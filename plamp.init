@@ -1,0 +1,40 @@
+#! /bin/sh
+
+# Install this service with a symlink like so:
+# sudo cp plamp.init /etc/init.d
+# cd /etc/rc2.d
+# sudo ln -sf ../init.d/plamp.init S99plamp
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+
+. /lib/init/vars.sh
+. /lib/lsb/init-functions
+
+do_start() {
+  # Start plamp web server and log to disk
+  mkdir -p /home/pi/logs
+  ./home/pi/plamp/app.py 80 > /home/pi/logs/plamp.log 2>&1 &
+  return 0
+}
+
+do_stop() {
+  killall app.py
+}
+
+case "$1" in
+    start)
+	do_start
+        ;;
+    restart|reload|force-reload)
+        do_stop
+        do_start
+        ;;
+    stop)
+	do_stop
+        ;;
+    *)
+        echo "Usage: $0 start|stop" >&2
+        exit 3
+        ;;
+esac
+
