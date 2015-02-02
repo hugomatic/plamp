@@ -12,7 +12,7 @@ PATH=/sbin:/usr/sbin:/bin:/usr/bin
 
 do_start() {
   # Start plamp web server and log to disk
-  mkdir -p /home/pi/logs
+  mkdir -p /home/pi/plamp/logs
   ./home/pi/plamp/app.py 80 > /home/pi/logs/plamp.log 2>&1 &
   return 0
 }
@@ -21,9 +21,16 @@ do_stop() {
   killall app.py
 }
 
+do_status() {
+  wget -qO- localhost &> /dev/null
+}
+
 case "$1" in
     start)
 	do_start
+        ;;
+    status)
+        do_status
         ;;
     restart|reload|force-reload)
         do_stop

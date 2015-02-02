@@ -1,13 +1,24 @@
 #!/bin/bash
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-echo "DIR: ${DIR}"
 
 if [ $UID != 0 ]; then
   echo "You're not root.  Run this script under sudo."
   exit 1
 fi
 
+
+#
+# Packages
+
+# apt-get install -y python-pip
+# pip install Flask
+# pip install -U flask-cors
+
+# get LED python program
+
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo "DIR: ${DIR}"
 
 cp plamp.init /etc/init.d/plamp
 cd /etc/rc2.d
@@ -29,7 +40,7 @@ EOF
 plamp_path="/home/pi/plamp"
 #
 # Add a cron job to keep wifi alive
-line="*/2 * * * * $plamp_path/check_plamp.bash
+line="*/2 * * * * $plamp_path/check_plamp.bash"
 (crontab -u root -l; echo "$line" ) | crontab -u root -
 
 
