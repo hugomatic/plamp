@@ -25,6 +25,8 @@ cd /etc/rc2.d
 ln -sf ../init.d/plamp S99plamp
 cd -
 
+update-rc.d -f plamp  start 02
+
 #
 # disable power mgnt on wifi with a conf file
 cat << EOF > /etc/modprobe.d/8192cu.conf 

@@ -186,6 +186,6 @@ def set_color():
 
 if __name__ == '__main__':
     print ("Running server on port %s" % port_number)
-    debug = True 
+    debug = False 
     app.run(host= '0.0.0.0', port=port_number, debug=debug)
 

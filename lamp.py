@@ -30,9 +30,7 @@ strip.begin()
 
 if __name__ == '__main__':
     # create NeoPixel object with appropriate configuration.
-    strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT)
     # Intialize the library (must be called once before other functions).
-    strip.begin()
     if len(sys.argv) < 4:
         print("lamp.py red green blue")
 	exit(-1)
