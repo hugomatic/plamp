@@ -10,19 +10,21 @@ PATH=/sbin:/usr/sbin:/bin:/usr/bin
 . /lib/init/vars.sh
 . /lib/lsb/init-functions
 
+plampdir=/home/pi/plamp
+
 do_start() {
   # Start plamp web server and log to disk
-  mkdir -p /home/pi/plamp/logs
-  ./home/pi/plamp/app.py 80 > /home/pi/logs/plamp.log 2>&1 &
+  mkdir -p $plampdir/logs
+  ./home/pi/plamp/plamp.py 80 > $plampdir/logs/plamp.log 2>&1 &
   return 0
 }
 
 do_stop() {
-  killall app.py
+  killall plamp.py
 }
 
 do_status() {
-  wget -qO- localhost &> /dev/null
+  /sbin/pgrep -fl app.py
 }
 
 case "$1" in

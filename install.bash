@@ -32,8 +32,7 @@ update-rc.d -f plamp  start 02
 cat << EOF > /etc/modprobe.d/8192cu.conf 
 
 # Disable power management
-options 8192cu rtw_power_mgnt=0
-rtw_enusbss=0
+options 8192cu rtw_power_mgnt=0 rtw_enusbss=0
 
 EOF
 
