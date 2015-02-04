@@ -6,7 +6,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 mkdir -p $DIR/logs
 log="$DIR/logs/plamp_check.log"
 
-if /usr/bin/pgrep -lf app.py ; then
+if /usr/bin/pgrep -lf plamp.py ; then
    echo `date` " plamp server up" >> $log
 else
    echo `date` " plamp server down" >> $log
