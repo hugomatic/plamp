@@ -24,7 +24,7 @@ do_stop() {
 }
 
 do_status() {
-  /sbin/pgrep -fl app.py
+  /usr/bin/pgrep -fl plamp.py
 }
 
 case "$1" in
