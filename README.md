@@ -5,6 +5,6 @@ plamps are good
 
 
 
-you must install
+you must install the LED drivers
 ===============
-rpi_ws281x-1.0.0-py2.7-linux-armv6l.egg
+see neopix.txt
