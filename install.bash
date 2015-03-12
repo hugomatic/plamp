@@ -21,11 +21,11 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "DIR: ${DIR}"
 
 cp plamp.init /etc/init.d/plamp
-cd /etc/rc2.d
-ln -sf ../init.d/plamp S99plamp
+cd /etc/rc5.d
+ln -sf ../init.d/plamp S07plamp
 cd -
 
-update-rc.d -f plamp  start 02
+update-rc.d -f plamp  start 05
 
 #
 # disable power mgnt on wifi with a conf file

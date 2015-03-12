@@ -1,5 +1,16 @@
 #! /bin/sh
 
+### BEGIN INIT INFO
+# Provides: plamp_init
+# Required-Start: $remote_fs $syslog
+# Required-Stop: $remote_fs $syslog
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: Plamp is a lamp
+# Description: Plamps are good
+### END INIT INFO
+
+
 # Install this service with a symlink like so:
 # sudo cp plamp.init /etc/init.d
 # cd /etc/rc2.d

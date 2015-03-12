@@ -148,7 +148,7 @@ Wait <input type="text" size="25" value="20" id="wait_id" /><br>
     return Response(content, mimetype="text/html") 
 
 
-    
+strip = lamp.create_strip()    
 
 @app.route('/color', methods = ['POST'])
 def set_color():
@@ -180,7 +180,7 @@ def set_color():
     if 'wait' in request.json:
        wait = request.json['wait']
 
-    lamp.color_wipe(red, green, blue, wait)
+    lamp.color_wipe(strip, red, green, blue, wait)
     return jsonify( { 'color': [red, green, blue] } ), 200
 
 
