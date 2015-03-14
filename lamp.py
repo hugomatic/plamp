@@ -39,6 +39,11 @@ def create_strip(led_count=64):
             LED_INVERT)
     # Intialize the library (must be called once before other functions).
     strip.begin()
+    color_wipe(strip, 255,   0,   0, 5)
+    color_wipe(strip,   0, 255,   0, 5)
+    color_wipe(strip,   0,   0, 255, 5)
+    color_wipe(strip,   0,   0,   0, 5)
+ 
     return strip
 
 
