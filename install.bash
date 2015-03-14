@@ -20,12 +20,9 @@ fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "DIR: ${DIR}"
 
-cp plamp.init /etc/init.d/plamp
-cd /etc/rc5.d
-ln -sf ../init.d/plamp S07plamp
-cd -
+cp $DIR/plamp.init /etc/init.d/plamp
 
-update-rc.d -f plamp  start 05
+sudo update-rc.d plamp defaults
 
 #
 # disable power mgnt on wifi with a conf file
@@ -38,11 +35,11 @@ EOF
 
 ####
 
-plamp_path="/home/pi/plamp"
+# plamp_path="/home/pi/plamp"
 #
 # Add a cron job to keep wifi alive
-line="*/2 * * * * $plamp_path/check_plamp.bash"
-(crontab -u root -l; echo "$line" ) | crontab -u root -
+# line="*/2 * * * * $plamp_path/check_plamp.bash"
+# (crontab -u root -l; echo "$line" ) | crontab -u root -
 
 
 

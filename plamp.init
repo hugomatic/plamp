@@ -1,32 +1,21 @@
-#! /bin/sh
+
+#!/bin/bash
+plampdir=/home/pi/plamp
 
 ### BEGIN INIT INFO
-# Provides: plamp_init
-# Required-Start: $remote_fs $syslog
-# Required-Stop: $remote_fs $syslog
-# Default-Start: 2 3 4 5
-# Default-Stop: 0 1 6
-# Short-Description: Plamp is a lamp
-# Description: Plamps are good
+# Provides:          plamp
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Plamp service
+# Description:       Plamps are good
 ### END INIT INFO
-
-
-# Install this service with a symlink like so:
-# sudo cp plamp.init /etc/init.d
-# cd /etc/rc2.d
-# sudo ln -sf ../init.d/plamp.init S99plamp
-
-PATH=/sbin:/usr/sbin:/bin:/usr/bin
-
-. /lib/init/vars.sh
-. /lib/lsb/init-functions
-
-plampdir=/home/pi/plamp
 
 do_start() {
   # Start plamp web server and log to disk
   mkdir -p $plampdir/logs
-  ./home/pi/plamp/plamp.py 80 > $plampdir/logs/plamp.log 2>&1 &
+  $plampdir/plamp.py > $plampdir/logs/plamp.log 2>&1 &
   return 0
 }
 
@@ -53,8 +42,10 @@ case "$1" in
 	do_stop
         ;;
     *)
-        echo "Usage: $0 start|stop" >&2
+        echo "Usage: $0 start|stop|status" >&2
         exit 3
         ;;
 esac
+
+exit 0
 
