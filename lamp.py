@@ -26,7 +26,7 @@ def color_array(strip, pixels):
     strip.show()
 
 # Create NeoPixel object with appropriate configuration.
-def create_strip(led_count=64):
+def create_strip(led_count):
     LED_PIN     = 18      # GPIO pin connected to the pixels (must support PWM!).
     LED_FREQ_HZ = 800000  # LED signal frequency in hertz (usually 800khz)
     LED_DMA     = 5       # DMA channel to use for generating signal (try 5)
@@ -62,6 +62,6 @@ if __name__ == '__main__':
 	wait = int(sys.argv[4])
 
     print ("color wipe [%s, %s, %s] %s s" % (r, g, b, wait) )
-    strip = create_strip()
+    strip = create_strip(64)
     color_wipe(strip, r,g,b, wait)
     print("done")

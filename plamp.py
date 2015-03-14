@@ -26,7 +26,8 @@ from flask.ext.cors import CORS
 import requests
 
 port_number = 80
-debug = False 
+debug = False
+LED_COUNT = 128
 
 
 # parse cmd line args
@@ -77,7 +78,7 @@ def index():
     return Response(content, mimetype="text/html") 
 
 
-strip = lamp.create_strip()    
+strip = lamp.create_strip(LED_COUNT)    
 
 @app.route('/color_array', methods = ['POST'])
 def post_colors():
