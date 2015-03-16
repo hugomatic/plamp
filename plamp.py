@@ -60,7 +60,8 @@ app = Flask(__name__)
 # 'Access-Control-Allow-Methods'
 # 'Access-Control-Max-Age'
 # 'Access-Control-Allow-Headers' 
-cors = CORS(app)
+
+cors = CORS(app, resources="/*", allow_headers="Content-Type")
 
 
 @app.route('/config', methods = ['GET'])
