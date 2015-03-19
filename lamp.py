@@ -12,10 +12,12 @@ def color_wipe(strip, r, g, b, wait_ms=0):
     """
     color = Color(r, g, b)
     for i in range(strip.numPixels()):
-	# print("%s [%s %s %s]" % (i, r, g, b))
+        # print("%s [%s %s %s]" % (i, r, g, b))
         strip.setPixelColor(i, color)
-        strip.show()
+        if wait_ms > 0:
+            strip.show()
         time.sleep(wait_ms/1000.0)
+    strip.show()
 
 def color_array(strip, pixels):
     for pix in pixels:

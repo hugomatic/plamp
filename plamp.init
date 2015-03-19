@@ -1,21 +1,24 @@
 
 #!/bin/bash
-plampdir=/home/pi/plamp
+
 
 ### BEGIN INIT INFO
 # Provides:          plamp
 # Required-Start:    $remote_fs $syslog
 # Required-Stop:     $remote_fs $syslog
-# Default-Start:     2 3 4 5
+# Default-Start:     S
 # Default-Stop:      0 1 6
 # Short-Description: Plamp service
 # Description:       Plamps are good
 ### END INIT INFO
 
+plampdir=/home/pi/plamp
+
 do_start() {
   # Start plamp web server and log to disk
   mkdir -p $plampdir/logs
-  $plampdir/plamp.py > $plampdir/logs/plamp.log 2>&1 &
+  $plampdir/logs/plamp.log >> "STARTING"
+  $plampdir/plamp_socket.py > $plampdir/logs/plamp.log 2>&1 &
   return 0
 }
 
