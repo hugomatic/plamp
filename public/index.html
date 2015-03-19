@@ -1,0 +1,38 @@
+<html>
+  <head>
+    <style>
+      .border { border: 1px solid black; }
+      input { width: 35em; }
+      .left { width: 25%; float: left; margin: 20px; }
+      .right { width: 60%; float: left; margin: 20px;}
+      #chat-data { height: 400px; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Socket Plamp</h1>
+    <div id="status" class="border">Disconnected</div>
+    <form id="color_wipe">
+      <label for="color_wipe-input">color_wipe [r, g, b, w]</label>
+      <input id="color_wipe-input">
+    </form>
+    <div id="status_wipe" class="border">Last response:</div>
+    <div>
+
+    <form id="color_array">
+      <label for="color_array-input">color_array [[i, r, g, b]]</label>
+      <input id="color_array-input">
+    </form>
+    <div id="status_array" class="border">Last response</div>
+    <div>
+
+    <script type="text/javascript" src="/js/jquery.min.js"></script>
+    <script type="text/javascript" src="/js/socket.io.min.js"></script>
+
+    <br>
+    <button id="pushme">Pushme</button>
+
+    <script type="text/javascript" src="/js/plamp.js"></script>
+    <script type="text/javascript" src="/js/effects.js"></script>
+  </body>
+</html>
+
