@@ -66,6 +66,7 @@ def plamp(environ, start_response):
 
 def serve_file(environ, start_response):
     print "serve file"
+    print "%s" % environ
     f = environ['PATH_INFO']
     if f == '/':
         f= '/index.html'

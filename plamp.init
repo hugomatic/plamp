@@ -14,16 +14,18 @@
 
 plampdir=/home/pi/plamp
 
+plamp_proc=plamp_socket.py
+
 do_start() {
   # Start plamp web server and log to disk
   mkdir -p $plampdir/logs
   $plampdir/logs/plamp.log >> "STARTING"
-  $plampdir/plamp_socket.py > $plampdir/logs/plamp.log 2>&1 &
+  $plampdir/$plamp_proc > $plampdir/logs/plamp.log 2>&1 &
   return 0
 }
 
 do_stop() {
-  killall plamp.py
+  killall -9 $plamp_proc
 }
 
 do_status() {
