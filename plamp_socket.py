@@ -13,6 +13,26 @@ led_count = 64
 
 strip = lamp.create_strip(led_count)
 
+def color_wipe(str):
+    print "on color_wipe", str
+    data = eval(str)
+    r = int(data[0])
+    g = int(data[1])
+    b = int(data[2])
+    w = int(data[3])
+    lamp.color_wipe(strip, r, g, b, w)
+    return  data
+        
+def color_array(str):
+    print "on color array"
+    print "data %s" % str
+    pixels = eval(str)
+    print "PIXELS %s" % pixels
+    print type(pixels)
+    lamp.color_array(strip, pixels)
+    return len(pixels)
+
+
 public = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
@@ -28,29 +48,15 @@ class PlampNamespace(BaseNamespace):
 
     def disconnect(self, *args, **kwargs):
         print "disco-nekt"
-        if self.nick:
-            self._broadcast('exit', self.nick)
-        del self._registry[id(self)]
         super(PlampNamespace, self).disconnect(*args, **kwargs)
 
-    def on_color_wipe(self, m):
-        print "on color_wipe", m
-        data = eval(m)
-        r = int(data[0])
-        g = int(data[1])
-        b = int(data[2])
-        w = int(data[3])
-        lamp.color_wipe(strip, r, g, b, w)
-        self._broadcast('color_wiped', data)
+    def on_color_wipe(self, str):
+        w = color_wipe(str)
+        self._broadcast('color_wiped', w)
 
-    def on_color_array(self, data):
-        print "on color array"
-        print "data %s" % data
-        pixels = eval(data)
-        print "PIXELS %s" % pixels
-        print type(pixels)
-        lamp.color_array(strip, pixels)
-        self._broadcast('color_arrayed',{'count':len(pixels)})
+    def on_color_array(self, str):
+        count = color_array(str)
+        self._broadcast('color_arrayed',{'count':count})
 
     def _broadcast(self, event, message):
         for s in self._registry.values():
@@ -58,15 +64,53 @@ class PlampNamespace(BaseNamespace):
 
 
 def plamp(environ, start_response):
+    """
+    This is the main routing
+    """
     print "plamp pathinfo %s" % environ['PATH_INFO']
     if environ['PATH_INFO'].startswith('/socket.io'):
         return socketio_manage(environ, { '/plamp': PlampNamespace })
     else:
-        return serve_file(environ, start_response)
+        if environ['REQUEST_METHOD'] == 'GET':
+            return serve_file(environ, start_response)
+        if environ['REQUEST_METHOD'] == 'POST':
+            if environ['PATH_INFO'] == "/color_wipe":
+                return post_color_wipe(environ, start_response)
+            if environ['PATH_INFO'] == "/color_array":
+                return post_color_array(environ, start_response)
+            return api_not_found(environ, start_response)
+
+
+def api_not_found(environ, start_response):
+    start_response('404 NOT FOUND', [])
+    r = 'route "%s" not found' % environ['PATH_INFO'] 
+    yield r
+
+def get_headers():
+    r = [('Access-Control-Allow-Origin', '*'),
+    ('Access-Control-Allow-Methods', 'POST, GET, PUT, PATCH, DELETE, OPTIONS'),
+    ('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'),
+    ('Access-Control-Max-Age', '1728000'),
+    ('Content-Type', 'application/json')]
+    return r
+
+def post_color_wipe(environ, start_response):
+    dataStr = environ['wsgi.input'].read()
+    color_wipe(dataStr)
+    start_response('200 OK', get_headers())
+    r = {"color_wipe": data}
+    yield r
+
+def post_color_array(environ, start_response):
+    print("color_array")
+    dataStr = environ['wsgi.input'].read()
+    color_array(dataStr)
+    start_response('200 OK', [('Content-Type', 'text/html')])
+    r = '{"count": 0}'
+    yield r
+
 
 def serve_file(environ, start_response):
-    print "serve file"
-    print "%s" % environ
     f = environ['PATH_INFO']
     if f == '/':
         f= '/index.html'
