@@ -21,4 +21,17 @@
             socket.emit('color_wipe', '['+r+','+g+','+b+',0]')
         }
     }
+    var r_range = document.getElementById('r_id')
+    var g_range = document.getElementById('g_id')
+    var b_range = document.getElementById('b_id')
+    r_range.onchange = slider_wipe
+    b_range.onchange = slider_wipe
+    g_range.onchange = slider_wipe
+
+    function slider_wipe() {
+       var r = r_range.value
+       var g = g_range.value
+       var b = b_range.value
+       socket.emit('color_wipe', '['+r+','+g+','+b+',0]')
+    }
 })();

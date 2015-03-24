@@ -87,11 +87,12 @@ def api_not_found(environ, start_response):
     yield r
 
 def get_headers():
-    r = [('Access-Control-Allow-Origin', '*'),
-    ('Access-Control-Allow-Methods', 'POST, GET, PUT, PATCH, DELETE, OPTIONS'),
-    ('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'),
-    ('Access-Control-Max-Age', '1728000'),
-    ('Content-Type', 'application/json')]
+    r = [ ('Content-Type', 'application/json'),
+    # ('Access-Control-Allow-Origin', '*'),
+    # ('Access-Control-Allow-Methods', 'POST, GET, PUT, PATCH, DELETE, OPTIONS'),
+    # ('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With'),
+    # ('Access-Control-Max-Age', '1728000'),
+    ]
     return r
 
 def post_color_wipe(environ, start_response):
