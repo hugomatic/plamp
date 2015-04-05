@@ -13,6 +13,7 @@ Raspberry PI packages
 * pip install Flask
 * pip install -U flask-cors
 * pip install requests
+* pip install gevent-socketio
 
 Then run install.bash
 
