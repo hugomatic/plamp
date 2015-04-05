@@ -9,7 +9,7 @@ machine setup
 
 Raspberry PI packages
 
-* apt-get install -y python-pip python-bluez avahi-daemon
+* apt-get install -y python-dev python-pip python-bluez avahi-daemon
 * pip install Flask
 * pip install -U flask-cors
 * pip install requests
