@@ -15,8 +15,21 @@ Raspberry PI packages
 * pip install requests
 * pip install gevent-socketio
 
-Then run install.bash
-
-you must install the LED drivers
+Install the LED driver software
 ===============
-see neopix.txt
+
+sudo apt-get install -y build-essential git scons swig
+
+git clone https://github.com/jgarff/rpi_ws281x.git
+cd rpi_ws281x
+scons
+
+cd python && sudo python setup.py install
+
+
+Install the plamp service
+====================
+
+Then run install.bash as root from this directory
+
+

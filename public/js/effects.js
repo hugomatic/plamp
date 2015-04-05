@@ -3,8 +3,17 @@
 
     var socket = io.connect('/plamp');
 
-    var pushme_button = document.querySelector("#pushme")
-    pushme_button.onclick = function() {
+    var button_pushme = document.querySelector("#button_pushme")
+    var button_off = document.querySelector("#button_off")
+
+    document.querySelector("#button_red").onclick = function() { socket.emit('color_wipe', '[255,0,0,0]') }    
+    document.querySelector("#button_green").onclick = function() { socket.emit('color_wipe', '[0,255,0,0]') }    
+    document.querySelector("#button_blue").onclick = function() { socket.emit('color_wipe', '[0,0,255,0]') }    
+    document.querySelector("#button_yellow").onclick = function() { socket.emit('color_wipe', '[255,200,0,0]') }    
+    document.querySelector("#button_white").onclick = function() { socket.emit('color_wipe', '[10,10,10,0]') }    
+    document.querySelector("#button_off").onclick = function() { socket.emit('color_wipe', '[0,0,0,0]') }    
+	
+    button_pushme.onclick = function() {
 	
 	var r = 0
         var g = 0

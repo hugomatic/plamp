@@ -12,7 +12,23 @@
    
     
     <h1>Socket Plamp</h1>
-    <div id="status" class="border">Disconnected</div>
+    
+    <button id="button_red">Red</button>
+    <button id="button_green">Green</button>
+    <button id="button_blue">Blue</button>
+    <button id="button_yellow">Yellow</button>
+    <button id="button_white">White</button>
+    <button id="button_off">Off</button>
+
+    <button id="button_pushme">Surprise</button>
+
+    <br>R<input id='r_id' type="range" min=0 max=255 step=1/>
+    <br>G<input id='g_id' type="range" min=0 max=255 step=1/>
+    <br>B<input id='b_id' type="range" min=0 max=255 step=1/>
+    <br>
+    <br>
+
+   <div id="status" class="border">Disconnected</div>
     <form id="color_wipe">
       <label for="color_wipe-input">color_wipe [r, g, b, w]</label>
       <input id="color_wipe-input">
@@ -29,13 +45,6 @@
 
     <script type="text/javascript" src="/js/jquery.min.js"></script>
     <script type="text/javascript" src="/js/socket.io.min.js"></script>
-
-    <br>
-    <button id="pushme">Pushme</button>
-
-    <br>R<input id='r_id' type="range" min=0 max=255 step=1/>
-    <br>G<input id='g_id' type="range" min=0 max=255 step=1/>
-    <br>B<input id='b_id' type="range" min=0 max=255 step=1/>
 
 <h1>REST Plamp</h1>
 <i>Plamps are good!</i>
