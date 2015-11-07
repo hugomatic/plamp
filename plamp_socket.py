@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import time
 
 from socketio import socketio_manage
 from socketio.server import SocketIOServer
@@ -13,14 +14,20 @@ led_count = 3 * 64
 
 strip = lamp.create_strip(led_count)
 
+timestamp = time.time() 
+
 def color_wipe(str):
+    global timestamp
     print "on color_wipe", str
     data = eval(str)
     r = int(data[0])
     g = int(data[1])
     b = int(data[2])
     w = int(data[3])
-    lamp.color_wipe(strip, r, g, b, w)
+    age = time.time() - timestamp
+    if age > 0.1:
+        lamp.color_wipe(strip, r, g, b, w)
+        timestamp = time.time()
     return  data
         
 def color_array(str):
