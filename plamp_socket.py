@@ -8,7 +8,7 @@ from socketio.namespace import BaseNamespace
 import lamp
 
 port = 80
-led_count = 64
+led_count = 3 * 64
 
 
 strip = lamp.create_strip(led_count)

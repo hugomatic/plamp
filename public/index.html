@@ -1,94 +1,16 @@
+
+
 <html>
-  <head>
-    <style>
-      .border { border: 1px solid black; }
-      input { width: 35em; }
-      .left { width: 25%; float: left; margin: 20px; }
-      .right { width: 60%; float: left; margin: 20px;}
-      #chat-data { height: 400px; overflow: auto; }
-    </style>
-  </head>
-  <body>
-   
-    
-    <h1>Socket Plamp</h1>
-    
-    <button id="button_red">Red</button>
-    <button id="button_green">Green</button>
-    <button id="button_blue">Blue</button>
-    <button id="button_yellow">Yellow</button>
-    <button id="button_white">White</button>
-    <button id="button_off">Off</button>
+<body>
 
-    <button id="button_pushme">Surprise</button>
-
-    <br>R<input id='r_id' type="range" min=0 max=255 step=1/>
-    <br>G<input id='g_id' type="range" min=0 max=255 step=1/>
-    <br>B<input id='b_id' type="range" min=0 max=255 step=1/>
-    <br>
-    <br>
-
-   <div id="status" class="border">Disconnected</div>
-    <form id="color_wipe">
-      <label for="color_wipe-input">color_wipe [r, g, b, w]</label>
-      <input id="color_wipe-input">
-    </form>
-    <div id="status_wipe" class="border">Last response:</div>
-    <div>
-
-    <form id="color_array">
-      <label for="color_array-input">color_array [[i, r, g, b]]</label>
-      <input id="color_array-input">
-    </form>
-    <div id="status_array" class="border">Last response</div>
-    <div>
-
-    <script type="text/javascript" src="/js/jquery.min.js"></script>
-    <script type="text/javascript" src="/js/socket.io.min.js"></script>
-
-<h1>REST Plamp</h1>
-<i>Plamps are good!</i>
-
-<div>
-<h2>Plamp host (CORS)</h2>
-Plamp is CORS enabled<br>
-<input type="text" size="40" value="" id="host_id" /><br>
-</div>
-
-<div>
-<h2>[POST] /color_wipe</h2>
-An array with a color (0-255) and a wait (ms) [r, g, b, w]<br>
-<input type="text" size="40" value="[8, 8, 8, 20]" id="colorwipe_id" /><br>
-<button onclick="send_color_wipe()" >Send command</button>
-</div>
-
-<div>
-<h2>[POST] /color_array</h2> 
-An array of indexed colors [[i, r, g, b]]<br>
-<textarea rows="10" cols="40"  id="array_values_id" >
-[
- [ 0, 255,     0,     0],
- [ 7,     0, 255,     0],
- [56,    0,     0, 255],
- [63, 255, 255, 255] 
-]
-</textarea><br>
-<button onclick="send_color_array()">Send command</button>
-</div>
-
-
-<div>
-<h2>Response</h2>
-Last response first
-<div id="responseDiv"/>
-</div>
-
-
-
-    <script type="text/javascript" src="/js/rest_plamp.js"></script>
-
-    <script type="text/javascript" src="/js/plamp.js"></script>
-    <script type="text/javascript" src="/js/effects.js"></script>
-  </body>
+  <h1>
+    <a href="/dev.html">dev</a>
+  </h1>
+  <h1>
+     <a href="/tilt.html">tilt</a>
+  </h1>
+  <h1>
+    <a href="/touch.html">touch</a>
+  </h1>
+</body>
 </html>
-
