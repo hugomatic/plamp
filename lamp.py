@@ -18,6 +18,7 @@ def color_wipe(strip, r, g, b, wait_ms=0):
             strip.show()
         time.sleep(wait_ms/1000.0)
     strip.show()
+    color = [r,g,b]
 
 def color_array(strip, pixels):
     for pix in pixels:

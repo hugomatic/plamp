@@ -5,33 +5,66 @@
   <title>Touch plamp</title>
   
   <style type="text/css">
-  .touchArea {
-    width:100px;
-    height:256px;
-    background:#333;
-    font-size:20px;
-    color:#fff;
-    text-align: center;
-  }
+
+    #container {
+      height: 96%;
+      position: absolute;
+      top: 0px;
+      right: 0;
+      bottom: 0px;
+      left: 0;
+      padding: 10px 10px 10px;
+    }
+
+    #R {
+      width:33%;
+      height:100%;
+      padding:2px;
+      border:1px solid #000;
+      float:left; 
+      background-color:#ff0000;
+      color:#ffffff;
+      text-align: center;
+      font-size: 40px;
+    }
+
+    #B {
+      width:33%;
+      height:100%;
+      padding:2px;
+      border:1px solid #000;
+      float:right;
+      background-color:#0000ff;
+      color:#ffffff;
+      text-align: center;
+      font-size: 40px;
+    }
+
+    #G {
+      height:100%;
+      padding:2px;
+      border:1px solid #000;
+      background-color:#00ff00;
+      color:#ffffff;
+      vertical-align: middle;  
+      text-align: center;
+      font-size: 40px;
+    } 
+
   </style>
 </head>
 <body>
 
-Plamp :-)
-<table>
-    <tr>
-        <td><div class="touchArea" id="R"></div></td>
-        <td><div class="touchArea" id="G"></div></td>
-        <td><div class="touchArea" id="B"></div></td>
-    </tr>
-</table>
+<div id="container">
+  <div id="R">RED</div>
+  <div id="B">BLUE</div>
+  <div id="G">GREEN</div> 
+</div>
 
-<!-- <script type="text/javascript" src="/js/jquery.min.js"></script> -->
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
 <script type="text/javascript" src="/js/socket.io.min.js"></script>
-<script type="text/javascript" src="/js/plamp.js"></script>
 
-  <script type="text/javascript">
+<script type="text/javascript">
 'use strict'
 
 console.log('Init touch')
@@ -50,7 +83,7 @@ function rgbToHex(r, g, b) {
 }
 
 var socket = null;
-var R=0;
+var R=-1; // negative indicate it hasn't seen any color yet
 var G=0;
 var B=0;
 
@@ -59,7 +92,60 @@ $(function() {
   setup('#R')
   setup('#G')
   setup('#B')
-  socket = io.connect('/plamp');
+  var socket = io.connect('/plamp');
+ 
+  var $wipe = $("#wipe")
+  var $status = $("#status")
+  var $msg = $("#msg")
+  var $R = $("#R")
+  var $G = $("#G")
+  var $B = $("#B")
+ 
+  socket.on('connect', function() {
+        console.log('connect using: ' + socket.socket.transport.name)
+        $status.html('<b>:-)</b>');
+  });
+
+  socket.on('error', function() {
+        console.log('socket error')
+        $status.html('<b>:-(</b>');
+    });
+  
+  socket.on('disconnect', function() {
+        console.log('socket disconnect')
+        $status.html('<b>:-/</b>');
+  });
+
+  socket.on('color_wiped', function(msg) {
+       $R.html(msg[0])
+       $R.css("backgroundColor", rgbToHex(msg[0], 0, 0) )
+       $G.html(msg[1])
+       $G.css("backgroundColor", rgbToHex(0, msg[1], 0) )
+       $B.html(msg[2])
+       $B.css("backgroundColor", rgbToHex(0, 0, msg[2]) )
+  });
+
+  //
+  // this is a timer that executes a function every 50 milisecs and
+  // sends the color, but only if its different than the last time it was sent
+  // 
+  var last_msg = '';
+  var timer = setInterval(function() 
+  {
+    if(R<0)
+      return
+    var msg = '[' + R + ',' + G +','+ B + ',0]'
+    if(msg != last_msg)
+    {
+      console.log(msg)
+      socket.emit('color_wipe', msg)
+      $msg.html(msg)
+    }
+    else
+      console.log(msg + ' no change')
+    last_msg = msg
+  }, 50)
+
 })
 
 function setup(id)
@@ -98,48 +184,45 @@ $touchArea.on('touchend mouseup touchcancel',function (e){
     var pointer = getPointerEvent(e);
     currX = pointer.pageX;
     currY = pointer.pageY;
-    $touchArea.text('Touchended [' + currX + ", " + currY + ']');
 });
        
 $touchArea.on('touchmove mousemove',function (e){
-
-   console.log('xxx[' + R + ',' + G +','+ B + ',0]')
     e.preventDefault();
     var pointer = getPointerEvent(e);
     currX = pointer.pageX;
-    currY = pointer.pageY - 18;
-    var col = currY < 0? 0 : currY
-    if (col > 255)  col = 0 
-    $touchArea.text('[' + currY + ']');
+    currY = pointer.pageY;
+    var divDy = $touchArea.height()
+    var col = Math.round(255 * currY / divDy) - 10
+    if(col < 0) col = 0
+    if(col > 255) col =255   
+    console.log('screen' + col)
+
+    // ===================================
+    // this is where we set the new color
     if (id == "#R")
     {
       R = col
-      $touchArea.css("backgroundColor", rgbToHex(col, 0, 0) )
     }
     if (id == "#G")
     {
       G = col
-      $touchArea.css("backgroundColor", rgbToHex(0, col, 0) )
     }  
     if (id == "#B")
     {
       B = col
-      $touchArea.css("backgroundColor", rgbToHex(0, 0, col) )
     }
-    //
-    // ===============
-    var msg = '[' + R + ',' + G +','+ B + ',0]'
-    console.log('emit ' + msg)
-    socket.emit('color_wipe', msg)    
-    // ===============
+    // ===================================
+
     if(touchStarted) {
          // here you are swiping
-         $touchArea.text('Swiping [' + currX + ", " + currY + ']');
+         $touchArea.text('! [' + col + ']');
     }
    
 });
     
-}
+}  // setup
+
+
   </script>
 </body>
 </html>

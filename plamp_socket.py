@@ -11,12 +11,18 @@ import lamp
 port = 80
 led_count = 3 * 64
 
+R=0
+G=0
+B=0
 
 strip = lamp.create_strip(led_count)
 
 timestamp = time.time() 
 
 def color_wipe(str):
+    global R
+    global G
+    global B
     global timestamp
     print "on color_wipe", str
     data = eval(str)
@@ -25,8 +31,11 @@ def color_wipe(str):
     b = int(data[2])
     w = int(data[3])
     age = time.time() - timestamp
-    if age > 0.1:
+    if age > 0.05:
         lamp.color_wipe(strip, r, g, b, w)
+        R = r
+        G = g
+        B = b
         timestamp = time.time()
     return  data
         
@@ -50,9 +59,12 @@ class PlampNamespace(BaseNamespace):
 
     def initialize(self):
         self._registry[id(self)] = self
+        print "co-nekt"
         self.emit('connect')
         self.nick = None
-
+        print("COLOR: [%s, %s, %s]" % (R, G, B)) 
+        self.emit('color_wiped', [R, G, B, 0])      
+ 
     def disconnect(self, *args, **kwargs):
         print "disco-nekt"
         super(PlampNamespace, self).disconnect(*args, **kwargs)
@@ -60,7 +72,7 @@ class PlampNamespace(BaseNamespace):
     def on_color_wipe(self, str):
         w = color_wipe(str)
         self._broadcast('color_wiped', w)
-
+        
     def on_color_array(self, str):
         count = color_array(str)
         self._broadcast('color_arrayed',{'count':count})
@@ -124,7 +136,7 @@ def serve_file(environ, start_response):
         f= '/index.html'
     path = os.path.normpath(
         os.path.join(public, f.lstrip('/')))
-    print "PATHate: %s" % path
+    print "serve file: %s" % path
     assert path.startswith(public), path
     if os.path.exists(path):
         start_response('200 OK', [('Content-Type', 'text/html')])
