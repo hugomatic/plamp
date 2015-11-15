@@ -16,21 +16,21 @@ plampdir=/home/pi/plamp
 
 plamp_proc=plamp_socket.py
 
+plamp_full_path=$plampdir/$plamp_proc
+
 do_start() {
   # Start plamp web server and log to disk
-  mkdir -p $plampdir/logs
-  $plampdir/logs/plamp.log >> "STARTING"
-  $plampdir/$plamp_proc > $plampdir/logs/plamp.log 2>&1 &
+  $plamp_full_path > /tmp/plamp.log 2>&1 &
   return 0
 }
 
 do_stop() {
   # killall -9 $plamp_proc
-  kill $(ps aux | grep "[p]ython /home/pi/plamp/plamp_socket.py" | awk '{print $2}')
+  kill $(ps aux | grep "[p]ython $plamp_full_path" | awk '{print $2}')
 }
 
 do_status() {
-  /usr/bin/pgrep -fl plamp.py
+  echo plamp pid: $(ps aux | grep "[p]ython $plamp_full_path" | awk '{print $2}')  
 }
 
 case "$1" in

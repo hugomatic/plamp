@@ -24,7 +24,7 @@ def color_wipe(str):
     global G
     global B
     global timestamp
-    print "on color_wipe", str
+    print "%s color_wipe %s" % (timestamp, str)
     data = eval(str)
     r = int(data[0])
     g = int(data[1])
@@ -37,7 +37,8 @@ def color_wipe(str):
         G = g
         B = b
         timestamp = time.time()
-    return  data
+        return  data
+    return None
         
 def color_array(str):
     print "on color array"
@@ -71,7 +72,8 @@ class PlampNamespace(BaseNamespace):
 
     def on_color_wipe(self, str):
         w = color_wipe(str)
-        self._broadcast('color_wiped', w)
+        if w:
+            self._broadcast('color_wiped', w)
         
     def on_color_array(self, str):
         count = color_array(str)
