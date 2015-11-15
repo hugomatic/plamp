@@ -22,7 +22,7 @@
       padding:2px;
       border:1px solid #000;
       float:left; 
-      background-color:#ff0000;
+      background-color:#000;
       color:#ffffff;
       text-align: center;
       font-size: 40px;
@@ -34,7 +34,7 @@
       padding:2px;
       border:1px solid #000;
       float:right;
-      background-color:#0000ff;
+      background-color:#000;
       color:#ffffff;
       text-align: center;
       font-size: 40px;
@@ -44,7 +44,7 @@
       height:100%;
       padding:2px;
       border:1px solid #000;
-      background-color:#00ff00;
+      background-color:#000;
       color:#ffffff;
       vertical-align: middle;  
       text-align: center;
@@ -117,6 +117,7 @@ $(function() {
   });
 
   socket.on('color_wiped', function(msg) {
+       console.log('!!! color_wiped ' + msg)
        $R.html(msg[0])
        $R.css("backgroundColor", rgbToHex(msg[0], 0, 0) )
        $G.html(msg[1])
@@ -148,6 +149,29 @@ $(function() {
 
 })
 
+
+function touch2brightness(y, id)
+{
+  var $touchArea = $(id)
+  var divDy = $touchArea.height()
+  var col = Math.round(255 * y / divDy) - 10
+  if(col < 0) {
+    col = 0
+  }
+  if(col > 255)  {
+    col = 255
+  }
+  if (id == "#R")  {
+    R = col 
+  }
+  if (id == "#G")  {
+    G = col
+  }  
+  if (id == "#B")  { 
+    B = col
+  }
+}
+
 function setup(id)
 {
     var $touchArea = $(id)
@@ -168,12 +192,13 @@ function setup(id)
     // a touch event is detected      
     touchStarted = true;
     $touchArea.text('Touchstarted ' + currX + ", " + currY);
+    touch2brightness(currY,  id)
     // detecting if after 200ms the finger is still in the same position
     setTimeout(function (){
         if ((cachedX === currX) && !touchStarted && (cachedY === currY)) {
             // Here you get the Tap event
             $touchArea.text('Tap [' + currX + ", " + currY + ']');
-        }
+       }
     },200);
 });
     
@@ -184,6 +209,7 @@ $touchArea.on('touchend mouseup touchcancel',function (e){
     var pointer = getPointerEvent(e);
     currX = pointer.pageX;
     currY = pointer.pageY;
+    touch2brightness(currY,  id)
 });
        
 $touchArea.on('touchmove mousemove',function (e){
@@ -192,25 +218,9 @@ $touchArea.on('touchmove mousemove',function (e){
     currX = pointer.pageX;
     currY = pointer.pageY;
     var divDy = $touchArea.height()
-    var col = Math.round(255 * currY / divDy) - 10
-    if(col < 0) col = 0
-    if(col > 255) col =255   
-    console.log('screen' + col)
-
+    
     // ===================================
-    // this is where we set the new color
-    if (id == "#R")
-    {
-      R = col
-    }
-    if (id == "#G")
-    {
-      G = col
-    }  
-    if (id == "#B")
-    {
-      B = col
-    }
+    touch2brightness(currY,  id)
     // ===================================
 
     if(touchStarted) {

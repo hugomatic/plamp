@@ -25,7 +25,8 @@ do_start() {
 }
 
 do_stop() {
-  killall -9 $plamp_proc
+  # killall -9 $plamp_proc
+  kill $(ps aux | grep "[p]ython /home/pi/plamp/plamp_socket.py" | awk '{print $2}')
 }
 
 do_status() {
