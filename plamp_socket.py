@@ -8,8 +8,9 @@ from socketio.server import SocketIOServer
 from socketio.namespace import BaseNamespace
 import lamp
 
+min_wait_time = 0.075
 port = 80
-led_count = 3 * 64
+led_count = 1 * 64
 
 R=0
 G=0
@@ -31,7 +32,7 @@ def color_wipe(str):
     b = int(data[2])
     w = int(data[3])
     age = time.time() - timestamp
-    if age > 0.05:
+    if age > min_wait_time:
         lamp.color_wipe(strip, r, g, b, w)
         R = r
         G = g
