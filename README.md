@@ -13,6 +13,7 @@ Raspberry PI packages
 * pip install Flask
 * pip install -U flask-cors
 * pip install requests
+* pip install gevent
 * pip install gevent-socketio
 
 Install the LED driver software
