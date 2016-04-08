@@ -1,0 +1,15 @@
+[Unit]
+Description=Plamps are good!
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target
+
+
+[Service]
+Type=simple
+ExecStart=/home/pi/code/plamp/plamp_socket.py
+
+[Install]
+WantedBy=multi-user.target
+
+
+
