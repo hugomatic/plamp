@@ -46,16 +46,17 @@ ff02::2         ip6-allrouters
 127.0.1.1       plamp
 EOF
 
-#
-# disable power mgnt on wifi with a conf file
-#
-#cat << EOF > /etc/modprobe.d/8192cu.conf 
-#
+if grep BCM2709 /proc/cpuinfo; then
+  echo RPI 3
+else
+  echo not RPI 3
+ # disable power mgnt on wifi with a conf file
+cat << EOF > /etc/modprobe.d/8192cu.conf 
 ## Disable power management
-#options 8192cu rtw_power_mgnt=0 rtw_enusbss=0 rtw_ips_mode=1
-#
-#EOF
-
+options 8192cu rtw_power_mgnt=0 rtw_enusbss=0 rtw_ips_mode=1
+EOF
+ 
+fi
 
 ####
 
