@@ -7,18 +7,6 @@ if [ $UID != 0 ]; then
 fi
 
 
-apt-get install -y vim ipython python-dev python-pip python-bluez avahi-daemon
-pip install Flask
-pip install -U flask-cors
-pip install requests
-pip install gevent
-pip install gevent-socketio
-
-# install pimonori
-curl -sS get.pimoroni.com/unicornhat | bash
-
-
-
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "DIR: ${DIR}"
 
@@ -57,14 +45,4 @@ options 8192cu rtw_power_mgnt=0 rtw_enusbss=0 rtw_ips_mode=1
 EOF
  
 fi
-
-####
-
-# plamp_path="/home/pi/plamp"
-#
-# Add a cron job to keep wifi alive
-# line="*/2 * * * * $plamp_path/check_plamp.bash"
-# (crontab -u root -l; echo "$line" ) | crontab -u root -
-
-
 
