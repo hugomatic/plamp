@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 
 if [ $UID != 0 ]; then
@@ -7,17 +7,27 @@ if [ $UID != 0 ]; then
 fi
 
 
-# get LED python program
+apt-get install -y vim ipython python-dev python-pip python-bluez avahi-daemon
+pip install Flask
+pip install -U flask-cors
+pip install requests
+pip install gevent
+pip install gevent-socketio
+
+# install pimonori
+curl -sS get.pimoroni.com/unicornhat | bash
+
 
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "DIR: ${DIR}"
 
-cp $DIR/plamp.init /etc/init.d/plamp
+# systemd
+. $DIR/install_plamp_service.bash
 
-sudo update-rc.d plamp defaults
+# sysinit
+#. $DIR/install_sysinit.bash plamp.init
 
-#
 # set the name to plamp.local
 # write /etc/hostname and /etc/hosts
 
@@ -36,15 +46,16 @@ ff02::2         ip6-allrouters
 127.0.1.1       plamp
 EOF
 
-
 #
 # disable power mgnt on wifi with a conf file
-cat << EOF > /etc/modprobe.d/8192cu.conf 
+#
+#cat << EOF > /etc/modprobe.d/8192cu.conf 
+#
+## Disable power management
+#options 8192cu rtw_power_mgnt=0 rtw_enusbss=0 rtw_ips_mode=1
+#
+#EOF
 
-# Disable power management
-options 8192cu rtw_power_mgnt=0 rtw_enusbss=0 rtw_ips_mode=1
-
-EOF
 
 ####
 

@@ -35,11 +35,12 @@ def create_strip(led_count):
     LED_DMA     = 5       # DMA channel to use for generating signal (try 5)
     LED_INVERT  = False   # True to invert the signal (when using NPN transistor level shift)
 
-    strip = Adafruit_NeoPixel(led_count,
-            LED_PIN,
-            LED_FREQ_HZ,
-            LED_DMA,
-            LED_INVERT)
+    strip = Adafruit_NeoPixel(led_count, # num
+            LED_PIN,  # pin
+            LED_FREQ_HZ,  # freq
+            LED_DMA,  # dma
+            LED_INVERT, # invert
+	    255)  # brightness
     # Intialize the library (must be called once before other functions).
     strip.begin()
     color_wipe(strip, 255,   0,   0, 5)

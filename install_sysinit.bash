@@ -1,4 +1,13 @@
+#!/bin/bash
 
+
+# get LED python program
+
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+echo "DIR: ${DIR}"
+
+cat << EOF > plamp.init
 #!/bin/bash
 
 
@@ -12,7 +21,7 @@
 # Description:       Plamps are good
 ### END INIT INFO
 
-plampdir=/home/pi/plamp
+plampdir=$DIR
 
 plamp_proc=plamp_socket.py
 
@@ -35,7 +44,7 @@ do_status() {
 
 case "$1" in
     start)
-	do_start
+  do_start
         ;;
     status)
         do_status
@@ -45,7 +54,7 @@ case "$1" in
         do_start
         ;;
     stop)
-	do_stop
+  do_stop
         ;;
     *)
         echo "Usage: $0 start|stop|status" >&2
@@ -54,4 +63,12 @@ case "$1" in
 esac
 
 exit 0
+EOF
+
+
+cp $DIR/plamp.init /etc/init.d/plamp
+
+sudo update-rc.d plamp defaults
+
+
 
