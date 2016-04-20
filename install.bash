@@ -16,6 +16,10 @@ echo "DIR: ${DIR}"
 # sysinit
 #. $DIR/install_sysinit.bash plamp.init
 
+# enable ll and other aliases
+sed -i.bak s/#alias/alias/g /home/pi/.bashrc
+sed -i.bak s/"# alias"/alias/g /root/.bashrc
+
 # set the name to plamp.local
 # write /etc/hostname and /etc/hosts
 
