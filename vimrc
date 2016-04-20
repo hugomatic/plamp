@@ -1,3 +1,4 @@
+set tabstop=2 shiftwidth=2 expandtab
 
 " Automatically remove all trailing whitespace before saving
 autocmd BufWritePre * :%s/\s\+$//e
