@@ -16,6 +16,9 @@ echo "DIR: ${DIR}"
 # sysinit
 #. $DIR/install_sysinit.bash plamp.init
 
+# vim preferences
+cp $DIR/vimrc ~/.vimrc
+
 # enable ll and other aliases
 sed -i.bak s/#alias/alias/g /home/pi/.bashrc
 sed -i.bak s/"# alias"/alias/g /root/.bashrc
