@@ -18,12 +18,18 @@ def load_state():
     try:
         with open(STATE_FILE, "r") as f:
             raw = json.load(f)
-    except:
+    except Exception as e:
+        print("load_state: failed to read state.json:", e)
         return False
 
     if not isinstance(raw, dict):
+        print("load_state: top-level JSON must be an object")
         return False
-    if "report_every" not in raw or "events" not in raw:
+    if "report_every" not in raw:
+        print("load_state: missing top-level field: report_every")
+        return False
+    if "events" not in raw:
+        print("load_state: missing top-level field: events")
         return False
 
     report_every_value = raw["report_every"]
@@ -32,11 +38,14 @@ def load_state():
     try:
         report_every_value = int(report_every_value)
     except:
+        print("load_state: report_every must be an integer")
         return False
 
     if report_every_value <= 0:
+        print("load_state: report_every must be > 0")
         return False
     if not isinstance(raw_events, list):
+        print("load_state: events must be a list")
         return False
 
     new_events = []
@@ -46,17 +55,20 @@ def load_state():
     while i < n:
         src = raw_events[i]
         if not isinstance(src, dict):
+            print("load_state: event", i, "must be an object")
             return False
 
         required = ["type", "ch", "current_t", "reschedule", "pattern"]
         j = 0
         while j < len(required):
             if required[j] not in src:
+                print("load_state: event", i, "missing field:", required[j])
                 return False
             j += 1
 
         event_type = src["type"]
         if event_type != "gpio" and event_type != "pwm":
+            print("load_state: event", i, "type must be gpio or pwm")
             return False
 
         try:
@@ -64,15 +76,19 @@ def load_state():
             current_t = int(src["current_t"])
             reschedule = 1 if int(src["reschedule"]) else 0
         except:
+            print("load_state: event", i, "ch/current_t/reschedule must be integers")
             return False
 
         if ch < 0 or ch > 29:
+            print("load_state: event", i, "ch must be in range 0..29")
             return False
         if current_t < 0:
+            print("load_state: event", i, "current_t must be >= 0")
             return False
 
         pattern_src = src["pattern"]
         if not isinstance(pattern_src, list) or not pattern_src:
+            print("load_state: event", i, "pattern must be a non-empty list")
             return False
 
         pattern = []
@@ -82,21 +98,29 @@ def load_state():
         while j < m:
             step = pattern_src[j]
             if not isinstance(step, dict):
+                print("load_state: event", i, "pattern step", j, "must be an object")
                 return False
-            if "val" not in step or "dur" not in step:
+            if "val" not in step:
+                print("load_state: event", i, "pattern step", j, "missing field: val")
+                return False
+            if "dur" not in step:
+                print("load_state: event", i, "pattern step", j, "missing field: dur")
                 return False
 
             try:
                 val = int(step["val"])
                 dur = int(step["dur"])
             except:
+                print("load_state: event", i, "pattern step", j, "val/dur must be integers")
                 return False
 
             if dur <= 0:
+                print("load_state: event", i, "pattern step", j, "dur must be > 0")
                 return False
 
             if event_type == "gpio":
                 if val != 0 and val != 1:
+                    print("load_state: event", i, "pattern step", j, "gpio val must be 0 or 1")
                     return False
             else:
                 if val < 0:
