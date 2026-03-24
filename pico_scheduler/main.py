@@ -3,12 +3,12 @@ import time
 import ujson as json
 from machine import Pin, PWM
 
-# Minimal cyclic scheduler for Raspberry Pi Pico.
+# Minimal pattern scheduler for Raspberry Pi Pico.
 #
 # Timing:
 # - time.ticks_ms() drives the loop
 # - elapsed milliseconds are accumulated
-# - state advances in whole seconds only for deterministic integer sec updates
+# - state advances in whole seconds only for deterministic integer current_t updates
 #
 # Reload logic:
 # - state.json is not read every loop
@@ -17,17 +17,25 @@ from machine import Pin, PWM
 # - invalid JSON or bad content is ignored and the previous in-memory state is kept
 #
 # Event semantics:
-# - each event owns its own current second: sec
-# - every tick: sec = (sec + dt) % per
-# - output: on if sec < dur, else off
-# - sec is always normalized into the cycle
+# - each event has a pattern: [{"val": X, "dur": N}, ...]
+# - current_t is the current second inside that pattern
+# - if reschedule is truthy: current_t wraps at total duration
+# - otherwise current_t advances until the end and then the last value is held
 #
 # Example state.json:
 # {
-#   "report_every": 60,
+#   "report_every": 10,
 #   "events": [
-#     {"type":"gpio","ch":2,"on":1,"off":0,"sec":890,"dur":900,"per":2700},
-#     {"type":"pwm","ch":15,"on":40000,"off":0,"sec":120,"dur":30,"per":300}
+#     {
+#       "type": "gpio",
+#       "ch": 25,
+#       "current_t": 3,
+#       "reschedule": 1,
+#       "pattern": [
+#         {"val": 1, "dur": 10},
+#         {"val": 0, "dur": 20}
+#       ]
+#     }
 #   ]
 # }
 
@@ -37,7 +45,7 @@ LOOP_SLEEP_MS = 20
 DEFAULT_REPORT_EVERY = 60
 DEFAULT_PWM_FREQ = 1000
 
-# The only event state object.
+# The only runtime state object.
 events = []
 
 report_every = DEFAULT_REPORT_EVERY
@@ -57,50 +65,16 @@ def _safe_int(value, default=0):
         return default
 
 
-def _normalize_event(src):
-    if not isinstance(src, dict):
-        return None
-
-    typ = src.get("type")
-    if typ != "gpio" and typ != "pwm":
-        return None
-
-    ch = _safe_int(src.get("ch"), -1)
-    if ch < 0 or ch > 29:
-        return None
-
-    per = _safe_int(src.get("per"), 0)
-    if per <= 0:
-        return None
-
-    dur = _safe_int(src.get("dur"), 0)
-    if dur < 0:
-        dur = 0
-
-    sec = _safe_int(src.get("sec"), 0) % per
-    on = _safe_int(src.get("on"), 0)
-    off = _safe_int(src.get("off"), 0)
-
-    ev = {
-        "type": typ,
-        "ch": ch,
-        "on": on,
-        "off": off,
-        "sec": sec,
-        "dur": dur,
-        "per": per,
-    }
-
-    if "id" in src:
-        ev["id"] = src["id"]
-
-    return ev
+def _safe_bool_int(value):
+    try:
+        return 1 if int(value) else 0
+    except:
+        return 0
 
 
 def _safe_stat(path):
     try:
-        st = os.stat(path)
-        return tuple(st)
+        return tuple(os.stat(path))
     except:
         return None
 
@@ -110,6 +84,85 @@ def _normalize_report_every(value):
     if value <= 0:
         return DEFAULT_REPORT_EVERY
     return value
+
+
+def _normalize_pattern(pattern_src, event_type):
+    if not isinstance(pattern_src, list):
+        return None
+
+    pattern = []
+    total_t = 0
+    i = 0
+    n = len(pattern_src)
+    while i < n:
+        step = pattern_src[i]
+        if not isinstance(step, dict):
+            i += 1
+            continue
+
+        dur = _safe_int(step.get("dur"), 0)
+        if dur <= 0:
+            i += 1
+            continue
+
+        val = _safe_int(step.get("val"), 0)
+        if event_type == "gpio":
+            val = 1 if val else 0
+        else:
+            if val < 0:
+                val = 0
+            elif val > 65535:
+                val = 65535
+
+        pattern.append({"val": val, "dur": dur})
+        total_t += dur
+        i += 1
+
+    if total_t <= 0:
+        return None
+
+    return pattern, total_t
+
+
+def _normalize_event(src):
+    if not isinstance(src, dict):
+        return None
+
+    event_type = src.get("type")
+    if event_type != "gpio" and event_type != "pwm":
+        return None
+
+    ch = _safe_int(src.get("ch"), -1)
+    if ch < 0 or ch > 29:
+        return None
+
+    pattern_info = _normalize_pattern(src.get("pattern", []), event_type)
+    if pattern_info is None:
+        return None
+    pattern, total_t = pattern_info
+
+    reschedule = _safe_bool_int(src.get("reschedule", 1))
+    current_t = _safe_int(src.get("current_t"), 0)
+    if current_t < 0:
+        current_t = 0
+
+    if reschedule:
+        current_t = current_t % total_t
+    elif current_t > total_t:
+        current_t = total_t
+
+    ev = {
+        "type": event_type,
+        "ch": ch,
+        "current_t": current_t,
+        "reschedule": reschedule,
+        "pattern": pattern,
+    }
+
+    if "id" in src:
+        ev["id"] = src["id"]
+
+    return ev
 
 
 def load_state():
@@ -136,10 +189,13 @@ def load_state():
 
     new_report_every = _normalize_report_every(raw_report_every)
 
-    for item in raw_events:
-        ev = _normalize_event(item)
+    i = 0
+    n = len(raw_events)
+    while i < n:
+        ev = _normalize_event(raw_events[i])
         if ev is not None:
             new_events.append(ev)
+        i += 1
 
     events[:] = new_events
     report_every = new_report_every
@@ -164,12 +220,24 @@ def tick(dt):
     if dt <= 0:
         return
 
-    n = len(events)
     i = 0
+    n = len(events)
     while i < n:
         ev = events[i]
-        per = ev["per"]
-        ev["sec"] = (ev["sec"] + dt) % per
+        total_t = 0
+        j = 0
+        pattern = ev["pattern"]
+        m = len(pattern)
+        while j < m:
+            total_t += pattern[j]["dur"]
+            j += 1
+
+        if ev["reschedule"]:
+            ev["current_t"] = (ev["current_t"] + dt) % total_t
+        else:
+            ev["current_t"] += dt
+            if ev["current_t"] > total_t:
+                ev["current_t"] = total_t
         i += 1
 
 
@@ -190,18 +258,32 @@ def _pwm_pin(ch):
     return pwm
 
 
-def apply():
-    n = len(events)
+def _current_value(ev):
+    t = ev["current_t"]
+    elapsed = 0
+    pattern = ev["pattern"]
     i = 0
+    n = len(pattern)
+    while i < n:
+        step = pattern[i]
+        elapsed += step["dur"]
+        if t < elapsed:
+            return step["val"]
+        i += 1
+    return pattern[-1]["val"]
+
+
+def apply():
+    i = 0
+    n = len(events)
     while i < n:
         ev = events[i]
         try:
-            value = ev["on"] if ev["sec"] < ev["dur"] else ev["off"]
+            value = _current_value(ev)
             if ev["type"] == "gpio":
                 _gpio_pin(ev["ch"]).value(1 if value else 0)
             else:
-                pwm = _pwm_pin(ev["ch"])
-                pwm.duty_u16(value)
+                _pwm_pin(ev["ch"]).duty_u16(value)
         except:
             pass
         i += 1

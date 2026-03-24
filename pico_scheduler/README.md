@@ -1,11 +1,37 @@
 # pico_scheduler
 
-Minimal cyclic scheduler for Raspberry Pi Pico.
+Minimal pattern scheduler for Raspberry Pi Pico.
 
 ## Files
 
 - `main.py` - single-file MicroPython runtime
 - `state.json` - host-provided scheduler state (not written by the Pico runtime)
+
+## State format
+
+`state.json` contains `report_every` and an `events` list.
+
+Each event uses a timed pattern:
+
+```json
+{
+  "type": "gpio",
+  "ch": 25,
+  "current_t": 3,
+  "reschedule": 1,
+  "pattern": [
+    {"val": 1, "dur": 10},
+    {"val": 0, "dur": 20}
+  ]
+}
+```
+
+Meaning:
+- `pattern` is a list of steps
+- each step applies `val` for `dur` seconds
+- `current_t` is the current second inside the pattern
+- if `reschedule` is truthy, the pattern repeats forever
+- if `reschedule` is falsey, the pattern runs once and then holds the last value
 
 ## Dependency
 
