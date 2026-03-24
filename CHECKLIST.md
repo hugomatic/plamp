@@ -10,6 +10,7 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 - [ ] Output locations are sensible and safe.
 - [ ] Scripts that create output use a fresh non-existing target directory when that is the expected contract.
 - [ ] Local assumptions are documented (`PATH`, tools, machine-specific setup, odd gotchas).
+- [ ] Required host-side tools are actually available from a normal shell (`command -v ...`), not just installed somewhere.
 - [ ] If a change is expensive to validate, there is still a clear manual check for it.
 
 ## Script / generation changes
