@@ -1,4 +1,3 @@
-import os
 import time
 import ujson as json
 from machine import Pin, PWM
@@ -49,9 +48,6 @@ events = []
 report_every = DEFAULT_REPORT_EVERY
 last_report_ms = 0
 accum_ms = 0
-
-gpio_out = {}
-pwm_out = {}
 
 
 def _safe_int(value, default=0):
@@ -140,12 +136,19 @@ def _normalize_event(src):
     elif current_t > total_t:
         current_t = total_t
 
+    if event_type == "gpio":
+        output = Pin(ch, Pin.OUT)
+    else:
+        output = PWM(Pin(ch))
+        output.freq(DEFAULT_PWM_FREQ)
+
     ev = {
         "type": event_type,
         "ch": ch,
         "current_t": current_t,
         "reschedule": reschedule,
         "pattern": pattern,
+        "output": output,
     }
 
     if "id" in src:
@@ -216,23 +219,6 @@ def tick(dt):
         i += 1
 
 
-def _gpio_pin(ch):
-    pin = gpio_out.get(ch)
-    if pin is None:
-        pin = Pin(ch, Pin.OUT)
-        gpio_out[ch] = pin
-    return pin
-
-
-def _pwm_pin(ch):
-    pwm = pwm_out.get(ch)
-    if pwm is None:
-        pwm = PWM(Pin(ch))
-        pwm.freq(DEFAULT_PWM_FREQ)
-        pwm_out[ch] = pwm
-    return pwm
-
-
 def _current_value(ev):
     t = ev["current_t"]
     elapsed = 0
@@ -256,16 +242,32 @@ def apply():
         try:
             value = _current_value(ev)
             if ev["type"] == "gpio":
-                _gpio_pin(ev["ch"]).value(1 if value else 0)
+                ev["output"].value(1 if value else 0)
             else:
-                _pwm_pin(ev["ch"]).duty_u16(value)
+                ev["output"].duty_u16(value)
         except:
             pass
         i += 1
 
 
 def report():
-    print(json.dumps({"events": events}))
+    out = []
+    i = 0
+    n = len(events)
+    while i < n:
+        ev = events[i]
+        item = {
+            "type": ev["type"],
+            "ch": ev["ch"],
+            "current_t": ev["current_t"],
+            "reschedule": ev["reschedule"],
+            "pattern": ev["pattern"],
+        }
+        if "id" in ev:
+            item["id"] = ev["id"]
+        out.append(item)
+        i += 1
+    print(json.dumps({"events": out}))
 
 
 def main():
