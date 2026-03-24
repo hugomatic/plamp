@@ -17,6 +17,42 @@ Install it on the host with:
 python3 -m pip install --user mpremote
 ```
 
+If needed, bootstrap pip first:
+
+```bash
+python3 -m ensurepip --upgrade
+python3 -m pip install --user mpremote
+```
+
+`mpremote` is often installed into `~/.local/bin`.
+If `mpremote help` says command not found, add this to your shell startup file:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload your shell and test:
+
+```bash
+mpremote help
+```
+
+## Connect to the Pico
+
+With the Pico connected over USB, test that `mpremote` can see it:
+
+```bash
+mpremote connect auto fs ls
+```
+
+You can also open a REPL:
+
+```bash
+mpremote connect auto repl
+```
+
+If `mpremote` cannot connect, make sure no other serial tool is holding the device.
+
 ## Deploy
 
 Copy the runtime to the Pico:
@@ -34,6 +70,15 @@ mpremote cp state.json :state.json
 Reset the board:
 
 ```bash
+mpremote reset
+```
+
+Example from this directory:
+
+```bash
+cd /home/hugo/.openclaw/workspace/code/plamp/pico_scheduler
+mpremote cp main.py :main.py
+mpremote cp state.json.example :state.json
 mpremote reset
 ```
 
