@@ -10,10 +10,9 @@ from machine import Pin, PWM
 # - elapsed milliseconds are accumulated
 # - state advances in whole seconds only for deterministic integer current_t updates
 #
-# Reload logic:
-# - state.json is not read every loop
-# - os.stat() is checked about every 2 seconds
-# - if the stat tuple changes, state.json is reloaded and validated
+# Load logic:
+# - state.json is read once at boot
+# - schedule changes are applied by copying a new state.json and resetting the board
 # - invalid JSON or bad content is ignored and the previous in-memory state is kept
 #
 # Event semantics:
@@ -70,13 +69,6 @@ def _safe_bool_int(value):
         return 1 if int(value) else 0
     except:
         return 0
-
-
-def _safe_stat(path):
-    try:
-        return tuple(os.stat(path))
-    except:
-        return None
 
 
 def _normalize_report_every(value):

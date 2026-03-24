@@ -124,7 +124,7 @@ mpremote reset
 
 ## Host update flow
 
-Keep `state.json` as a host-side working file, update it with an atomic replace, then copy it to the device.
+Keep `state.json` as a host-side working file, update it with an atomic replace, then copy it to the device and reset the board.
 
 Example host-side pattern:
 
@@ -132,6 +132,7 @@ Example host-side pattern:
 python3 emit_state.py > state.json.tmp && mv state.json.tmp state.json
 python3 -m json.tool state.json >/dev/null
 mpremote cp state.json :state.json
+mpremote reset
 ```
 
 If you are editing by hand instead of generating it, use the same temporary-file pattern:
@@ -140,11 +141,13 @@ If you are editing by hand instead of generating it, use the same temporary-file
 $EDITOR state.json.tmp && mv state.json.tmp state.json
 python3 -m json.tool state.json >/dev/null
 mpremote cp state.json :state.json
+mpremote reset
 ```
 
 ## Runtime behavior
 
-- `main.py` reloads `state.json` by checking `os.stat()` about every 2 seconds
+- `main.py` reads `state.json` once at boot
+- schedule changes take effect after copying a new `state.json` and resetting the board
 - invalid JSON is ignored and the previous in-memory state is kept
 - missing `state.json` means the scheduler continues with an empty event list
 - the runtime never writes to flash during normal operation
