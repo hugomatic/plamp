@@ -50,21 +50,16 @@ def load_state():
 
     new_events = []
 
-    i = 0
-    n = len(raw_events)
-    while i < n:
-        src = raw_events[i]
+    for i, src in enumerate(raw_events):
         if not isinstance(src, dict):
             print("load_state: event", i, "must be an object")
             return False
 
         required = ["type", "ch", "current_t", "reschedule", "pattern"]
-        j = 0
-        while j < len(required):
-            if required[j] not in src:
-                print("load_state: event", i, "missing field:", required[j])
+        for name in required:
+            if name not in src:
+                print("load_state: event", i, "missing field:", name)
                 return False
-            j += 1
 
         event_type = src["type"]
         if event_type != "gpio" and event_type != "pwm":
@@ -93,10 +88,7 @@ def load_state():
 
         pattern = []
         total_t = 0
-        j = 0
-        m = len(pattern_src)
-        while j < m:
-            step = pattern_src[j]
+        for j, step in enumerate(pattern_src):
             if not isinstance(step, dict):
                 print("load_state: event", i, "pattern step", j, "must be an object")
                 return False
@@ -130,7 +122,6 @@ def load_state():
 
             pattern.append({"val": val, "dur": dur})
             total_t += dur
-            j += 1
 
         if reschedule:
             current_t = current_t % total_t
@@ -156,8 +147,6 @@ def load_state():
             ev["id"] = src["id"]
 
         new_events.append(ev)
-        j += 1
-        i += 1
 
     events = new_events
     report_every = report_every_value
@@ -168,51 +157,36 @@ def tick(dt):
     if dt <= 0:
         return
 
-    i = 0
-    n = len(events)
-    while i < n:
-        ev = events[i]
+    for ev in events:
         if ev["reschedule"]:
             ev["current_t"] = (ev["current_t"] + dt) % ev["total_t"]
         else:
             ev["current_t"] += dt
             if ev["current_t"] > ev["total_t"]:
                 ev["current_t"] = ev["total_t"]
-        i += 1
 
 
 def apply():
-    i = 0
-    n = len(events)
-    while i < n:
-        ev = events[i]
+    for ev in events:
         t = ev["current_t"]
         elapsed = 0
         value = ev["pattern"][-1]["val"]
 
-        j = 0
-        m = len(ev["pattern"])
-        while j < m:
-            step = ev["pattern"][j]
+        for step in ev["pattern"]:
             elapsed += step["dur"]
             if t < elapsed:
                 value = step["val"]
                 break
-            j += 1
 
         if ev["type"] == "gpio":
             ev["output"].value(value)
         else:
             ev["output"].duty_u16(value)
-        i += 1
 
 
 def report():
     out = []
-    i = 0
-    n = len(events)
-    while i < n:
-        ev = events[i]
+    for ev in events:
         item = {
             "type": ev["type"],
             "ch": ev["ch"],
@@ -223,7 +197,6 @@ def report():
         if "id" in ev:
             item["id"] = ev["id"]
         out.append(item)
-        i += 1
     print(json.dumps({"events": out}))
 
 
