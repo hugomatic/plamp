@@ -81,13 +81,25 @@ If `mpremote` cannot connect, make sure no other serial tool is holding the devi
 
 ## Deploy
 
+Start by creating a host-side state file from the example:
+
+```bash
+cp state.json.example state.json
+```
+
+Edit `state.json` so it matches the current schema used by `main.py`, then optionally validate it on the host:
+
+```bash
+python3 -m json.tool state.json >/dev/null
+```
+
 Copy the runtime to the Pico:
 
 ```bash
 mpremote cp main.py :main.py
 ```
 
-Copy a state file to the Pico:
+Copy the state file to the Pico:
 
 ```bash
 mpremote cp state.json :state.json
@@ -103,19 +115,30 @@ Example from this directory:
 
 ```bash
 cd /home/hugo/.openclaw/workspace/code/plamp/pico_scheduler
+cp state.json.example state.json
+python3 -m json.tool state.json >/dev/null
 mpremote cp main.py :main.py
-mpremote cp state.json.example :state.json
+mpremote cp state.json :state.json
 mpremote reset
 ```
 
 ## Host update flow
 
-Update `state.json` on the host using atomic replace, then copy it to the device.
+Keep `state.json` as a host-side working file, update it with an atomic replace, then copy it to the device.
 
 Example host-side pattern:
 
 ```bash
-python3 write_state.py > state.json.tmp && mv state.json.tmp state.json
+python3 emit_state.py > state.json.tmp && mv state.json.tmp state.json
+python3 -m json.tool state.json >/dev/null
+mpremote cp state.json :state.json
+```
+
+If you are editing by hand instead of generating it, use the same temporary-file pattern:
+
+```bash
+$EDITOR state.json.tmp && mv state.json.tmp state.json
+python3 -m json.tool state.json >/dev/null
 mpremote cp state.json :state.json
 ```
 
