@@ -24,6 +24,9 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 
 Use this when changing the Pico scheduler runtime, state schema, deployment flow, or any camera-based verification around board status.
 
+Precondition:
+- [ ] A human is available to connect a Pico and place it in front of the camera; this check is not meaningful without real hardware in view.
+
 - [ ] A Pico is connected over USB and visible to `mpremote connect auto fs ls`.
 - [ ] The test state file validates on the host with `python3 -m json.tool state.json >/dev/null`.
 - [ ] `main.py` and `state.json` can be copied to the Pico with `mpremote cp ...` and the board can be reset cleanly.
