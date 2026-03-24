@@ -12,6 +12,30 @@ last_report_ms = 0
 accum_ms = 0
 
 
+def emit_error(message):
+    print(json.dumps({"kind": "error", "where": "load_state", "message": message}))
+
+
+def emit_report():
+    out = []
+    for ev in events:
+        item = {
+            "type": ev["type"],
+            "ch": ev["ch"],
+            "current_t": ev["current_t"],
+            "reschedule": ev["reschedule"],
+            "pattern": ev["pattern"],
+        }
+        if "id" in ev:
+            item["id"] = ev["id"]
+        out.append(item)
+    print(json.dumps({"kind": "report", "events": out}))
+
+
+def emit_startup():
+    print(json.dumps({"kind": "startup", "ok": True, "event_count": len(events), "report_every": report_every}))
+
+
 def load_state():
     global events, report_every
 
@@ -19,17 +43,17 @@ def load_state():
         with open(STATE_FILE, "r") as f:
             raw = json.load(f)
     except Exception as e:
-        print("load_state: failed to read state.json:", e)
+        emit_error("failed to read state.json: %s" % e)
         return False
 
     if not isinstance(raw, dict):
-        print("load_state: top-level JSON must be an object")
+        emit_error("top-level JSON must be an object")
         return False
     if "report_every" not in raw:
-        print("load_state: missing top-level field: report_every")
+        emit_error("missing top-level field: report_every")
         return False
     if "events" not in raw:
-        print("load_state: missing top-level field: events")
+        emit_error("missing top-level field: events")
         return False
 
     report_every_value = raw["report_every"]
@@ -38,32 +62,32 @@ def load_state():
     try:
         report_every_value = int(report_every_value)
     except:
-        print("load_state: report_every must be an integer")
+        emit_error("report_every must be an integer")
         return False
 
     if report_every_value <= 0:
-        print("load_state: report_every must be > 0")
+        emit_error("report_every must be > 0")
         return False
     if not isinstance(raw_events, list):
-        print("load_state: events must be a list")
+        emit_error("events must be a list")
         return False
 
     new_events = []
 
     for i, src in enumerate(raw_events):
         if not isinstance(src, dict):
-            print("load_state: event", i, "must be an object")
+            emit_error("event %d must be an object" % i)
             return False
 
         required = ["type", "ch", "current_t", "reschedule", "pattern"]
         for name in required:
             if name not in src:
-                print("load_state: event", i, "missing field:", name)
+                emit_error("event %d missing field: %s" % (i, name))
                 return False
 
         event_type = src["type"]
         if event_type != "gpio" and event_type != "pwm":
-            print("load_state: event", i, "type must be gpio or pwm")
+            emit_error("event %d type must be gpio or pwm" % i)
             return False
 
         try:
@@ -71,48 +95,48 @@ def load_state():
             current_t = int(src["current_t"])
             reschedule = 1 if int(src["reschedule"]) else 0
         except:
-            print("load_state: event", i, "ch/current_t/reschedule must be integers")
+            emit_error("event %d ch/current_t/reschedule must be integers" % i)
             return False
 
         if ch < 0 or ch > 29:
-            print("load_state: event", i, "ch must be in range 0..29")
+            emit_error("event %d ch must be in range 0..29" % i)
             return False
         if current_t < 0:
-            print("load_state: event", i, "current_t must be >= 0")
+            emit_error("event %d current_t must be >= 0" % i)
             return False
 
         pattern_src = src["pattern"]
         if not isinstance(pattern_src, list) or not pattern_src:
-            print("load_state: event", i, "pattern must be a non-empty list")
+            emit_error("event %d pattern must be a non-empty list" % i)
             return False
 
         pattern = []
         total_t = 0
         for j, step in enumerate(pattern_src):
             if not isinstance(step, dict):
-                print("load_state: event", i, "pattern step", j, "must be an object")
+                emit_error("event %d pattern step %d must be an object" % (i, j))
                 return False
             if "val" not in step:
-                print("load_state: event", i, "pattern step", j, "missing field: val")
+                emit_error("event %d pattern step %d missing field: val" % (i, j))
                 return False
             if "dur" not in step:
-                print("load_state: event", i, "pattern step", j, "missing field: dur")
+                emit_error("event %d pattern step %d missing field: dur" % (i, j))
                 return False
 
             try:
                 val = int(step["val"])
                 dur = int(step["dur"])
             except:
-                print("load_state: event", i, "pattern step", j, "val/dur must be integers")
+                emit_error("event %d pattern step %d val/dur must be integers" % (i, j))
                 return False
 
             if dur <= 0:
-                print("load_state: event", i, "pattern step", j, "dur must be > 0")
+                emit_error("event %d pattern step %d dur must be > 0" % (i, j))
                 return False
 
             if event_type == "gpio":
                 if val != 0 and val != 1:
-                    print("load_state: event", i, "pattern step", j, "gpio val must be 0 or 1")
+                    emit_error("event %d pattern step %d gpio val must be 0 or 1" % (i, j))
                     return False
             else:
                 if val < 0:
@@ -185,19 +209,7 @@ def apply():
 
 
 def report():
-    out = []
-    for ev in events:
-        item = {
-            "type": ev["type"],
-            "ch": ev["ch"],
-            "current_t": ev["current_t"],
-            "reschedule": ev["reschedule"],
-            "pattern": ev["pattern"],
-        }
-        if "id" in ev:
-            item["id"] = ev["id"]
-        out.append(item)
-    print(json.dumps({"events": out}))
+    emit_report()
 
 
 def main():
@@ -207,6 +219,7 @@ def main():
         return
 
     apply()
+    emit_startup()
 
     now_ms = time.ticks_ms()
     last_report_ms = now_ms
