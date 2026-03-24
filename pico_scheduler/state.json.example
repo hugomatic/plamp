@@ -1,0 +1,7 @@
+{
+  "report_every": 60,
+  "events": [
+    {"type": "gpio", "ch": 2, "on": 1, "off": 0, "sec": 890, "dur": 900, "per": 2700},
+    {"type": "pwm", "ch": 15, "on": 40000, "off": 0, "sec": 120, "dur": 30, "per": 300}
+  ]
+}
