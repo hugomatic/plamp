@@ -11,7 +11,7 @@ if ! command -v openscad >/dev/null 2>&1; then
 fi
 
 commit=$(git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCRIPT_DIR/plamp_stand.scad")
-outdir=$(mktemp -d /tmp/plamp-stand-test-XXXXXX)
+outdir=$(mktemp -d /tmp/plamp-stand-check-XXXXXX)
 trap 'rm -rf "$outdir"' EXIT
 
 bash ./generate.bash "$outdir/out" "$commit"
@@ -28,4 +28,4 @@ do
   fi
 done
 
-echo "PASS: generated STL files for commit $commit"
+echo "PASS: generate.bash produced STL files from plamp_stand.scad for commit $commit"
