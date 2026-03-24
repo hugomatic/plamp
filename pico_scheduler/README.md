@@ -27,11 +27,20 @@ Each event uses a timed pattern:
 ```
 
 Meaning:
-- `pattern` is a list of steps
-- each step applies `val` for `dur` seconds
-- `current_t` is the current second inside the pattern
-- if `reschedule` is truthy, the pattern repeats forever
-- if `reschedule` is falsey, the pattern runs once and then holds the last value
+- `type` selects the output kind:
+  - `gpio` writes a digital value to a GPIO pin (`0` or `1`)
+  - `pwm` writes a PWM duty value to a GPIO pin (`0..65535`)
+- `ch` is the Pico GPIO pin number to drive (`0..29`)
+- `current_t` is the current second inside the pattern at boot time
+- `reschedule` controls whether the pattern repeats:
+  - truthy (`1`) means loop forever
+  - falsey (`0`) means run once and then hold the last value
+- `pattern` is a non-empty list of timed steps
+- each pattern step has:
+  - `val` - the output value for that step
+    - for `gpio`: must be `0` or `1`
+    - for `pwm`: integer duty value, clamped to `0..65535`
+  - `dur` - step duration in whole seconds, must be `> 0`
 
 ## Dependency
 
