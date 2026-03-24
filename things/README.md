@@ -8,4 +8,4 @@
 
 ## Checklist
 
-See [`CHECKLIST.md`](./CHECKLIST.md) for the general repo checklist and example manual checks.
+See the repo-level [`CHECKLIST.md`](../CHECKLIST.md) for the general checklist and example manual checks.
