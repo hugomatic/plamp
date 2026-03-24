@@ -39,7 +39,6 @@ from machine import Pin, PWM
 # }
 
 STATE_FILE = "state.json"
-RELOAD_CHECK_MS = 2000
 LOOP_SLEEP_MS = 20
 DEFAULT_REPORT_EVERY = 60
 DEFAULT_PWM_FREQ = 1000
@@ -48,8 +47,6 @@ DEFAULT_PWM_FREQ = 1000
 events = []
 
 report_every = DEFAULT_REPORT_EVERY
-last_state_stat = None
-last_reload_check_ms = 0
 last_report_ms = 0
 accum_ms = 0
 
@@ -158,7 +155,7 @@ def _normalize_event(src):
 
 
 def load_state():
-    global report_every, last_state_stat
+    global report_every
 
     new_report_every = report_every
     new_events = []
@@ -191,21 +188,7 @@ def load_state():
 
     events[:] = new_events
     report_every = new_report_every
-    last_state_stat = _safe_stat(STATE_FILE)
     return True
-
-
-def maybe_reload(now_ms):
-    global last_reload_check_ms
-
-    if time.ticks_diff(now_ms, last_reload_check_ms) < RELOAD_CHECK_MS:
-        return
-
-    last_reload_check_ms = now_ms
-    current_stat = _safe_stat(STATE_FILE)
-    if current_stat != last_state_stat:
-        if load_state():
-            apply()
 
 
 def tick(dt):
@@ -286,15 +269,13 @@ def report():
 
 
 def main():
-    global report_every, last_state_stat, last_reload_check_ms, last_report_ms, accum_ms
+    global report_every, last_report_ms, accum_ms
 
     report_every = DEFAULT_REPORT_EVERY
-    last_state_stat = _safe_stat(STATE_FILE)
     load_state()
     apply()
 
     now_ms = time.ticks_ms()
-    last_reload_check_ms = now_ms
     last_report_ms = now_ms
     last_tick_ms = now_ms
     accum_ms = 0
@@ -311,8 +292,6 @@ def main():
                 accum_ms -= dt * 1000
                 tick(dt)
                 apply()
-
-        maybe_reload(now_ms)
 
         if time.ticks_diff(now_ms, last_report_ms) >= report_every * 1000:
             last_report_ms = now_ms
