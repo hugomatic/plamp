@@ -22,6 +22,8 @@ GIT_FOLDER="things/${cad}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # path to the scad file on disk
 SCAD_PATH="$SCRIPT_DIR/$SCAD_FILE"
+# repo root for stable git commands, even after cd
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 # repo-relative path to the scad file
 GIT_SCAD_PATH="$GIT_FOLDER/$SCAD_FILE"
 # name of this script (generate.bash)
@@ -29,7 +31,7 @@ name=$0
 
 if [[ "$#" -ne 2 ]];
     then
-        last_commit=`git log -n 1 --pretty=format:%h -- "$SCAD_PATH"`
+        last_commit=`git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCAD_PATH"`
         today=`date +%b%d | tr 'A-Z' 'a-z'`
         echo
         echo "$cad stl generator"
@@ -41,7 +43,7 @@ if [[ "$#" -ne 2 ]];
         echo
         echo
         # check if file is modified on disk
-        git_stat=`git status --porcelain -s | grep "$SCAD_PATH" || true`
+        git_stat=`git -C "$REPO_ROOT" status --porcelain -s | grep "$SCAD_PATH" || true`
         if [[ $git_stat ]];
           then
             echo "!!"
@@ -65,7 +67,7 @@ echo "target_directory $target_directory"
 mkdir -p $target_directory
 cd $target_directory
 # remove any previous file
-rm /tmp/scad_doc.scad
+rm -f /tmp/scad_doc.scad
 
 
 # get the correct version of the cad file in the temp directory
@@ -73,10 +75,10 @@ echo "# $SCAD_FILE" | tee -a $log
 date | tee -a $log
 echo "get the source CAD:" | tee -a $log
 echo '```' >> $log
-echo "git show $commit:$GIT_SCAD_PATH" | tee -a $log
+echo "git -C $REPO_ROOT show $commit:$GIT_SCAD_PATH" | tee -a $log
 
 echo '```' >> $log
-git show "$commit:$GIT_SCAD_PATH" > /tmp/scad_doc.scad
+git -C "$REPO_ROOT" show "$commit:$GIT_SCAD_PATH" > /tmp/scad_doc.scad
 
 
 for view in "${views[@]}"
