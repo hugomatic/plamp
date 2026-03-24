@@ -39,35 +39,33 @@ from machine import Pin, PWM
 
 STATE_FILE = "state.json"
 LOOP_SLEEP_MS = 20
-DEFAULT_REPORT_EVERY = 60
-DEFAULT_PWM_FREQ = 1000
 
 # The only runtime state object.
 events = []
 
-report_every = DEFAULT_REPORT_EVERY
+report_every = 0
 last_report_ms = 0
 accum_ms = 0
 
 
-def _safe_int(value, default=0):
+def _safe_int(value):
     try:
         return int(value)
     except:
-        return default
+        return None
 
 
 def _safe_bool_int(value):
     try:
         return 1 if int(value) else 0
     except:
-        return 0
+        return None
 
 
 def _normalize_report_every(value):
-    value = _safe_int(value, DEFAULT_REPORT_EVERY)
-    if value <= 0:
-        return DEFAULT_REPORT_EVERY
+    value = _safe_int(value)
+    if value is None or value <= 0:
+        return None
     return value
 
 
@@ -85,14 +83,24 @@ def _normalize_pattern(pattern_src, event_type):
             i += 1
             continue
 
-        dur = _safe_int(step.get("dur"), 0)
-        if dur <= 0:
+        if "dur" not in step or "val" not in step:
             i += 1
             continue
 
-        val = _safe_int(step.get("val"), 0)
+        dur = _safe_int(step.get("dur"))
+        if dur is None or dur <= 0:
+            i += 1
+            continue
+
+        val = _safe_int(step.get("val"))
+        if val is None:
+            i += 1
+            continue
+
         if event_type == "gpio":
-            val = 1 if val else 0
+            if val != 0 and val != 1:
+                i += 1
+                continue
         else:
             if val < 0:
                 val = 0
@@ -117,8 +125,15 @@ def _normalize_event(src):
     if event_type != "gpio" and event_type != "pwm":
         return None
 
-    ch = _safe_int(src.get("ch"), -1)
-    if ch < 0 or ch > 29:
+    required = ["type", "ch", "current_t", "reschedule", "pattern"]
+    i = 0
+    while i < len(required):
+        if required[i] not in src:
+            return None
+        i += 1
+
+    ch = _safe_int(src.get("ch"))
+    if ch is None or ch < 0 or ch > 29:
         return None
 
     pattern_info = _normalize_pattern(src.get("pattern", []), event_type)
@@ -126,9 +141,9 @@ def _normalize_event(src):
         return None
     pattern, total_t = pattern_info
 
-    reschedule = _safe_bool_int(src.get("reschedule", 1))
-    current_t = _safe_int(src.get("current_t"), 0)
-    if current_t < 0:
+    reschedule = _safe_bool_int(src.get("reschedule"))
+    current_t = _safe_int(src.get("current_t"))
+    if reschedule is None or current_t is None or current_t < 0:
         current_t = 0
 
     if reschedule:
@@ -140,7 +155,7 @@ def _normalize_event(src):
         output = Pin(ch, Pin.OUT)
     else:
         output = PWM(Pin(ch))
-        output.freq(DEFAULT_PWM_FREQ)
+        output.freq(1000)
 
     ev = {
         "type": event_type,
@@ -160,33 +175,35 @@ def _normalize_event(src):
 def load_state():
     global report_every
 
-    new_report_every = report_every
     new_events = []
 
     try:
         with open(STATE_FILE, "r") as f:
             raw = json.load(f)
-    except OSError:
-        raw = {"report_every": report_every, "events": []}
     except:
         return False
 
     if not isinstance(raw, dict):
         return False
+    if "report_every" not in raw or "events" not in raw:
+        return False
 
-    raw_report_every = raw.get("report_every", report_every)
-    raw_events = raw.get("events", [])
+    raw_report_every = raw.get("report_every")
+    raw_events = raw.get("events")
     if not isinstance(raw_events, list):
         return False
 
     new_report_every = _normalize_report_every(raw_report_every)
+    if new_report_every is None:
+        return False
 
     i = 0
     n = len(raw_events)
     while i < n:
         ev = _normalize_event(raw_events[i])
-        if ev is not None:
-            new_events.append(ev)
+        if ev is None:
+            return False
+        new_events.append(ev)
         i += 1
 
     events[:] = new_events
@@ -273,7 +290,7 @@ def report():
 def main():
     global report_every, last_report_ms, accum_ms
 
-    report_every = DEFAULT_REPORT_EVERY
+    report_every = 0
     load_state()
     apply()
 
