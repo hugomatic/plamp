@@ -13,7 +13,7 @@ accum_ms = 0
 
 
 def emit_error(message):
-    print(json.dumps({"kind": "error", "message": message}))
+    print(json.dumps({"kind": "error", "content": message}))
 
 
 def emit_report():
