@@ -12,6 +12,8 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 - [ ] Local assumptions are documented (`PATH`, tools, machine-specific setup, odd gotchas).
 - [ ] Required host-side tools are actually available from a normal shell (`command -v ...`), not just installed somewhere.
 - [ ] If a change is expensive to validate, there is still a clear manual check for it.
+- [ ] When validating live device behavior, distinguish configured state from runtime state.
+- [ ] For report+camera timelines, send a picture immediately after the startup message, then send all reports and only send additional pictures when the observable state actually changes.
 
 ## Script / generation changes
 

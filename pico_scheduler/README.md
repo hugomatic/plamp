@@ -157,6 +157,7 @@ mpremote reset
 
 - `main.py` reads `state.json` once at boot
 - schedule changes take effect after copying a new `state.json` and resetting the board
-- invalid JSON is ignored and the previous in-memory state is kept
-- missing `state.json` means the scheduler continues with an empty event list
+- invalid or incomplete `state.json` causes startup to fail with a structured JSON error message
+- on successful startup, the runtime emits a structured JSON startup message
+- periodic state reports are emitted as structured JSON messages
 - the runtime never writes to flash during normal operation

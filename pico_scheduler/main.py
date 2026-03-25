@@ -246,4 +246,5 @@ def main():
         time.sleep_ms(LOOP_SLEEP_MS)
 
 
-main()
+if __name__ == "__main__":
+    main()
