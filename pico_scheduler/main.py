@@ -12,11 +12,11 @@ last_report_ms = 0
 accum_ms = 0
 
 
-def emit_error(message):
+def error(message):
     print(json.dumps({"kind": "error", "content": message}))
 
 
-def emit_report():
+def report():
     out = []
     for ev in events:
         item = {
@@ -32,7 +32,7 @@ def emit_report():
     print(json.dumps({"kind": "report", "content": {"events": out}}))
 
 
-def emit_startup():
+def startup():
     print(json.dumps({"kind": "startup", "content": {"ok": True, "event_count": len(events), "report_every": report_every}}))
 
 
@@ -43,17 +43,17 @@ def load_state():
         with open(STATE_FILE, "r") as f:
             raw = json.load(f)
     except Exception as e:
-        emit_error("failed to read state.json: %s" % e)
+        error("failed to read state.json: %s" % e)
         return False
 
     if not isinstance(raw, dict):
-        emit_error("top-level JSON must be an object")
+        error("top-level JSON must be an object")
         return False
     if "report_every" not in raw:
-        emit_error("missing top-level field: report_every")
+        error("missing top-level field: report_every")
         return False
     if "events" not in raw:
-        emit_error("missing top-level field: events")
+        error("missing top-level field: events")
         return False
 
     report_every_value = raw["report_every"]
@@ -62,32 +62,32 @@ def load_state():
     try:
         report_every_value = int(report_every_value)
     except:
-        emit_error("report_every must be an integer")
+        error("report_every must be an integer")
         return False
 
     if report_every_value <= 0:
-        emit_error("report_every must be > 0")
+        error("report_every must be > 0")
         return False
     if not isinstance(raw_events, list):
-        emit_error("events must be a list")
+        error("events must be a list")
         return False
 
     new_events = []
 
     for i, src in enumerate(raw_events):
         if not isinstance(src, dict):
-            emit_error("event %d must be an object" % i)
+            error("event %d must be an object" % i)
             return False
 
         required = ["type", "ch", "current_t", "reschedule", "pattern"]
         for name in required:
             if name not in src:
-                emit_error("event %d missing field: %s" % (i, name))
+                error("event %d missing field: %s" % (i, name))
                 return False
 
         event_type = src["type"]
         if event_type != "gpio" and event_type != "pwm":
-            emit_error("event %d type must be gpio or pwm" % i)
+            error("event %d type must be gpio or pwm" % i)
             return False
 
         try:
@@ -95,48 +95,48 @@ def load_state():
             current_t = int(src["current_t"])
             reschedule = 1 if int(src["reschedule"]) else 0
         except:
-            emit_error("event %d ch/current_t/reschedule must be integers" % i)
+            error("event %d ch/current_t/reschedule must be integers" % i)
             return False
 
         if ch < 0 or ch > 29:
-            emit_error("event %d ch must be in range 0..29" % i)
+            error("event %d ch must be in range 0..29" % i)
             return False
         if current_t < 0:
-            emit_error("event %d current_t must be >= 0" % i)
+            error("event %d current_t must be >= 0" % i)
             return False
 
         pattern_src = src["pattern"]
         if not isinstance(pattern_src, list) or not pattern_src:
-            emit_error("event %d pattern must be a non-empty list" % i)
+            error("event %d pattern must be a non-empty list" % i)
             return False
 
         pattern = []
         total_t = 0
         for j, step in enumerate(pattern_src):
             if not isinstance(step, dict):
-                emit_error("event %d pattern step %d must be an object" % (i, j))
+                error("event %d pattern step %d must be an object" % (i, j))
                 return False
             if "val" not in step:
-                emit_error("event %d pattern step %d missing field: val" % (i, j))
+                error("event %d pattern step %d missing field: val" % (i, j))
                 return False
             if "dur" not in step:
-                emit_error("event %d pattern step %d missing field: dur" % (i, j))
+                error("event %d pattern step %d missing field: dur" % (i, j))
                 return False
 
             try:
                 val = int(step["val"])
                 dur = int(step["dur"])
             except:
-                emit_error("event %d pattern step %d val/dur must be integers" % (i, j))
+                error("event %d pattern step %d val/dur must be integers" % (i, j))
                 return False
 
             if dur <= 0:
-                emit_error("event %d pattern step %d dur must be > 0" % (i, j))
+                error("event %d pattern step %d dur must be > 0" % (i, j))
                 return False
 
             if event_type == "gpio":
                 if val != 0 and val != 1:
-                    emit_error("event %d pattern step %d gpio val must be 0 or 1" % (i, j))
+                    error("event %d pattern step %d gpio val must be 0 or 1" % (i, j))
                     return False
             else:
                 if val < 0:
@@ -217,9 +217,6 @@ def apply():
     return changed
 
 
-def report():
-    emit_report()
-
 
 def main():
     global last_report_ms, accum_ms
@@ -228,8 +225,8 @@ def main():
         return
 
     apply()
-    emit_startup()
-    emit_report()
+    startup()
+    report()
 
     now_ms = time.ticks_ms()
     last_report_ms = now_ms
@@ -248,7 +245,7 @@ def main():
                 accum_ms -= dt * 1000
                 tick(dt)
                 if apply():
-                    emit_report()
+                    report()
                     last_report_ms = now_ms
 
         if time.ticks_diff(now_ms, last_report_ms) >= report_every * 1000:
