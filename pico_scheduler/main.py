@@ -238,6 +238,8 @@ def main():
         delta_ms = time.ticks_diff(now_ms, last_tick_ms)
         last_tick_ms = now_ms
 
+        should_report = time.ticks_diff(now_ms, last_report_ms) >= report_every * 1000
+
         if delta_ms > 0:
             accum_ms += delta_ms
             dt = accum_ms // 1000
@@ -245,10 +247,9 @@ def main():
                 accum_ms -= dt * 1000
                 tick(dt)
                 if apply():
-                    report()
-                    last_report_ms = now_ms
+                    should_report = True
 
-        if time.ticks_diff(now_ms, last_report_ms) >= report_every * 1000:
+        if should_report:
             last_report_ms = now_ms
             report()
 
