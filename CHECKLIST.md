@@ -14,6 +14,7 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 - [ ] If a change is expensive to validate, there is still a clear manual check for it.
 - [ ] When validating live device behavior, distinguish configured state from runtime state.
 - [ ] For report+camera timelines, send a picture immediately after the startup message, then send all reports and only send additional pictures when the observable state actually changes.
+- [ ] Verify that the Pico emits a full `report` not only on `report_every`, but also immediately when any output changes state.
 
 ## Script / generation changes
 

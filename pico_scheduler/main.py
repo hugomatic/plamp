@@ -166,6 +166,7 @@ def load_state():
             "pattern": pattern,
             "total_t": total_t,
             "output": output,
+            "last_value": None,
         }
         if "id" in src:
             ev["id"] = src["id"]
@@ -191,6 +192,8 @@ def tick(dt):
 
 
 def apply():
+    changed = False
+
     for ev in events:
         t = ev["current_t"]
         elapsed = 0
@@ -207,6 +210,12 @@ def apply():
         else:
             ev["output"].duty_u16(value)
 
+        if ev["last_value"] != value:
+            ev["last_value"] = value
+            changed = True
+
+    return changed
+
 
 def report():
     emit_report()
@@ -220,6 +229,7 @@ def main():
 
     apply()
     emit_startup()
+    emit_report()
 
     now_ms = time.ticks_ms()
     last_report_ms = now_ms
@@ -237,7 +247,9 @@ def main():
             if dt:
                 accum_ms -= dt * 1000
                 tick(dt)
-                apply()
+                if apply():
+                    emit_report()
+                    last_report_ms = now_ms
 
         if time.ticks_diff(now_ms, last_report_ms) >= report_every * 1000:
             last_report_ms = now_ms
