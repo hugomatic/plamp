@@ -13,7 +13,7 @@ accum_ms = 0
 
 
 def emit_error(message):
-    print(json.dumps({"kind": "error", "where": "load_state", "message": message}))
+    print(json.dumps({"kind": "error", "message": message}))
 
 
 def emit_report():
@@ -29,11 +29,11 @@ def emit_report():
         if "id" in ev:
             item["id"] = ev["id"]
         out.append(item)
-    print(json.dumps({"kind": "report", "events": out}))
+    print(json.dumps({"kind": "report", "content": {"events": out}}))
 
 
 def emit_startup():
-    print(json.dumps({"kind": "startup", "ok": True, "event_count": len(events), "report_every": report_every}))
+    print(json.dumps({"kind": "startup", "content": {"ok": True, "event_count": len(events), "report_every": report_every}}))
 
 
 def load_state():
