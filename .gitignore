@@ -1,0 +1,10 @@
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
+# Local Pico scheduler state used for host-side deploys
+pico_scheduler/state.json
+
+# Generated 3D outputs / docs
+things/plamp_stand/doc/
+things/plamp_stand/prints/

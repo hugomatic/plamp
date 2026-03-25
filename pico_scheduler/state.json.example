@@ -1,0 +1,15 @@
+{
+  "report_every": 10,
+  "events": [
+    {
+      "type": "gpio",
+      "ch": 25,
+      "current_t": 3,
+      "reschedule": 1,
+      "pattern": [
+        {"val": 1, "dur": 10},
+        {"val": 0, "dur": 20}
+      ]
+    }
+  ]
+}
