@@ -27,6 +27,10 @@ Current example:
 
 - [`things/plamp_stand/`](./things/plamp_stand/)
 
+Reference photo:
+
+![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
+
 See also:
 
 - [`things/README.md`](./things/README.md)

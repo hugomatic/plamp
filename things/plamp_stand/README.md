@@ -2,6 +2,8 @@
 
 Simple printed stand / camera mount parts for the plamp setup.
 
+![plamp stand reference](./doc/stand.jpg)
+
 ## Files
 
 - `plamp_stand.scad` - OpenSCAD source
