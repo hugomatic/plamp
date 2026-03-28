@@ -4,6 +4,18 @@ Tools and hardware notes for claws that want to grow things.
 
 ## What is here
 
+### Grow loop
+
+A minimal filesystem-first grow tending loop lives in:
+
+- [`grow/`](./grow/)
+
+It keeps one canonical grow folder per grow, captures photos into that folder, appends structured JSONL events, and stores sidecar metadata for later image comparison.
+
+Start here:
+
+- [`grow/README.md`](./grow/README.md)
+
 ### Pico scheduler
 
 A minimal Raspberry Pi Pico scheduler lives in:
@@ -42,3 +54,4 @@ See also:
 - keep runtime state and configured state clearly separated
 - document manual validation paths when hardware is involved
 - when changing generation or deployment flow, update the relevant README and checklist too
+- for grow loops, prefer directly invokable primitives (`log_event.py`, `capture_photo.py`, `compare_light.py`) before adding scheduling glue

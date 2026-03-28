@@ -16,6 +16,21 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 - [ ] For report+camera timelines, send a picture immediately after the startup message, then send all reports and only send additional pictures when the observable state actually changes.
 - [ ] Verify that the Pico emits a full `report` not only on `report_every`, but also immediately when any output changes state.
 
+## Grow loop / tending reflexes
+
+Use this when changing the hourly grow loop, grow folder layout, event log format, or capture/comparison tools.
+
+- [ ] `grow/README.md` still describes the canonical grow layout and the direct tools accurately.
+- [ ] `grow/grows/<grow-id>/grow.json` remains the single tracked source of grow identity/config.
+- [ ] Runtime grow data stays filesystem-only (`events.jsonl`, image files, sidecar JSON) with no database sneaking in.
+- [ ] `python3 grow/log_event.py --grow <grow-id> ...` still appends exactly one valid JSON line.
+- [ ] `python3 grow/capture_photo.py --grow <grow-id>` writes both the image and a matching sidecar JSON into the grow folder.
+- [ ] Capture sidecars include enough comparison context: timestamp, image path, brightness, previous capture pointer, and AI-compare payload.
+- [ ] `python3 grow/compare_light.py --grow <grow-id>` updates the latest sidecar and appends a `light_compare` event.
+- [ ] `python3 grow/hourly_tend.py --grow <grow-id>` still composes capture + compare without hiding where files landed.
+- [ ] If the camera wrapper path is machine-specific, it is documented in repo docs or the grow config.
+- [ ] A manual validation path still exists for confirming actual light-on vs light-off images tomorrow with real captures.
+
 ## Script / generation changes
 
 - [ ] `generate.bash` (or equivalent) still prints a sane suggested command when run with no args.
@@ -70,6 +85,26 @@ Why this is manual:
 - it depends on real hardware (`mpremote`, Pico, camera)
 - it validates the full chain instead of only the scheduler code in isolation
 - timing, framing, and ambient light all affect whether the camera verification is trustworthy
+
+## Example manual check: grow hourly loop
+
+Run this intentionally when validating the real garden path:
+
+```bash
+cd /home/hugo/.openclaw/workspace/code/plamp
+python3 grow/hourly_tend.py --grow grow-thai-basil-siam-queen-2026-03-27
+```
+
+Then confirm:
+- a new image exists under `grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/YYYY-MM-DD/`
+- the matching sidecar JSON points at the previous capture when one exists
+- `events.jsonl` gained `capture`, `light_compare`, and `hourly_tend` entries
+- the inferred `light_state` matches what Hugo can see in the image
+
+Why this is manual:
+- it depends on the real camera and the real grow scene
+- ambient light and framing still matter
+- the current comparison is deliberately simple and should be checked against reality before trusting automation
 
 ## Example manual check: `things/plamp_stand`
 
