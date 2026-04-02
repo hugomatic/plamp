@@ -1,0 +1,14 @@
+{
+  "summary_id": "daily-2026-04-02-grow-thai-basil-siam-queen-2026-03-27",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "scope": "daily",
+  "period_start": "2026-04-02T00:00:00Z",
+  "period_end": "2026-04-03T00:00:00Z",
+  "observation": "Hourly captures completed and the scene remained stable.",
+  "prediction_review": "No daily prediction changed yet; keep watching vigor and light schedule consistency.",
+  "goal_impact": "No clear taste/yield tradeoff change today.",
+  "reliability": "Cron captured on schedule; no repair action requested.",
+  "open_questions": [
+    "Do the next daylight captures show stronger vigor?"
+  ]
+}

@@ -21,13 +21,18 @@ Use this as a lightweight checklist for changes in this repo. Not every item app
 Use this when changing the hourly grow loop, grow folder layout, event log format, or capture/comparison tools.
 
 - [ ] `grow/README.md` still describes the canonical grow layout and the direct tools accurately.
+- [ ] `grow/OPERATING_MODEL.md` still matches the intended hourly / 12h / daily / weekly / monthly loop responsibilities.
 - [ ] `grow/grows/<grow-id>/grow.json` remains the single tracked source of grow identity/config.
-- [ ] Runtime grow data stays filesystem-only (`events.jsonl`, image files, sidecar JSON) with no database sneaking in.
+- [ ] Runtime grow data stays filesystem-only (`events.jsonl`, image files, sidecar JSON, summaries, predictions, amendments) with no database sneaking in.
 - [ ] `python3 grow/log_event.py --grow <grow-id> ...` still appends exactly one valid JSON line.
 - [ ] `python3 grow/capture_photo.py --grow <grow-id>` writes both the image and a matching sidecar JSON into the grow folder.
 - [ ] Capture sidecars include enough comparison context: timestamp, image path, brightness, previous capture pointer, and AI-compare payload.
 - [ ] `python3 grow/compare_light.py --grow <grow-id>` updates the latest sidecar and appends a `light_compare` event.
 - [ ] `python3 grow/hourly_tend.py --grow <grow-id>` still composes capture + compare without hiding where files landed.
+- [ ] Heartbeat is still described as auditor/repair behavior, not as the primary hourly scheduler.
+- [ ] Higher-frequency grow artifacts still prepare inputs for slower summaries/reviews rather than bypassing them.
+- [ ] Prediction artifacts remain durable and amendments never overwrite old predictions in place.
+- [ ] If summaries/predictions are emitted, they prioritize useful answers/results over plumbing-only blobs.
 - [ ] If the camera wrapper path is machine-specific, it is documented in repo docs or the grow config.
 - [ ] A manual validation path still exists for confirming actual light-on vs light-off images tomorrow with real captures.
 

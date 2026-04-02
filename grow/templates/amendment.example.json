@@ -1,0 +1,14 @@
+{
+  "amendment_id": "amd-2026-04-02-light-window-check-1",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "created_at": "2026-04-02T21:30:00Z",
+  "prediction_id": "pred-2026-04-02-light-window-check",
+  "amends_prediction_id": "pred-2026-04-02-light-window-check",
+  "reason": "Brightness rose, but not as clearly as expected.",
+  "updated_judgment": "Keep the original prediction as historical context; amend confidence downward and request image review.",
+  "basis": [
+    "Observed capture brightness trend",
+    "Human review still pending"
+  ],
+  "status": "open"
+}

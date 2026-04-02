@@ -4,6 +4,8 @@ Minimal filesystem-first grow tending tools.
 
 This is app/repo code, not an OpenClaw skill.
 
+The current operating model is documented in [`OPERATING_MODEL.md`](./OPERATING_MODEL.md).
+
 ## Canonical grow layout
 
 Each grow lives under:
@@ -25,9 +27,14 @@ grow/grows/<grow-id>/events.jsonl               # append-only event log
 grow/grows/<grow-id>/captures/YYYY-MM-DD/       # hourly images + sidecar metadata
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.jpg
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.json
+grow/grows/<grow-id>/summaries/                 # optional daily/weekly/monthly review artifacts
+grow/grows/<grow-id>/predictions/               # durable prediction artifacts by cadence
+grow/grows/<grow-id>/amendments/               # later judgment improvements, never history rewrites
 ```
 
 Image sidecar metadata is intentionally plain JSON so later tooling can compare captures without opening the event log.
+
+Higher-frequency artifacts should prepare inputs for lower-frequency review. Hourly capture sidecars and event records feed 12-hour, daily, weekly, and monthly summaries instead of each slower layer recomputing everything from scratch.
 
 Each capture sidecar stores:
 
@@ -42,6 +49,8 @@ Each capture sidecar stores:
 - `ai_compare` payload with current/previous image paths and a ready-to-use prompt
 
 `events.jsonl` is the human/audit timeline. One JSON object per line.
+
+Observations in that timeline should remain fixed. Predictions and later amendments belong in their own artifacts so old facts stay intact while judgments improve.
 
 ## Direct tools
 
@@ -84,6 +93,8 @@ What it does:
 
 There is no new framework here. The intended scheduler is the host's normal scheduler.
 
+Cron owns the hourly capture reflex. Heartbeat is useful as an auditor/repair loop that notices missed runs, stale data, or confusing outputs, but heartbeat is not the primary scheduler.
+
 Cron example:
 
 ```cron
@@ -91,6 +102,10 @@ Cron example:
 ```
 
 Or systemd timer if Hugo wants a managed service later.
+
+When writing sidecars, summaries, or logs, prefer concise answers/results over plumbing dumps when possible.
+
+Tracked runtime artifact examples live in [`templates/`](./templates/).
 
 ## Current grow
 

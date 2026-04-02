@@ -1,0 +1,14 @@
+{
+  "summary_id": "weekly-2026-W14-grow-thai-basil-siam-queen-2026-03-27",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "scope": "weekly",
+  "period": "2026-W14",
+  "observation": "Capture coverage is sufficient for a weekly review.",
+  "prediction_review": "Short-horizon judgments remain provisional and should be amended rather than rewritten.",
+  "goal_impact": "Current notes do not justify a path change yet.",
+  "reliability": "Investigate any repeated unclear light comparisons before trusting automation more deeply.",
+  "next_week_focus": [
+    "Confirm the light-state inference against real images.",
+    "Start a more explicit seedling vigor prediction if the scene is stable."
+  ]
+}

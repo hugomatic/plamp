@@ -1,0 +1,17 @@
+{
+  "prediction_id": "pred-2026-04-02-light-window-check",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "created_at": "2026-04-02T12:00:00Z",
+  "scope": "daily",
+  "question": "Will the next daylight window show the expected light-on pattern and stable framing?",
+  "prediction": "The next three hourly captures should show a clear rise in brightness and no framing drift.",
+  "basis": [
+    "Recent hourly capture sequence",
+    "Known timer expectations"
+  ],
+  "target_window": {
+    "start": "2026-04-02T18:00:00Z",
+    "end": "2026-04-02T21:00:00Z"
+  },
+  "status": "open"
+}
