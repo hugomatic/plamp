@@ -51,8 +51,11 @@ Higher-frequency artifacts should prepare inputs for lower-frequency review. The
 
 - hourly artifacts feed the 12h review
 - 12h summaries feed the daily review
-- daily summaries feed the weekly review
-- weekly summaries feed the monthly review
+- daily summaries + daily selected/representative pictures + prediction amendments feed the weekly review
+- weekly summaries + selected evidence can feed the monthly review
+
+Weekly is for trend + model correction from curated evidence, not rereading all raw pictures.
+Monthly is for lessons + selected evidence + visual story, and may include a small high-signal gallery or before/after pair.
 
 That keeps slower layers from recomputing everything from scratch and preserves the durable-facts + additive-judgments model.
 

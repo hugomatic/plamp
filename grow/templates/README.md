@@ -26,4 +26,9 @@ All templates should stay small, concrete, and answer-first:
 - what does it mean for taste/yield?
 - what changed in the model?
 
+Cadence notes:
+
+- weekly summarizes trend from daily summaries + selected daily pictures + amendments; it should not reread all raw pictures
+- monthly summarizes lessons from weekly judgments + selected evidence and may include a small visual story / before-after set
+
 If a judgment changed, write an additive amendment instead of overwriting the older prediction.

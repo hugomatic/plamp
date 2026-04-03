@@ -56,17 +56,18 @@ Owner: cron + direct scripts.
 
 ### Weekly
 
-- **ingest:** daily summaries, relevant 12h summaries for anomalies, open weekly predictions/amendments, and the week’s material gardener interventions
-- **process / judgment:** compare several days of trend, review whether the grow matched the trend model, and decide which deviations are recurring, structural, or still ambiguous
+- **ingest:** daily summaries, daily selected/representative pictures, relevant 12h summaries for anomalies, open weekly predictions/amendments, and the week’s material gardener interventions
+- **process / judgment:** compare several days of trend, correct the trend model from curated evidence, and decide which deviations are recurring, structural, or still ambiguous
 - **output artifacts:** one weekly summary plus any additive trend prediction/amendment and a short operator-priority list for the coming week
-- **feeds next slower layer:** provides the monthly layer with trend judgments, recurring failure modes, and whether the crop path still looks viable
+- **image policy:** do **not** reread all raw hourly pictures at weekly scope; weekly works from daily summaries + curated daily evidence + prediction amendments
+- **feeds next slower layer:** provides the monthly layer with trend judgments, recurring failure modes, selected evidence, and whether the crop path still looks viable
 - **reliability:** identify recurring misses, blind spots, or debt
 
 ### Monthly
 
-- **ingest:** weekly summaries, major daily exceptions, open monthly predictions/amendments, and any stage-change or strategy-change notes from the gardener
-- **process / judgment:** review stage transition and long-horizon progress, decide whether the operating strategy still matches the desired crop path, and separate crop-path issues from loop-quality issues
-- **output artifacts:** one monthly summary plus any additive strategy-level prediction/amendment and explicit loop-change recommendations when needed
+- **ingest:** weekly summaries, selected daily exceptions, open monthly predictions/amendments, any stage-change or strategy-change notes from the gardener, and a small high-signal image gallery when it helps
+- **process / judgment:** review stage transition and long-horizon progress, extract lessons, and build the visual story from selected evidence instead of brute-force image review
+- **output artifacts:** one monthly summary plus any additive strategy-level prediction/amendment, explicit loop-change recommendations when needed, and optionally a small before/after or high-signal gallery
 - **feeds next slower layer:** this is the slowest review layer; it resets strategic expectations that future weekly/daily/hourly judgments should inherit
 - **reliability:** decide whether the loop itself needs changes
 
