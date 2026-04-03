@@ -47,7 +47,14 @@ Every cadence should answer, concretely:
 3. what does it mean for taste/yield?
 4. what changed in the model?
 
-Higher-frequency artifacts should prepare inputs for lower-frequency review. Hourly capture sidecars and event records feed 12-hour, daily, weekly, and monthly summaries instead of each slower layer recomputing everything from scratch.
+Higher-frequency artifacts should prepare inputs for lower-frequency review. The handoff is explicit:
+
+- hourly artifacts feed the 12h review
+- 12h summaries feed the daily review
+- daily summaries feed the weekly review
+- weekly summaries feed the monthly review
+
+That keeps slower layers from recomputing everything from scratch and preserves the durable-facts + additive-judgments model.
 
 Each capture sidecar stores:
 

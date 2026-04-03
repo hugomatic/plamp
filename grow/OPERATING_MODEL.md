@@ -26,42 +26,49 @@ Every layer answers the same four questions:
 3. what does it mean for taste/yield?
 4. what changed in the model?
 
+Faster layers prepare inputs for slower layers. Cron owns the hourly reflex; heartbeat audits and repairs stale or confusing situations instead of becoming a second scheduler.
+
 ### Hourly
 
 Owner: cron + direct scripts.
 
-- observe: capture the scene and sidecar facts
-- compare: check against the latest short-horizon expectation
-- update: write an event and, if needed, a small prediction/amendment
-- reliability: confirm the reflex is alive
+- **ingest:** current capture, previous capture/sidecar when present, latest open hourly or 12h prediction, grow config, and any recent gardener note already on disk
+- **process / judgment:** capture the scene, compare against the previous hour and current short-horizon expectation, classify obvious deviations, and decide whether the miss looks like nature, gardener, system, or still-unclear
+- **output artifacts:** append-only event record, capture sidecar, comparison summary, and only when warranted a small hourly prediction or additive amendment
+- **feeds next slower layer:** provides the raw evidence and unresolved exceptions that the 12h review rolls up
+- **reliability:** confirm the reflex is alive
 
 ### Every 12 hours
 
-- observe: compare the last half-day window (day/night, drift, repeated uncertainty)
-- compare: review whether recent behavior matched the short-horizon model
-- update: amend confidence, next checks, or immediate concerns
-- reliability: detect partial failures hourly runs may miss
+- **ingest:** hourly events/capture sidecars/comparisons for the last half-day, open hourly predictions and amendments, and any gardener notes in that window
+- **process / judgment:** review the half-day as a window (day/night, drift, repeated uncertainty, missed captures), decide whether the short-horizon model held, and tighten or lower confidence in immediate concerns
+- **output artifacts:** one 12h summary plus any new 12h prediction or additive amendment needed to carry uncertainty forward
+- **feeds next slower layer:** hands the daily layer a compact judgment about window quality, immediate plant behavior, and whether evidence is trustworthy enough to summarize
+- **reliability:** detect partial failures hourly runs may miss
 
 ### Daily
 
-- observe: compress the last 24 hours into a readable summary
-- compare: review daily expectations for growth, water, pruning, and light behavior
-- update: issue/amend next-day judgments and questions
-- reliability: verify hourly evidence was good enough to trust
+- **ingest:** the last 24 hours of hourly artifacts, both 12h summaries, open daily predictions/amendments, and relevant gardener actions for water, pruning, feeding, or environment changes
+- **process / judgment:** compress the day into a readable operational story, judge whether daily expectations for growth, water, pruning, and light behavior were met, and decide what needs attention tomorrow
+- **output artifacts:** one daily summary plus any next-day prediction or additive amendment, including explicit open questions when evidence is weak
+- **feeds next slower layer:** gives the weekly layer day-sized judgments instead of forcing it to recompute from every hourly capture
+- **reliability:** verify hourly evidence was good enough to trust
 
 ### Weekly
 
-- observe: compare several days of trend, not just adjacent captures
-- compare: review whether the week matched the trend model
-- update: amend trend judgments and operator priorities
-- reliability: identify recurring misses, blind spots, or debt
+- **ingest:** daily summaries, relevant 12h summaries for anomalies, open weekly predictions/amendments, and the week’s material gardener interventions
+- **process / judgment:** compare several days of trend, review whether the grow matched the trend model, and decide which deviations are recurring, structural, or still ambiguous
+- **output artifacts:** one weekly summary plus any additive trend prediction/amendment and a short operator-priority list for the coming week
+- **feeds next slower layer:** provides the monthly layer with trend judgments, recurring failure modes, and whether the crop path still looks viable
+- **reliability:** identify recurring misses, blind spots, or debt
 
 ### Monthly
 
-- observe: review stage transition and long-horizon progress
-- compare: review whether the strategy matched the desired crop path
-- update: amend strategy-level predictions or operating assumptions
-- reliability: decide whether the loop itself needs changes
+- **ingest:** weekly summaries, major daily exceptions, open monthly predictions/amendments, and any stage-change or strategy-change notes from the gardener
+- **process / judgment:** review stage transition and long-horizon progress, decide whether the operating strategy still matches the desired crop path, and separate crop-path issues from loop-quality issues
+- **output artifacts:** one monthly summary plus any additive strategy-level prediction/amendment and explicit loop-change recommendations when needed
+- **feeds next slower layer:** this is the slowest review layer; it resets strategic expectations that future weekly/daily/hourly judgments should inherit
+- **reliability:** decide whether the loop itself needs changes
 
 ## Predictions and amendments
 
