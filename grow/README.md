@@ -27,12 +27,25 @@ grow/grows/<grow-id>/events.jsonl               # append-only event log
 grow/grows/<grow-id>/captures/YYYY-MM-DD/       # hourly images + sidecar metadata
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.jpg
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.json
-grow/grows/<grow-id>/summaries/                 # optional daily/weekly/monthly review artifacts
+grow/grows/<grow-id>/summaries/                 # 12h/daily/weekly/monthly review artifacts
 grow/grows/<grow-id>/predictions/               # durable prediction artifacts by cadence
-grow/grows/<grow-id>/amendments/               # later judgment improvements, never history rewrites
+grow/grows/<grow-id>/amendments/                # additive judgment updates, never history rewrites
 ```
 
 Image sidecar metadata is intentionally plain JSON so later tooling can compare captures without opening the event log.
+
+The grow loop has three actors:
+
+- **nature**: what the plant/environment actually did
+- **gardener**: what the human did or failed to do
+- **system / Plamp**: what sensing/scheduling/inference/logging did or failed to do
+
+Every cadence should answer, concretely:
+
+1. what happened?
+2. what was expected?
+3. what does it mean for taste/yield?
+4. what changed in the model?
 
 Higher-frequency artifacts should prepare inputs for lower-frequency review. Hourly capture sidecars and event records feed 12-hour, daily, weekly, and monthly summaries instead of each slower layer recomputing everything from scratch.
 
@@ -93,7 +106,7 @@ What it does:
 
 There is no new framework here. The intended scheduler is the host's normal scheduler.
 
-Cron owns the hourly capture reflex. Heartbeat is useful as an auditor/repair loop that notices missed runs, stale data, or confusing outputs, but heartbeat is not the primary scheduler.
+Cron owns the hourly capture reflex. Heartbeat is the auditor/repair loop for stale data, missed windows, and confusing outputs.
 
 Cron example:
 
@@ -103,7 +116,7 @@ Cron example:
 
 Or systemd timer if Hugo wants a managed service later.
 
-When writing sidecars, summaries, or logs, prefer concise answers/results over plumbing dumps when possible.
+When writing sidecars, summaries, predictions, or amendments, keep outputs answer-first and additive.
 
 Tracked runtime artifact examples live in [`templates/`](./templates/).
 

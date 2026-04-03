@@ -1,131 +1,86 @@
 # Grow operating model
 
-This is the intended operating model for the grow loop.
-
 Keep it filesystem-first and boring:
 
 - cron owns the hourly capture reflex
-- heartbeat is an auditor/repair loop, not the primary scheduler
-- higher-frequency layers prepare cleaner inputs for lower-frequency layers
-- lower-frequency layers make slower, better judgments without rewriting old facts
+- heartbeat audits/repairs the reflex; it is not the primary scheduler
+- slower layers reuse artifacts from faster layers
+- observations stay fixed; judgments improve through additive predictions/amendments
 
-## Cadence layers
+## Roles
 
-Each layer should answer the same four questions in a different time horizon:
+Every deviation should be attributed, when possible, to one of:
 
-1. what do we observe?
-2. what prediction or judgment should be reviewed or amended?
-3. what does this mean for the current taste/yield path?
-4. is the system doing its duty reliably?
+- **nature**: the plant/environment did something real
+- **gardener**: a human action or omission changed the path
+- **system / Plamp**: sensing, scheduling, inference, or logging failed
+
+If evidence is insufficient, say so and ask the gardener.
+
+## Cadence model
+
+Every layer answers the same four questions:
+
+1. what happened?
+2. what was expected?
+3. what does it mean for taste/yield?
+4. what changed in the model?
 
 ### Hourly
 
-Primary owner: cron + direct scripts.
+Owner: cron + direct scripts.
 
-Purpose:
-
-- observation: capture the current scene and basic machine-readable sidecar facts
-- prediction review/update: check whether the latest expectation still looks plausible enough to keep watching
-- goal impact: flag obvious drift that could hurt taste/yield later
-- reliability / duty verification: confirm the camera, light-state inference, and scheduled capture reflex are still alive
-
-Outputs:
-
-- append-only event entries in `events.jsonl`
-- capture image + sidecar JSON
-- optional lightweight prediction review note when the latest expectation needs follow-up
-
-Notes:
-
-- this is the primary sensing loop
-- keep the output answer-first: what happened, what changed, what looks wrong
-- do not bury the result inside plumbing-heavy logs when a short result record will do
+- observe: capture the scene and sidecar facts
+- compare: check against the latest short-horizon expectation
+- update: write an event and, if needed, a small prediction/amendment
+- reliability: confirm the reflex is alive
 
 ### Every 12 hours
 
-Purpose:
-
-- observation: compare day/night windows or the most recent half-day run
-- prediction review/update: amend short-horizon expectations such as light schedule confidence, visible vigor, or likely next checks
-- goal impact: note whether the plant still appears on the intended taste/yield path
-- reliability / duty verification: detect partial failure patterns that hourly runs may miss (repeated unclear comparisons, stale sidecars, missing windows)
-
-Outputs:
-
-- half-day summary or review artifact
-- amendment records that point at earlier predictions when judgment improves
+- observe: compare the last half-day window (day/night, drift, repeated uncertainty)
+- compare: review whether recent behavior matched the short-horizon model
+- update: amend confidence, next checks, or immediate concerns
+- reliability: detect partial failures hourly runs may miss
 
 ### Daily
 
-Purpose:
-
-- observation: compress the last 24 hours into a human-reviewable summary
-- prediction review/update: issue or amend daily expectations for growth, water, pruning, or investigation needs
-- goal impact: state whether the grow is moving toward the current taste/yield goal
-- reliability / duty verification: verify that the hourly reflex actually happened enough times and produced usable evidence
-
-Outputs:
-
-- daily summary artifact
-- prediction snapshot and/or amendment artifact
-- explicit open questions for the next day
+- observe: compress the last 24 hours into a readable summary
+- compare: review daily expectations for growth, water, pruning, and light behavior
+- update: issue/amend next-day judgments and questions
+- reliability: verify hourly evidence was good enough to trust
 
 ### Weekly
 
-Purpose:
-
-- observation: compare across several days, not just adjacent captures
-- prediction review/update: revisit trend-level judgments with more evidence
-- goal impact: decide whether the current approach still serves the intended crop outcome
-- reliability / duty verification: review recurring misses, weak sensors, noisy logs, or operational debt
-
-Outputs:
-
-- weekly summary artifact
-- updated trend judgments
-- reliability punch list if the system is wasting operator time
+- observe: compare several days of trend, not just adjacent captures
+- compare: review whether the week matched the trend model
+- update: amend trend judgments and operator priorities
+- reliability: identify recurring misses, blind spots, or debt
 
 ### Monthly
 
-Purpose:
+- observe: review stage transition and long-horizon progress
+- compare: review whether the strategy matched the desired crop path
+- update: amend strategy-level predictions or operating assumptions
+- reliability: decide whether the loop itself needs changes
 
-- observation: inspect stage transitions and long-horizon progress
-- prediction review/update: retire, confirm, or amend longer-range predictions
-- goal impact: assess whether the operating strategy is producing the desired taste/yield tradeoff
-- reliability / duty verification: decide whether the loop itself should change
+## Predictions and amendments
 
-Outputs:
-
-- monthly review artifact
-- strategy-level amendments
-- operating-model changes if the loop is not earning its keep
-
-## Data model: observations, predictions, amendments
-
-Facts and judgments should not be treated the same.
+Facts and judgments are different artifacts.
 
 ### Observations are durable facts
 
 Examples:
 
-- a captured image path
-- a brightness measurement
-- a timestamp
-- a human note about what they saw
+- image path
+- timestamp
+- brightness measurement
+- gardener note
 
-These should stay fixed once written, except for narrowly-scoped repair records when something was malformed.
+Do not rewrite old observations except for narrow repair records.
 
-### Predictions are durable artifacts
+### Predictions are durable judgment records
 
-A prediction is a record of what the system or operator believed at that time.
-
-Examples:
-
-- "the light should turn on within the next two hourly captures"
-- "seedlings likely need thinning within 5 days"
-- "the current path favors yield more than flavor"
-
-Predictions should be written as their own artifacts, not folded back into old observations.
+A prediction records what nature, the gardener, or the system was expected to do in a target window.
 
 Recommended fields:
 
@@ -135,13 +90,13 @@ Recommended fields:
 - `scope` (`hourly`, `12h`, `daily`, `weekly`, `monthly`)
 - `question`
 - `prediction`
-- `basis` (what evidence supported it)
+- `basis`
 - `target_window`
 - `status` (`open`, `confirmed`, `missed`, `superseded`)
 
-### Amendments do not overwrite history
+### Amendments are additive
 
-When judgment improves later, write an amendment that points at the earlier prediction.
+Amendments never overwrite prior predictions. They point at the earlier judgment and explain what changed.
 
 Recommended fields:
 
@@ -158,15 +113,11 @@ Recommended fields:
 Rules:
 
 - do not rewrite the old prediction in place
-- old observations stay fixed
-- old predictions stay visible as historical judgment
-- newer amendments explain why thinking changed
-
-This keeps the trail honest: reality happened once, but interpretation can improve.
+- keep old predictions visible as historical judgment
+- add newer amendments when confidence, attribution, or expectation changes
+- explicitly note whether the deviation looks like nature, gardener, system, or still-unclear
 
 ## Suggested runtime layout
-
-Tracked docs define the contract; runtime artifacts live inside each grow folder.
 
 ```text
 grow/grows/<grow-id>/
@@ -174,11 +125,13 @@ grow/grows/<grow-id>/
   events.jsonl
   captures/YYYY-MM-DD/
   summaries/
+    12h/
     daily/YYYY-MM-DD.json
     weekly/YYYY-Www.json
     monthly/YYYY-MM.json
   predictions/
     hourly/*.json
+    12h/*.json
     daily/*.json
     weekly/*.json
     monthly/*.json
@@ -186,19 +139,13 @@ grow/grows/<grow-id>/
     *.json
 ```
 
-The repo should only track examples/templates when needed. Live grow runtime data can remain ignored.
-
 ## Logging preference
 
-When a sidecar or summary exists to answer the real question, prefer writing that answer directly.
+Prefer answer-first outputs over plumbing dumps:
 
-Good:
-
-- `light_state=off and capture gap looks normal`
-- `daily summary says vigor improved but yield path still unclear`
-
-Less good:
-
-- large plumbing dumps without a short conclusion
+- what happened
+- what was expected
+- taste/yield meaning
+- model change
 
 Unix/tool-first still applies: small tools, plain files, obvious outputs.

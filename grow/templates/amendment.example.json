@@ -5,10 +5,12 @@
   "prediction_id": "pred-2026-04-02-light-window-check",
   "amends_prediction_id": "pred-2026-04-02-light-window-check",
   "reason": "Brightness rose, but not as clearly as expected.",
-  "updated_judgment": "Keep the original prediction as historical context; amend confidence downward and request image review.",
+  "updated_judgment": "Do not rewrite the original prediction. Add this amendment lowering confidence in the system/light inference and request gardener review if the next window is still unclear.",
   "basis": [
     "Observed capture brightness trend",
     "Human review still pending"
   ],
+  "attribution": "system / Plamp",
+  "taste_yield_relevance": "Unclear sensing weakens confidence in later vigor and yield/taste judgments.",
   "status": "open"
 }

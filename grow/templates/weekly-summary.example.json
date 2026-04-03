@@ -3,12 +3,17 @@
   "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
   "scope": "weekly",
   "period": "2026-W14",
-  "observation": "Capture coverage is sufficient for a weekly review.",
-  "prediction_review": "Short-horizon judgments remain provisional and should be amended rather than rewritten.",
-  "goal_impact": "Current notes do not justify a path change yet.",
-  "reliability": "Investigate any repeated unclear light comparisons before trusting automation more deeply.",
+  "what_happened": "The week had usable capture coverage, repeated overnight uncertainty, and modest signs of steady basil establishment.",
+  "what_was_expected": "Hourly capture should have been routine and light-state checks should have been easy to classify.",
+  "taste_yield_meaning": "The grow still looks on a viable path, but unreliable sensing weakens confidence in yield/taste forecasts.",
+  "model_change": "Keep prior trend predictions visible, add an amendment reducing confidence in the light/reliability model, and prioritize system repair over new inference.",
+  "attribution": {
+    "nature": "Plant changes remain slow but plausible.",
+    "gardener": "No gardener-caused deviation is evident from this week alone.",
+    "system": "Repeated unclear or missed checks point to system weakness."
+  },
   "next_week_focus": [
-    "Confirm the light-state inference against real images.",
-    "Start a more explicit seedling vigor prediction if the scene is stable."
+    "Restore trustworthy hourly evidence.",
+    "Only tighten growth predictions if the evidence gets cleaner."
   ]
 }
