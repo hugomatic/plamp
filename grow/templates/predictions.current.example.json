@@ -1,0 +1,27 @@
+{
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "updated_at": "2026-04-02T21:30:00Z",
+  "scope": "daily",
+  "question": "What should the next cadence checks watch, and what gardener action matters most right now?",
+  "current_state": "Hourly/daylight checks should confirm stable light behavior while keeping recent gardener interventions visible in the inherited state.",
+  "basis": [
+    "Recent hourly checks",
+    "Latest daily summary",
+    "Latest gardener note"
+  ],
+  "gardener_interventions": {
+    "recent": [
+      "move to tower",
+      "add food",
+      "change water"
+    ],
+    "priority": "Prominent in current state and summaries"
+  },
+  "target_window": {
+    "start": "2026-04-02T18:00:00Z",
+    "end": "2026-04-03T18:00:00Z"
+  },
+  "expected_actor": "system / Plamp + gardener",
+  "taste_yield_relevance": "Unrecorded gardener actions can dominate taste/yield outcomes, so they should stay visible in the current prediction state.",
+  "status": "open"
+}

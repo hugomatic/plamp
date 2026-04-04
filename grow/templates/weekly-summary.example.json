@@ -6,10 +6,10 @@
   "what_happened": "Daily summaries plus a few representative daily photos showed usable coverage, repeated overnight uncertainty, and modest signs of steady basil establishment.",
   "what_was_expected": "Hourly capture should have produced clean daily evidence and light-state checks should have been easy to classify.",
   "taste_yield_meaning": "The grow still looks on a viable path, but unreliable sensing weakens confidence in yield/taste forecasts.",
-  "model_change": "Use curated daily evidence to correct the trend model, keep prior trend predictions visible, add an amendment reducing confidence in the light/reliability model, and prioritize system repair over new inference.",
+  "model_change": "Use curated daily evidence to correct the trend model, update prediction state/history from the week's cadence checks, keep prior trend predictions visible, and make gardener interventions prominent because they are the weakest automation link.",
   "attribution": {
     "nature": "Plant changes remain slow but plausible.",
-    "gardener": "No gardener-caused deviation is evident from this week alone.",
+    "gardener": "Surface material gardener actions clearly, especially move to tower, add food, or change water, because downstream summaries can miss them if they stay implicit.",
     "system": "Repeated unclear or missed checks point to system weakness."
   },
   "next_week_focus": [

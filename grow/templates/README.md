@@ -15,6 +15,12 @@ grow/grows/<grow-id>/predictions/current.json
 grow/grows/<grow-id>/predictions/history.jsonl
 ```
 
+Tracked examples in this folder:
+
+- `prediction.example.json`
+- `predictions.current.example.json`
+- `predictions.history.example.jsonl`
+
 All templates should stay small, concrete, and answer-first:
 
 - what happened?
@@ -24,7 +30,8 @@ All templates should stay small, concrete, and answer-first:
 
 Cadence notes:
 
-- every cadence reads `predictions/current.json`, updates it if needed, then appends one `predictions/history.jsonl` entry
+- hourly / 12h / daily / weekly checks should leave or update prediction artifacts, not just prose: each cadence reads `predictions/current.json`, updates it if needed, then appends one `predictions/history.jsonl` entry
 - history entries must include the explicit delta/change so the prediction path can be reconstructed later
+- gardener interventions are especially important to surface because they are the weakest automation link; current state and summaries should make actions like move to tower, add food, or change water obvious
 - weekly summarizes trend from daily summaries + selected daily pictures + prediction history; it should not reread all raw pictures
 - monthly summarizes lessons from weekly judgments + selected evidence and may include a small visual story / before-after set

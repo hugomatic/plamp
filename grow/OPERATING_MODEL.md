@@ -34,7 +34,7 @@ Every cadence that touches predictions follows the same write pattern:
 2. update the current belief/state if the judgment changed
 3. append one entry to `predictions/history.jsonl`
 
-History entries must include the explicit delta/change from the previous state so the prediction evolution can be reconstructed later.
+History entries must include the explicit delta/change from the previous state so the prediction evolution can be reconstructed later. Gardener interventions should be surfaced aggressively in both current state and history because they are the weakest automation link.
 
 ### Hourly
 
@@ -57,7 +57,7 @@ Owner: cron + direct scripts.
 ### Daily
 
 - **ingest:** the last 24 hours of hourly artifacts, both 12h summaries, `predictions/current.json`, and relevant gardener actions for water, pruning, feeding, or environment changes
-- **process / judgment:** compress the day into a readable operational story, judge whether daily expectations for growth, water, pruning, and light behavior were met, and decide what needs attention tomorrow
+- **process / judgment:** compress the day into a readable operational story, judge whether daily expectations for growth, water, pruning, and light behavior were met, decide what needs attention tomorrow, and make any gardener intervention status obvious
 - **output artifacts:** one daily summary plus any updated prediction state in `predictions/current.json` and one appended history entry with explicit delta, including open questions when evidence is weak
 - **feeds next slower layer:** gives the weekly layer day-sized judgments instead of forcing it to recompute from every hourly capture
 - **reliability:** verify hourly evidence was good enough to trust
@@ -65,7 +65,7 @@ Owner: cron + direct scripts.
 ### Weekly
 
 - **ingest:** daily summaries, daily selected/representative pictures, relevant 12h summaries for anomalies, `predictions/current.json`, and the week’s material gardener interventions
-- **process / judgment:** compare several days of trend, correct the trend model from curated evidence, and decide which deviations are recurring, structural, or still ambiguous
+- **process / judgment:** compare several days of trend, correct the trend model from curated evidence, decide which deviations are recurring, structural, or still ambiguous, and keep gardener interventions prominent in the inherited prediction state and summary
 - **output artifacts:** one weekly summary plus any updated trend state in `predictions/current.json`, one appended history entry with explicit delta, and a short operator-priority list for the coming week
 - **image policy:** do **not** reread all raw hourly pictures at weekly scope; weekly works from daily summaries + curated daily evidence + prediction history
 - **feeds next slower layer:** provides the monthly layer with trend judgments, recurring failure modes, selected evidence, and whether the crop path still looks viable
@@ -106,6 +106,7 @@ Recommended fields:
 - `question`
 - `current_state`
 - `basis`
+- `gardener_interventions`
 - `target_window`
 - `expected_actor`
 - `taste_yield_relevance`

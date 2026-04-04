@@ -40,6 +40,8 @@ The grow loop has three actors:
 - **gardener**: what the human did or failed to do
 - **system / Plamp**: what sensing/scheduling/inference/logging did or failed to do
 
+Gardener interventions are the weakest automation link, so actions like move to tower, add food, and change water should be obvious in current prediction state and cadence summaries.
+
 Every cadence should answer, concretely:
 
 1. what happened?
@@ -47,7 +49,7 @@ Every cadence should answer, concretely:
 3. what does it mean for taste/yield?
 4. what changed in the model?
 
-Higher-frequency artifacts should prepare inputs for lower-frequency review. The handoff is explicit:
+Higher-frequency artifacts should prepare inputs for lower-frequency review. The handoff is explicit, and cadence checks should update prediction state/history instead of stopping at raw evidence:
 
 - hourly artifacts feed the 12h review
 - 12h summaries feed the daily review

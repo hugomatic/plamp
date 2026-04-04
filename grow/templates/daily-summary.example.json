@@ -7,10 +7,10 @@
   "what_happened": "Hourly captures mostly landed; one overnight gap needed repair and morning vigor looked slightly better.",
   "what_was_expected": "Cron should have covered every hour and the daytime window should have shown stable light-on behavior.",
   "taste_yield_meaning": "No clear taste/yield tradeoff changed yet, but stable vigor is mildly encouraging.",
-  "model_change": "Keep the slight-vigor-improvement prediction open, lower confidence in capture reliability, and nominate one representative daylight photo plus one anomaly photo for weekly review if tomorrow stays ambiguous.",
+  "model_change": "Update prediction state/history from the day: keep the slight-vigor-improvement prediction open, lower confidence in capture reliability, and keep any gardener intervention status prominent in the current prediction state and tomorrow summary.",
   "attribution": {
     "nature": "Possible small vigor improvement.",
-    "gardener": "No new gardener action recorded.",
+    "gardener": "No new gardener action recorded; if a move to tower, add food, or change water happened, it should be surfaced prominently here and in current prediction state.",
     "system": "One missed hourly capture required repair."
   },
   "open_questions": [
