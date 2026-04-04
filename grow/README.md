@@ -28,8 +28,8 @@ grow/grows/<grow-id>/captures/YYYY-MM-DD/       # hourly images + sidecar metada
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.jpg
 grow/grows/<grow-id>/captures/YYYY-MM-DD/*.json
 grow/grows/<grow-id>/summaries/                 # 12h/daily/weekly/monthly review artifacts
-grow/grows/<grow-id>/predictions/               # durable prediction artifacts by cadence
-grow/grows/<grow-id>/amendments/                # additive judgment updates, never history rewrites
+grow/grows/<grow-id>/predictions/current.json   # latest prediction belief/state
+grow/grows/<grow-id>/predictions/history.jsonl  # append-only prediction changes with explicit deltas
 ```
 
 Image sidecar metadata is intentionally plain JSON so later tooling can compare captures without opening the event log.
@@ -51,13 +51,13 @@ Higher-frequency artifacts should prepare inputs for lower-frequency review. The
 
 - hourly artifacts feed the 12h review
 - 12h summaries feed the daily review
-- daily summaries + daily selected/representative pictures + prediction amendments feed the weekly review
+- daily summaries + daily selected/representative pictures + prediction history feed the weekly review
 - weekly summaries + selected evidence can feed the monthly review
 
 Weekly is for trend + model correction from curated evidence, not rereading all raw pictures.
 Monthly is for lessons + selected evidence + visual story, and may include a small high-signal gallery or before/after pair.
 
-That keeps slower layers from recomputing everything from scratch and preserves the durable-facts + additive-judgments model.
+That keeps slower layers from recomputing everything from scratch and preserves the durable-facts + current-state-plus-history judgment model.
 
 Each capture sidecar stores:
 
@@ -73,7 +73,7 @@ Each capture sidecar stores:
 
 `events.jsonl` is the human/audit timeline. One JSON object per line.
 
-Observations in that timeline should remain fixed. Predictions and later amendments belong in their own artifacts so old facts stay intact while judgments improve.
+Observations in that timeline should remain fixed. Prediction handling is separate: each cadence reads `predictions/current.json`, updates it if needed, and appends a `predictions/history.jsonl` entry that includes the explicit delta/change.
 
 ## Direct tools
 
@@ -111,6 +111,7 @@ What it does:
 2. write image sidecar metadata
 3. compare current vs previous capture for likely light state change
 4. append structured events to `events.jsonl`
+5. when prediction state changes, update `predictions/current.json` and append `predictions/history.jsonl`
 
 ## Scheduling
 
@@ -126,7 +127,7 @@ Cron example:
 
 Or systemd timer if Hugo wants a managed service later.
 
-When writing sidecars, summaries, predictions, or amendments, keep outputs answer-first and additive.
+When writing sidecars, summaries, or prediction state/history artifacts, keep outputs answer-first and additive.
 
 Tracked runtime artifact examples live in [`templates/`](./templates/).
 

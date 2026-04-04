@@ -1,11 +1,16 @@
 {
-  "amendment_id": "amd-2026-04-02-light-window-check-1",
-  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "history_id": "predhist-2026-04-02-light-window-check-1",
   "created_at": "2026-04-02T21:30:00Z",
-  "prediction_id": "pred-2026-04-02-light-window-check",
-  "amends_prediction_id": "pred-2026-04-02-light-window-check",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "scope": "12h",
+  "question": "Will the next daylight window show the expected light-on pattern and stable framing?",
+  "delta": {
+    "confidence": "lower",
+    "current_state": "brightness rise happened but was less clear than expected; keep the question open and request gardener review if the next window is still unclear"
+  },
+  "previous_state_summary": "Expected a clear brightness rise, stable framing, and no repair capture.",
+  "new_state_summary": "Keep the prediction open, but lower confidence in the light inference until another clear window appears.",
   "reason": "Brightness rose, but not as clearly as expected.",
-  "updated_judgment": "Do not rewrite the original prediction. Add this amendment lowering confidence in the system/light inference and request gardener review if the next window is still unclear.",
   "basis": [
     "Observed capture brightness trend",
     "Human review still pending"
