@@ -4,16 +4,23 @@
   "scope": "daily",
   "period_start": "2026-04-02T00:00:00Z",
   "period_end": "2026-04-03T00:00:00Z",
-  "what_happened": "Hourly captures mostly landed; one overnight gap needed repair and morning vigor looked slightly better.",
+  "what_happened": "Hourly captures mostly landed; one overnight gap needed repair, morning vigor looked slightly better, and one visible scene change suggested a possible gardener intervention.",
   "what_was_expected": "Cron should have covered every hour and the daytime window should have shown stable light-on behavior.",
   "taste_yield_meaning": "No clear taste/yield tradeoff changed yet, but stable vigor is mildly encouraging.",
-  "model_change": "Update prediction state/history from the day: keep the slight-vigor-improvement prediction open, lower confidence in capture reliability, and keep any gardener intervention status prominent in the current prediction state and tomorrow summary.",
+  "model_change": "Update prediction state/history from the day: keep the slight-vigor-improvement prediction open, lower confidence in capture reliability, and keep any likely gardener intervention explicit until the gardener confirms or denies it.",
   "attribution": {
     "nature": "Possible small vigor improvement.",
     "gardener": "No new gardener action recorded; if a move to tower, add food, or change water happened, it should be surfaced prominently here and in current prediction state.",
     "system": "One missed hourly capture required repair."
   },
   "open_questions": [
-    "Do the next daylight captures confirm the vigor improvement?"
-  ]
+    "Do the next daylight captures confirm the vigor improvement?",
+    "Was the apparent scene change caused by pruning, harvest, a move, or another gardener action?"
+  ],
+  "possible_intervention": {
+    "type": "prune / harvest / move",
+    "status": "suspected",
+    "confirmed_by_gardener": null
+  },
+  "gardener_prompt_needed": true
 }

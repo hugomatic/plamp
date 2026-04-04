@@ -40,7 +40,7 @@ The grow loop has three actors:
 - **gardener**: what the human did or failed to do
 - **system / Plamp**: what sensing/scheduling/inference/logging did or failed to do
 
-Gardener interventions are the weakest automation link, so actions like move to tower, add food, and change water should be obvious in current prediction state and cadence summaries.
+Gardener interventions are the weakest automation link, so actions like move to tower, add food, and change water should be obvious in current prediction state and cadence summaries. Hourly checks should also detect likely human-caused changes from evidence such as visible scene change, pH/EC change, water change, or pruning/harvest/move indications, then prompt the gardener for confirmation when confidence is high enough to suspect a human action.
 
 Every cadence should answer, concretely:
 
@@ -114,6 +114,7 @@ What it does:
 3. compare current vs previous capture for likely light state change
 4. append structured events to `events.jsonl`
 5. when prediction state changes, update `predictions/current.json` and append `predictions/history.jsonl`
+6. if the evidence points to a likely gardener intervention, record it explicitly and ask for confirmation instead of treating it as settled plant behavior
 
 ## Scheduling
 

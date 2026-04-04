@@ -3,12 +3,23 @@
   "updated_at": "2026-04-02T21:30:00Z",
   "scope": "daily",
   "question": "What should the next cadence checks watch, and what gardener action matters most right now?",
-  "current_state": "Hourly/daylight checks should confirm stable light behavior while keeping recent gardener interventions visible in the inherited state.",
+  "current_state": "Hourly/daylight checks should confirm stable light behavior while also flagging likely gardener-caused changes for confirmation when the evidence suggests a human action.",
   "basis": [
     "Recent hourly checks",
     "Latest daily summary",
-    "Latest gardener note"
+    "Latest gardener note",
+    "Any recent pH/EC or water-change evidence"
   ],
+  "possible_intervention": {
+    "type": "water change",
+    "evidence": [
+      "EC shifted sharply after a reservoir refill window",
+      "Scene looks freshly disturbed near the basin"
+    ],
+    "status": "suspected"
+  },
+  "intervention_confidence": "medium",
+  "gardener_prompt_needed": true,
   "gardener_interventions": {
     "recent": [
       "move to tower",

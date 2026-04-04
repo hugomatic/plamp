@@ -3,12 +3,23 @@
   "updated_at": "2026-04-02T21:30:00Z",
   "scope": "daily",
   "question": "What should the next cadence checks be watching, and does the gardener need to do anything obvious?",
-  "current_state": "Expect the next hourly/daylight checks to confirm stable light behavior and no new repair captures, but keep gardener interventions prominent until recorded actions are reflected in the scene.",
+  "current_state": "Expect the next hourly/daylight checks to confirm stable light behavior and separate plant change from likely gardener interventions that need confirmation.",
   "basis": [
     "Recent hourly capture sequence",
     "Known timer expectations",
-    "Latest gardener notes or missing gardener notes"
+    "Latest gardener notes or missing gardener notes",
+    "Recent pH/EC or water-change evidence"
   ],
+  "possible_intervention": {
+    "type": "prune / harvest / move",
+    "evidence": [
+      "Visible scene change relative to previous hour",
+      "Canopy outline changed faster than expected from plant growth alone"
+    ],
+    "status": "suspected"
+  },
+  "intervention_confidence": "medium",
+  "gardener_prompt_needed": true,
   "target_window": {
     "start": "2026-04-02T18:00:00Z",
     "end": "2026-04-03T18:00:00Z"

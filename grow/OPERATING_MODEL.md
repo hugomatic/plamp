@@ -41,7 +41,8 @@ History entries must include the explicit delta/change from the previous state s
 Owner: cron + direct scripts.
 
 - **ingest:** current capture, previous capture/sidecar when present, `predictions/current.json` when present, grow config, and any recent gardener note already on disk
-- **process / judgment:** capture the scene, compare against the previous hour and current short-horizon expectation, classify obvious deviations, and decide whether the miss looks like nature, gardener, system, or still-unclear
+- **process / judgment:** capture the scene, compare against the previous hour and current short-horizon expectation, classify obvious deviations, detect likely gardener interventions from evidence (for example visible scene change, pH/EC change, water change, pruning/harvest/move indications), and decide whether the miss looks like nature, gardener, system, or still-unclear
+- **gardener confirmation rule:** when evidence suggests a human-caused change, the hourly layer should surface it as a likely intervention and prompt the gardener for confirmation instead of silently treating it as plant behavior
 - **output artifacts:** append-only event record, capture sidecar, comparison summary, and when needed an updated `predictions/current.json` plus one appended `predictions/history.jsonl` entry with the delta
 - **feeds next slower layer:** provides the raw evidence and unresolved exceptions that the 12h review rolls up
 - **reliability:** confirm the reflex is alive
@@ -106,6 +107,9 @@ Recommended fields:
 - `question`
 - `current_state`
 - `basis`
+- `possible_intervention`
+- `intervention_confidence`
+- `gardener_prompt_needed`
 - `gardener_interventions`
 - `target_window`
 - `expected_actor`
@@ -124,6 +128,10 @@ Recommended fields per entry:
 - `scope`
 - `question`
 - `delta`
+- `possible_intervention`
+- `intervention_confidence`
+- `gardener_prompt_needed`
+- `gardener_confirmation`
 - `previous_state_summary`
 - `new_state_summary`
 - `reason`
@@ -138,6 +146,7 @@ Rules:
 - never rewrite or delete old `predictions/history.jsonl` entries
 - every history entry must state the explicit delta/change
 - explicitly note whether the deviation looks like nature, gardener, system, or still-unclear
+- when likely gardener intervention is inferred, record whether gardener confirmation is still needed or already confirmed/denied
 
 ## Suggested runtime layout
 
