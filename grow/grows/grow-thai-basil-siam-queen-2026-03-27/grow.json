@@ -1,0 +1,20 @@
+{
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "started_at": "2026-03-27",
+  "crop": {
+    "common_name": "Thai basil",
+    "cultivar": "Siam Queen"
+  },
+  "propagation": {
+    "medium": "Root Riot cubes",
+    "cube_count": 40,
+    "seeds_per_cube": 4,
+    "water": "plain water"
+  },
+  "plan": {
+    "next_selection": "choose best 30 later for iHarvest tower"
+  },
+  "camera": {
+    "capture_script": "/home/hugo/.openclaw/workspace/scripts/camera-shot.sh"
+  }
+}

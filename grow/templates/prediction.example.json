@@ -1,0 +1,38 @@
+{
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "updated_at": "2026-04-02T21:30:00Z",
+  "scope": "daily",
+  "question": "What should the next cadence checks be watching, and does the gardener need to do anything obvious?",
+  "current_state": "Expect the next hourly/daylight checks to confirm stable light behavior and separate plant change from likely gardener interventions that need confirmation.",
+  "basis": [
+    "Recent hourly capture sequence",
+    "Known timer expectations",
+    "Latest gardener notes or missing gardener notes",
+    "Recent pH/EC or water-change evidence"
+  ],
+  "possible_intervention": {
+    "type": "prune / harvest / move",
+    "evidence": [
+      "Visible scene change relative to previous hour",
+      "Canopy outline changed faster than expected from plant growth alone"
+    ],
+    "status": "suspected"
+  },
+  "intervention_confidence": "medium",
+  "gardener_prompt_needed": true,
+  "target_window": {
+    "start": "2026-04-02T18:00:00Z",
+    "end": "2026-04-03T18:00:00Z"
+  },
+  "expected_actor": "system / Plamp + gardener",
+  "gardener_interventions": {
+    "recent": [
+      "move to tower",
+      "add food",
+      "change water"
+    ],
+    "prominence": "Keep these visible in current state and summaries because gardener actions are the weakest automation link."
+  },
+  "taste_yield_relevance": "If sensing stays trustworthy and gardener interventions are timely, light and vigor judgments become more useful for later taste/yield decisions.",
+  "status": "open"
+}

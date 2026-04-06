@@ -1,0 +1,23 @@
+{
+  "summary_id": "12h-2026-04-02T12-grow-thai-basil-siam-queen-2026-03-27",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "scope": "12h",
+  "period_start": "2026-04-02T12:00:00Z",
+  "period_end": "2026-04-03T00:00:00Z",
+  "what_happened": "The daylight half-day window showed expected brightening, but one comparison stayed borderline and the reservoir evidence suggested a possible water change.",
+  "what_was_expected": "The daytime window should have been clearly classifiable as lights-on with no repair capture.",
+  "taste_yield_meaning": "No immediate crop-path change, but uncertain light evidence weakens near-term vigor judgment.",
+  "model_change": "Keep the prior prediction, add an amendment reducing confidence in the light inference, and ask the gardener to confirm or deny the suspected intervention if the evidence still points to a human-caused change.",
+  "attribution": {
+    "nature": "No clear plant-driven deviation in this half-day.",
+    "gardener": "No gardener-caused deviation recorded.",
+    "system": "Classification confidence stayed weaker than expected."
+  },
+  "possible_intervention": {
+    "type": "water change",
+    "status": "suspected",
+    "confirmed_by_gardener": null
+  },
+  "intervention_confidence": "medium",
+  "gardener_prompt_needed": true
+}
