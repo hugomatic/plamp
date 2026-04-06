@@ -167,6 +167,76 @@ module tripod() {
     
 }
 
+module instrument_hook() {
+
+    thick = 10;
+   
+    dy1 = 20;
+   
+    t2 = 1.25;
+    gap = 3;
+   
+    // red
+    dz1 = thick;
+    dx1 = 5;
+   
+    // blue
+    dx3 = t2;
+    dy3 = 60.8;
+   
+    // orange
+    dy4 = 1;
+   
+    // pink
+    dx5 = t2;
+    dy5 = 20;
+   
+    dx4 = dx3 + dx5 + gap;
+   
+     // mm per inch
+    i = 25.4;
+   
+   
+   
+    x1 = 0;
+    y1 = 0;
+    z1 = 0;
+    color("red") translate([x1, y1, z1]) cube([dx1, dy1, dz1]);
+   
+    thick2 = 5;
+    x2 = x1;
+    y2 = -thick2;
+    z2 = z1;
+    dx2 = dx1 + i +dx3;
+    dy2 = 5;
+    dz2 = dz1;
+    color("green") translate([x2, y2, z2])cube([dx2, dy2, dz2]);
+   
+    x3 = dx2  - dx3;
+    y3 = y1;
+    z3 = z2;
+    dz3 = dz2;
+    color("blue") translate([x3, y3, z3])cube([dx3, dy3, dz3]);
+   
+    x4 = x3;
+    y4 = dy3;
+    z4 = z3;
+    dz4 = dz3;
+    color("orange") translate([x4, y4, z4])cube([dx4, dy4, dz4]);
+   
+    x5 = x4 + dx4 - dx5;
+    y5 = dy3 - dy5;
+    z5 = z1;
+    dz5 = dz4;
+    color("pink") translate([x5, y5, z5])cube([dx5, dy5, dz5]);
+    echo("x", x5);
+    echo("y", y5);
+    echo("z", z5);
+    echo("dx",dx5);
+    echo("dy",dy5);
+    echo("dz",dz5);    
+   
+}
 
 module write_text(string) {
     z0 = - 0.25;
@@ -190,10 +260,6 @@ module rpi_holder () {
 
 echo(["view", view]); 
 
-if (view == "plate") {
-  camera_clip();
-  rpi_holder();
-}
 
 if (view == "tripod") {
   tripod();
@@ -205,12 +271,12 @@ if (view == "camera_clip") {
 }
 
 
-
-if (view == "assembly") { 
+if (view == "assembly" || view == "plate") {
    echo("assmenbly view"); 
    
-    rpi_holder();
-    camera_clip();
+   rpi_holder();
+   camera_clip();
+   translate([-5, -25, 0]) instrument_hook();
 }
 
 
