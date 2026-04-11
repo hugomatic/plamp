@@ -18,8 +18,9 @@ from fastapi.responses import HTMLResponse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_FILE = REPO_ROOT / "config.json"
-TIMERS_DIR = REPO_ROOT / "timers"
+DATA_DIR = REPO_ROOT / "data"
+CONFIG_FILE = DATA_DIR / "config.json"
+TIMERS_DIR = DATA_DIR / "timers"
 STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
@@ -32,6 +33,10 @@ pico_locks: dict[str, threading.Lock] = {}
 app = FastAPI(title="plamp Pico API")
 
 
+@app.on_event("startup")
+def startup() -> None:
+    ensure_data_dir()
+
 
 def lock_for(mapping: dict[str, threading.Lock], key: str) -> threading.Lock:
     with config_lock:
@@ -40,6 +45,13 @@ def lock_for(mapping: dict[str, threading.Lock], key: str) -> threading.Lock:
             lock = threading.Lock()
             mapping[key] = lock
         return lock
+
+
+def ensure_data_dir() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    TIMERS_DIR.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_FILE.exists():
+        atomic_write_json(CONFIG_FILE, {"timers": []})
 
 
 def load_json_file(path: Path) -> Any:
@@ -64,6 +76,7 @@ def atomic_write_json(path: Path, data: Any) -> None:
 
 
 def load_config() -> dict[str, Any]:
+    ensure_data_dir()
     data = load_json_file(CONFIG_FILE)
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail="config.json must be an object")
@@ -110,6 +123,7 @@ def timer_role(role: str) -> dict[str, Any]:
 
 def timer_state_path(role: str) -> Path:
     timer_role(role)
+    ensure_data_dir()
     return TIMERS_DIR / f"{role}.json"
 
 
