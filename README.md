@@ -26,10 +26,11 @@ A minimal Raspberry Pi Pico scheduler lives in:
 
 It reads a complete `state.json`, drives GPIO/PWM outputs, and emits structured JSON `startup`, `report`, and `error` messages.
 
-Host-side deployment uses `mpremote`.
+Host-side deployment uses `mpremote`. The FastAPI runtime page lives separately in `pico_api/` and runs with `uv run`.
 Start here:
 
 - [`pico_scheduler/README.md`](./pico_scheduler/README.md)
+- [`pico_api/README.md`](./pico_api/README.md)
 
 ### Things / printable parts
 

@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 
+# Local Python virtual environments
+.venv/
+
 # Local Pico scheduler state used for host-side deploys
 pico_scheduler/state.json
 

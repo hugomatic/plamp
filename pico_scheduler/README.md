@@ -131,6 +131,10 @@ mpremote cp state.json :state.json
 mpremote reset
 ```
 
+## Host API
+
+The FastAPI host app lives in `../pico_api/` so the firmware directory stays focused on files for the Pico. See `../pico_api/README.md` for setup and runtime page commands.
+
 ## Host update flow
 
 Keep `state.json` as a host-side working file, update it with an atomic replace, then copy it to the device and reset the board.
