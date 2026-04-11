@@ -1,0 +1,9 @@
+[project]
+name = "plamp"
+version = "0.1.0"
+description = "Host tools and firmware for plamp."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+]

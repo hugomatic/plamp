@@ -1,0 +1,8 @@
+{
+  "timers": [
+    {
+      "role": "pump_lights",
+      "pico_serial": "e66038b71387a039"
+    }
+  ]
+}

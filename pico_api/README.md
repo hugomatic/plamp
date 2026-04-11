@@ -57,6 +57,17 @@ curl -X PUT 'http://localhost:8000/api/timers/pump_lights?apply=false' \
   --data @timers/pump_lights.json
 ```
 
+The save-only response confirms that the host file was updated and the Pico was not touched:
+
+```json
+{
+  "role": "pump_lights",
+  "saved": true,
+  "apply_requested": false,
+  "apply_status": "skipped"
+}
+```
+
 Save and apply to the assigned Pico. This is the default because `current_t` is timing-sensitive:
 
 ```bash
@@ -65,6 +76,8 @@ curl -X PUT http://localhost:8000/api/timers/pump_lights \
   --data @timers/pump_lights.json
 ```
 
+The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when `mpremote` succeeds.
+
 The browser test page is available at:
 
 ```text
@@ -72,6 +85,8 @@ http://localhost:8000/timers/test
 ```
 
 It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, an apply radio for save-only vs save-and-reset, and generated curl commands for both GET and PUT.
+
+GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI.
 
 ## Run The Runtime Page
 
@@ -90,7 +105,13 @@ Open the runtime page:
 http://<raspberry-pi-ip>:8000/
 ```
 
-On this host right now, that is likely:
+On the local network, the hostname form may also work:
+
+```text
+http://raspberrypi.local:8000/
+```
+
+On this host right now, the IP form is likely:
 
 ```text
 http://192.168.68.56:8000/
