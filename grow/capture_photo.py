@@ -96,28 +96,8 @@ def main() -> int:
         "camera_command": [str(script), str(image_path)],
         "camera_summary": camera_summary,
         "camera_stderr": completed.stderr.strip(),
-        "brightness_mean": brightness,
-        "previous_capture": None,
-        "comparison": {
-            "status": "pending",
-            "reason": "run compare_light.py or hourly_tend.py to evaluate against previous capture"
-        },
-        "ai_compare": {
-            "status": "ready",
-            "current_image_path": str(image_path.relative_to(REPO_ROOT)),
-            "previous_image_path": None,
-            "question": "Compare the two grow photos. Is the grow light on or off in the current image? Note any obvious scene change or camera framing problem."
-        }
+        "brightness_mean": brightness
     }
-
-    if previous_sidecar_path and previous_sidecar_path != image_path.with_suffix('.json'):
-        previous = json.loads(previous_sidecar_path.read_text(encoding="utf-8"))
-        metadata["previous_capture"] = {
-            "timestamp": previous.get("timestamp"),
-            "image_path": previous.get("image_path"),
-            "brightness_mean": previous.get("brightness_mean"),
-        }
-        metadata["ai_compare"]["previous_image_path"] = previous.get("image_path")
 
     sidecar_path = image_path.with_suffix(".json")
     sidecar_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -131,7 +111,6 @@ def main() -> int:
             "data": {
                 "image_path": metadata["image_path"],
                 "brightness_mean": metadata["brightness_mean"],
-                "previous_image_path": None if metadata["previous_capture"] is None else metadata["previous_capture"]["image_path"],
             },
         },
     )
