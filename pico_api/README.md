@@ -102,15 +102,13 @@ For deployment, use port 80 through a service or reverse proxy instead of the de
 Open the runtime page:
 
 ```text
-http://<raspberry-pi-ip>:8000/
+http://<hostname>:8000/
 ```
 
-If mDNS is available, the hostname form may also work. Use the hostname shown in the Network section of the runtime page.
-
-On this host right now, the IP form is likely:
+Or use the Pi IP address directly:
 
 ```text
-http://192.168.68.56:8000/
+http://<raspberry-pi-ip>:8000/
 ```
 
 The JSON version is available at:
