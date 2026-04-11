@@ -105,11 +105,7 @@ Open the runtime page:
 http://<raspberry-pi-ip>:8000/
 ```
 
-On the local network, the hostname form may also work:
-
-```text
-http://raspberrypi.local:8000/
-```
+If mDNS is available, the hostname form may also work. Use the hostname shown in the Network section of the runtime page.
 
 On this host right now, the IP form is likely:
 
