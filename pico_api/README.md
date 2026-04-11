@@ -28,7 +28,7 @@ uv run python -c "import fastapi, uvicorn"
 
 ## Timer API
 
-Timer roles are configured in `../config.json`. Each role maps to a Pico serial number:
+Timer roles are configured in `../data/config.json`. The app creates `../data/`, `../data/timers/`, and an empty config file if they do not exist. The `data/` directory is local runtime data and is ignored by git. Each role maps to a Pico serial number:
 
 ```json
 {
@@ -41,7 +41,7 @@ Timer roles are configured in `../config.json`. Each role maps to a Pico serial 
 }
 ```
 
-Each timer role has a scheduler state file under `../timers/`. For example, `../timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
+Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
 Read the current saved timer state:
 
@@ -54,7 +54,18 @@ Save only, without copying to the Pico or resetting it:
 ```bash
 curl -X PUT 'http://localhost:8000/api/timers/pump_lights?apply=false' \
   -H 'content-type: application/json' \
-  --data @timers/pump_lights.json
+  --data @data/timers/pump_lights.json
+```
+
+The save-only response confirms that the host file was updated and the Pico was not touched:
+
+```json
+{
+  "role": "pump_lights",
+  "saved": true,
+  "apply_requested": false,
+  "apply_status": "skipped"
+}
 ```
 
 Save and apply to the assigned Pico. This is the default because `current_t` is timing-sensitive:
@@ -62,8 +73,10 @@ Save and apply to the assigned Pico. This is the default because `current_t` is 
 ```bash
 curl -X PUT http://localhost:8000/api/timers/pump_lights \
   -H 'content-type: application/json' \
-  --data @timers/pump_lights.json
+  --data @data/timers/pump_lights.json
 ```
+
+The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when `mpremote` succeeds.
 
 The browser test page is available at:
 
@@ -72,6 +85,8 @@ http://localhost:8000/timers/test
 ```
 
 It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, an apply radio for save-only vs save-and-reset, and generated curl commands for both GET and PUT.
+
+GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI.
 
 ## Run The Runtime Page
 
@@ -87,13 +102,13 @@ For deployment, use port 80 through a service or reverse proxy instead of the de
 Open the runtime page:
 
 ```text
-http://<raspberry-pi-ip>:8000/
+http://<hostname>:8000/
 ```
 
-On this host right now, that is likely:
+Or use the Pi IP address directly:
 
 ```text
-http://192.168.68.56:8000/
+http://<raspberry-pi-ip>:8000/
 ```
 
 The JSON version is available at:
