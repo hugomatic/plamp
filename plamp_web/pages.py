@@ -148,6 +148,7 @@ def render_timer_dashboard_page(
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
   <div id="timer-editor-panel" class="timer-editor" hidden></div>
+  <footer>Refreshing in <span id="refresh-countdown">30</span>s</footer>
 
   <script>
     const clockTimeFormat = __TIME_FORMAT__;
@@ -159,6 +160,8 @@ def render_timer_dashboard_page(
     const timerBoard = document.getElementById("timer-status-board");
     const timerEditorPanel = document.getElementById("timer-editor-panel");
     const hostClock = document.getElementById("host-clock");
+    const refreshCountdown = document.getElementById("refresh-countdown");
+    let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
 
@@ -191,6 +194,15 @@ def render_timer_dashboard_page(
     function hostSecondsNow() {
       const elapsed = Math.floor((Date.now() - timerHostLoadedAt) / 1000);
       return (timerHostSecondsAtLoad + elapsed) % 86400;
+    }
+
+    function tickPageRefresh() {
+      refreshSeconds -= 1;
+      if (refreshSeconds <= 0) {
+        window.location.reload();
+        return;
+      }
+      refreshCountdown.textContent = String(refreshSeconds);
     }
 
     async function refreshHostClock() {
@@ -482,6 +494,7 @@ def render_timer_dashboard_page(
     window.addEventListener("beforeunload", stopTimerStreams);
     refreshHostClock();
     setInterval(refreshHostClock, 30000);
+    setInterval(tickPageRefresh, 1000);
     startTimerStreams();
   </script>
 </body>
