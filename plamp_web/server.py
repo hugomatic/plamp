@@ -21,6 +21,7 @@ import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
 from plamp_web.pages import render_settings_page, render_timer_dashboard_page, render_timer_test_page
+from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -993,11 +994,41 @@ def enumerate_picos() -> list[dict[str, Any]]:
     return detected
 
 
+def state_for_role(role: str) -> dict[str, Any]:
+    latest = latest_timer_state(role)
+    if latest is not None:
+        return latest
+    path = timer_state_path(role)
+    state = load_json_file(path)
+    return state_with_current_values(validate_timer_state(state))
+
+
+def live_events_for_role(role: str) -> list[dict[str, Any]]:
+    latest = latest_timer_state(role)
+    events = latest.get("events") if isinstance(latest, dict) else None
+    return events if isinstance(events, list) else []
+
+
 def configured_timer_roles() -> list[str]:
     try:
         return sorted(timer_roles())
     except HTTPException:
         return []
+
+
+def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
+    result: dict[str, list[dict[str, Any]]] = {}
+    try:
+        roles = timer_roles()
+    except HTTPException:
+        return result
+    for role, item in roles.items():
+        try:
+            state = state_for_role(role)
+            result[role] = channel_metadata_for_role(role, item, state)
+        except (HTTPException, ValueError):
+            result[role] = []
+    return result
 
 
 def configured_time_format() -> str:
@@ -1008,8 +1039,21 @@ def configured_time_format() -> str:
     return "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
 
 
+def host_time_summary() -> dict[str, Any]:
+    now = datetime.now()
+    seconds = now.hour * 3600 + now.minute * 60 + now.second
+    if configured_time_format() == "24h":
+        display = now.strftime("%H:%M")
+    else:
+        hour = now.hour % 12 or 12
+        suffix = "AM" if now.hour < 12 else "PM"
+        display = f"{hour}:{now.minute:02d} {suffix}"
+    return {"iso": now.isoformat(timespec="seconds"), "seconds_since_midnight": seconds, "display": display}
+
+
 def settings_summary() -> dict[str, Any]:
     return {
+        "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
             "fqdn": socket.getfqdn(),
@@ -1039,16 +1083,52 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
 
 
+@app.get("/api/timer-config")
+def get_timer_config() -> dict[str, Any]:
+    return {"roles": configured_timer_roles(), "channels": configured_timer_channels(), "time_format": configured_time_format()}
+
+
+@app.get("/api/host-time")
+def get_host_time() -> dict[str, Any]:
+    return host_time_summary()
+
+
+@app.post("/api/timers/{role}/channels/{channel_id}/schedule")
+def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    role_config = timer_role(role)
+    current_state = state_for_role(role)
+    channels = channel_metadata_for_role(role, role_config, current_state)
+    try:
+        updated = patch_channel_schedule(
+            current_state,
+            channels,
+            channel_id,
+            schedule,
+            live_events=live_events_for_role(role),
+            now=datetime.now().time(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    validated = validate_timer_state(updated)
+    path = timer_state_path(role)
+    with lock_for(role_locks, role):
+        atomic_write_json(path, validated)
+        sent = apply_timer_state(role, path)
+    return {
+        "role": role,
+        "channel": channel_id,
+        "success": True,
+        "message": "schedule saved and sent to Pico",
+        "pico": sent,
+        "state": state_with_current_values(validated),
+    }
+
+
 @app.get("/api/timers/{role}", response_model=None)
 def get_timer(role: str, stream: bool = Query(False)) -> Any:
     if stream:
         return stream_timer_events(role)
-    latest = latest_timer_state(role)
-    if latest is not None:
-        return latest
-    path = timer_state_path(role)
-    state = load_json_file(path)
-    return state_with_current_values(validate_timer_state(state))
+    return state_for_role(role)
 
 
 @app.put("/api/timers/{role}")
@@ -1086,4 +1166,11 @@ def get_settings_page() -> HTMLResponse:
 
 @app.get("/", response_class=HTMLResponse)
 def get_timer_dashboard_page() -> HTMLResponse:
-    return HTMLResponse(render_timer_dashboard_page(configured_timer_roles(), configured_time_format()))
+    return HTMLResponse(
+        render_timer_dashboard_page(
+            configured_timer_roles(),
+            configured_time_format(),
+            configured_timer_channels(),
+            seconds_since_midnight(),
+        )
+    )

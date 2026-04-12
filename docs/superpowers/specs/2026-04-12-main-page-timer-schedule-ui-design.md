@@ -78,6 +78,7 @@ The main page keeps the current status-card visualization:
 - Progress through the current step.
 - Stream status for configured Pico roles.
 - Host/server time at minute accuracy, refreshed in the page, so clock-based schedule edits have an obvious time reference.
+- Settings page host/server time at minute accuracy; the existing 30-second page reload is enough to refresh it there.
 
 Each timer card gets an edit action. Editing opens an inline panel or compact dialog for that channel. The editor changes schedule behavior only; it does not change board role, Pico serial, channel name, pin, or output type.
 
@@ -157,6 +158,7 @@ Manual test paths:
 - Cycle set apply behavior can preserve phase, start now, and jump to next change.
 - 24h set saves ON/OFF clock times and reports a phase aligned with host time after reset.
 - Host/server time appears on the main page with minute accuracy and refreshes while the page is open.
+- Host/server time appears on the settings page with minute accuracy and refreshes through the existing 30-second reload.
 - Saving one channel PUTs a full board state and keeps unedited channels in sensible phases.
 - PUT failure leaves the edit form intact and shows the error.
 

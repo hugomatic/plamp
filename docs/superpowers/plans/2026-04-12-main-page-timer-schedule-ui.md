@@ -13,8 +13,8 @@
 ## File Structure
 
 - Create `plamp_web/timer_schedule.py`: Pure helper functions for channel config normalization, two-step pattern inspection, cycle schedule generation, 24-hour clock schedule generation, and board state patching.
-- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose host time via `/api/host-time`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, and pass channel metadata plus initial host time to the main page renderer.
-- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy, add channel metadata and initial host seconds-since-midnight into the page bootstrap JSON, refresh host time through `/api/host-time`, add edit controls and the schedule editor JavaScript.
+- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose host time via `/api/host-time`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, pass channel metadata plus initial host time to the main page renderer, and include host time in the settings summary.
+- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy on the main page and settings page, add channel metadata and initial host seconds-since-midnight into the main page bootstrap JSON, refresh main-page host time through `/api/host-time`, add edit controls and the schedule editor JavaScript.
 - Create `tests/test_timer_schedule.py`: Unit tests for pure helper behavior.
 - Modify `plamp_web/README.md`: Document the optional `channels` config shape and the main-page schedule editor.
 
@@ -544,10 +544,7 @@ def get_timer_config() -> dict[str, Any]:
 
 @app.get("/api/host-time")
 def get_host_time() -> dict[str, Any]:
-    now = datetime.now()
-    seconds = now.hour * 3600 + now.minute * 60 + now.second
-    display = now.strftime("%H:%M") if configured_time_format() == "24h" else now.strftime("%-I:%M %p")
-    return {"iso": now.isoformat(timespec="seconds"), "seconds_since_midnight": seconds, "display": display}
+    return host_time_summary()
 
 
 @app.post("/api/timers/{role}/channels/{channel_id}/schedule")
@@ -955,6 +952,7 @@ Open `http://localhost:8000/` and verify:
 - The card still shows ON/OFF state, pin, type, next change, and progress.
 - The card has an `Edit schedule` button.
 - Host time appears near the timer status with minute accuracy and updates while the page is open.
+- The settings page shows host time with minute accuracy and the existing 30-second reload refreshes it.
 - Opening the editor defaults to `Cycle set` if the config lacks `channels`.
 
 - [ ] **Step 5: Verify configured channel metadata manually**
