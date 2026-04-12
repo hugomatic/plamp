@@ -77,6 +77,7 @@ The main page keeps the current status-card visualization:
 - Pin, output type, raw value, next change time.
 - Progress through the current step.
 - Stream status for configured Pico roles.
+- Host/server time at minute accuracy, refreshed in the page, so clock-based schedule edits have an obvious time reference.
 
 Each timer card gets an edit action. Editing opens an inline panel or compact dialog for that channel. The editor changes schedule behavior only; it does not change board role, Pico serial, channel name, pin, or output type.
 
@@ -113,7 +114,7 @@ Cycle set can load any two-step on/off pattern. When saving:
 - ON time.
 - OFF time.
 
-When saving, it generates a 24-hour repeating pattern with ON and OFF durations in seconds. It always computes `current_t` from the host server clock, not the browser clock, so the timer phase matches the real day after the Pico resets.
+When saving, it generates a 24-hour repeating pattern with ON and OFF durations in seconds. It always computes `current_t` from the host server clock, not the browser clock, so the timer phase matches the real day after the Pico resets. The main page should display the host/server time to minute accuracy and refresh it so the user can see which clock is being used.
 
 24h set can be selected even if the current pattern is not already 24 hours. In that case, saving intentionally rewrites the event to a 24-hour cycle.
 
@@ -155,6 +156,7 @@ Manual test paths:
 - Cycle set can save seconds, minutes, and hours.
 - Cycle set apply behavior can preserve phase, start now, and jump to next change.
 - 24h set saves ON/OFF clock times and reports a phase aligned with host time after reset.
+- Host/server time appears on the main page with minute accuracy and refreshes while the page is open.
 - Saving one channel PUTs a full board state and keeps unedited channels in sensible phases.
 - PUT failure leaves the edit form intact and shows the error.
 

@@ -13,8 +13,8 @@
 ## File Structure
 
 - Create `plamp_web/timer_schedule.py`: Pure helper functions for channel config normalization, two-step pattern inspection, cycle schedule generation, 24-hour clock schedule generation, and board state patching.
-- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, and pass channel metadata to the main page renderer.
-- Modify `plamp_web/pages.py`: Keep the current status-card visualization, add channel metadata and host seconds-since-midnight into the page bootstrap JSON, add edit controls and the schedule editor JavaScript.
+- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, and pass channel metadata plus host time to the main page renderer.
+- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy, add channel metadata and host seconds-since-midnight into the page bootstrap JSON, add edit controls and the schedule editor JavaScript.
 - Create `tests/test_timer_schedule.py`: Unit tests for pure helper behavior.
 - Modify `plamp_web/README.md`: Document the optional `channels` config shape and the main-page schedule editor.
 
@@ -624,12 +624,19 @@ def render_timer_dashboard_page(
 ) -> str:
 ```
 
+Inside the returned `<body>`, near the stream status paragraph, add:
+
+```html
+  <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
+```
+
 Inside the returned `<script>`, after `const timerRoles = ...`, add:
 
 ```javascript
     const timerChannels = {json.dumps(channels_by_role or {})};
     const timerHostSecondsAtLoad = {json.dumps(host_seconds_since_midnight)};
     const timerHostLoadedAt = Date.now();
+    const hostClock = document.getElementById("host-clock");
 ```
 
 - [ ] **Step 2: Add CSS for the editor without changing the existing card visualization**
@@ -643,6 +650,7 @@ Inside the existing `<style>` block for `render_timer_dashboard_page()`, add:
     .editor-row { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; }
     .editor-row label { display: grid; gap: .25rem; }
     .editor-row select, .editor-row input { min-width: 8rem; }
+    .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
     .editor-note { color: #555; font-size: .9rem; }
     .editor-error { color: #9a3412; font-weight: 600; }
     .editor-success { color: #166534; font-weight: 600; }
@@ -699,6 +707,11 @@ Add these functions in the main page script after `timerEventsFromMessage()`:
     function hostSecondsNow() {
       const elapsed = Math.floor((Date.now() - timerHostLoadedAt) / 1000);
       return (timerHostSecondsAtLoad + elapsed) % 86400;
+    }
+
+    function renderHostClock() {
+      if (!hostClock) return;
+      hostClock.textContent = secondsToClock(hostSecondsNow());
     }
 
     function clockValuesForEvent(event) {
@@ -836,13 +849,24 @@ to:
           name.textContent = role + " / " + channel.name;
 ```
 
-- [ ] **Step 6: Run syntax check**
+- [ ] **Step 6: Start and refresh the host clock display**
+
+Near the bottom of the main page script, immediately before `startTimerStreams();`, add:
+
+```javascript
+    renderHostClock();
+    setInterval(renderHostClock, 10000);
+```
+
+The display intentionally updates every 10 seconds while showing only `HH:MM`, so it stays current without drawing attention to seconds-level drift.
+
+- [ ] **Step 7: Run syntax check**
 
 Run: `uv run python -m py_compile plamp_web/pages.py plamp_web/server.py plamp_web/timer_schedule.py`
 
 Expected: no output and exit code 0.
 
-- [ ] **Step 7: Commit Task 4**
+- [ ] **Step 8: Commit Task 4**
 
 ```bash
 git add plamp_web/pages.py plamp_web/server.py plamp_web/timer_schedule.py
@@ -914,6 +938,7 @@ Open `http://localhost:8000/` and verify:
 - The existing timer card still renders with the current `pump_lights` role.
 - The card still shows ON/OFF state, pin, type, next change, and progress.
 - The card has an `Edit schedule` button.
+- Host time appears near the timer status with minute accuracy and updates while the page is open.
 - Opening the editor defaults to `Cycle set` if the config lacks `channels`.
 
 - [ ] **Step 5: Verify configured channel metadata manually**
