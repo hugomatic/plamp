@@ -131,9 +131,9 @@ mpremote cp state.json :state.json
 mpremote reset
 ```
 
-## Host API
+## Host Web Server
 
-The FastAPI host app lives in `../pico_api/` so the firmware directory stays focused on files for the Pico. See `../pico_api/README.md` for setup and runtime page commands.
+The Plamp web server lives in `../plamp_web/` so the firmware directory stays focused on files for the Pico. See `../plamp_web/README.md` for setup and page commands.
 
 ## Host update flow
 

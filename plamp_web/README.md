@@ -1,6 +1,6 @@
-# pico_api
+# plamp_web
 
-Minimal FastAPI host app for the Pico scheduler.
+FastAPI web server for the Plamp dashboard, settings pages, and Pico scheduler APIs.
 
 This is host-only code. The MicroPython firmware stays in `../pico_scheduler/`, and the API reads host runtime information while leaving the Pico serial port alone.
 
@@ -83,7 +83,7 @@ During development, run with reload on port 8000:
 
 ```bash
 cd /home/hugo/.openclaw/workspace/code/plamp
-uv run uvicorn pico_api.server:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 For deployment, use port 80 through a service or reverse proxy instead of the development reload server.
