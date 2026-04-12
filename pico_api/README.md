@@ -71,7 +71,7 @@ curl -X PUT http://localhost:8000/api/timers/pump_lights \
   --data @data/timers/pump_lights.json
 ```
 
-If the Pico is disconnected or `mpremote` fails, the response returns a clear error and the monitor keeps retrying the serial connection by Pico serial.
+A successful PUT returns a short success message. If the Pico is disconnected or `mpremote` fails, the response explains which step failed and the monitor keeps retrying the serial connection by Pico serial.
 
 The browser test page is available at:
 

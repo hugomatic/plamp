@@ -523,13 +523,7 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
-        command.result = {
-            "role": self.role,
-            "port": port,
-            "serial": self.pico_serial,
-            "copy": "ok",
-            "reset": "ok",
-        }
+        command.result = {"role": self.role, "port": port, "serial": self.pico_serial}
         command.done.set()
         self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
         self.update_status("reconnecting", connected=False, port=port, error=None)
@@ -1323,7 +1317,7 @@ def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     with lock_for(role_locks, role):
         atomic_write_json(path, validated)
         sent = apply_timer_state(role, path)
-    return {"role": role, "saved": True, "sent_to_pico": True, "reset": True, "pico": sent}
+    return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
 
 
 @app.get("/timers/test", response_class=HTMLResponse)
