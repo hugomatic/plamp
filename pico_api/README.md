@@ -23,7 +23,7 @@ From the repo root, `uv run` will install the Python requirements from `pyprojec
 
 ```bash
 cd /home/hugo/.openclaw/workspace/code/plamp
-uv run python -c "import fastapi, uvicorn"
+uv run python -c "import fastapi, serial, uvicorn"
 ```
 
 ## Timer API
@@ -48,6 +48,14 @@ Read the current saved timer state:
 ```bash
 curl http://localhost:8000/api/timers/pump_lights
 ```
+
+Stream runtime reports from the monitor for that role:
+
+```bash
+curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
+```
+
+Each configured timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, emits stream events to connected HTTP clients, and temporarily closes serial before running `mpremote` copy/reset for `apply=true`.
 
 Save only, without copying to the Pico or resetting it:
 
@@ -76,7 +84,7 @@ curl -X PUT http://localhost:8000/api/timers/pump_lights \
   --data @data/timers/pump_lights.json
 ```
 
-The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when `mpremote` succeeds.
+The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when the role monitor finishes the `mpremote` copy/reset. If the Pico is disconnected or `mpremote` fails, the response returns a clear error and the monitor keeps retrying the serial connection by configured Pico serial.
 
 The browser test page is available at:
 

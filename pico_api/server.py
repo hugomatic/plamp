@@ -3,18 +3,23 @@ from __future__ import annotations
 import glob
 import html
 import json
+import logging
 import os
+import queue
 import re
 import shutil
 import socket
 import subprocess
 import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import serial
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -25,10 +30,12 @@ STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+LOGGER = logging.getLogger("pico_api")
 
 config_lock = threading.Lock()
 role_locks: dict[str, threading.Lock] = {}
-pico_locks: dict[str, threading.Lock] = {}
+monitors_lock = threading.Lock()
+monitors: dict[str, "PicoMonitor"] = {}
 
 app = FastAPI(title="plamp Pico API")
 
@@ -36,6 +43,12 @@ app = FastAPI(title="plamp Pico API")
 @app.on_event("startup")
 def startup() -> None:
     ensure_data_dir()
+    start_configured_monitors()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    stop_monitors()
 
 
 def lock_for(mapping: dict[str, threading.Lock], key: str) -> threading.Lock:
@@ -220,23 +233,326 @@ def pico_for_role(role: str) -> dict[str, Any]:
     raise HTTPException(status_code=409, detail=f"Pico for role {role} is not connected: {serial}")
 
 
-def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    pico = pico_for_role(role)
-    port = pico["port"]
-    mpremote = shutil.which("mpremote")
-    if not mpremote:
-        raise HTTPException(status_code=500, detail="mpremote not found")
+@dataclass
+class ApplyCommand:
+    path: Path
+    done: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, Any] | None = None
+    error_status: int | None = None
+    error_detail: Any = None
 
-    serial = str(pico["serial"])
-    with lock_for(pico_locks, serial):
-        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(path), ":state.json"], timeout=30)
+
+class PicoMonitor:
+    def __init__(self, role: str, pico_serial: str):
+        self.role = role
+        self.pico_serial = pico_serial
+        self.commands: queue.Queue[ApplyCommand] = queue.Queue()
+        self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.wake_event = threading.Event()
+        self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
+        self.summary: dict[str, Any] = {
+            "role": role,
+            "serial": pico_serial,
+            "state": "starting",
+            "connected": False,
+            "port": None,
+            "last_seen": None,
+            "last_error": None,
+            "last_report": None,
+        }
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.wake_event.set()
+
+    def join(self, timeout: float = 2.0) -> None:
+        self.thread.join(timeout=timeout)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.summary)
+
+    def subscribe(self) -> queue.Queue[dict[str, Any]]:
+        subscriber: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=100)
+        with self.lock:
+            self.subscribers.add(subscriber)
+        return subscriber
+
+    def unsubscribe(self, subscriber: queue.Queue[dict[str, Any]]) -> None:
+        with self.lock:
+            self.subscribers.discard(subscriber)
+
+    def publish(self, event: str, data: dict[str, Any]) -> None:
+        payload = {"event": event, "data": data}
+        with self.lock:
+            subscribers = list(self.subscribers)
+        for subscriber in subscribers:
+            try:
+                subscriber.put_nowait(payload)
+            except queue.Full:
+                try:
+                    subscriber.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    subscriber.put_nowait(payload)
+                except queue.Full:
+                    pass
+
+    def update_status(self, state: str, *, connected: bool | None = None, port: str | None = None, error: Any = None) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        changed = False
+        with self.lock:
+            if self.summary.get("state") != state:
+                self.summary["state"] = state
+                changed = True
+            if connected is not None and self.summary.get("connected") != connected:
+                self.summary["connected"] = connected
+                changed = True
+            if port is not None and self.summary.get("port") != port:
+                self.summary["port"] = port
+                changed = True
+            if error != self.summary.get("last_error"):
+                self.summary["last_error"] = error
+                changed = True
+            self.summary["updated_at"] = now
+            snapshot = dict(self.summary)
+        if changed:
+            LOGGER.info(
+                "pico monitor %s state=%s connected=%s port=%s error=%s",
+                self.role,
+                snapshot.get("state"),
+                snapshot.get("connected"),
+                snapshot.get("port"),
+                snapshot.get("last_error"),
+            )
+            self.publish("status", snapshot)
+
+    def find_port(self) -> str | None:
+        for pico in enumerate_picos():
+            if pico.get("serial") == self.pico_serial:
+                return str(pico["port"])
+        return None
+
+    def open_serial(self) -> serial.Serial | None:
+        port = self.find_port()
+        if not port:
+            self.update_status("disconnected", connected=False, error="configured Pico is not connected")
+            return None
+        try:
+            conn = serial.Serial(port, baudrate=115200, timeout=0.5)
+        except (OSError, serial.SerialException) as exc:
+            self.update_status("disconnected", connected=False, port=port, error=str(exc))
+            return None
+        self.update_status("connected", connected=True, port=port, error=None)
+        self.publish("snapshot", self.snapshot())
+        return conn
+
+    def close_serial(self, conn: serial.Serial | None) -> None:
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except (OSError, serial.SerialException):
+            pass
+
+    def handle_line(self, raw: bytes) -> None:
+        text = raw.decode("utf-8", errors="replace").strip()
+        if not text:
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        try:
+            report = json.loads(text)
+        except json.JSONDecodeError as exc:
+            error = f"invalid JSON from Pico: {exc}"
+            with self.lock:
+                self.summary["last_seen"] = now
+                self.summary["last_error"] = error
+            LOGGER.warning("pico monitor %s invalid JSON: %s", self.role, text)
+            self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
+            return
+        with self.lock:
+            self.summary["last_seen"] = now
+            self.summary["last_error"] = None
+            self.summary["last_report"] = report
+            snapshot = dict(self.summary)
+        self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": report})
+        if isinstance(report, dict) and report.get("type") == "startup":
+            self.publish("snapshot", snapshot)
+
+    def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
+        command = ApplyCommand(path=path)
+        self.commands.put(command)
+        self.wake_event.set()
+        if not command.done.wait(timeout=timeout):
+            raise HTTPException(status_code=504, detail="timed out waiting for Pico apply")
+        if command.error_status is not None:
+            raise HTTPException(status_code=command.error_status, detail=command.error_detail)
+        if command.result is None:
+            raise HTTPException(status_code=500, detail="Pico apply finished without a result")
+        return command.result
+
+    def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> serial.Serial | None:
+        self.close_serial(conn)
+        self.update_status("applying", connected=False, error=None)
+        port = self.find_port()
+        if not port:
+            command.error_status = 409
+            command.error_detail = f"Pico for role {self.role} is not connected: {self.pico_serial}"
+            command.done.set()
+            self.update_status("disconnected", connected=False, error=command.error_detail)
+            return None
+
+        mpremote = shutil.which("mpremote")
+        if not mpremote:
+            command.error_status = 500
+            command.error_detail = "mpremote not found"
+            command.done.set()
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
+        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(command.path), ":state.json"], timeout=30)
         if copy_rc != 0:
-            raise HTTPException(status_code=502, detail={"step": "copy", "stdout": copy_out, "stderr": copy_err})
+            command.error_status = 502
+            command.error_detail = {"step": "copy", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote copy failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "copy", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
         reset_rc, reset_out, reset_err = run_command([mpremote, "connect", port, "reset"], timeout=15)
         if reset_rc != 0:
-            raise HTTPException(status_code=502, detail={"step": "reset", "stdout": reset_out, "stderr": reset_err})
+            command.error_status = 502
+            command.error_detail = {"step": "reset", "returncode": reset_rc, "stdout": reset_out, "stderr": reset_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote reset failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "reset", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
 
-    return {"role": role, "port": port, "serial": serial, "copy_stdout": copy_out, "reset_stdout": reset_out}
+        command.result = {
+            "role": self.role,
+            "port": port,
+            "serial": self.pico_serial,
+            "copy_stdout": copy_out,
+            "reset_stdout": reset_out,
+        }
+        command.done.set()
+        self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
+        self.update_status("reconnecting", connected=False, port=port, error=None)
+        time.sleep(0.5)
+        return None
+
+    def run(self) -> None:
+        conn: serial.Serial | None = None
+        retry_sleep = 1.0
+        while not self.stop_event.is_set():
+            try:
+                try:
+                    command = self.commands.get_nowait()
+                except queue.Empty:
+                    command = None
+                if command is not None:
+                    conn = self.handle_apply(command, conn)
+                    continue
+
+                if conn is None or not conn.is_open:
+                    conn = self.open_serial()
+                    if conn is None:
+                        self.wake_event.wait(retry_sleep)
+                        self.wake_event.clear()
+                        retry_sleep = min(retry_sleep * 2, 5.0)
+                        continue
+                    retry_sleep = 1.0
+
+                try:
+                    line = conn.readline()
+                except (OSError, serial.SerialException) as exc:
+                    port = getattr(conn, "port", None)
+                    self.close_serial(conn)
+                    conn = None
+                    self.update_status("disconnected", connected=False, port=port, error=str(exc))
+                    continue
+                if line:
+                    self.handle_line(line)
+            except Exception as exc:
+                self.update_status("error", connected=False, error=str(exc))
+                self.stop_event.wait(1.0)
+        self.close_serial(conn)
+        self.update_status("stopped", connected=False)
+
+
+def get_or_start_monitor(role: str) -> PicoMonitor:
+    item = timer_role(role)
+    pico_serial = str(item["pico_serial"])
+    with monitors_lock:
+        monitor = monitors.get(role)
+        if monitor is None or monitor.pico_serial != pico_serial:
+            if monitor is not None:
+                monitor.stop()
+            monitor = PicoMonitor(role, pico_serial)
+            monitors[role] = monitor
+            monitor.start()
+        return monitor
+
+
+def start_configured_monitors() -> None:
+    try:
+        roles = timer_roles()
+    except HTTPException:
+        return
+    for role in roles:
+        get_or_start_monitor(role)
+
+
+def stop_monitors() -> None:
+    with monitors_lock:
+        active = list(monitors.values())
+        monitors.clear()
+    for monitor in active:
+        monitor.stop()
+    for monitor in active:
+        monitor.join()
+
+
+def monitor_summaries() -> dict[str, dict[str, Any]]:
+    with monitors_lock:
+        active = dict(monitors)
+    return {role: monitor.snapshot() for role, monitor in active.items()}
+
+
+def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
+    return get_or_start_monitor(role).apply(path)
+
+
+def sse_message(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+def stream_timer_events(role: str) -> StreamingResponse:
+    monitor = get_or_start_monitor(role)
+
+    def events():
+        subscriber = monitor.subscribe()
+        try:
+            yield sse_message("snapshot", monitor.snapshot())
+            while True:
+                try:
+                    item = subscriber.get(timeout=15)
+                except queue.Empty:
+                    yield sse_message("keepalive", {"role": role})
+                    continue
+                yield sse_message(str(item["event"]), item["data"])
+        finally:
+            monitor.unsubscribe(subscriber)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 def seconds_since_midnight() -> int:
@@ -505,7 +821,9 @@ def runtime_summary() -> dict[str, Any]:
         "picos": enumerate_picos(),
         "tools": {
             "mpremote": shutil.which("mpremote"),
+            "pyserial": getattr(serial, "VERSION", "unknown"),
         },
+        "monitors": monitor_summaries(),
         "state": {
             "path": str(STATE_FILE),
             "exists": STATE_FILE.exists(),
@@ -542,6 +860,10 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
         "<tr>"
         "<td>mpremote</td>"
         f"<td><code>{html.escape(str(summary['tools']['mpremote'] or 'not found'))}</code></td>"
+        "</tr>"
+        "<tr>"
+        "<td>pyserial</td>"
+        f"<td><code>{html.escape(str(summary['tools']['pyserial']))}</code></td>"
         "</tr>"
     )
 
@@ -895,8 +1217,10 @@ def render_timer_test_page() -> str:
 </html>"""
 
 
-@app.get("/api/timers/{role}")
-def get_timer(role: str) -> dict[str, Any]:
+@app.get("/api/timers/{role}", response_model=None)
+def get_timer(role: str, stream: bool = Query(False)) -> Any:
+    if stream:
+        return stream_timer_events(role)
     path = timer_state_path(role)
     state = load_json_file(path)
     return validate_timer_state(state)
