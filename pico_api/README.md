@@ -77,7 +77,7 @@ It has separate GET and PUT sections, separate role inputs for each section, an 
 
 GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI. PUT always copies state to the Pico and resets it.
 
-## Run The Runtime Page
+## Run The Settings Page
 
 During development, run with reload on port 8000:
 
@@ -88,7 +88,7 @@ uv run uvicorn pico_api.server:app --host 0.0.0.0 --port 8000 --reload
 
 For deployment, use port 80 through a service or reverse proxy instead of the development reload server.
 
-Open the runtime page:
+Open the main timer page:
 
 ```text
 http://<hostname>:8000/
@@ -100,10 +100,10 @@ Or use the Pi IP address directly:
 http://<raspberry-pi-ip>:8000/
 ```
 
-The JSON version is available at:
+The settings JSON version is available at:
 
 ```bash
-curl http://localhost:8000/runtime
+curl http://localhost:8000/settings.json
 ```
 
 The app log is written under local runtime data and rotated when it reaches 1 MB:

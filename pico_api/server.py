@@ -993,7 +993,7 @@ def enumerate_picos() -> list[dict[str, Any]]:
     return detected
 
 
-def runtime_summary() -> dict[str, Any]:
+def settings_summary() -> dict[str, Any]:
     return {
         "host": {
             "hostname": socket.gethostname(),
@@ -1019,7 +1019,7 @@ def runtime_summary() -> dict[str, Any]:
     }
 
 
-def render_runtime_page(summary: dict[str, Any]) -> str:
+def render_settings_page(summary: dict[str, Any]) -> str:
     host = summary["host"]
     picos = summary["picos"]
     networks = host["network"]
@@ -1060,7 +1060,7 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plamp node runtime</title>
+  <title>Plamp settings</title>
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 960px; }}
@@ -1071,7 +1071,8 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <h1>Plamp node runtime</h1>
+  <nav><a href="/">Plamp</a> | <a href="/timers/test">Timer test</a> | <a href="/settings.json">Settings JSON</a></nav>
+  <h1>Plamp settings</h1>
   <h2>Picos</h2>
   <table>
     <thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
@@ -1108,6 +1109,174 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
 </html>"""
 
 
+def render_timer_dashboard_page() -> str:
+    try:
+        roles = sorted(timer_roles())
+        config = load_config()
+    except HTTPException:
+        roles = []
+        config = {}
+    time_format = "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plamp</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    a {{ color: #174ea6; }}
+    button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
+    input {{ box-sizing: border-box; padding: .35rem; }}
+    .status-board {{ display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }}
+    .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
+    .timer-top {{ align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }}
+    .timer-name {{ font-weight: 700; }}
+    .timer-value {{ border-radius: 6px; padding: .15rem .45rem; }}
+    .timer-value.on {{ background: #d9f7d9; }}
+    .timer-value.off {{ background: #eee; }}
+    .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
+    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
+    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
+    .timer-fill.off {{ background: #888; }}
+  </style>
+</head>
+<body>
+  <nav><a href="/timers/test">Timer test</a> | <a href="/settings">Settings</a></nav>
+  <h1>Plamp</h1>
+  <h2>Timers</h2>
+  <p id="timer-stream-status">Connecting...</p>
+  <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
+
+  <script>
+    const clockTimeFormat = {json.dumps(time_format)};
+    const timerRoles = {json.dumps(roles)};
+    const timerStatus = document.getElementById("timer-stream-status");
+    const timerBoard = document.getElementById("timer-status-board");
+    const timerEventSources = new Map();
+    const timerMessages = new Map();
+
+    function formatChangeTime(secondsFromNow) {{
+      const when = new Date(Date.now() + secondsFromNow * 1000);
+      if (clockTimeFormat === "24h") {{
+        return when.toLocaleTimeString([], {{hour: "2-digit", minute: "2-digit", hour12: false}});
+      }}
+      return when.toLocaleTimeString([], {{hour: "numeric", minute: "2-digit"}});
+    }}
+
+    function currentTimerStep(event) {{
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (!pattern.length) return null;
+      const durations = pattern.map((step) => Number(step.dur));
+      if (durations.some((duration) => !Number.isFinite(duration) || duration <= 0)) return null;
+      const total = durations.reduce((sum, duration) => sum + duration, 0);
+      let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
+      if (!Number.isFinite(cycleT)) cycleT = 0;
+      if (Number(event.reschedule ?? 1)) {{
+        cycleT = ((cycleT % total) + total) % total;
+      }} else {{
+        cycleT = Math.min(Math.max(cycleT, 0), total);
+      }}
+      let start = 0;
+      for (let index = 0; index < pattern.length; index += 1) {{
+        const end = start + durations[index];
+        if (cycleT < end || index === pattern.length - 1) {{
+          return {{step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)}};
+        }}
+        start = end;
+      }}
+      return null;
+    }}
+
+    function timerEventsFromMessage(message) {{
+      const candidates = [
+        message?.report?.content?.events,
+        message?.last_report?.content?.events,
+        message?.content?.events,
+        message?.events,
+      ];
+      return candidates.find((events) => Array.isArray(events)) || [];
+    }}
+
+    function renderTimerStatus() {{
+      timerBoard.replaceChildren();
+      let rendered = 0;
+      for (const role of timerRoles) {{
+        const message = timerMessages.get(role);
+        const events = timerEventsFromMessage(message);
+        for (const [index, event] of events.entries()) {{
+          const step = currentTimerStep(event);
+          const value = Number(step?.step?.val ?? event.current_value ?? 0);
+          const isOn = value > 0;
+          const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
+          const card = document.createElement("div");
+          card.className = "timer-card";
+          const top = document.createElement("div");
+          top.className = "timer-top";
+          const name = document.createElement("span");
+          name.className = "timer-name";
+          name.textContent = role + " / " + (event.id || "pin " + (event.ch ?? index));
+          const badge = document.createElement("span");
+          badge.className = "timer-value " + (isOn ? "on" : "off");
+          badge.textContent = isOn ? "ON" : "OFF";
+          top.append(name, badge);
+          const meta = document.createElement("div");
+          meta.className = "timer-meta";
+          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+          const bar = document.createElement("div");
+          bar.className = "timer-bar";
+          const fill = document.createElement("div");
+          fill.className = "timer-fill" + (isOn ? "" : " off");
+          fill.style.width = percent + "%";
+          bar.append(fill);
+          card.append(top, meta, bar);
+          timerBoard.append(card);
+          rendered += 1;
+        }}
+      }}
+      if (!rendered) {{
+        timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
+      }}
+    }}
+
+    function stopTimerStreams() {{
+      for (const source of timerEventSources.values()) {{
+        source.close();
+      }}
+      timerEventSources.clear();
+      timerStatus.textContent = "Not streaming.";
+    }}
+
+    function startTimerStreams() {{
+      stopTimerStreams();
+      timerMessages.clear();
+      renderTimerStatus();
+      if (!timerRoles.length) {{
+        timerStatus.textContent = "No timers configured.";
+        return;
+      }}
+      timerStatus.textContent = `${{timerRoles.length}} pico board${{timerRoles.length === 1 ? "" : "s"}}: ${{timerRoles.join(", ")}}`;
+      for (const role of timerRoles) {{
+        const source = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+        timerEventSources.set(role, source);
+        for (const eventName of ["snapshot", "status", "report"]) {{
+          source.addEventListener(eventName, (event) => {{
+            timerMessages.set(role, JSON.parse(event.data));
+            renderTimerStatus();
+          }});
+        }}
+        source.onerror = () => {{ timerStatus.textContent = "Stream error or reconnecting..."; }};
+      }}
+    }}
+
+    window.addEventListener("beforeunload", stopTimerStreams);
+    startTimerStreams();
+  </script>
+</body>
+</html>"""
+
+
 def render_timer_test_page() -> str:
     try:
         roles = sorted(timer_roles())
@@ -1116,7 +1285,13 @@ def render_timer_test_page() -> str:
     default_role = roles[0] if roles else "pump_lights"
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
+    try:
+        config = load_config()
+    except HTTPException:
+        config = {}
+    time_format = "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
     default_get_curl = f"curl http://localhost:8000/api/timers/{default_role}"
+    default_stream_curl = f"curl -N 'http://localhost:8000/api/timers/{default_role}?stream=true'"
     default_put_curl = "\n".join([
         f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}' " + chr(92),
         "  -H 'content-type: application/json' " + chr(92),
@@ -1141,10 +1316,23 @@ def render_timer_test_page() -> str:
     .row {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }}
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
-    #put-curl-command {{ white-space: pre-wrap; }}
+    #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
+    #stream-result {{ max-height: 18rem; white-space: pre-wrap; }}
+    .status-board {{ display: grid; gap: .75rem; margin: .75rem 0; max-width: 980px; }}
+    .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
+    .timer-top {{ align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }}
+    .timer-name {{ font-weight: 700; }}
+    .timer-value {{ border-radius: 6px; padding: .15rem .45rem; }}
+    .timer-value.on {{ background: #d9f7d9; }}
+    .timer-value.off {{ background: #eee; }}
+    .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
+    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
+    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
+    .timer-fill.off {{ background: #888; }}
   </style>
 </head>
 <body>
+  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
   <h1>Timer API test</h1>
 
   <h2>GET</h2>
@@ -1158,6 +1346,16 @@ def render_timer_test_page() -> str:
     <button id="get-state" type="button">GET current state</button>
     <div><span id="get-status">Ready.</span></div>
     <pre id="get-result">GET response will appear here.</pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>GET stream timer events</legend>
+    <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
+    <button id="start-stream" type="button">Start GET stream</button>
+    <button id="stop-stream" type="button">Stop GET stream</button>
+    <div><span id="stream-status">Not streaming.</span></div>
+    <div id="timer-status-board" class="status-board">Start the GET stream to see timer status.</div>
+    <pre id="stream-result">GET stream events will appear here.</pre>
   </fieldset>
 
   <h2>PUT</h2>
@@ -1201,6 +1399,8 @@ def render_timer_test_page() -> str:
     const payload = document.getElementById("payload");
     const getRoleInput = document.getElementById("get-role");
     const putRoleInput = document.getElementById("put-role");
+    const clockTimeFormat = {json.dumps(time_format)};
+    let timerEventSource = null;
 
     function getRole() {{
       return getRoleInput.value.trim();
@@ -1238,6 +1438,10 @@ def render_timer_test_page() -> str:
       return "curl " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}`);
     }}
 
+    function streamCurlCommand() {{
+      return "curl -N " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}?stream=true`);
+    }}
+
     function putCurlCommand() {{
       const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}`;
       const slash = String.fromCharCode(92);
@@ -1253,6 +1457,7 @@ def render_timer_test_page() -> str:
 
     function updateCurl() {{
       document.getElementById("get-curl-command").textContent = getCurlCommand();
+      document.getElementById("stream-curl-command").textContent = streamCurlCommand();
       document.getElementById("put-curl-command").textContent = putCurlCommand();
     }}
 
@@ -1290,6 +1495,132 @@ def render_timer_test_page() -> str:
         getStatus.textContent = "Request failed.";
         getResult.textContent = String(error);
       }}
+    }}
+
+    function formatChangeTime(secondsFromNow) {{
+      const when = new Date(Date.now() + secondsFromNow * 1000);
+      if (clockTimeFormat === "24h") {{
+        return when.toLocaleTimeString([], {{hour: "2-digit", minute: "2-digit", hour12: false}});
+      }}
+      return when.toLocaleTimeString([], {{hour: "numeric", minute: "2-digit"}});
+    }}
+
+    function currentTimerStep(event) {{
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (!pattern.length) return null;
+      const durations = pattern.map((step) => Number(step.dur));
+      if (durations.some((duration) => !Number.isFinite(duration) || duration <= 0)) return null;
+      const total = durations.reduce((sum, duration) => sum + duration, 0);
+      let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
+      if (!Number.isFinite(cycleT)) cycleT = 0;
+      if (Number(event.reschedule ?? 1)) {{
+        cycleT = ((cycleT % total) + total) % total;
+      }} else {{
+        cycleT = Math.min(Math.max(cycleT, 0), total);
+      }}
+      let start = 0;
+      for (let index = 0; index < pattern.length; index += 1) {{
+        const end = start + durations[index];
+        if (cycleT < end || index === pattern.length - 1) {{
+          return {{step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)}};
+        }}
+        start = end;
+      }}
+      return null;
+    }}
+
+    function timerEventsFromMessage(message) {{
+      const candidates = [
+        message?.report?.content?.events,
+        message?.last_report?.content?.events,
+        message?.content?.events,
+        message?.events,
+      ];
+      return candidates.find((events) => Array.isArray(events)) || [];
+    }}
+
+    function renderTimerStatus(message) {{
+      const events = timerEventsFromMessage(message);
+      const board = document.getElementById("timer-status-board");
+      if (!events.length) return;
+      board.replaceChildren();
+      for (const [index, event] of events.entries()) {{
+        const step = currentTimerStep(event);
+        const value = Number(step?.step?.val ?? event.current_value ?? 0);
+        const isOn = value > 0;
+        const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
+
+        const card = document.createElement("div");
+        card.className = "timer-card";
+
+        const top = document.createElement("div");
+        top.className = "timer-top";
+        const name = document.createElement("span");
+        name.className = "timer-name";
+        name.textContent = event.id || "pin " + (event.ch ?? index);
+        const badge = document.createElement("span");
+        badge.className = "timer-value " + (isOn ? "on" : "off");
+        badge.textContent = isOn ? "ON" : "OFF";
+        top.append(name, badge);
+
+        const meta = document.createElement("div");
+        meta.className = "timer-meta";
+        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+
+        const bar = document.createElement("div");
+        bar.className = "timer-bar";
+        const fill = document.createElement("div");
+        fill.className = "timer-fill" + (isOn ? "" : " off");
+        fill.style.width = percent + "%";
+        bar.append(fill);
+
+        card.append(top, meta, bar);
+        board.append(card);
+      }}
+    }}
+
+    function appendStreamEvent(eventName, data) {{
+      const streamResult = document.getElementById("stream-result");
+      const timestamp = new Date().toLocaleTimeString();
+      let display = data;
+      try {{
+        const parsed = JSON.parse(data);
+        renderTimerStatus(parsed);
+        display = JSON.stringify(parsed, null, 2);
+      }} catch (error) {{
+      }}
+      streamResult.textContent += `[${{timestamp}}] ${{eventName}}\n${{display}}\n\n`;
+      if (streamResult.textContent.length > 20000) {{
+        streamResult.textContent = streamResult.textContent.slice(-20000);
+      }}
+      streamResult.scrollTop = streamResult.scrollHeight;
+    }}
+
+    function stopTimerStream() {{
+      if (timerEventSource) {{
+        timerEventSource.close();
+        timerEventSource = null;
+      }}
+      document.getElementById("stream-status").textContent = "Not streaming.";
+    }}
+
+    function startTimerStream() {{
+      stopTimerStream();
+      const role = getRole();
+      const streamStatus = document.getElementById("stream-status");
+      const streamResult = document.getElementById("stream-result");
+      streamResult.textContent = "";
+      streamStatus.textContent = `Connecting to /api/timers/${{role}}?stream=true...`;
+      timerEventSource = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+      timerEventSource.onopen = () => {{
+        streamStatus.textContent = `Streaming ${{role}}.`;
+      }};
+      for (const eventName of ["snapshot", "status", "report", "error", "keepalive"]) {{
+        timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
+      }}
+      timerEventSource.onerror = () => {{
+        streamStatus.textContent = "Stream error or reconnecting...";
+      }};
     }}
 
     async function putState() {{
@@ -1384,6 +1715,8 @@ def render_timer_test_page() -> str:
     }});
 
     document.getElementById("get-state").addEventListener("click", getState);
+    document.getElementById("start-stream").addEventListener("click", startTimerStream);
+    document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
     document.getElementById("put-state").addEventListener("click", putState);
     getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
@@ -1426,11 +1759,21 @@ def timer_test_page() -> HTMLResponse:
     return HTMLResponse(render_timer_test_page())
 
 
+@app.get("/settings.json")
+def get_settings_json() -> dict[str, Any]:
+    return settings_summary()
+
+
 @app.get("/runtime")
 def get_runtime() -> dict[str, Any]:
-    return runtime_summary()
+    return settings_summary()
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def get_settings_page() -> HTMLResponse:
+    return HTMLResponse(render_settings_page(settings_summary()))
 
 
 @app.get("/", response_class=HTMLResponse)
-def get_runtime_page() -> HTMLResponse:
-    return HTMLResponse(render_runtime_page(runtime_summary()))
+def get_timer_dashboard_page() -> HTMLResponse:
+    return HTMLResponse(render_timer_dashboard_page())
