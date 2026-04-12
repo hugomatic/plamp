@@ -97,16 +97,10 @@ Cycle set edits a two-step repeating pattern:
 - ON duration.
 - OFF duration.
 - Unit selector for seconds, minutes, or hours.
-- Apply behavior:
-  - `Keep current position` as the default.
-  - `Start cycle now`.
-  - `Jump to next change`.
+- Start position:
+  - `Start at` seconds into the cycle, defaulting to `0`.
 
-Cycle set can load any two-step on/off pattern. When saving:
-
-- `Start cycle now` sets `current_t` to `0`.
-- `Jump to next change` sets `current_t` close to the end of the current step, such as five seconds before the transition when the current step is long enough.
-- `Keep current position` uses the latest live report cycle position when available, and otherwise preserves the existing saved `current_t`.
+Cycle set can load any two-step on/off pattern. When saving, it writes `current_t` from the `Start at` seconds field. The field defaults to `0`, so saving starts the new cycle at the beginning unless the user intentionally chooses a later point in the cycle to test an upcoming hardware change.
 
 ### 24h Set
 
@@ -155,7 +149,7 @@ Manual test paths:
 - Config with multiple roles renders timers grouped by board.
 - Config with multiple channels under one role renders one card per channel.
 - Cycle set can save seconds, minutes, and hours.
-- Cycle set apply behavior can preserve phase, start now, and jump to next change.
+- Cycle set can save an explicit start-at seconds offset, defaulting to 0.
 - 24h set saves ON/OFF clock times and reports a phase aligned with host time after reset.
 - Host/server time appears on the main page with minute accuracy and refreshes while the page is open.
 - Host/server time appears on the settings page with minute accuracy and refreshes through the existing 30-second reload.

@@ -131,6 +131,7 @@ def render_timer_dashboard_page(
     .timer-actions { margin-top: .65rem; }
     .timer-editor { border: 1px solid #ccc; border-radius: 6px; display: grid; gap: .65rem; margin: 1rem 0; max-width: 980px; padding: .75rem; }
     .timer-editor[hidden] { display: none; }
+    .editor-row[hidden] { display: none; }
     .editor-row { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; }
     .editor-row label { display: grid; gap: .25rem; }
     .editor-row select, .editor-row input { min-width: 8rem; }
@@ -329,7 +330,8 @@ def render_timer_dashboard_page(
             <label>Unit <select name="onUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
             <label>Off for <input name="offValue" type="number" min="1" step="1" value="${offUnit.value}"></label>
             <label>Unit <select name="offUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
-            <label>When applied <select name="applyBehavior"><option value="preserve">Keep current position</option><option value="start_now">Start cycle now</option><option value="jump_to_next_change">Jump to next change</option></select></label>
+            <label>Start at <input name="startAtSeconds" type="number" min="0" step="1" value="0"></label>
+            <span class="editor-note">Seconds into the cycle. Use a value near the end of a step to test the next change.</span>
           </div>
           <div class="editor-row clock-fields">
             <label>On at <input name="onTime" type="time" value="${clock.on}"></label>
@@ -369,7 +371,7 @@ def render_timer_dashboard_page(
       if (mode === "cycle") {
         body.on_seconds = Number(form.elements.onValue.value) * unitMultiplier(form.elements.onUnit.value);
         body.off_seconds = Number(form.elements.offValue.value) * unitMultiplier(form.elements.offUnit.value);
-        body.apply_behavior = form.elements.applyBehavior.value;
+        body.start_at_seconds = Number(form.elements.startAtSeconds.value);
       } else {
         body.on_time = form.elements.onTime.value;
         body.off_time = form.elements.offTime.value;

@@ -116,29 +116,17 @@ def apply_cycle_schedule(
     *,
     on_seconds: int,
     off_seconds: int,
-    apply_behavior: str,
-    live_event: dict[str, Any] | None = None,
+    start_at_seconds: int = 0,
 ) -> dict[str, Any]:
     if on_seconds <= 0:
         raise ValueError("on_seconds must be > 0")
     if off_seconds <= 0:
         raise ValueError("off_seconds must be > 0")
+    if start_at_seconds < 0:
+        raise ValueError("start_at_seconds must be >= 0")
     updated = _copy_event_base(event)
     updated["pattern"] = [{"val": 1, "dur": on_seconds}, {"val": 0, "dur": off_seconds}]
-    total = on_seconds + off_seconds
-    if apply_behavior == "start_now":
-        current_t = 0
-    elif apply_behavior == "jump_to_next_change":
-        source_cycle = cycle_t_from_event(live_event or event) or 0
-        source_cycle %= total
-        boundary = on_seconds if source_cycle < on_seconds else total
-        current_t = max(0, boundary - 5)
-    elif apply_behavior == "preserve":
-        source_cycle = cycle_t_from_event(live_event or event)
-        current_t = source_cycle if source_cycle is not None else _as_int(event.get("current_t", 0), "current_t")
-    else:
-        raise ValueError("apply_behavior must be preserve, start_now, or jump_to_next_change")
-    updated["current_t"] = current_t % total
+    updated["current_t"] = start_at_seconds % (on_seconds + off_seconds)
     return updated
 
 
@@ -237,8 +225,7 @@ def patch_channel_schedule(
                         event,
                         on_seconds=_as_int(schedule.get("on_seconds"), "on_seconds"),
                         off_seconds=_as_int(schedule.get("off_seconds"), "off_seconds"),
-                        apply_behavior=str(schedule.get("apply_behavior", "preserve")),
-                        live_event=live_event,
+                        start_at_seconds=_as_int(schedule.get("start_at_seconds", 0), "start_at_seconds"),
                     )
                 )
             elif mode == "clock_window":

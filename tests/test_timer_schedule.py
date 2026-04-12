@@ -47,10 +47,10 @@ class TimerScheduleTests(unittest.TestCase):
 
         self.assertEqual(inspect_two_step_pattern(event), {"on_seconds": 30, "off_seconds": 600, "total_seconds": 630})
 
-    def test_apply_cycle_schedule_can_start_now(self):
+    def test_apply_cycle_schedule_defaults_to_start_at_zero(self):
         event = {"id": "fan", "type": "gpio", "ch": 3, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
 
-        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20, apply_behavior="start_now", live_event={"cycle_t": 12})
+        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20)
 
         self.assertEqual(updated["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
         self.assertEqual(updated["current_t"], 0)
@@ -58,12 +58,12 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["type"], "gpio")
         self.assertEqual(updated["ch"], 3)
 
-    def test_apply_cycle_schedule_can_jump_to_next_change(self):
+    def test_apply_cycle_schedule_can_start_at_explicit_seconds(self):
         event = {"id": "fan", "type": "gpio", "ch": 3, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
 
-        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20, apply_behavior="jump_to_next_change", live_event={"cycle_t": 2})
+        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20, start_at_seconds=28)
 
-        self.assertEqual(updated["current_t"], 5)
+        self.assertEqual(updated["current_t"], 28)
 
     def test_apply_clock_window_schedule_uses_host_time(self):
         event = {"id": "lamp", "type": "gpio", "ch": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]}
@@ -97,7 +97,7 @@ class TimerScheduleTests(unittest.TestCase):
             state,
             channels,
             "fan",
-            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "apply_behavior": "preserve"},
+            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 25},
             live_events=live_events,
             now=time(12, 0, 0),
         )
@@ -112,7 +112,7 @@ class TimerScheduleTests(unittest.TestCase):
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):
-            patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "apply_behavior": "preserve"})
+            patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 0})
 
 
 if __name__ == "__main__":

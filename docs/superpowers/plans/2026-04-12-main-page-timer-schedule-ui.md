@@ -76,10 +76,10 @@ class TimerScheduleTests(unittest.TestCase):
 
         self.assertEqual(inspect_two_step_pattern(event), {"on_seconds": 30, "off_seconds": 600, "total_seconds": 630})
 
-    def test_apply_cycle_schedule_can_start_now(self):
+    def test_apply_cycle_schedule_defaults_to_start_at_zero(self):
         event = {"id": "fan", "type": "gpio", "ch": 3, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
 
-        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20, apply_behavior="start_now", live_event={"cycle_t": 12})
+        updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20)
 
         self.assertEqual(updated["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
         self.assertEqual(updated["current_t"], 0)
@@ -185,29 +185,16 @@ def _copy_event_base(event: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
-def apply_cycle_schedule(event: dict[str, Any], *, on_seconds: int, off_seconds: int, apply_behavior: str, live_event: dict[str, Any] | None = None) -> dict[str, Any]:
+def apply_cycle_schedule(event: dict[str, Any], *, on_seconds: int, off_seconds: int, start_at_seconds: int = 0) -> dict[str, Any]:
     if on_seconds <= 0:
         raise ValueError("on_seconds must be > 0")
     if off_seconds <= 0:
         raise ValueError("off_seconds must be > 0")
+    if start_at_seconds < 0:
+        raise ValueError("start_at_seconds must be >= 0")
     updated = _copy_event_base(event)
     updated["pattern"] = [{"val": 1, "dur": on_seconds}, {"val": 0, "dur": off_seconds}]
-    total = on_seconds + off_seconds
-    if apply_behavior == "start_now":
-        current_t = 0
-    elif apply_behavior == "jump_to_next_change":
-        source_cycle = cycle_t_from_event(live_event or event)
-        if source_cycle is None:
-            source_cycle = 0
-        in_on = source_cycle < on_seconds
-        boundary = on_seconds if in_on else total
-        current_t = max(0, boundary - 5)
-    elif apply_behavior == "preserve":
-        source_cycle = cycle_t_from_event(live_event or event)
-        current_t = source_cycle if source_cycle is not None else _as_int(event.get("current_t", 0), "current_t")
-    else:
-        raise ValueError("apply_behavior must be preserve, start_now, or jump_to_next_change")
-    updated["current_t"] = current_t % total
+    updated["current_t"] = start_at_seconds % (on_seconds + off_seconds)
     return updated
 
 
@@ -280,7 +267,7 @@ Append these test methods inside `TimerScheduleTests` before the `if __name__ ==
             state,
             channels,
             "fan",
-            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "apply_behavior": "preserve"},
+            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 25},
             live_events=live_events,
             now=time(12, 0, 0),
         )
@@ -406,7 +393,7 @@ def patch_channel_schedule(
                         event,
                         on_seconds=_as_int(schedule.get("on_seconds"), "on_seconds"),
                         off_seconds=_as_int(schedule.get("off_seconds"), "off_seconds"),
-                        apply_behavior=str(schedule.get("apply_behavior", "preserve")),
+                        start_at_seconds=_as_int(schedule.get("start_at_seconds", 0), "start_at_seconds"),
                         live_event=live_event,
                     )
                 )
@@ -459,7 +446,7 @@ Append this test inside `TimerScheduleTests`:
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):
-            patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "apply_behavior": "preserve"})
+            patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 25})
 ```
 
 - [ ] **Step 2: Run tests to verify the new behavior**
@@ -767,7 +754,8 @@ Add these functions after the helper functions from Step 3:
           <label>Unit <select name="onUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
           <label>Off for <input name="offValue" type="number" min="1" step="1" value="${offUnit.value}"></label>
           <label>Unit <select name="offUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
-          <label>When applied <select name="applyBehavior"><option value="preserve">Keep current position</option><option value="start_now">Start cycle now</option><option value="jump_to_next_change">Jump to next change</option></select></label>
+          <label>Start at <input name="startAtSeconds" type="number" min="0" step="1" value="0"></label>
+          <span class="editor-note">Seconds into the cycle. Use a value near the end of a step to test the next change.</span>
         </div>
         <div class="editor-row clock-fields">
           <label>On at <input name="onTime" type="time" value="${clock.on}"></label>
@@ -791,7 +779,7 @@ Add these functions after the helper functions from Step 3:
     }
 
     function syncEditorMode(editor) {
-      const clock = editor.elements.mode.value === "clock";
+      const clock = editor.elements.mode.value === "clock_window";
       editor.querySelector(".cycle-fields").hidden = clock;
       editor.querySelector(".clock-fields").hidden = !clock;
     }
@@ -807,7 +795,7 @@ Add these functions after the helper functions from Step 3:
       if (mode === "cycle") {
         body.on_seconds = Number(editor.elements.onValue.value) * unitMultiplier(editor.elements.onUnit.value);
         body.off_seconds = Number(editor.elements.offValue.value) * unitMultiplier(editor.elements.offUnit.value);
-        body.apply_behavior = editor.elements.applyBehavior.value;
+        body.start_at_seconds = Number(editor.elements.startAtSeconds.value);
       } else {
         body.on_time = editor.elements.onTime.value;
         body.off_time = editor.elements.offTime.value;
