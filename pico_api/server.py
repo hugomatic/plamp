@@ -1021,7 +1021,7 @@ def render_timer_test_page() -> str:
     default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
     default_get_curl = f"curl http://localhost:8000/api/timers/{default_role}"
     default_put_curl = "\n".join([
-        f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}?apply=false' " + chr(92),
+        f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}' " + chr(92),
         "  -H 'content-type: application/json' " + chr(92),
         "  --data-binary @- <<'JSON'",
         default_payload,
@@ -1069,10 +1069,6 @@ def render_timer_test_page() -> str:
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
-    <div class="radio-row">
-      <label><input name="apply" type="radio" value="false" checked> Save only</label>
-      <label><input name="apply" type="radio" value="true"> Save and reset</label>
-    </div>
   </fieldset>
 
   <fieldset>
@@ -1117,10 +1113,6 @@ def render_timer_test_page() -> str:
       return putRoleInput.value.trim();
     }}
 
-    function applyValue() {{
-      return document.querySelector('input[name="apply"]:checked').value === "true";
-    }}
-
     function secondsSinceMidnight() {{
       const now = new Date();
       return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
@@ -1150,7 +1142,7 @@ def render_timer_test_page() -> str:
     }}
 
     function putCurlCommand() {{
-      const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}?apply=${{applyValue() ? "true" : "false"}}`;
+      const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}`;
       const slash = String.fromCharCode(92);
       const newline = String.fromCharCode(10);
       return [
@@ -1208,7 +1200,7 @@ def render_timer_test_page() -> str:
       const putResult = document.getElementById("put-result");
       putStatus.textContent = "";
       putResult.textContent = "";
-      const url = `/api/timers/${{encodeURIComponent(putRole())}}?apply=${{applyValue() ? "true" : "false"}}`;
+      const url = `/api/timers/${{encodeURIComponent(putRole())}}`;
       if (!window.confirm(`PUT ${{url}}?`)) {{
         putStatus.textContent = "Cancelled.";
         return;
@@ -1299,9 +1291,6 @@ def render_timer_test_page() -> str:
     getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
     payload.addEventListener("input", updateCurl);
-    for (const item of document.querySelectorAll('input[name="apply"]')) {{
-      item.addEventListener("change", updateCurl);
-    }}
     updateCurl();
   </script>
 </body>
@@ -1313,34 +1302,28 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
 
 
-@app.get("/api/timers/{role}/runtime")
-def get_timer_runtime(role: str) -> dict[str, Any]:
+@app.get("/api/timers/{role}/reports")
+def get_timer_reports(role: str) -> dict[str, Any]:
     return get_or_start_monitor(role).snapshot()
 
 
 @app.get("/api/timers/{role}", response_model=None)
-def get_timer(role: str, stream: bool = Query(False), runtime: bool = Query(False)) -> Any:
+def get_timer(role: str, stream: bool = Query(False)) -> Any:
     if stream:
         return stream_timer_events(role)
-    if runtime:
-        return get_timer_runtime(role)
     path = timer_state_path(role)
     state = load_json_file(path)
     return validate_timer_state(state)
 
 
 @app.put("/api/timers/{role}")
-def put_timer(role: str, state: dict[str, Any] = Body(...), apply: bool = Query(True)) -> dict[str, Any]:
+def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     path = timer_state_path(role)
     validated = validate_timer_state(state)
     with lock_for(role_locks, role):
         atomic_write_json(path, validated)
-        applied: dict[str, Any] | None = None
-        if apply:
-            applied = apply_timer_state(role, path)
-    if applied is None:
-        return {"role": role, "saved": True, "apply_requested": False, "apply_status": "skipped"}
-    return {"role": role, "saved": True, "apply_requested": True, "apply_status": "ok", "pico": applied}
+        sent = apply_timer_state(role, path)
+    return {"role": role, "saved": True, "sent_to_pico": True, "reset": True, "pico": sent}
 
 
 @app.get("/timers/test", response_class=HTMLResponse)

@@ -43,52 +43,27 @@ Timer roles are configured in `../data/config.json`. The app creates `../data/`,
 
 Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
-Read the saved desired timer state. This is the host file, so fields like `current_t` do not advance here:
+Read the saved timer state:
 
 ```bash
 curl http://localhost:8000/api/timers/pump_lights
 ```
 
-Read the latest live monitor state for that role:
+Read the latest reports seen from the Pico for that role:
 
 ```bash
-curl http://localhost:8000/api/timers/pump_lights/runtime
+curl http://localhost:8000/api/timers/pump_lights/reports
 ```
 
-You can also request the live monitor state as a query form:
-
-```bash
-curl 'http://localhost:8000/api/timers/pump_lights?runtime=true'
-```
-
-Stream runtime reports from the monitor for that role:
+Stream reports from the monitor for that role:
 
 ```bash
 curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
 ```
 
-Each configured timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, reduces reports into a live `pins` summary with `current_t` and `current_value`, emits stream events to connected HTTP clients, and temporarily closes serial before running `mpremote` copy/reset for `apply=true`.
+Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, reduces reports into a `pins` summary with `current_t` and `current_value`, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico.
 
-Save only, without copying to the Pico or resetting it:
-
-```bash
-curl -X PUT 'http://localhost:8000/api/timers/pump_lights?apply=false' \
-  -H 'content-type: application/json' \
-  --data @data/timers/pump_lights.json
-```
-
-The save-only response confirms that the host file was updated and the Pico was not touched:
-
-```json
-{
-  "role": "pump_lights",
-  "saved": true,
-  "apply_requested": false,
-  "apply_status": "skipped"
-}
-```
-
-Save and apply to the assigned Pico. This is the default because `current_t` is timing-sensitive:
+Write a new timer state. PUT always saves the host state file, copies it to the Pico, and resets the timer:
 
 ```bash
 curl -X PUT http://localhost:8000/api/timers/pump_lights \
@@ -96,7 +71,7 @@ curl -X PUT http://localhost:8000/api/timers/pump_lights \
   --data @data/timers/pump_lights.json
 ```
 
-The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when the role monitor finishes the `mpremote` copy/reset. If the Pico is disconnected or `mpremote` fails, the response returns a clear error and the monitor keeps retrying the serial connection by configured Pico serial.
+If the Pico is disconnected or `mpremote` fails, the response returns a clear error and the monitor keeps retrying the serial connection by Pico serial.
 
 The browser test page is available at:
 
@@ -104,9 +79,9 @@ The browser test page is available at:
 http://localhost:8000/timers/test
 ```
 
-It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, an apply radio for save-only vs save-and-reset, and generated curl commands for both GET and PUT.
+It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, and generated curl commands for both GET and PUT.
 
-GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI.
+GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI. PUT always copies state to the Pico and resets it.
 
 ## Run The Runtime Page
 
