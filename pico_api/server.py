@@ -318,6 +318,48 @@ def reduce_report(report: Any) -> dict[str, Any]:
     return reduced
 
 
+def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
+    events = state.get("events")
+    if not isinstance(events, list):
+        return state
+    enriched = dict(state)
+    enriched_events = []
+    for event in events:
+        if not isinstance(event, dict):
+            enriched_events.append(event)
+            continue
+        item = dict(event)
+        if "current_value" not in item:
+            value = current_value_for_event(item)
+            if value is not None:
+                item["current_value"] = value
+        enriched_events.append(item)
+    enriched["events"] = enriched_events
+    return enriched
+
+
+def latest_timer_state(role: str) -> dict[str, Any] | None:
+    snapshot = get_or_start_monitor(role).snapshot()
+    report = snapshot.get("last_report")
+    if not isinstance(report, dict):
+        return None
+    content = report.get("content")
+    if not isinstance(content, dict):
+        return None
+    events = content.get("events")
+    if not isinstance(events, list):
+        return None
+    state: dict[str, Any] = {"events": events}
+    if "report_every" in content:
+        state["report_every"] = content["report_every"]
+    else:
+        try:
+            state["report_every"] = load_json_file(timer_state_path(role))["report_every"]
+        except (HTTPException, KeyError, TypeError):
+            pass
+    return state
+
+
 @dataclass
 class ApplyCommand:
     path: Path
@@ -1307,18 +1349,16 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
 
 
-@app.get("/api/timers/{role}/reports")
-def get_timer_reports(role: str) -> dict[str, Any]:
-    return get_or_start_monitor(role).snapshot()
-
-
 @app.get("/api/timers/{role}", response_model=None)
 def get_timer(role: str, stream: bool = Query(False)) -> Any:
     if stream:
         return stream_timer_events(role)
+    latest = latest_timer_state(role)
+    if latest is not None:
+        return latest
     path = timer_state_path(role)
     state = load_json_file(path)
-    return validate_timer_state(state)
+    return state_with_current_values(validate_timer_state(state))
 
 
 @app.put("/api/timers/{role}")

@@ -43,25 +43,19 @@ Timer roles are configured in `../data/config.json`. The app creates `../data/`,
 
 Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
-Read the saved timer state:
+Read the timer state:
 
 ```bash
 curl http://localhost:8000/api/timers/pump_lights
 ```
 
-Read the latest reports seen from the Pico for that role:
-
-```bash
-curl http://localhost:8000/api/timers/pump_lights/reports
-```
-
-Stream reports from the monitor for that role:
+Stream timer state changes for that role:
 
 ```bash
 curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
 ```
 
-Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, reduces reports into a `pins` summary with `current_t` and `current_value`, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico.
+Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, keeps the timer state current from Pico reports, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico.
 
 Write a new timer state. PUT always saves the host state file, copies it to the Pico, and resets the timer:
 
