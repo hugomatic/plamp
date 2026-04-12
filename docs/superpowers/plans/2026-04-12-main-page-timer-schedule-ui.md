@@ -4,7 +4,7 @@
 
 **Goal:** Build a polished main-page schedule editor for arbitrary configured Pico timer channels while keeping board/channel setup in JSON config for now.
 
-**Architecture:** Add focused server-side timer config and schedule helper code, then expose read-only channel metadata plus a channel schedule update endpoint that uses the existing board-level apply path. Keep the existing main-page live status visualization and add a schedule edit panel per channel that posts schedule changes instead of raw JSON.
+**Architecture:** Add focused server-side timer config and schedule helper code, then expose read-only channel metadata, a host-time endpoint, and a channel schedule update endpoint that uses the existing board-level apply path. Keep the existing main-page live status visualization and add a schedule edit panel per channel that posts schedule changes instead of raw JSON.
 
 **Tech Stack:** Python 3.11, FastAPI, plain server-rendered HTML, vanilla browser JavaScript, MicroPython-compatible scheduler state JSON, stdlib `unittest`.
 
@@ -13,8 +13,8 @@
 ## File Structure
 
 - Create `plamp_web/timer_schedule.py`: Pure helper functions for channel config normalization, two-step pattern inspection, cycle schedule generation, 24-hour clock schedule generation, and board state patching.
-- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, and pass channel metadata plus host time to the main page renderer.
-- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy, add channel metadata and host seconds-since-midnight into the page bootstrap JSON, add edit controls and the schedule editor JavaScript.
+- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose host time via `/api/host-time`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, and pass channel metadata plus initial host time to the main page renderer.
+- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy, add channel metadata and initial host seconds-since-midnight into the page bootstrap JSON, refresh host time through `/api/host-time`, add edit controls and the schedule editor JavaScript.
 - Create `tests/test_timer_schedule.py`: Unit tests for pure helper behavior.
 - Modify `plamp_web/README.md`: Document the optional `channels` config shape and the main-page schedule editor.
 
@@ -45,7 +45,7 @@ class TimerScheduleTests(unittest.TestCase):
             "role": "sprouter",
             "pico_serial": "abc123",
             "channels": [
-                {"id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock"},
+                {"id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
                 {"id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
             ],
         }
@@ -54,7 +54,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", role_config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock"},
+                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
                 {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
             ],
         )
@@ -141,7 +141,7 @@ def channel_metadata_for_role(role: str, role_config: dict[str, Any], state: dic
                 raise ValueError(f"channel {channel_id} pin must be in range 0..29")
             if event_type not in {"gpio", "pwm"}:
                 raise ValueError(f"channel {channel_id} type must be gpio or pwm")
-            if default_editor not in {"cycle", "clock"}:
+            if default_editor not in {"cycle", "clock_window"}:
                 default_editor = "cycle"
             result.append({"role": role, "id": channel_id, "name": name, "pin": pin_int, "type": event_type, "default_editor": default_editor})
         return result
@@ -272,7 +272,7 @@ Append these test methods inside `TimerScheduleTests` before the `if __name__ ==
         }
         channels = [
             {"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
-            {"id": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock"},
+            {"id": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
         ]
         live_events = [{"id": "fan", "cycle_t": 25}, {"id": "lamp", "cycle_t": 7200}]
 
@@ -410,7 +410,7 @@ def patch_channel_schedule(
                         live_event=live_event,
                     )
                 )
-            elif mode == "clock":
+            elif mode == "clock_window":
                 updated_events.append(
                     apply_clock_schedule(
                         event,
@@ -420,7 +420,7 @@ def patch_channel_schedule(
                     )
                 )
             else:
-                raise ValueError("mode must be cycle or clock")
+                raise ValueError("mode must be cycle or clock_window")
         else:
             updated_events.append(_resync_unedited_event(event, live_event))
     if not found:
@@ -540,6 +540,14 @@ Add these routes before `/api/timers/{role}` in `plamp_web/server.py`:
 @app.get("/api/timer-config")
 def get_timer_config() -> dict[str, Any]:
     return {"roles": configured_timer_roles(), "channels": configured_timer_channels(), "time_format": configured_time_format()}
+
+
+@app.get("/api/host-time")
+def get_host_time() -> dict[str, Any]:
+    now = datetime.now()
+    seconds = now.hour * 3600 + now.minute * 60 + now.second
+    display = now.strftime("%H:%M") if configured_time_format() == "24h" else now.strftime("%-I:%M %p")
+    return {"iso": now.isoformat(timespec="seconds"), "seconds_since_midnight": seconds, "display": display}
 
 
 @app.post("/api/timers/{role}/channels/{channel_id}/schedule")
@@ -709,8 +717,16 @@ Add these functions in the main page script after `timerEventsFromMessage()`:
       return (timerHostSecondsAtLoad + elapsed) % 86400;
     }
 
-    function renderHostClock() {
+    async function refreshHostClock() {
       if (!hostClock) return;
+      try {
+        const response = await fetch("/api/host-time");
+        const data = await response.json();
+        if (response.ok && typeof data.display === "string") {
+          hostClock.textContent = data.display;
+          return;
+        }
+      } catch (error) {}
       hostClock.textContent = secondsToClock(hostSecondsNow());
     }
 
@@ -744,7 +760,7 @@ Add these functions after the helper functions from Step 3:
           <label>Set as
             <select name="mode">
               <option value="cycle">Cycle set</option>
-              <option value="clock">24h set</option>
+              <option value="clock_window">24h set</option>
             </select>
           </label>
           <span class="editor-note">${channel.name} uses pin ${channel.pin ?? "?"} as ${channel.type || "gpio"}.</span>
@@ -767,7 +783,7 @@ Add these functions after the helper functions from Step 3:
           <span class="editor-message" aria-live="polite"></span>
         </div>
       `;
-      editor.elements.mode.value = channel.default_editor === "clock" ? "clock" : "cycle";
+      editor.elements.mode.value = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
       editor.elements.onUnit.value = onUnit.unit;
       editor.elements.offUnit.value = offUnit.unit;
       syncEditorMode(editor);
@@ -854,11 +870,11 @@ to:
 Near the bottom of the main page script, immediately before `startTimerStreams();`, add:
 
 ```javascript
-    renderHostClock();
-    setInterval(renderHostClock, 10000);
+    refreshHostClock();
+    setInterval(refreshHostClock, 30000);
 ```
 
-The display intentionally updates every 10 seconds while showing only `HH:MM`, so it stays current without drawing attention to seconds-level drift.
+The display polls `/api/host-time` every 30 seconds while showing only `HH:MM`, so it stays tied to the server clock without drawing attention to seconds-level drift.
 
 - [ ] **Step 7: Run syntax check**
 
@@ -904,7 +920,7 @@ Timer roles may also define channels for the main-page schedule editor:
           "name": "Lights",
           "pin": 2,
           "type": "gpio",
-          "default_editor": "clock"
+          "default_editor": "clock_window"
         }
       ]
     }

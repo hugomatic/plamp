@@ -49,7 +49,7 @@ Out of scope for this slice:
           "name": "Lights",
           "pin": 2,
           "type": "gpio",
-          "default_editor": "clock"
+          "default_editor": "clock_window"
         }
       ]
     }
@@ -64,7 +64,7 @@ Rules:
 - `channels[].name` is the user-facing label.
 - `channels[].pin` maps to scheduler event `ch`.
 - `channels[].type` maps to scheduler event `type`; this slice should support existing `gpio` and keep `pwm` compatible with validation.
-- `channels[].default_editor` may be `cycle` or `clock`.
+- `channels[].default_editor` may be `cycle` or `clock_window`.
 
 If `channels` is missing, the main page should still fall back to the events reported by the timer state, as it does today. This keeps existing local configs usable.
 
@@ -114,7 +114,7 @@ Cycle set can load any two-step on/off pattern. When saving:
 - ON time.
 - OFF time.
 
-When saving, it generates a 24-hour repeating pattern with ON and OFF durations in seconds. It always computes `current_t` from the host server clock, not the browser clock, so the timer phase matches the real day after the Pico resets. The main page should display the host/server time to minute accuracy and refresh it so the user can see which clock is being used.
+When saving, it generates a 24-hour repeating pattern with ON and OFF durations in seconds. It always computes `current_t` from the host server clock, not the browser clock, so the timer phase matches the real day after the Pico resets. The main page should display the host/server time to minute accuracy by polling a small host-time endpoint, so the user can see which clock is being used.
 
 24h set can be selected even if the current pattern is not already 24 hours. In that case, saving intentionally rewrites the event to a 24-hour cycle.
 
@@ -129,9 +129,9 @@ The UI should feel like it edits one timer at a time, but the implementation mus
 
 For unedited events:
 
-- If a channel uses `default_editor: "clock"` and has a simple 24-hour pattern, recompute `current_t` from the host clock.
-- Otherwise preserve phase from the latest live report when available.
+- Preserve phase from the latest live report when available.
 - If no live report is available, preserve the saved `current_t`.
+- Do not infer an absolute clock window from only the firmware pattern; edited `clock_window` schedules use explicit clock times and the host clock at save time.
 
 This prevents editing one timer from unexpectedly restarting every generic cycle at the beginning while still keeping 24-hour timers aligned to the host clock.
 
