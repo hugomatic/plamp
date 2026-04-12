@@ -3,32 +3,42 @@ from __future__ import annotations
 import glob
 import html
 import json
+import logging
+import logging.handlers
 import os
+import queue
 import re
 import shutil
 import socket
 import subprocess
 import threading
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import serial
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
+PICO_MAIN_FILE = REPO_ROOT / "pico_scheduler" / "main.py"
 STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
+LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+LOGGER = logging.getLogger("pico_api")
 
 config_lock = threading.Lock()
 role_locks: dict[str, threading.Lock] = {}
-pico_locks: dict[str, threading.Lock] = {}
+monitors_lock = threading.Lock()
+monitors: dict[str, "PicoMonitor"] = {}
 
 app = FastAPI(title="plamp Pico API")
 
@@ -36,6 +46,13 @@ app = FastAPI(title="plamp Pico API")
 @app.on_event("startup")
 def startup() -> None:
     ensure_data_dir()
+    configure_logging()
+    start_configured_monitors()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    stop_monitors()
 
 
 def lock_for(mapping: dict[str, threading.Lock], key: str) -> threading.Lock:
@@ -52,6 +69,26 @@ def ensure_data_dir() -> None:
     TIMERS_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
         atomic_write_json(CONFIG_FILE, {"timers": []})
+
+
+def configure_logging() -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    for handler in root.handlers:
+        if getattr(handler, "baseFilename", None) == str(LOG_FILE):
+            return
+    handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3)
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+def read_log_tail(max_lines: int = 200) -> str:
+    if not LOG_FILE.exists():
+        return ""
+    lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:]) + ("\n" if lines else "")
 
 
 def load_json_file(path: Path) -> Any:
@@ -191,9 +228,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
             pattern.append({"val": val, "dur": dur})
             total_t += dur
 
-        if reschedule:
-            current_t = current_t % total_t
-        elif current_t > total_t:
+        if not reschedule and current_t > total_t:
             current_t = total_t
 
         event = {
@@ -220,23 +255,488 @@ def pico_for_role(role: str) -> dict[str, Any]:
     raise HTTPException(status_code=409, detail=f"Pico for role {role} is not connected: {serial}")
 
 
-def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    pico = pico_for_role(role)
-    port = pico["port"]
-    mpremote = shutil.which("mpremote")
-    if not mpremote:
-        raise HTTPException(status_code=500, detail="mpremote not found")
+def total_duration(pattern: Any) -> int | None:
+    if not isinstance(pattern, list) or not pattern:
+        return None
+    total = 0
+    for step in pattern:
+        if not isinstance(step, dict):
+            return None
+        try:
+            duration = int(step["dur"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if duration <= 0:
+            return None
+        total += duration
+    return total
 
-    serial = str(pico["serial"])
-    with lock_for(pico_locks, serial):
-        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(path), ":state.json"], timeout=30)
+
+def event_elapsed_t(event: dict[str, Any]) -> int | None:
+    try:
+        return int(event.get("elapsed_t", event["current_t"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def event_cycle_t(event: dict[str, Any]) -> int | None:
+    elapsed_t = event_elapsed_t(event)
+    if elapsed_t is None:
+        return None
+    total = total_duration(event.get("pattern"))
+    if total is None:
+        return None
+    try:
+        reschedule = int(event.get("reschedule", 1))
+    except (TypeError, ValueError):
+        reschedule = 1
+    return elapsed_t % total if reschedule else min(elapsed_t, total)
+
+
+def current_value_for_event(event: dict[str, Any]) -> int | None:
+    pattern = event.get("pattern")
+    cycle_t = event_cycle_t(event)
+    if cycle_t is None or not isinstance(pattern, list):
+        return None
+    elapsed = 0
+    fallback: int | None = None
+    for step in pattern:
+        if not isinstance(step, dict):
+            return None
+        try:
+            value = int(step["val"])
+            duration = int(step["dur"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        fallback = value
+        elapsed += duration
+        if cycle_t < elapsed:
+            return value
+    return fallback
+
+
+def reduce_report(report: Any) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {"kind": "unknown", "raw": report}
+    reduced = dict(report)
+    content = reduced.get("content")
+    if not isinstance(content, dict):
+        return reduced
+    events = content.get("events")
+    if not isinstance(events, list):
+        return reduced
+    reduced_events = []
+    pins: dict[str, dict[str, Any]] = {}
+    for index, event in enumerate(events):
+        if not isinstance(event, dict):
+            reduced_events.append(event)
+            continue
+        item = dict(event)
+        if "elapsed_t" not in item:
+            elapsed_t = event_elapsed_t(item)
+            if elapsed_t is not None:
+                item["elapsed_t"] = elapsed_t
+        if "cycle_t" not in item:
+            cycle_t = event_cycle_t(item)
+            if cycle_t is not None:
+                item["cycle_t"] = cycle_t
+        if "current_value" not in item:
+            value = current_value_for_event(item)
+            if value is not None:
+                item["current_value"] = value
+        event_id = str(item.get("id") or item.get("ch") or index)
+        pins[event_id] = {
+            "id": item.get("id"),
+            "type": item.get("type"),
+            "ch": item.get("ch"),
+            "elapsed_t": item.get("elapsed_t"),
+            "cycle_t": item.get("cycle_t"),
+            "current_value": item.get("current_value"),
+        }
+        reduced_events.append(item)
+    reduced["content"] = dict(content)
+    reduced["content"]["events"] = reduced_events
+    reduced["pins"] = pins
+    return reduced
+
+
+def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
+    events = state.get("events")
+    if not isinstance(events, list):
+        return state
+    enriched = dict(state)
+    enriched_events = []
+    for event in events:
+        if not isinstance(event, dict):
+            enriched_events.append(event)
+            continue
+        item = dict(event)
+        if "elapsed_t" not in item:
+            elapsed_t = event_elapsed_t(item)
+            if elapsed_t is not None:
+                item["elapsed_t"] = elapsed_t
+        if "cycle_t" not in item:
+            cycle_t = event_cycle_t(item)
+            if cycle_t is not None:
+                item["cycle_t"] = cycle_t
+        if "current_value" not in item:
+            value = current_value_for_event(item)
+            if value is not None:
+                item["current_value"] = value
+        enriched_events.append(item)
+    enriched["events"] = enriched_events
+    return enriched
+
+
+def latest_timer_state(role: str) -> dict[str, Any] | None:
+    snapshot = get_or_start_monitor(role).snapshot()
+    report = snapshot.get("last_report")
+    if not isinstance(report, dict):
+        return None
+    content = report.get("content")
+    if not isinstance(content, dict):
+        return None
+    events = content.get("events")
+    if not isinstance(events, list):
+        return None
+    state: dict[str, Any] = {"events": events}
+    if "report_every" in content:
+        state["report_every"] = content["report_every"]
+    else:
+        try:
+            state["report_every"] = load_json_file(timer_state_path(role))["report_every"]
+        except (HTTPException, KeyError, TypeError):
+            pass
+    return state
+
+
+@dataclass
+class ApplyCommand:
+    path: Path
+    done: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, Any] | None = None
+    error_status: int | None = None
+    error_detail: Any = None
+
+
+class PicoMonitor:
+    def __init__(self, role: str, pico_serial: str):
+        self.role = role
+        self.pico_serial = pico_serial
+        self.commands: queue.Queue[ApplyCommand] = queue.Queue()
+        self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.wake_event = threading.Event()
+        self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
+        self.summary: dict[str, Any] = {
+            "role": role,
+            "serial": pico_serial,
+            "state": "starting",
+            "connected": False,
+            "port": None,
+            "last_seen": None,
+            "last_error": None,
+            "last_report": None,
+        }
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.wake_event.set()
+
+    def join(self, timeout: float = 2.0) -> None:
+        self.thread.join(timeout=timeout)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            return dict(self.summary)
+
+    def subscribe(self) -> queue.Queue[dict[str, Any]]:
+        subscriber: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=100)
+        with self.lock:
+            self.subscribers.add(subscriber)
+        return subscriber
+
+    def unsubscribe(self, subscriber: queue.Queue[dict[str, Any]]) -> None:
+        with self.lock:
+            self.subscribers.discard(subscriber)
+
+    def publish(self, event: str, data: dict[str, Any]) -> None:
+        payload = {"event": event, "data": data}
+        with self.lock:
+            subscribers = list(self.subscribers)
+        for subscriber in subscribers:
+            try:
+                subscriber.put_nowait(payload)
+            except queue.Full:
+                try:
+                    subscriber.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    subscriber.put_nowait(payload)
+                except queue.Full:
+                    pass
+
+    def update_status(self, state: str, *, connected: bool | None = None, port: str | None = None, error: Any = None) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        changed = False
+        with self.lock:
+            if self.summary.get("state") != state:
+                self.summary["state"] = state
+                changed = True
+            if connected is not None and self.summary.get("connected") != connected:
+                self.summary["connected"] = connected
+                changed = True
+            if port is not None and self.summary.get("port") != port:
+                self.summary["port"] = port
+                changed = True
+            if error != self.summary.get("last_error"):
+                self.summary["last_error"] = error
+                changed = True
+            self.summary["updated_at"] = now
+            snapshot = dict(self.summary)
+        if changed:
+            LOGGER.info(
+                "pico monitor %s state=%s connected=%s port=%s error=%s",
+                self.role,
+                snapshot.get("state"),
+                snapshot.get("connected"),
+                snapshot.get("port"),
+                snapshot.get("last_error"),
+            )
+            self.publish("status", snapshot)
+
+    def find_port(self) -> str | None:
+        for pico in enumerate_picos():
+            if pico.get("serial") == self.pico_serial:
+                return str(pico["port"])
+        return None
+
+    def open_serial(self) -> serial.Serial | None:
+        port = self.find_port()
+        if not port:
+            self.update_status("disconnected", connected=False, error="configured Pico is not connected")
+            return None
+        try:
+            conn = serial.Serial(port, baudrate=115200, timeout=0.5)
+        except (OSError, serial.SerialException) as exc:
+            self.update_status("disconnected", connected=False, port=port, error=str(exc))
+            return None
+        self.update_status("connected", connected=True, port=port, error=None)
+        self.publish("snapshot", self.snapshot())
+        return conn
+
+    def close_serial(self, conn: serial.Serial | None) -> None:
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except (OSError, serial.SerialException):
+            pass
+
+    def handle_line(self, raw: bytes) -> None:
+        text = raw.decode("utf-8", errors="replace").strip()
+        if not text:
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        try:
+            report = json.loads(text)
+        except json.JSONDecodeError as exc:
+            error = f"invalid JSON from Pico: {exc}"
+            with self.lock:
+                self.summary["last_seen"] = now
+                self.summary["last_error"] = error
+            LOGGER.warning("pico monitor %s invalid JSON: %s", self.role, text)
+            self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
+            return
+        reduced = reduce_report(report)
+        with self.lock:
+            self.summary["last_seen"] = now
+            self.summary["last_error"] = None
+            self.summary["last_report"] = reduced
+            if isinstance(reduced, dict) and "pins" in reduced:
+                self.summary["pins"] = reduced["pins"]
+            snapshot = dict(self.summary)
+        self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": reduced})
+        if isinstance(report, dict) and report.get("type") == "startup":
+            self.publish("snapshot", snapshot)
+
+    def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
+        command = ApplyCommand(path=path)
+        self.commands.put(command)
+        self.wake_event.set()
+        if not command.done.wait(timeout=timeout):
+            raise HTTPException(status_code=504, detail="timed out waiting for Pico apply")
+        if command.error_status is not None:
+            raise HTTPException(status_code=command.error_status, detail=command.error_detail)
+        if command.result is None:
+            raise HTTPException(status_code=500, detail="Pico apply finished without a result")
+        return command.result
+
+    def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> serial.Serial | None:
+        self.close_serial(conn)
+        self.update_status("applying", connected=False, error=None)
+        port = self.find_port()
+        if not port:
+            command.error_status = 409
+            command.error_detail = f"Pico for role {self.role} is not connected: {self.pico_serial}"
+            command.done.set()
+            self.update_status("disconnected", connected=False, error=command.error_detail)
+            return None
+
+        mpremote = shutil.which("mpremote")
+        if not mpremote:
+            command.error_status = 500
+            command.error_detail = "mpremote not found"
+            command.done.set()
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
+        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "cp", str(PICO_MAIN_FILE), ":main.py"], timeout=30)
+        if firmware_rc != 0:
+            command.error_status = 502
+            command.error_detail = {"step": "firmware", "returncode": firmware_rc, "stdout": firmware_out, "stderr": firmware_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote firmware copy failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "firmware", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
+        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(command.path), ":state.json"], timeout=30)
         if copy_rc != 0:
-            raise HTTPException(status_code=502, detail={"step": "copy", "stdout": copy_out, "stderr": copy_err})
+            command.error_status = 502
+            command.error_detail = {"step": "state", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote state copy failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "state", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
         reset_rc, reset_out, reset_err = run_command([mpremote, "connect", port, "reset"], timeout=15)
         if reset_rc != 0:
-            raise HTTPException(status_code=502, detail={"step": "reset", "stdout": reset_out, "stderr": reset_err})
+            command.error_status = 502
+            command.error_detail = {"step": "reset", "returncode": reset_rc, "stdout": reset_out, "stderr": reset_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote reset failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "reset", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
 
-    return {"role": role, "port": port, "serial": serial, "copy_stdout": copy_out, "reset_stdout": reset_out}
+        command.result = {"role": self.role, "port": port, "serial": self.pico_serial}
+        command.done.set()
+        self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
+        self.update_status("reconnecting", connected=False, port=port, error=None)
+        time.sleep(0.5)
+        return None
+
+    def run(self) -> None:
+        conn: serial.Serial | None = None
+        retry_sleep = 1.0
+        while not self.stop_event.is_set():
+            try:
+                try:
+                    command = self.commands.get_nowait()
+                except queue.Empty:
+                    command = None
+                if command is not None:
+                    conn = self.handle_apply(command, conn)
+                    continue
+
+                if conn is None or not conn.is_open:
+                    conn = self.open_serial()
+                    if conn is None:
+                        self.wake_event.wait(retry_sleep)
+                        self.wake_event.clear()
+                        retry_sleep = min(retry_sleep * 2, 5.0)
+                        continue
+                    retry_sleep = 1.0
+
+                try:
+                    line = conn.readline()
+                except (OSError, serial.SerialException) as exc:
+                    port = getattr(conn, "port", None)
+                    self.close_serial(conn)
+                    conn = None
+                    self.update_status("disconnected", connected=False, port=port, error=str(exc))
+                    continue
+                if line:
+                    self.handle_line(line)
+            except Exception as exc:
+                self.update_status("error", connected=False, error=str(exc))
+                self.stop_event.wait(1.0)
+        self.close_serial(conn)
+        self.update_status("stopped", connected=False)
+
+
+def get_or_start_monitor(role: str) -> PicoMonitor:
+    item = timer_role(role)
+    pico_serial = str(item["pico_serial"])
+    with monitors_lock:
+        monitor = monitors.get(role)
+        if monitor is None or monitor.pico_serial != pico_serial:
+            if monitor is not None:
+                monitor.stop()
+            monitor = PicoMonitor(role, pico_serial)
+            monitors[role] = monitor
+            monitor.start()
+        return monitor
+
+
+def start_configured_monitors() -> None:
+    try:
+        roles = timer_roles()
+    except HTTPException:
+        return
+    for role in roles:
+        get_or_start_monitor(role)
+
+
+def stop_monitors() -> None:
+    with monitors_lock:
+        active = list(monitors.values())
+        monitors.clear()
+    for monitor in active:
+        monitor.stop()
+    for monitor in active:
+        monitor.join()
+
+
+def monitor_summaries() -> dict[str, dict[str, Any]]:
+    with monitors_lock:
+        active = dict(monitors)
+    return {role: monitor.snapshot() for role, monitor in active.items()}
+
+
+def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
+    return get_or_start_monitor(role).apply(path)
+
+
+def sse_message(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+def stream_timer_events(role: str) -> StreamingResponse:
+    monitor = get_or_start_monitor(role)
+
+    def events():
+        subscriber = monitor.subscribe()
+        try:
+            yield sse_message("snapshot", monitor.snapshot())
+            while True:
+                try:
+                    item = subscriber.get(timeout=15)
+                except queue.Empty:
+                    yield sse_message("keepalive", {"role": role})
+                    continue
+                yield sse_message(str(item["event"]), item["data"])
+        finally:
+            monitor.unsubscribe(subscriber)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 def seconds_since_midnight() -> int:
@@ -493,7 +993,7 @@ def enumerate_picos() -> list[dict[str, Any]]:
     return detected
 
 
-def runtime_summary() -> dict[str, Any]:
+def settings_summary() -> dict[str, Any]:
     return {
         "host": {
             "hostname": socket.gethostname(),
@@ -505,15 +1005,21 @@ def runtime_summary() -> dict[str, Any]:
         "picos": enumerate_picos(),
         "tools": {
             "mpremote": shutil.which("mpremote"),
+            "pyserial": getattr(serial, "VERSION", "unknown"),
         },
+        "monitors": monitor_summaries(),
         "state": {
             "path": str(STATE_FILE),
             "exists": STATE_FILE.exists(),
         },
+        "log": {
+            "path": str(LOG_FILE),
+            "exists": LOG_FILE.exists(),
+        },
     }
 
 
-def render_runtime_page(summary: dict[str, Any]) -> str:
+def render_settings_page(summary: dict[str, Any]) -> str:
     host = summary["host"]
     picos = summary["picos"]
     networks = host["network"]
@@ -543,6 +1049,10 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
         "<td>mpremote</td>"
         f"<td><code>{html.escape(str(summary['tools']['mpremote'] or 'not found'))}</code></td>"
         "</tr>"
+        "<tr>"
+        "<td>pyserial</td>"
+        f"<td><code>{html.escape(str(summary['tools']['pyserial']))}</code></td>"
+        "</tr>"
     )
 
     return f"""<!doctype html>
@@ -550,7 +1060,7 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plamp node runtime</title>
+  <title>Plamp settings</title>
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 960px; }}
@@ -561,7 +1071,8 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <h1>Plamp node runtime</h1>
+  <nav><a href="/">Plamp</a> | <a href="/timers/test">Timer test</a> | <a href="/settings.json">Settings JSON</a></nav>
+  <h1>Plamp settings</h1>
   <h2>Picos</h2>
   <table>
     <thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
@@ -598,6 +1109,174 @@ def render_runtime_page(summary: dict[str, Any]) -> str:
 </html>"""
 
 
+def render_timer_dashboard_page() -> str:
+    try:
+        roles = sorted(timer_roles())
+        config = load_config()
+    except HTTPException:
+        roles = []
+        config = {}
+    time_format = "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plamp</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    a {{ color: #174ea6; }}
+    button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
+    input {{ box-sizing: border-box; padding: .35rem; }}
+    .status-board {{ display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }}
+    .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
+    .timer-top {{ align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }}
+    .timer-name {{ font-weight: 700; }}
+    .timer-value {{ border-radius: 6px; padding: .15rem .45rem; }}
+    .timer-value.on {{ background: #d9f7d9; }}
+    .timer-value.off {{ background: #eee; }}
+    .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
+    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
+    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
+    .timer-fill.off {{ background: #888; }}
+  </style>
+</head>
+<body>
+  <nav><a href="/timers/test">Timer test</a> | <a href="/settings">Settings</a></nav>
+  <h1>Plamp</h1>
+  <h2>Timers</h2>
+  <p id="timer-stream-status">Connecting...</p>
+  <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
+
+  <script>
+    const clockTimeFormat = {json.dumps(time_format)};
+    const timerRoles = {json.dumps(roles)};
+    const timerStatus = document.getElementById("timer-stream-status");
+    const timerBoard = document.getElementById("timer-status-board");
+    const timerEventSources = new Map();
+    const timerMessages = new Map();
+
+    function formatChangeTime(secondsFromNow) {{
+      const when = new Date(Date.now() + secondsFromNow * 1000);
+      if (clockTimeFormat === "24h") {{
+        return when.toLocaleTimeString([], {{hour: "2-digit", minute: "2-digit", hour12: false}});
+      }}
+      return when.toLocaleTimeString([], {{hour: "numeric", minute: "2-digit"}});
+    }}
+
+    function currentTimerStep(event) {{
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (!pattern.length) return null;
+      const durations = pattern.map((step) => Number(step.dur));
+      if (durations.some((duration) => !Number.isFinite(duration) || duration <= 0)) return null;
+      const total = durations.reduce((sum, duration) => sum + duration, 0);
+      let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
+      if (!Number.isFinite(cycleT)) cycleT = 0;
+      if (Number(event.reschedule ?? 1)) {{
+        cycleT = ((cycleT % total) + total) % total;
+      }} else {{
+        cycleT = Math.min(Math.max(cycleT, 0), total);
+      }}
+      let start = 0;
+      for (let index = 0; index < pattern.length; index += 1) {{
+        const end = start + durations[index];
+        if (cycleT < end || index === pattern.length - 1) {{
+          return {{step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)}};
+        }}
+        start = end;
+      }}
+      return null;
+    }}
+
+    function timerEventsFromMessage(message) {{
+      const candidates = [
+        message?.report?.content?.events,
+        message?.last_report?.content?.events,
+        message?.content?.events,
+        message?.events,
+      ];
+      return candidates.find((events) => Array.isArray(events)) || [];
+    }}
+
+    function renderTimerStatus() {{
+      timerBoard.replaceChildren();
+      let rendered = 0;
+      for (const role of timerRoles) {{
+        const message = timerMessages.get(role);
+        const events = timerEventsFromMessage(message);
+        for (const [index, event] of events.entries()) {{
+          const step = currentTimerStep(event);
+          const value = Number(step?.step?.val ?? event.current_value ?? 0);
+          const isOn = value > 0;
+          const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
+          const card = document.createElement("div");
+          card.className = "timer-card";
+          const top = document.createElement("div");
+          top.className = "timer-top";
+          const name = document.createElement("span");
+          name.className = "timer-name";
+          name.textContent = role + " / " + (event.id || "pin " + (event.ch ?? index));
+          const badge = document.createElement("span");
+          badge.className = "timer-value " + (isOn ? "on" : "off");
+          badge.textContent = isOn ? "ON" : "OFF";
+          top.append(name, badge);
+          const meta = document.createElement("div");
+          meta.className = "timer-meta";
+          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+          const bar = document.createElement("div");
+          bar.className = "timer-bar";
+          const fill = document.createElement("div");
+          fill.className = "timer-fill" + (isOn ? "" : " off");
+          fill.style.width = percent + "%";
+          bar.append(fill);
+          card.append(top, meta, bar);
+          timerBoard.append(card);
+          rendered += 1;
+        }}
+      }}
+      if (!rendered) {{
+        timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
+      }}
+    }}
+
+    function stopTimerStreams() {{
+      for (const source of timerEventSources.values()) {{
+        source.close();
+      }}
+      timerEventSources.clear();
+      timerStatus.textContent = "Not streaming.";
+    }}
+
+    function startTimerStreams() {{
+      stopTimerStreams();
+      timerMessages.clear();
+      renderTimerStatus();
+      if (!timerRoles.length) {{
+        timerStatus.textContent = "No timers configured.";
+        return;
+      }}
+      timerStatus.textContent = `${{timerRoles.length}} pico board${{timerRoles.length === 1 ? "" : "s"}}: ${{timerRoles.join(", ")}}`;
+      for (const role of timerRoles) {{
+        const source = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+        timerEventSources.set(role, source);
+        for (const eventName of ["snapshot", "status", "report"]) {{
+          source.addEventListener(eventName, (event) => {{
+            timerMessages.set(role, JSON.parse(event.data));
+            renderTimerStatus();
+          }});
+        }}
+        source.onerror = () => {{ timerStatus.textContent = "Stream error or reconnecting..."; }};
+      }}
+    }}
+
+    window.addEventListener("beforeunload", stopTimerStreams);
+    startTimerStreams();
+  </script>
+</body>
+</html>"""
+
+
 def render_timer_test_page() -> str:
     try:
         roles = sorted(timer_roles())
@@ -606,9 +1285,15 @@ def render_timer_test_page() -> str:
     default_role = roles[0] if roles else "pump_lights"
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
+    try:
+        config = load_config()
+    except HTTPException:
+        config = {}
+    time_format = "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
     default_get_curl = f"curl http://localhost:8000/api/timers/{default_role}"
+    default_stream_curl = f"curl -N 'http://localhost:8000/api/timers/{default_role}?stream=true'"
     default_put_curl = "\n".join([
-        f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}?apply=false' " + chr(92),
+        f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}' " + chr(92),
         "  -H 'content-type: application/json' " + chr(92),
         "  --data-binary @- <<'JSON'",
         default_payload,
@@ -631,10 +1316,23 @@ def render_timer_test_page() -> str:
     .row {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }}
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
-    #put-curl-command {{ white-space: pre-wrap; }}
+    #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
+    #stream-result {{ max-height: 18rem; white-space: pre-wrap; }}
+    .status-board {{ display: grid; gap: .75rem; margin: .75rem 0; max-width: 980px; }}
+    .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
+    .timer-top {{ align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }}
+    .timer-name {{ font-weight: 700; }}
+    .timer-value {{ border-radius: 6px; padding: .15rem .45rem; }}
+    .timer-value.on {{ background: #d9f7d9; }}
+    .timer-value.off {{ background: #eee; }}
+    .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
+    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
+    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
+    .timer-fill.off {{ background: #888; }}
   </style>
 </head>
 <body>
+  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
   <h1>Timer API test</h1>
 
   <h2>GET</h2>
@@ -650,16 +1348,22 @@ def render_timer_test_page() -> str:
     <pre id="get-result">GET response will appear here.</pre>
   </fieldset>
 
+  <fieldset>
+    <legend>GET stream timer events</legend>
+    <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
+    <button id="start-stream" type="button">Start GET stream</button>
+    <button id="stop-stream" type="button">Stop GET stream</button>
+    <div><span id="stream-status">Not streaming.</span></div>
+    <div id="timer-status-board" class="status-board">Start the GET stream to see timer status.</div>
+    <pre id="stream-result">GET stream events will appear here.</pre>
+  </fieldset>
+
   <h2>PUT</h2>
   <fieldset>
     <legend>Target</legend>
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
-    <div class="radio-row">
-      <label><input name="apply" type="radio" value="false" checked> Save only</label>
-      <label><input name="apply" type="radio" value="true"> Save and reset</label>
-    </div>
   </fieldset>
 
   <fieldset>
@@ -695,6 +1399,8 @@ def render_timer_test_page() -> str:
     const payload = document.getElementById("payload");
     const getRoleInput = document.getElementById("get-role");
     const putRoleInput = document.getElementById("put-role");
+    const clockTimeFormat = {json.dumps(time_format)};
+    let timerEventSource = null;
 
     function getRole() {{
       return getRoleInput.value.trim();
@@ -702,10 +1408,6 @@ def render_timer_test_page() -> str:
 
     function putRole() {{
       return putRoleInput.value.trim();
-    }}
-
-    function applyValue() {{
-      return document.querySelector('input[name="apply"]:checked').value === "true";
     }}
 
     function secondsSinceMidnight() {{
@@ -736,8 +1438,12 @@ def render_timer_test_page() -> str:
       return "curl " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}`);
     }}
 
+    function streamCurlCommand() {{
+      return "curl -N " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}?stream=true`);
+    }}
+
     function putCurlCommand() {{
-      const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}?apply=${{applyValue() ? "true" : "false"}}`;
+      const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}`;
       const slash = String.fromCharCode(92);
       const newline = String.fromCharCode(10);
       return [
@@ -751,6 +1457,7 @@ def render_timer_test_page() -> str:
 
     function updateCurl() {{
       document.getElementById("get-curl-command").textContent = getCurlCommand();
+      document.getElementById("stream-curl-command").textContent = streamCurlCommand();
       document.getElementById("put-curl-command").textContent = putCurlCommand();
     }}
 
@@ -790,12 +1497,138 @@ def render_timer_test_page() -> str:
       }}
     }}
 
+    function formatChangeTime(secondsFromNow) {{
+      const when = new Date(Date.now() + secondsFromNow * 1000);
+      if (clockTimeFormat === "24h") {{
+        return when.toLocaleTimeString([], {{hour: "2-digit", minute: "2-digit", hour12: false}});
+      }}
+      return when.toLocaleTimeString([], {{hour: "numeric", minute: "2-digit"}});
+    }}
+
+    function currentTimerStep(event) {{
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (!pattern.length) return null;
+      const durations = pattern.map((step) => Number(step.dur));
+      if (durations.some((duration) => !Number.isFinite(duration) || duration <= 0)) return null;
+      const total = durations.reduce((sum, duration) => sum + duration, 0);
+      let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
+      if (!Number.isFinite(cycleT)) cycleT = 0;
+      if (Number(event.reschedule ?? 1)) {{
+        cycleT = ((cycleT % total) + total) % total;
+      }} else {{
+        cycleT = Math.min(Math.max(cycleT, 0), total);
+      }}
+      let start = 0;
+      for (let index = 0; index < pattern.length; index += 1) {{
+        const end = start + durations[index];
+        if (cycleT < end || index === pattern.length - 1) {{
+          return {{step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)}};
+        }}
+        start = end;
+      }}
+      return null;
+    }}
+
+    function timerEventsFromMessage(message) {{
+      const candidates = [
+        message?.report?.content?.events,
+        message?.last_report?.content?.events,
+        message?.content?.events,
+        message?.events,
+      ];
+      return candidates.find((events) => Array.isArray(events)) || [];
+    }}
+
+    function renderTimerStatus(message) {{
+      const events = timerEventsFromMessage(message);
+      const board = document.getElementById("timer-status-board");
+      if (!events.length) return;
+      board.replaceChildren();
+      for (const [index, event] of events.entries()) {{
+        const step = currentTimerStep(event);
+        const value = Number(step?.step?.val ?? event.current_value ?? 0);
+        const isOn = value > 0;
+        const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
+
+        const card = document.createElement("div");
+        card.className = "timer-card";
+
+        const top = document.createElement("div");
+        top.className = "timer-top";
+        const name = document.createElement("span");
+        name.className = "timer-name";
+        name.textContent = event.id || "pin " + (event.ch ?? index);
+        const badge = document.createElement("span");
+        badge.className = "timer-value " + (isOn ? "on" : "off");
+        badge.textContent = isOn ? "ON" : "OFF";
+        top.append(name, badge);
+
+        const meta = document.createElement("div");
+        meta.className = "timer-meta";
+        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+
+        const bar = document.createElement("div");
+        bar.className = "timer-bar";
+        const fill = document.createElement("div");
+        fill.className = "timer-fill" + (isOn ? "" : " off");
+        fill.style.width = percent + "%";
+        bar.append(fill);
+
+        card.append(top, meta, bar);
+        board.append(card);
+      }}
+    }}
+
+    function appendStreamEvent(eventName, data) {{
+      const streamResult = document.getElementById("stream-result");
+      const timestamp = new Date().toLocaleTimeString();
+      let display = data;
+      try {{
+        const parsed = JSON.parse(data);
+        renderTimerStatus(parsed);
+        display = JSON.stringify(parsed, null, 2);
+      }} catch (error) {{
+      }}
+      streamResult.textContent += `[${{timestamp}}] ${{eventName}}\n${{display}}\n\n`;
+      if (streamResult.textContent.length > 20000) {{
+        streamResult.textContent = streamResult.textContent.slice(-20000);
+      }}
+      streamResult.scrollTop = streamResult.scrollHeight;
+    }}
+
+    function stopTimerStream() {{
+      if (timerEventSource) {{
+        timerEventSource.close();
+        timerEventSource = null;
+      }}
+      document.getElementById("stream-status").textContent = "Not streaming.";
+    }}
+
+    function startTimerStream() {{
+      stopTimerStream();
+      const role = getRole();
+      const streamStatus = document.getElementById("stream-status");
+      const streamResult = document.getElementById("stream-result");
+      streamResult.textContent = "";
+      streamStatus.textContent = `Connecting to /api/timers/${{role}}?stream=true...`;
+      timerEventSource = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+      timerEventSource.onopen = () => {{
+        streamStatus.textContent = `Streaming ${{role}}.`;
+      }};
+      for (const eventName of ["snapshot", "status", "report", "error", "keepalive"]) {{
+        timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
+      }}
+      timerEventSource.onerror = () => {{
+        streamStatus.textContent = "Stream error or reconnecting...";
+      }};
+    }}
+
     async function putState() {{
       const putStatus = document.getElementById("put-status");
       const putResult = document.getElementById("put-result");
       putStatus.textContent = "";
       putResult.textContent = "";
-      const url = `/api/timers/${{encodeURIComponent(putRole())}}?apply=${{applyValue() ? "true" : "false"}}`;
+      const url = `/api/timers/${{encodeURIComponent(putRole())}}`;
       if (!window.confirm(`PUT ${{url}}?`)) {{
         putStatus.textContent = "Cancelled.";
         return;
@@ -882,38 +1715,43 @@ def render_timer_test_page() -> str:
     }});
 
     document.getElementById("get-state").addEventListener("click", getState);
+    document.getElementById("start-stream").addEventListener("click", startTimerStream);
+    document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
     document.getElementById("put-state").addEventListener("click", putState);
     getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
     payload.addEventListener("input", updateCurl);
-    for (const item of document.querySelectorAll('input[name="apply"]')) {{
-      item.addEventListener("change", updateCurl);
-    }}
     updateCurl();
   </script>
 </body>
 </html>"""
 
 
-@app.get("/api/timers/{role}")
-def get_timer(role: str) -> dict[str, Any]:
+@app.get("/api/logs")
+def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
+
+
+@app.get("/api/timers/{role}", response_model=None)
+def get_timer(role: str, stream: bool = Query(False)) -> Any:
+    if stream:
+        return stream_timer_events(role)
+    latest = latest_timer_state(role)
+    if latest is not None:
+        return latest
     path = timer_state_path(role)
     state = load_json_file(path)
-    return validate_timer_state(state)
+    return state_with_current_values(validate_timer_state(state))
 
 
 @app.put("/api/timers/{role}")
-def put_timer(role: str, state: dict[str, Any] = Body(...), apply: bool = Query(True)) -> dict[str, Any]:
+def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     path = timer_state_path(role)
     validated = validate_timer_state(state)
     with lock_for(role_locks, role):
         atomic_write_json(path, validated)
-        applied: dict[str, Any] | None = None
-        if apply:
-            applied = apply_timer_state(role, path)
-    if applied is None:
-        return {"role": role, "saved": True, "apply_requested": False, "apply_status": "skipped"}
-    return {"role": role, "saved": True, "apply_requested": True, "apply_status": "ok", "pico": applied}
+        sent = apply_timer_state(role, path)
+    return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
 
 
 @app.get("/timers/test", response_class=HTMLResponse)
@@ -921,11 +1759,21 @@ def timer_test_page() -> HTMLResponse:
     return HTMLResponse(render_timer_test_page())
 
 
+@app.get("/settings.json")
+def get_settings_json() -> dict[str, Any]:
+    return settings_summary()
+
+
 @app.get("/runtime")
 def get_runtime() -> dict[str, Any]:
-    return runtime_summary()
+    return settings_summary()
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def get_settings_page() -> HTMLResponse:
+    return HTMLResponse(render_settings_page(settings_summary()))
 
 
 @app.get("/", response_class=HTMLResponse)
-def get_runtime_page() -> HTMLResponse:
-    return HTMLResponse(render_runtime_page(runtime_summary()))
+def get_timer_dashboard_page() -> HTMLResponse:
+    return HTMLResponse(render_timer_dashboard_page())

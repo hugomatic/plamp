@@ -23,10 +23,12 @@ def report():
         item = {
             "type": ev["type"],
             "ch": ev["ch"],
-            "current_t": ev["current_t"],
+            "elapsed_t": ev["elapsed_t"],
+            "cycle_t": ev["elapsed_t"] % ev["total_t"] if ev["reschedule"] else ev["elapsed_t"],
             "reschedule": ev["reschedule"],
             "pattern": ev["pattern"],
         }
+        item["current_value"] = ev["last_value"]
         if "id" in ev:
             item["id"] = ev["id"]
         out.append(item)
@@ -128,9 +130,7 @@ def load_state():
             pattern.append({"val": val, "dur": dur})
             total_t += dur
 
-        if reschedule:
-            current_t = current_t % total_t
-        elif current_t > total_t:
+        if not reschedule and current_t > total_t:
             current_t = total_t
 
         if event_type == "gpio":
@@ -142,7 +142,7 @@ def load_state():
         ev = {
             "type": event_type,
             "ch": ch,
-            "current_t": current_t,
+            "elapsed_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,
             "total_t": total_t,
@@ -164,19 +164,16 @@ def tick(dt):
         return
 
     for ev in events:
-        if ev["reschedule"]:
-            ev["current_t"] = (ev["current_t"] + dt) % ev["total_t"]
-        else:
-            ev["current_t"] += dt
-            if ev["current_t"] > ev["total_t"]:
-                ev["current_t"] = ev["total_t"]
+        ev["elapsed_t"] += dt
+        if not ev["reschedule"] and ev["elapsed_t"] > ev["total_t"]:
+            ev["elapsed_t"] = ev["total_t"]
 
 
 def apply():
     changed = False
 
     for ev in events:
-        t = ev["current_t"]
+        t = ev["elapsed_t"] % ev["total_t"] if ev["reschedule"] else ev["elapsed_t"]
         elapsed = 0
         value = ev["pattern"][-1]["val"]
 

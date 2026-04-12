@@ -23,7 +23,7 @@ From the repo root, `uv run` will install the Python requirements from `pyprojec
 
 ```bash
 cd /home/hugo/.openclaw/workspace/code/plamp
-uv run python -c "import fastapi, uvicorn"
+uv run python -c "import fastapi, serial, uvicorn"
 ```
 
 ## Timer API
@@ -43,32 +43,21 @@ Timer roles are configured in `../data/config.json`. The app creates `../data/`,
 
 Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
-Read the current saved timer state:
+Read the timer state:
 
 ```bash
 curl http://localhost:8000/api/timers/pump_lights
 ```
 
-Save only, without copying to the Pico or resetting it:
+Stream timer state changes for that role:
 
 ```bash
-curl -X PUT 'http://localhost:8000/api/timers/pump_lights?apply=false' \
-  -H 'content-type: application/json' \
-  --data @data/timers/pump_lights.json
+curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
 ```
 
-The save-only response confirms that the host file was updated and the Pico was not touched:
+Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, keeps the timer state current from Pico reports, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico. Reported timer state uses `elapsed_t` for total elapsed seconds, `cycle_t` for the current pattern-cycle offset, and `current_value` for the output value.
 
-```json
-{
-  "role": "pump_lights",
-  "saved": true,
-  "apply_requested": false,
-  "apply_status": "skipped"
-}
-```
-
-Save and apply to the assigned Pico. This is the default because `current_t` is timing-sensitive:
+Write a new timer state. PUT always saves the host state file, copies it to the Pico, and resets the timer:
 
 ```bash
 curl -X PUT http://localhost:8000/api/timers/pump_lights \
@@ -76,7 +65,7 @@ curl -X PUT http://localhost:8000/api/timers/pump_lights \
   --data @data/timers/pump_lights.json
 ```
 
-The apply response uses the same fields, with `apply_requested: true`, `apply_status: "ok"`, and Pico copy/reset details when `mpremote` succeeds.
+A successful PUT returns a short success message. If the Pico is disconnected or `mpremote` fails, the response explains which step failed and the monitor keeps retrying the serial connection by Pico serial.
 
 The browser test page is available at:
 
@@ -84,11 +73,11 @@ The browser test page is available at:
 http://localhost:8000/timers/test
 ```
 
-It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, an apply radio for save-only vs save-and-reset, and generated curl commands for both GET and PUT.
+It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, and generated curl commands for both GET and PUT.
 
-GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI.
+GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI. PUT always copies state to the Pico and resets it.
 
-## Run The Runtime Page
+## Run The Settings Page
 
 During development, run with reload on port 8000:
 
@@ -99,7 +88,7 @@ uv run uvicorn pico_api.server:app --host 0.0.0.0 --port 8000 --reload
 
 For deployment, use port 80 through a service or reverse proxy instead of the development reload server.
 
-Open the runtime page:
+Open the main timer page:
 
 ```text
 http://<hostname>:8000/
@@ -111,10 +100,23 @@ Or use the Pi IP address directly:
 http://<raspberry-pi-ip>:8000/
 ```
 
-The JSON version is available at:
+The settings JSON version is available at:
 
 ```bash
-curl http://localhost:8000/runtime
+curl http://localhost:8000/settings.json
 ```
 
-The page reports detected Pico boards, network devices, and host software paths. The JSON keeps a default-route field because it is useful when debugging which network interface and gateway the Pi is actually using, but the page keeps that detail out of the main view.
+The app log is written under local runtime data and rotated when it reaches 1 MB:
+
+```text
+data/plamp.log
+data/plamp.log.1
+```
+
+Read recent log lines through the API:
+
+```bash
+curl 'http://localhost:8000/api/logs?lines=200'
+```
+
+The page reports detected Pico boards, network devices, monitor state, log path, and host software paths. The JSON keeps a default-route field because it is useful when debugging which network interface and gateway the Pi is actually using, but the page keeps that detail out of the main view.
