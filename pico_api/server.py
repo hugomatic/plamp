@@ -228,9 +228,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
             pattern.append({"val": val, "dur": dur})
             total_t += dur
 
-        if reschedule:
-            current_t = current_t % total_t
-        elif current_t > total_t:
+        if not reschedule and current_t > total_t:
             current_t = total_t
 
         event = {
@@ -257,13 +255,48 @@ def pico_for_role(role: str) -> dict[str, Any]:
     raise HTTPException(status_code=409, detail=f"Pico for role {role} is not connected: {serial}")
 
 
-def current_value_for_event(event: dict[str, Any]) -> int | None:
+def total_duration(pattern: Any) -> int | None:
+    if not isinstance(pattern, list) or not pattern:
+        return None
+    total = 0
+    for step in pattern:
+        if not isinstance(step, dict):
+            return None
+        try:
+            duration = int(step["dur"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if duration <= 0:
+            return None
+        total += duration
+    return total
+
+
+def event_elapsed_t(event: dict[str, Any]) -> int | None:
     try:
-        current_t = int(event["current_t"])
-        pattern = event["pattern"]
+        return int(event.get("elapsed_t", event["current_t"]))
     except (KeyError, TypeError, ValueError):
         return None
-    if not isinstance(pattern, list) or not pattern:
+
+
+def event_cycle_t(event: dict[str, Any]) -> int | None:
+    elapsed_t = event_elapsed_t(event)
+    if elapsed_t is None:
+        return None
+    total = total_duration(event.get("pattern"))
+    if total is None:
+        return None
+    try:
+        reschedule = int(event.get("reschedule", 1))
+    except (TypeError, ValueError):
+        reschedule = 1
+    return elapsed_t % total if reschedule else min(elapsed_t, total)
+
+
+def current_value_for_event(event: dict[str, Any]) -> int | None:
+    pattern = event.get("pattern")
+    cycle_t = event_cycle_t(event)
+    if cycle_t is None or not isinstance(pattern, list):
         return None
     elapsed = 0
     fallback: int | None = None
@@ -277,7 +310,7 @@ def current_value_for_event(event: dict[str, Any]) -> int | None:
             return None
         fallback = value
         elapsed += duration
-        if current_t < elapsed:
+        if cycle_t < elapsed:
             return value
     return fallback
 
@@ -299,6 +332,14 @@ def reduce_report(report: Any) -> dict[str, Any]:
             reduced_events.append(event)
             continue
         item = dict(event)
+        if "elapsed_t" not in item:
+            elapsed_t = event_elapsed_t(item)
+            if elapsed_t is not None:
+                item["elapsed_t"] = elapsed_t
+        if "cycle_t" not in item:
+            cycle_t = event_cycle_t(item)
+            if cycle_t is not None:
+                item["cycle_t"] = cycle_t
         if "current_value" not in item:
             value = current_value_for_event(item)
             if value is not None:
@@ -308,7 +349,8 @@ def reduce_report(report: Any) -> dict[str, Any]:
             "id": item.get("id"),
             "type": item.get("type"),
             "ch": item.get("ch"),
-            "current_t": item.get("current_t"),
+            "elapsed_t": item.get("elapsed_t"),
+            "cycle_t": item.get("cycle_t"),
             "current_value": item.get("current_value"),
         }
         reduced_events.append(item)
@@ -329,6 +371,14 @@ def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
             enriched_events.append(event)
             continue
         item = dict(event)
+        if "elapsed_t" not in item:
+            elapsed_t = event_elapsed_t(item)
+            if elapsed_t is not None:
+                item["elapsed_t"] = elapsed_t
+        if "cycle_t" not in item:
+            cycle_t = event_cycle_t(item)
+            if cycle_t is not None:
+                item["cycle_t"] = cycle_t
         if "current_value" not in item:
             value = current_value_for_event(item)
             if value is not None:

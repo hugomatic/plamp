@@ -55,7 +55,7 @@ Stream timer state changes for that role:
 curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
 ```
 
-Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, keeps the timer state current from Pico reports, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico.
+Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, keeps the timer state current from Pico reports, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico. Reported timer state uses `elapsed_t` for total elapsed seconds, `cycle_t` for the current pattern-cycle offset, and `current_value` for the output value.
 
 Write a new timer state. PUT always saves the host state file, copies it to the Pico, and resets the timer:
 
