@@ -27,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
+PICO_MAIN_FILE = REPO_ROOT / "pico_scheduler" / "main.py"
 STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
 LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
@@ -503,13 +504,23 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
+        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "cp", str(PICO_MAIN_FILE), ":main.py"], timeout=30)
+        if firmware_rc != 0:
+            command.error_status = 502
+            command.error_detail = {"step": "firmware", "returncode": firmware_rc, "stdout": firmware_out, "stderr": firmware_err}
+            command.done.set()
+            LOGGER.error("pico monitor %s mpremote firmware copy failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "firmware", "detail": command.error_detail})
+            self.update_status("error", connected=False, port=port, error=command.error_detail)
+            return None
+
         copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(command.path), ":state.json"], timeout=30)
         if copy_rc != 0:
             command.error_status = 502
-            command.error_detail = {"step": "copy", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
+            command.error_detail = {"step": "state", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
             command.done.set()
-            LOGGER.error("pico monitor %s mpremote copy failed: %s", self.role, command.error_detail)
-            self.publish("error", {"role": self.role, "step": "copy", "detail": command.error_detail})
+            LOGGER.error("pico monitor %s mpremote state copy failed: %s", self.role, command.error_detail)
+            self.publish("error", {"role": self.role, "step": "state", "detail": command.error_detail})
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
