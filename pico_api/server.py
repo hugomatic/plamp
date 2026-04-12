@@ -527,8 +527,8 @@ class PicoMonitor:
             "role": self.role,
             "port": port,
             "serial": self.pico_serial,
-            "copy_stdout": copy_out,
-            "reset_stdout": reset_out,
+            "copy": "ok",
+            "reset": "ok",
         }
         command.done.set()
         self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
