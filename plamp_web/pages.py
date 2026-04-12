@@ -141,7 +141,7 @@ def render_timer_dashboard_page(
   </style>
 </head>
 <body>
-  <nav><a href="/timers/test">Timer test</a> | <a href="/settings">Settings</a></nav>
+  <nav><a href="/settings">Settings</a></nav>
   <h1>Plamp</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
@@ -168,6 +168,12 @@ def render_timer_dashboard_page(
         return when.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
       }
       return when.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    }
+
+    function formatChangeLabel(secondsFromNow) {
+      if (!Number.isFinite(Number(secondsFromNow))) return "?";
+      const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
+      return formatChangeTime(seconds) + " (" + seconds + " secs)";
     }
 
     function secondsToClock(seconds) {
@@ -340,7 +346,7 @@ def render_timer_dashboard_page(
           </div>
           <div class="editor-row">
             <button type="submit">Apply schedule</button>
-            <button type="button" name="cancel">Cancel</button>
+            <button type="button" name="cancel">Close</button>
             <span class="editor-message" aria-live="polite"></span>
           </div>
         </form>
@@ -419,7 +425,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -765,7 +771,7 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
 
         const meta = document.createElement("div");
         meta.className = "timer-meta";
-        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
         const bar = document.createElement("div");
         bar.className = "timer-bar";
