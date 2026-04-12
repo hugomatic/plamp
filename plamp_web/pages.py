@@ -7,6 +7,7 @@ from typing import Any
 
 def render_settings_page(summary: dict[str, Any]) -> str:
     host = summary["host"]
+    host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
     picos = summary["picos"]
     networks = host["network"]
 
@@ -54,11 +55,13 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     th {{ background: #f4f4f4; }}
     code {{ background: #f4f4f4; padding: .1rem .25rem; }}
     footer {{ color: #555; font-size: .9rem; margin-top: 2rem; }}
+    .host-clock {{ color: #555; font-size: .95rem; }}
   </style>
 </head>
 <body>
   <nav><a href="/">Plamp</a> | <a href="/timers/test">Timer test</a> | <a href="/settings.json">Settings JSON</a></nav>
   <h1>Plamp settings</h1>
+  <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <h2>Picos</h2>
   <table>
     <thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
@@ -95,56 +98,132 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_timer_dashboard_page(roles: list[str], time_format: str) -> str:
-    return f"""<!doctype html>
+def render_timer_dashboard_page(
+    roles: list[str],
+    time_format: str,
+    channels_by_role: dict[str, list[dict[str, Any]]] | None = None,
+    host_seconds_since_midnight: int = 0,
+) -> str:
+    template = """<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plamp</title>
   <style>
-    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
-    nav {{ margin-bottom: 1.5rem; }}
-    a {{ color: #174ea6; }}
-    button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
-    input {{ box-sizing: border-box; padding: .35rem; }}
-    .status-board {{ display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }}
-    .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
-    .timer-top {{ align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }}
-    .timer-name {{ font-weight: 700; }}
-    .timer-value {{ border-radius: 6px; padding: .15rem .45rem; }}
-    .timer-value.on {{ background: #d9f7d9; }}
-    .timer-value.off {{ background: #eee; }}
-    .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
-    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
-    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
-    .timer-fill.off {{ background: #888; }}
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    nav { margin-bottom: 1.5rem; }
+    a { color: #174ea6; }
+    button { border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }
+    input, select { box-sizing: border-box; padding: .35rem; }
+    .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
+    .status-board { display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }
+    .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
+    .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
+    .timer-name { font-weight: 700; }
+    .timer-value { border-radius: 6px; padding: .15rem .45rem; }
+    .timer-value.on { background: #d9f7d9; }
+    .timer-value.off { background: #eee; }
+    .timer-meta { color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }
+    .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
+    .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
+    .timer-fill.off { background: #888; }
+    .timer-actions { margin-top: .65rem; }
+    .timer-editor { border: 1px solid #ccc; border-radius: 6px; display: grid; gap: .65rem; margin: 1rem 0; max-width: 980px; padding: .75rem; }
+    .timer-editor[hidden] { display: none; }
+    .editor-row[hidden] { display: none; }
+    .editor-row { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; }
+    .editor-row label { display: grid; gap: .25rem; }
+    .editor-row select, .editor-row input { min-width: 8rem; }
+    .editor-note { color: #555; font-size: .9rem; }
+    .editor-error { color: #9a3412; font-weight: 600; }
+    .editor-success { color: #166534; font-weight: 600; }
   </style>
 </head>
 <body>
-  <nav><a href="/timers/test">Timer test</a> | <a href="/settings">Settings</a></nav>
+  <nav><a href="/settings">Settings</a></nav>
   <h1>Plamp</h1>
   <h2>Timers</h2>
+  <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
+  <div id="timer-editor-panel" class="timer-editor" hidden></div>
+  <footer>Refreshing in <span id="refresh-countdown">30</span>s</footer>
 
   <script>
-    const clockTimeFormat = {json.dumps(time_format)};
-    const timerRoles = {json.dumps(roles)};
+    const clockTimeFormat = __TIME_FORMAT__;
+    const timerRoles = __ROLES__;
+    const timerChannels = __CHANNELS__;
+    let timerHostSecondsAtLoad = __HOST_SECONDS__;
+    let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
     const timerBoard = document.getElementById("timer-status-board");
+    const timerEditorPanel = document.getElementById("timer-editor-panel");
+    const hostClock = document.getElementById("host-clock");
+    const refreshCountdown = document.getElementById("refresh-countdown");
+    let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
 
-    function formatChangeTime(secondsFromNow) {{
+    function formatChangeTime(secondsFromNow) {
       const when = new Date(Date.now() + secondsFromNow * 1000);
-      if (clockTimeFormat === "24h") {{
-        return when.toLocaleTimeString([], {{hour: "2-digit", minute: "2-digit", hour12: false}});
-      }}
-      return when.toLocaleTimeString([], {{hour: "numeric", minute: "2-digit"}});
-    }}
+      if (clockTimeFormat === "24h") {
+        return when.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
+      }
+      return when.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    }
 
-    function currentTimerStep(event) {{
+    function formatChangeLabel(secondsFromNow) {
+      if (!Number.isFinite(Number(secondsFromNow))) return "?";
+      const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
+      return formatChangeTime(seconds) + " (" + seconds + " secs)";
+    }
+
+    function secondsToClock(seconds) {
+      const normalized = ((seconds % 86400) + 86400) % 86400;
+      const hours = Math.floor(normalized / 3600);
+      const minutes = Math.floor((normalized % 3600) / 60);
+      if (clockTimeFormat === "24h") {
+        return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+      }
+      const hour = hours % 12 || 12;
+      const suffix = hours < 12 ? "AM" : "PM";
+      return hour + ":" + String(minutes).padStart(2, "0") + " " + suffix;
+    }
+
+    function hostSecondsNow() {
+      const elapsed = Math.floor((Date.now() - timerHostLoadedAt) / 1000);
+      return (timerHostSecondsAtLoad + elapsed) % 86400;
+    }
+
+    function tickPageRefresh() {
+      refreshSeconds -= 1;
+      if (refreshSeconds <= 0) {
+        window.location.reload();
+        return;
+      }
+      refreshCountdown.textContent = String(refreshSeconds);
+    }
+
+    async function refreshHostClock() {
+      if (!hostClock) return;
+      try {
+        const response = await fetch("/api/host-time");
+        const data = await response.json();
+        if (response.ok && typeof data.display === "string") {
+          hostClock.textContent = data.display;
+          if (Number.isFinite(Number(data.seconds_since_midnight))) {
+            timerHostSecondsAtLoad = Number(data.seconds_since_midnight);
+            timerHostLoadedAt = Date.now();
+          }
+          return;
+        }
+      } catch (error) {
+      }
+      hostClock.textContent = secondsToClock(hostSecondsNow());
+    }
+
+    function currentTimerStep(event) {
       const pattern = Array.isArray(event.pattern) ? event.pattern : [];
       if (!pattern.length) return null;
       const durations = pattern.map((step) => Number(step.dur));
@@ -152,23 +231,23 @@ def render_timer_dashboard_page(roles: list[str], time_format: str) -> str:
       const total = durations.reduce((sum, duration) => sum + duration, 0);
       let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
       if (!Number.isFinite(cycleT)) cycleT = 0;
-      if (Number(event.reschedule ?? 1)) {{
+      if (Number(event.reschedule ?? 1)) {
         cycleT = ((cycleT % total) + total) % total;
-      }} else {{
+      } else {
         cycleT = Math.min(Math.max(cycleT, 0), total);
-      }}
+      }
       let start = 0;
-      for (let index = 0; index < pattern.length; index += 1) {{
+      for (let index = 0; index < pattern.length; index += 1) {
         const end = start + durations[index];
-        if (cycleT < end || index === pattern.length - 1) {{
-          return {{step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)}};
-        }}
+        if (cycleT < end || index === pattern.length - 1) {
+          return {step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)};
+        }
         start = end;
-      }}
+      }
       return null;
-    }}
+    }
 
-    function timerEventsFromMessage(message) {{
+    function timerEventsFromMessage(message) {
       const candidates = [
         message?.report?.content?.events,
         message?.last_report?.content?.events,
@@ -176,15 +255,171 @@ def render_timer_dashboard_page(roles: list[str], time_format: str) -> str:
         message?.events,
       ];
       return candidates.find((events) => Array.isArray(events)) || [];
-    }}
+    }
 
-    function renderTimerStatus() {{
+    function channelForEvent(role, event, index) {
+      const channels = timerChannels[role] || [];
+      const eventId = event.id || "pin-" + (event.ch ?? index);
+      return channels.find((channel) => channel.id === eventId) || {
+        role,
+        id: eventId,
+        name: event.id || "pin " + (event.ch ?? index),
+        pin: event.ch,
+        type: event.type || "gpio",
+        default_editor: "cycle",
+      };
+    }
+
+    function twoStepDurations(event) {
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (pattern.length !== 2) return null;
+      const on = Number(pattern[0].dur);
+      const off = Number(pattern[1].dur);
+      const onValue = Number(pattern[0].val);
+      const offValue = Number(pattern[1].val);
+      if (!Number.isFinite(on) || !Number.isFinite(off) || on <= 0 || off <= 0 || onValue <= 0 || offValue !== 0) return null;
+      return {on, off, total: on + off};
+    }
+
+    function chooseUnit(seconds) {
+      if (seconds % 3600 === 0) return {value: seconds / 3600, unit: "hours"};
+      if (seconds % 60 === 0) return {value: seconds / 60, unit: "minutes"};
+      return {value: seconds, unit: "seconds"};
+    }
+
+    function unitMultiplier(unit) {
+      if (unit === "hours") return 3600;
+      if (unit === "minutes") return 60;
+      return 1;
+    }
+
+    function secondsToTimeInput(seconds) {
+      const normalized = ((seconds % 86400) + 86400) % 86400;
+      const hours = Math.floor(normalized / 3600);
+      const minutes = Math.floor((normalized % 3600) / 60);
+      return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+    }
+
+    function clockValuesForEvent(event) {
+      const durations = twoStepDurations(event);
+      if (!durations || durations.total !== 86400) return {on: "06:00", off: "18:00"};
+      const cycleT = Number(event.cycle_t ?? event.current_t ?? 0) || 0;
+      const onSeconds = ((hostSecondsNow() - cycleT) % 86400 + 86400) % 86400;
+      return {on: secondsToTimeInput(onSeconds), off: secondsToTimeInput(onSeconds + durations.on)};
+    }
+
+    function showEditorMessage(message, className, text) {
+      message.className = "editor-message" + (className ? " " + className : "");
+      message.textContent = text;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function openScheduleEditor(role, event, index) {
+      const channel = channelForEvent(role, event, index);
+      const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
+      const onUnit = chooseUnit(durations.on);
+      const offUnit = chooseUnit(durations.off);
+      const clock = clockValuesForEvent(event);
+      timerEditorPanel.hidden = false;
+      timerEditorPanel.dataset.role = role;
+      timerEditorPanel.dataset.channelId = channel.id;
+      timerEditorPanel.innerHTML = `
+        <form id="timer-schedule-form">
+          <div class="timer-top"><strong>Edit ${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
+          <div class="editor-row">
+            <label>Set as
+              <select name="mode">
+                <option value="cycle">Cycle set</option>
+                <option value="clock_window">24h set</option>
+              </select>
+            </label>
+          </div>
+          <div class="editor-row cycle-fields">
+            <label>On for <input name="onValue" type="number" min="1" step="1" value="${onUnit.value}"></label>
+            <label>Unit <select name="onUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
+            <label>Off for <input name="offValue" type="number" min="1" step="1" value="${offUnit.value}"></label>
+            <label>Unit <select name="offUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
+            <label>Start at <input name="startAtSeconds" type="number" min="0" step="1" value="0"></label>
+            <span class="editor-note">Seconds into the cycle. Use a value near the end of a step to test the next change.</span>
+          </div>
+          <div class="editor-row clock-fields">
+            <label>On at <input name="onTime" type="time" value="${clock.on}"></label>
+            <label>Off at <input name="offTime" type="time" value="${clock.off}"></label>
+            <span class="editor-note">Applies using the host clock.</span>
+          </div>
+          <div class="editor-row">
+            <button type="submit">Apply schedule</button>
+            <button type="button" name="cancel">Close</button>
+            <span class="editor-message" aria-live="polite"></span>
+          </div>
+        </form>
+      `;
+      const form = document.getElementById("timer-schedule-form");
+      form.elements.mode.value = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
+      form.elements.onUnit.value = onUnit.unit;
+      form.elements.offUnit.value = offUnit.unit;
+      syncEditorMode(form);
+      form.elements.mode.addEventListener("change", () => syncEditorMode(form));
+      form.elements.cancel.addEventListener("click", () => { timerEditorPanel.hidden = true; });
+      form.addEventListener("submit", submitScheduleEditor);
+    }
+
+    function syncEditorMode(form) {
+      const clock = form.elements.mode.value === "clock_window";
+      form.querySelector(".cycle-fields").hidden = clock;
+      form.querySelector(".clock-fields").hidden = !clock;
+    }
+
+    async function submitScheduleEditor(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const message = form.querySelector(".editor-message");
+      showEditorMessage(message, "", "Saving...");
+      const mode = form.elements.mode.value;
+      const body = {mode};
+      if (mode === "cycle") {
+        body.on_seconds = Number(form.elements.onValue.value) * unitMultiplier(form.elements.onUnit.value);
+        body.off_seconds = Number(form.elements.offValue.value) * unitMultiplier(form.elements.offUnit.value);
+        body.start_at_seconds = Number(form.elements.startAtSeconds.value);
+      } else {
+        body.on_time = form.elements.onTime.value;
+        body.off_time = form.elements.offTime.value;
+      }
+      try {
+        const response = await fetch(`/api/timers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(timerEditorPanel.dataset.channelId)}/schedule`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        const text = await response.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (error) {}
+        if (!response.ok) {
+          throw new Error(parsed?.detail || text || `${response.status} ${response.statusText}`);
+        }
+        showEditorMessage(message, "editor-success", "Schedule applied. Waiting for report...");
+      } catch (error) {
+        showEditorMessage(message, "editor-error", String(error.message || error));
+      }
+    }
+
+    function renderTimerStatus() {
       timerBoard.replaceChildren();
       let rendered = 0;
-      for (const role of timerRoles) {{
+      for (const role of timerRoles) {
         const message = timerMessages.get(role);
         const events = timerEventsFromMessage(message);
-        for (const [index, event] of events.entries()) {{
+        for (const [index, event] of events.entries()) {
+          const channel = channelForEvent(role, event, index);
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
           const isOn = value > 0;
@@ -195,65 +430,81 @@ def render_timer_dashboard_page(roles: list[str], time_format: str) -> str:
           top.className = "timer-top";
           const name = document.createElement("span");
           name.className = "timer-name";
-          name.textContent = role + " / " + (event.id || "pin " + (event.ch ?? index));
+          name.textContent = role + " / " + channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
           badge.textContent = isOn ? "ON" : "OFF";
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
           fill.className = "timer-fill" + (isOn ? "" : " off");
           fill.style.width = percent + "%";
           bar.append(fill);
-          card.append(top, meta, bar);
+          const actions = document.createElement("div");
+          actions.className = "timer-actions";
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.textContent = "Edit schedule";
+          edit.addEventListener("click", () => openScheduleEditor(role, event, index));
+          actions.append(edit);
+          card.append(top, meta, bar, actions);
           timerBoard.append(card);
           rendered += 1;
-        }}
-      }}
-      if (!rendered) {{
+        }
+      }
+      if (!rendered) {
         timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
-      }}
-    }}
+      }
+    }
 
-    function stopTimerStreams() {{
-      for (const source of timerEventSources.values()) {{
+    function stopTimerStreams() {
+      for (const source of timerEventSources.values()) {
         source.close();
-      }}
+      }
       timerEventSources.clear();
       timerStatus.textContent = "Not streaming.";
-    }}
+    }
 
-    function startTimerStreams() {{
+    function startTimerStreams() {
       stopTimerStreams();
       timerMessages.clear();
       renderTimerStatus();
-      if (!timerRoles.length) {{
+      if (!timerRoles.length) {
         timerStatus.textContent = "No timers configured.";
         return;
-      }}
-      timerStatus.textContent = `${{timerRoles.length}} pico board${{timerRoles.length === 1 ? "" : "s"}}: ${{timerRoles.join(", ")}}`;
-      for (const role of timerRoles) {{
-        const source = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+      }
+      timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
+      for (const role of timerRoles) {
+        const source = new EventSource(`/api/timers/${encodeURIComponent(role)}?stream=true`);
         timerEventSources.set(role, source);
-        for (const eventName of ["snapshot", "status", "report"]) {{
-          source.addEventListener(eventName, (event) => {{
+        for (const eventName of ["snapshot", "status", "report"]) {
+          source.addEventListener(eventName, (event) => {
             timerMessages.set(role, JSON.parse(event.data));
             renderTimerStatus();
-          }});
-        }}
-        source.onerror = () => {{ timerStatus.textContent = "Stream error or reconnecting..."; }};
-      }}
-    }}
+          });
+        }
+        source.onerror = () => { timerStatus.textContent = "Stream error or reconnecting..."; };
+      }
+    }
 
     window.addEventListener("beforeunload", stopTimerStreams);
+    refreshHostClock();
+    setInterval(refreshHostClock, 30000);
+    setInterval(tickPageRefresh, 1000);
     startTimerStreams();
   </script>
 </body>
 </html>"""
+    return (
+        template.replace("__TIME_FORMAT__", json.dumps(time_format))
+        .replace("__ROLES__", json.dumps(roles))
+        .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
+        .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
+    )
 
 
 def render_timer_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
@@ -533,7 +784,7 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
 
         const meta = document.createElement("div");
         meta.className = "timer-meta";
-        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeTime(step.remaining) : "?");
+        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
         const bar = document.createElement("div");
         bar.className = "timer-bar";

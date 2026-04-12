@@ -43,6 +43,37 @@ Timer roles are configured in `../data/config.json`. The app creates `../data/`,
 
 Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
+Timer roles may also define channels for the main-page schedule editor:
+
+```json
+{
+  "timers": [
+    {
+      "role": "pump_lights",
+      "pico_serial": "e66038b71387a039",
+      "channels": [
+        {
+          "id": "pump",
+          "name": "Pump",
+          "pin": 15,
+          "type": "gpio",
+          "default_editor": "cycle"
+        },
+        {
+          "id": "lights",
+          "name": "Lights",
+          "pin": 2,
+          "type": "gpio",
+          "default_editor": "clock_window"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The `id`, `pin`, and `type` fields should match events in `../data/timers/<role>.json`. Board and channel setup still happens by editing JSON; the main page only edits schedules. Use `cycle` for duration-based editing and `clock_window` for a 24-hour on/off window that is applied using the host clock.
+
 Read the timer state:
 
 ```bash
