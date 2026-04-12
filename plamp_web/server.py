@@ -20,7 +20,7 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
-from pico_api.pages import render_settings_page, render_timer_dashboard_page, render_timer_test_page
+from plamp_web.pages import render_settings_page, render_timer_dashboard_page, render_timer_test_page
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -33,14 +33,14 @@ LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-LOGGER = logging.getLogger("pico_api")
+LOGGER = logging.getLogger("plamp_web")
 
 config_lock = threading.Lock()
 role_locks: dict[str, threading.Lock] = {}
 monitors_lock = threading.Lock()
 monitors: dict[str, "PicoMonitor"] = {}
 
-app = FastAPI(title="plamp Pico API")
+app = FastAPI(title="plamp web")
 
 
 @app.on_event("startup")
