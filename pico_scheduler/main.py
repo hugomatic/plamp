@@ -27,6 +27,7 @@ def report():
             "reschedule": ev["reschedule"],
             "pattern": ev["pattern"],
         }
+        item["current_value"] = ev["last_value"]
         if "id" in ev:
             item["id"] = ev["id"]
         out.append(item)

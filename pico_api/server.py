@@ -4,6 +4,7 @@ import glob
 import html
 import json
 import logging
+import logging.handlers
 import os
 import queue
 import re
@@ -27,6 +28,7 @@ DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
 STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
+LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -43,6 +45,7 @@ app = FastAPI(title="plamp Pico API")
 @app.on_event("startup")
 def startup() -> None:
     ensure_data_dir()
+    configure_logging()
     start_configured_monitors()
 
 
@@ -65,6 +68,26 @@ def ensure_data_dir() -> None:
     TIMERS_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
         atomic_write_json(CONFIG_FILE, {"timers": []})
+
+
+def configure_logging() -> None:
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    for handler in root.handlers:
+        if getattr(handler, "baseFilename", None) == str(LOG_FILE):
+            return
+    handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3)
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+def read_log_tail(max_lines: int = 200) -> str:
+    if not LOG_FILE.exists():
+        return ""
+    lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:]) + ("\n" if lines else "")
 
 
 def load_json_file(path: Path) -> Any:
@@ -233,6 +256,67 @@ def pico_for_role(role: str) -> dict[str, Any]:
     raise HTTPException(status_code=409, detail=f"Pico for role {role} is not connected: {serial}")
 
 
+def current_value_for_event(event: dict[str, Any]) -> int | None:
+    try:
+        current_t = int(event["current_t"])
+        pattern = event["pattern"]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(pattern, list) or not pattern:
+        return None
+    elapsed = 0
+    fallback: int | None = None
+    for step in pattern:
+        if not isinstance(step, dict):
+            return None
+        try:
+            value = int(step["val"])
+            duration = int(step["dur"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        fallback = value
+        elapsed += duration
+        if current_t < elapsed:
+            return value
+    return fallback
+
+
+def reduce_report(report: Any) -> dict[str, Any]:
+    if not isinstance(report, dict):
+        return {"kind": "unknown", "raw": report}
+    reduced = dict(report)
+    content = reduced.get("content")
+    if not isinstance(content, dict):
+        return reduced
+    events = content.get("events")
+    if not isinstance(events, list):
+        return reduced
+    reduced_events = []
+    pins: dict[str, dict[str, Any]] = {}
+    for index, event in enumerate(events):
+        if not isinstance(event, dict):
+            reduced_events.append(event)
+            continue
+        item = dict(event)
+        if "current_value" not in item:
+            value = current_value_for_event(item)
+            if value is not None:
+                item["current_value"] = value
+        event_id = str(item.get("id") or item.get("ch") or index)
+        pins[event_id] = {
+            "id": item.get("id"),
+            "type": item.get("type"),
+            "ch": item.get("ch"),
+            "current_t": item.get("current_t"),
+            "current_value": item.get("current_value"),
+        }
+        reduced_events.append(item)
+    reduced["content"] = dict(content)
+    reduced["content"]["events"] = reduced_events
+    reduced["pins"] = pins
+    return reduced
+
+
 @dataclass
 class ApplyCommand:
     path: Path
@@ -376,12 +460,15 @@ class PicoMonitor:
             LOGGER.warning("pico monitor %s invalid JSON: %s", self.role, text)
             self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
             return
+        reduced = reduce_report(report)
         with self.lock:
             self.summary["last_seen"] = now
             self.summary["last_error"] = None
-            self.summary["last_report"] = report
+            self.summary["last_report"] = reduced
+            if isinstance(reduced, dict) and "pins" in reduced:
+                self.summary["pins"] = reduced["pins"]
             snapshot = dict(self.summary)
-        self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": report})
+        self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": reduced})
         if isinstance(report, dict) and report.get("type") == "startup":
             self.publish("snapshot", snapshot)
 
@@ -828,6 +915,10 @@ def runtime_summary() -> dict[str, Any]:
             "path": str(STATE_FILE),
             "exists": STATE_FILE.exists(),
         },
+        "log": {
+            "path": str(LOG_FILE),
+            "exists": LOG_FILE.exists(),
+        },
     }
 
 
@@ -1217,10 +1308,22 @@ def render_timer_test_page() -> str:
 </html>"""
 
 
+@app.get("/api/logs")
+def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
+
+
+@app.get("/api/timers/{role}/runtime")
+def get_timer_runtime(role: str) -> dict[str, Any]:
+    return get_or_start_monitor(role).snapshot()
+
+
 @app.get("/api/timers/{role}", response_model=None)
-def get_timer(role: str, stream: bool = Query(False)) -> Any:
+def get_timer(role: str, stream: bool = Query(False), runtime: bool = Query(False)) -> Any:
     if stream:
         return stream_timer_events(role)
+    if runtime:
+        return get_timer_runtime(role)
     path = timer_state_path(role)
     state = load_json_file(path)
     return validate_timer_state(state)

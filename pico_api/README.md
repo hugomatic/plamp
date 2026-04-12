@@ -43,10 +43,22 @@ Timer roles are configured in `../data/config.json`. The app creates `../data/`,
 
 Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
 
-Read the current saved timer state:
+Read the saved desired timer state. This is the host file, so fields like `current_t` do not advance here:
 
 ```bash
 curl http://localhost:8000/api/timers/pump_lights
+```
+
+Read the latest live monitor state for that role:
+
+```bash
+curl http://localhost:8000/api/timers/pump_lights/runtime
+```
+
+You can also request the live monitor state as a query form:
+
+```bash
+curl 'http://localhost:8000/api/timers/pump_lights?runtime=true'
 ```
 
 Stream runtime reports from the monitor for that role:
@@ -55,7 +67,7 @@ Stream runtime reports from the monitor for that role:
 curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
 ```
 
-Each configured timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, emits stream events to connected HTTP clients, and temporarily closes serial before running `mpremote` copy/reset for `apply=true`.
+Each configured timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, reads JSON reports, reduces reports into a live `pins` summary with `current_t` and `current_value`, emits stream events to connected HTTP clients, and temporarily closes serial before running `mpremote` copy/reset for `apply=true`.
 
 Save only, without copying to the Pico or resetting it:
 
@@ -125,4 +137,17 @@ The JSON version is available at:
 curl http://localhost:8000/runtime
 ```
 
-The page reports detected Pico boards, network devices, and host software paths. The JSON keeps a default-route field because it is useful when debugging which network interface and gateway the Pi is actually using, but the page keeps that detail out of the main view.
+The app log is written under local runtime data and rotated when it reaches 1 MB:
+
+```text
+data/plamp.log
+data/plamp.log.1
+```
+
+Read recent log lines through the API:
+
+```bash
+curl 'http://localhost:8000/api/logs?lines=200'
+```
+
+The page reports detected Pico boards, network devices, monitor state, log path, and host software paths. The JSON keeps a default-route field because it is useful when debugging which network interface and gateway the Pi is actually using, but the page keeps that detail out of the main view.
