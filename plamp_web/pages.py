@@ -10,6 +10,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
     picos = summary["picos"]
     networks = host["network"]
+    storage = summary.get("storage") if isinstance(summary.get("storage"), dict) else {}
 
     pico_rows = "\n".join(
         "<tr>"
@@ -42,6 +43,15 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         "</tr>"
     )
 
+    storage_rows = (
+        "<tr>"
+        f"<td><code>{html.escape(str(storage.get('path') or '-'))}</code></td>"
+        f"<td>{html.escape(str(storage.get('free') or '-'))}</td>"
+        f"<td>{html.escape(str(storage.get('used') or '-'))}</td>"
+        f"<td>{html.escape(str(storage.get('total') or '-'))}</td>"
+        "</tr>"
+    )
+
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -59,7 +69,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/timers/test">Timer test</a> | <a href="/settings.json">Settings JSON</a></nav>
+  <nav><a href="/">Plamp</a> | <a href="/api/test">API test</a> | <a href="/settings.json">Settings JSON</a></nav>
   <h1>Plamp settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <h2>Picos</h2>
@@ -79,6 +89,12 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <table>
     <thead><tr><th>Tool</th><th>Path</th></tr></thead>
     <tbody>{software_rows}</tbody>
+  </table>
+
+  <h2>Storage</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead>
+    <tbody>{storage_rows}</tbody>
   </table>
 
   <footer>Refreshing in <span id="refresh-countdown">30</span>s</footer>
@@ -130,6 +146,17 @@ def render_timer_dashboard_page(
     .timer-fill.off { background: #888; }
     .timer-actions { margin-top: .65rem; }
     .timer-editor { border: 1px solid #ccc; border-radius: 6px; display: grid; gap: .65rem; margin: 1rem 0; max-width: 980px; padding: .75rem; }
+    .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
+    .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
+    .camera-viewer { max-width: min(100%, 820px); }
+    .camera-viewer[hidden] { display: none; }
+    .capture-list { border: 1px solid #d0d0d0; display: grid; gap: 0; max-height: 22rem; max-width: 980px; overflow-y: auto; }
+    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; margin: 0; padding: .35rem .5rem; text-align: left; }
+    .capture-list button:nth-child(odd) { background: #fff; }
+    .capture-list button:nth-child(even) { background: #f6f7f8; }
+    .capture-list button:hover { background: #e9f2ff; }
+    .capture-list button.selected { background: #dcecff; border-left: 4px solid #174ea6; font-weight: 700; }
+    .capture-pager { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }
     .timer-editor[hidden] { display: none; }
     .editor-row[hidden] { display: none; }
     .editor-row { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; }
@@ -148,7 +175,32 @@ def render_timer_dashboard_page(
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
   <div id="timer-editor-panel" class="timer-editor" hidden></div>
-  <footer>Refreshing in <span id="refresh-countdown">30</span>s</footer>
+
+  <h2>Camera</h2>
+  <section class="camera-panel" aria-label="Camera captures">
+    <div class="camera-actions">
+      <button id="camera-capture" type="button">Take picture</button>
+      <span id="camera-capture-status">Ready.</span>
+    </div>
+    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
+    <label>Show
+      <select id="camera-capture-filter">
+        <option value="all">All</option>
+        <option value="camera_roll">Camera roll</option>
+      </select>
+    </label>
+    <div id="camera-capture-list" class="capture-list">Loading captures...</div>
+    <div class="capture-pager">
+      <button id="camera-capture-prev" type="button">Previous</button>
+      <button id="camera-capture-next" type="button">Next</button>
+      <span id="camera-capture-page-status"></span>
+    </div>
+  </section>
+
+  <footer>
+    <span id="refresh-status">Refreshing in <span id="refresh-countdown">30</span>s.</span>
+    <button id="resume-refresh" type="button" hidden>Resume auto-refresh</button>
+  </footer>
 
   <script>
     const clockTimeFormat = __TIME_FORMAT__;
@@ -161,9 +213,24 @@ def render_timer_dashboard_page(
     const timerEditorPanel = document.getElementById("timer-editor-panel");
     const hostClock = document.getElementById("host-clock");
     const refreshCountdown = document.getElementById("refresh-countdown");
+    const refreshStatus = document.getElementById("refresh-status");
+    const resumeRefreshButton = document.getElementById("resume-refresh");
+    const cameraCaptureButton = document.getElementById("camera-capture");
+    const cameraCaptureStatus = document.getElementById("camera-capture-status");
+    const cameraViewer = document.getElementById("camera-viewer");
+    const cameraCaptureFilter = document.getElementById("camera-capture-filter");
+    const cameraCaptureList = document.getElementById("camera-capture-list");
+    const cameraCapturePrev = document.getElementById("camera-capture-prev");
+    const cameraCaptureNext = document.getElementById("camera-capture-next");
+    const cameraCapturePageStatus = document.getElementById("camera-capture-page-status");
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
+    let cameraCaptures = [];
+    let cameraCaptureHasMore = false;
+    let cameraCaptureOffset = 0;
+    const cameraCapturePageSize = 30;
+    let selectedCameraImageUrl = "";
 
     function formatChangeTime(secondsFromNow) {
       const when = new Date(Date.now() + secondsFromNow * 1000);
@@ -196,13 +263,33 @@ def render_timer_dashboard_page(
       return (timerHostSecondsAtLoad + elapsed) % 86400;
     }
 
+    function updatePageRefreshStatus() {
+      refreshStatus.textContent = `Refreshing in ${refreshSeconds}s.`;
+    }
+
     function tickPageRefresh() {
       refreshSeconds -= 1;
       if (refreshSeconds <= 0) {
         window.location.reload();
         return;
       }
-      refreshCountdown.textContent = String(refreshSeconds);
+      updatePageRefreshStatus();
+    }
+
+    function stopPageAutoRefresh() {
+      if (!pageRefreshTimer) return;
+      window.clearInterval(pageRefreshTimer);
+      pageRefreshTimer = null;
+      refreshStatus.textContent = "Auto-refresh paused.";
+      resumeRefreshButton.hidden = false;
+    }
+
+    function startPageAutoRefresh() {
+      if (pageRefreshTimer) return;
+      refreshSeconds = 30;
+      updatePageRefreshStatus();
+      resumeRefreshButton.hidden = true;
+      pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
     }
 
     async function refreshHostClock() {
@@ -461,6 +548,119 @@ def render_timer_dashboard_page(
       }
     }
 
+    function updateCameraFilters() {
+      const selected = cameraCaptureFilter.value;
+      const options = new Map([["all", "All"], ["camera_roll", "Camera roll"]]);
+      for (const capture of cameraCaptures) {
+        if (capture.grow_id) {
+          options.set("grow:" + capture.grow_id, capture.grow_name || capture.grow_id);
+        }
+      }
+      cameraCaptureFilter.replaceChildren();
+      for (const [value, label] of options.entries()) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        cameraCaptureFilter.append(option);
+      }
+      cameraCaptureFilter.value = options.has(selected) ? selected : "all";
+    }
+
+    function visibleCameraCaptures() {
+      const filter = cameraCaptureFilter.value;
+      if (filter === "camera_roll") return cameraCaptures.filter((capture) => capture.source === "camera_roll");
+      if (filter.startsWith("grow:")) return cameraCaptures.filter((capture) => capture.grow_id === filter.slice(5));
+      return cameraCaptures;
+    }
+
+    function selectCameraCapture(capture) {
+      if (!capture || typeof capture.image_url !== "string") return;
+      selectedCameraImageUrl = capture.image_url;
+      cameraViewer.src = capture.image_url;
+      cameraViewer.hidden = false;
+      for (const button of cameraCaptureList.querySelectorAll("button")) {
+        button.classList.toggle("selected", button.dataset.imageUrl === selectedCameraImageUrl);
+      }
+    }
+
+    function captureLabel(capture) {
+      const parts = [];
+      if (capture.timestamp) parts.push(new Date(capture.timestamp).toLocaleString());
+      parts.push(capture.grow_name || (capture.source === "camera_roll" ? "Camera roll" : "Grow capture"));
+      if (capture.brightness_mean !== undefined) parts.push("brightness " + capture.brightness_mean);
+      return parts.join(" | ");
+    }
+
+    function renderCameraCaptures() {
+      updateCameraFilters();
+      const captures = visibleCameraCaptures();
+      cameraCaptureList.replaceChildren();
+      if (!captures.length) {
+        cameraCaptureList.textContent = cameraCaptureOffset ? "No more captures." : "No captures found.";
+        cameraViewer.hidden = true;
+        cameraViewer.removeAttribute("src");
+        selectedCameraImageUrl = "";
+        cameraCapturePrev.disabled = cameraCaptureOffset === 0;
+        cameraCaptureNext.disabled = true;
+        cameraCapturePageStatus.textContent = cameraCaptureOffset ? "Older page" : "";
+        return;
+      }
+      for (const capture of captures) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.imageUrl = capture.image_url || "";
+        button.textContent = captureLabel(capture);
+        button.addEventListener("click", () => selectCameraCapture(capture));
+        cameraCaptureList.append(button);
+      }
+      const selected = captures.find((capture) => capture.image_url === selectedCameraImageUrl) || captures[0];
+      selectCameraCapture(selected);
+      cameraCapturePrev.disabled = cameraCaptureOffset === 0;
+      cameraCaptureNext.disabled = !cameraCaptureHasMore;
+      const start = cameraCaptureOffset + 1;
+      const end = cameraCaptureOffset + captures.length;
+      cameraCapturePageStatus.textContent = `Showing ${start}-${end}`;
+    }
+
+    async function refreshCameraCaptures() {
+      cameraCaptureList.textContent = "Loading captures...";
+      try {
+        const response = await fetch(`/api/camera/captures?limit=${cameraCapturePageSize}&offset=${cameraCaptureOffset}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
+        cameraCaptures = Array.isArray(data.captures) ? data.captures : [];
+        cameraCaptureHasMore = Boolean(data.has_more);
+        renderCameraCaptures();
+      } catch (error) {
+        cameraCaptureList.textContent = "Could not load captures.";
+        cameraCaptureStatus.textContent = String(error.message || error);
+      }
+    }
+
+    async function captureCameraImage() {
+      cameraCaptureButton.disabled = true;
+      cameraCaptureStatus.textContent = "Capturing...";
+      try {
+        const response = await fetch("/api/camera/captures", {method: "POST"});
+        const text = await response.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (error) {}
+        if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
+        cameraCaptureStatus.textContent = "Captured.";
+        if (data && typeof data.image_url === "string") {
+          selectedCameraImageUrl = data.image_url;
+          cameraViewer.src = data.image_url;
+          cameraViewer.hidden = false;
+        }
+        cameraCaptureOffset = 0;
+        await refreshCameraCaptures();
+      } catch (error) {
+        cameraCaptureStatus.textContent = String(error.message || error);
+      } finally {
+        cameraCaptureButton.disabled = false;
+      }
+    }
+
     function stopTimerStreams() {
       for (const source of timerEventSources.values()) {
         source.close();
@@ -491,11 +691,33 @@ def render_timer_dashboard_page(
       }
     }
 
+    cameraCaptureButton.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      captureCameraImage();
+    });
+    cameraCaptureList.addEventListener("click", stopPageAutoRefresh);
+    cameraCaptureFilter.addEventListener("change", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = 0;
+      refreshCameraCaptures();
+    });
+    cameraCapturePrev.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = Math.max(0, cameraCaptureOffset - cameraCapturePageSize);
+      refreshCameraCaptures();
+    });
+    cameraCaptureNext.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset += cameraCapturePageSize;
+      refreshCameraCaptures();
+    });
     window.addEventListener("beforeunload", stopTimerStreams);
     refreshHostClock();
     setInterval(refreshHostClock, 30000);
-    setInterval(tickPageRefresh, 1000);
+    let pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
+    resumeRefreshButton.addEventListener("click", startPageAutoRefresh);
     startTimerStreams();
+    refreshCameraCaptures();
   </script>
 </body>
 </html>"""
@@ -507,7 +729,7 @@ def render_timer_dashboard_page(
     )
 
 
-def render_timer_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
+def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_get_curl = f"curl http://localhost:8000/api/timers/{default_role}"
     default_stream_curl = f"curl -N 'http://localhost:8000/api/timers/{default_role}?stream=true'"
@@ -523,7 +745,7 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Timer API test</title>
+  <title>Plamp API test</title>
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     fieldset {{ border: 1px solid #ccc; margin: 1rem 0 1.5rem; padding: 1rem; max-width: 980px; }}
@@ -536,6 +758,8 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
     #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
+    #camera-capture-preview {{ display: block; margin-top: 1rem; max-width: min(100%, 720px); }}
+    #camera-capture-preview[hidden] {{ display: none; }}
     #stream-result {{ max-height: 18rem; white-space: pre-wrap; }}
     .status-board {{ display: grid; gap: .75rem; margin: .75rem 0; max-width: 980px; }}
     .timer-card {{ border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }}
@@ -552,7 +776,29 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
 </head>
 <body>
   <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
-  <h1>Timer API test</h1>
+  <h1>Plamp API test</h1>
+
+  <h2>Camera</h2>
+  <fieldset>
+    <legend>POST camera capture</legend>
+    <p>POST /api/camera/captures</p>
+    <pre id="camera-capture-curl-command">curl -X POST http://localhost:8000/api/camera/captures</pre>
+    <button id="camera-capture" type="button">POST camera capture</button>
+    <div><span id="camera-capture-status">Ready.</span></div>
+    <pre id="camera-capture-result">POST response will appear here.</pre>
+    <img id="camera-capture-preview" alt="Latest camera capture preview" hidden>
+  </fieldset>
+
+  <fieldset>
+    <legend>GET camera captures</legend>
+    <p>GET /api/camera/captures</p>
+    <pre id="list-captures-curl-command">curl http://localhost:8000/api/camera/captures?limit=10&amp;offset=0</pre>
+    <button id="list-captures" type="button">GET camera captures</button>
+    <div><span id="list-captures-status">Ready.</span></div>
+    <pre id="list-captures-result">GET response will appear here.</pre>
+  </fieldset>
+
+  <h2>Timers</h2>
 
   <h2>GET</h2>
   <fieldset>
@@ -674,10 +920,20 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
       ].join(newline);
     }}
 
+    function cameraCaptureCurlCommand() {{
+      return "curl -X POST " + doubleQuote(`${{window.location.origin}}/api/camera/captures`);
+    }}
+
+    function listCapturesCurlCommand() {{
+      return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?limit=10`);
+    }}
+
     function updateCurl() {{
       document.getElementById("get-curl-command").textContent = getCurlCommand();
       document.getElementById("stream-curl-command").textContent = streamCurlCommand();
       document.getElementById("put-curl-command").textContent = putCurlCommand();
+      document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
+      document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
     }}
 
     function setPayload(state) {{
@@ -886,6 +1142,57 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
       }}
     }}
 
+    async function listCameraCaptures() {{
+      const status = document.getElementById("list-captures-status");
+      const result = document.getElementById("list-captures-result");
+      status.textContent = "Loading...";
+      result.textContent = "";
+      try {{
+        const response = await fetch("/api/camera/captures?limit=10&offset=0");
+        const text = await response.text();
+        let display = text;
+        try {{
+          display = JSON.stringify(JSON.parse(text), null, 2);
+        }} catch (error) {{
+        }}
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = display;
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
+    async function captureCameraImage() {{
+      const status = document.getElementById("camera-capture-status");
+      const result = document.getElementById("camera-capture-result");
+      const preview = document.getElementById("camera-capture-preview");
+      status.textContent = "Capturing...";
+      result.textContent = "";
+      preview.hidden = true;
+      preview.removeAttribute("src");
+      try {{
+        const response = await fetch("/api/camera/captures", {{method: "POST"}});
+        const text = await response.text();
+        let display = text;
+        let parsed = null;
+        try {{
+          parsed = JSON.parse(text);
+          display = JSON.stringify(parsed, null, 2);
+        }} catch (error) {{
+        }}
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = display;
+        if (response.ok && parsed && typeof parsed.image_url === "string") {{
+          preview.src = parsed.image_url;
+          preview.hidden = false;
+        }}
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
     document.getElementById("generate-quick").addEventListener("click", () => {{
       setPayload({{
         report_every: 10,
@@ -937,6 +1244,8 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
     document.getElementById("put-state").addEventListener("click", putState);
+    document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
+    document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
     getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
     payload.addEventListener("input", updateCurl);
@@ -944,3 +1253,7 @@ def render_timer_test_page(roles: list[str], default_role: str, default_payload:
   </script>
 </body>
 </html>"""
+
+
+def render_timer_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
+    return render_api_test_page(roles, default_role, default_payload, time_format)
