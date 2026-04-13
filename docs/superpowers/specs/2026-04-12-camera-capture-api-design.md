@@ -13,7 +13,7 @@ This first slice does not add the polished main-page web button or grow gallery.
 - Return enough metadata for a future UI to show the picture immediately.
 - Keep the implementation compatible with the existing camera wrapper and metadata style used by `grow/capture_photo.py`.
 - Leave grow album attachment and gallery browsing as follow-up slices.
-- Add a camera API test page so the endpoint is easy to debug and has a browser-visible curl example.
+- Add the camera controls to a shared API test page so the endpoint is easy to debug and has a browser-visible curl example.
 
 ## Non-Goals
 
@@ -111,19 +111,25 @@ The design preference is to avoid hardcoding the wrapper path in Python code.
 
 ## API Test Page
 
-Add a camera API test page for debugging and API documentation, not as the polished end-user capture control. Prefer a dedicated route such as:
+Use one shared API test page for debugging and API documentation instead of creating a separate camera-only test page. The existing `/timers/test` page is timer-specific in name and content; evolve it into a general API test surface.
+
+Preferred route:
 
 ```text
-GET /camera/test
+GET /api/test
 ```
 
-The page should:
+Compatibility:
+
+- keep `GET /timers/test` working as an alias or redirect so existing links do not break
+- update navigation links to point to `/api/test` when touching the relevant page templates
+
+The page should include separate panels for timer APIs and camera APIs. The camera panel should:
 
 - show the `POST /api/camera/captures` curl command using the current origin
 - provide a button that sends the POST request
 - show response status and formatted JSON
 - show a preview of the captured image using the returned `image_url`
-- keep the page clearly separate from `/timers/test`, which should remain focused on timer APIs
 
 ## Components
 
@@ -172,7 +178,7 @@ Recommended tests:
 - script that exits successfully but does not write an image raises a clear helper error
 - FastAPI route returns successful JSON for a fake helper path or temporary fake config, depending on the final implementation shape
 - image route returns JPEG bytes for a known capture ID and 404 for an unknown capture ID
-- camera API test page includes the POST curl command, response display elements, and image preview element
+- shared API test page includes the camera POST curl command, response display elements, and image preview element
 
 Manual validation on hardware:
 
