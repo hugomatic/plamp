@@ -89,6 +89,34 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("10.0 GB", html)
         self.assertIn("52.0 GB", html)
 
+
+    def test_settings_page_includes_git_software_identity(self):
+        html = render_settings_page({
+            "host_time": {"display": "1:23 PM"},
+            "host": {"hostname": "plamp", "network": []},
+            "picos": [],
+            "tools": {"mpremote": None, "pyserial": "3.5"},
+            "software": {
+                "git_commit": "d5883da4abcdef",
+                "git_short_commit": "d5883da",
+                "git_branch": "main",
+                "git_dirty": True,
+            },
+            "storage": {
+                "path": "/home/hugo/.openclaw/workspace/code/plamp",
+                "free": "42.0 GB",
+                "used": "10.0 GB",
+                "total": "52.0 GB",
+            },
+        })
+
+        self.assertIn("Git commit", html)
+        self.assertIn("d5883da", html)
+        self.assertIn("Git branch", html)
+        self.assertIn("main", html)
+        self.assertIn("Git dirty", html)
+        self.assertIn("yes", html)
+
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 

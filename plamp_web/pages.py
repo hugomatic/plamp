@@ -32,7 +32,24 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         for item in networks
     ) or '<tr><td colspan="3">No network devices found.</td></tr>'
 
+    software = summary.get("software") if isinstance(summary.get("software"), dict) else {}
+    git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
+    git_branch = software.get("git_branch") or "unknown"
+    git_dirty = software.get("git_dirty")
+    git_dirty_display = "unknown" if git_dirty is None else ("yes" if git_dirty else "no")
     software_rows = (
+        "<tr>"
+        "<td>Git commit</td>"
+        f"<td><code>{html.escape(str(git_short_commit))}</code></td>"
+        "</tr>"
+        "<tr>"
+        "<td>Git branch</td>"
+        f"<td><code>{html.escape(str(git_branch))}</code></td>"
+        "</tr>"
+        "<tr>"
+        "<td>Git dirty</td>"
+        f"<td><code>{html.escape(git_dirty_display)}</code></td>"
+        "</tr>"
         "<tr>"
         "<td>mpremote</td>"
         f"<td><code>{html.escape(str(summary['tools']['mpremote'] or 'not found'))}</code></td>"

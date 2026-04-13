@@ -13,6 +13,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -1074,6 +1075,28 @@ def storage_summary(path: Path = REPO_ROOT) -> dict[str, Any]:
         "total": human_bytes(usage.total),
     }
 
+
+def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
+    try:
+        return subprocess.check_output(args, cwd=repo_root, text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    commit = git_output(["git", "rev-parse", "HEAD"], repo_root=repo_root)
+    branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)
+    status = git_output(["git", "status", "--short"], repo_root=repo_root)
+    return {
+        "name": "plamp",
+        "git_commit": commit,
+        "git_short_commit": commit[:7] if commit else None,
+        "git_branch": branch,
+        "git_dirty": None if status is None else bool(status),
+    }
+
+
 def settings_summary() -> dict[str, Any]:
     return {
         "host_time": host_time_summary(),
@@ -1089,6 +1112,7 @@ def settings_summary() -> dict[str, Any]:
             "mpremote": shutil.which("mpremote"),
             "pyserial": getattr(serial, "VERSION", "unknown"),
         },
+        "software": software_summary(),
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
         "state": {
