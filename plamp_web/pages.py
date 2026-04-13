@@ -756,6 +756,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
     .row {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }}
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
+    .helper-title {{ font-weight: 700; margin: .75rem 0 .25rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
     #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
     #camera-capture-preview {{ display: block; margin-top: 1rem; max-width: min(100%, 720px); }}
@@ -780,90 +781,102 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <h2>Camera</h2>
   <fieldset>
-    <legend>POST camera capture</legend>
-    <p>POST /api/camera/captures</p>
+    <legend>POST /api/camera/captures</legend>
+    <p>Captures a new image and returns capture metadata.</p>
     <pre id="camera-capture-curl-command">curl -X POST http://localhost:8000/api/camera/captures</pre>
-    <button id="camera-capture" type="button">POST camera capture</button>
+    <button class="copy-curl" type="button" data-copy-target="camera-capture-curl-command">Copy curl</button>
+    <button id="camera-capture" type="button">Run request</button>
     <div><span id="camera-capture-status">Ready.</span></div>
     <pre id="camera-capture-result">POST response will appear here.</pre>
     <img id="camera-capture-preview" alt="Latest camera capture preview" hidden>
   </fieldset>
 
   <fieldset>
-    <legend>GET camera captures</legend>
-    <p>GET /api/camera/captures</p>
+    <legend>GET /api/camera/captures</legend>
+    <p>Lists captures newest first. Options: limit and offset.</p>
+    <div class="row">
+      <label>Limit <input id="list-captures-limit" type="number" min="0" max="200" step="1" value="10"></label>
+      <label>Offset <input id="list-captures-offset" type="number" min="0" step="1" value="0"></label>
+    </div>
     <pre id="list-captures-curl-command">curl http://localhost:8000/api/camera/captures?limit=10&amp;offset=0</pre>
-    <button id="list-captures" type="button">GET camera captures</button>
+    <button class="copy-curl" type="button" data-copy-target="list-captures-curl-command">Copy curl</button>
+    <button id="list-captures" type="button">Run request</button>
     <div><span id="list-captures-status">Ready.</span></div>
     <pre id="list-captures-result">GET response will appear here.</pre>
   </fieldset>
 
   <h2>Timers</h2>
 
-  <h2>GET</h2>
   <fieldset>
-    <legend>Read timer state</legend>
+    <legend>GET /api/timers/{{role}}</legend>
+    <p>Reads the current timer state for one role.</p>
     <label>Role
       <input id="get-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
     <datalist id="timer-roles">{role_options}</datalist>
     <pre id="get-curl-command">{html.escape(default_get_curl)}</pre>
-    <button id="get-state" type="button">GET current state</button>
+    <button class="copy-curl" type="button" data-copy-target="get-curl-command">Copy curl</button>
+    <button id="get-state" type="button">Run request</button>
     <div><span id="get-status">Ready.</span></div>
     <pre id="get-result">GET response will appear here.</pre>
   </fieldset>
 
   <fieldset>
-    <legend>GET stream timer events</legend>
+    <legend>GET /api/timers/{{role}}?stream=true</legend>
+    <p>Streams timer events with server-sent events.</p>
     <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
-    <button id="start-stream" type="button">Start GET stream</button>
-    <button id="stop-stream" type="button">Stop GET stream</button>
+    <button class="copy-curl" type="button" data-copy-target="stream-curl-command">Copy curl</button>
+    <button id="start-stream" type="button">Start stream</button>
+    <button id="stop-stream" type="button">Stop stream</button>
     <div><span id="stream-status">Not streaming.</span></div>
-    <div id="timer-status-board" class="status-board">Start the GET stream to see timer status.</div>
-    <pre id="stream-result">GET stream events will appear here.</pre>
+    <div id="timer-status-board" class="status-board">Start the stream to see timer status.</div>
+    <pre id="stream-result">Stream events will appear here.</pre>
   </fieldset>
 
-  <h2>PUT</h2>
   <fieldset>
-    <legend>Target</legend>
+    <legend>PUT /api/timers/{{role}}</legend>
+    <p>Writes timer state JSON and sends it to the Pico.</p>
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
+
+    <section>
+      <p class="helper-title">Helper: Generate 5s pin test</p>
+      <p>Builds a small GPIO payload in the PUT JSON editor.</p>
+      <label>Test pin <input id="test-pin" type="number" min="0" max="29" value="25"></label>
+      <button id="generate-quick" type="button">Generate pin test</button>
+    </section>
+
+    <section>
+      <p class="helper-title">Helper: Generate pump/lights</p>
+      <p>Builds a pump/lights payload in the PUT JSON editor.</p>
+      <div class="row">
+        <label>Pump pin <input id="pump-pin" type="number" min="0" max="29" value="15"></label>
+        <label>Pump on minutes <input id="pump-on" type="number" min="1" value="5"></label>
+        <label>Pump off minutes <input id="pump-off" type="number" min="1" value="30"></label>
+        <label>Lights pin <input id="lights-pin" type="number" min="0" max="29" value="2"></label>
+        <label>Lights on <input id="lights-on" type="time" step="1" value="06:00:00"></label>
+        <label>Lights off <input id="lights-off" type="time" step="1" value="18:00:00"></label>
+      </div>
+      <button id="generate-pump-lights" type="button">Generate pump/lights</button>
+    </section>
+
+    <label>JSON payload
+      <textarea id="payload">{html.escape(default_payload)}</textarea>
+    </label>
+    <pre id="put-curl-command">{html.escape(default_put_curl)}</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-curl-command">Copy curl</button>
+    <button id="put-state" type="button">Run request</button>
+    <div><span id="put-status">Ready.</span></div>
+    <pre id="put-result">PUT response will appear here.</pre>
   </fieldset>
-
-  <fieldset>
-    <legend>Generate 5s pin test</legend>
-    <label>Test pin <input id="test-pin" type="number" min="0" max="29" value="25"></label>
-    <button id="generate-quick" type="button">Generate pin test</button>
-  </fieldset>
-
-  <fieldset>
-    <legend>Generate pump/lights</legend>
-    <div class="row">
-      <label>Pump pin <input id="pump-pin" type="number" min="0" max="29" value="15"></label>
-      <label>Pump on minutes <input id="pump-on" type="number" min="1" value="5"></label>
-      <label>Pump off minutes <input id="pump-off" type="number" min="1" value="30"></label>
-      <label>Lights pin <input id="lights-pin" type="number" min="0" max="29" value="2"></label>
-      <label>Lights on <input id="lights-on" type="time" step="1" value="06:00:00"></label>
-      <label>Lights off <input id="lights-off" type="time" step="1" value="18:00:00"></label>
-    </div>
-    <button id="generate-pump-lights" type="button">Generate pump/lights</button>
-  </fieldset>
-
-  <label>JSON payload
-    <textarea id="payload">{html.escape(default_payload)}</textarea>
-  </label>
-
-  <h3>PUT curl</h3>
-  <pre id="put-curl-command">{html.escape(default_put_curl)}</pre>
-  <button id="put-state" type="button">PUT</button>
-  <div><span id="put-status">Ready.</span></div>
-  <pre id="put-result">PUT response will appear here.</pre>
 
   <script>
     const payload = document.getElementById("payload");
     const getRoleInput = document.getElementById("get-role");
     const putRoleInput = document.getElementById("put-role");
+    const listCapturesLimitInput = document.getElementById("list-captures-limit");
+    const listCapturesOffsetInput = document.getElementById("list-captures-offset");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
 
@@ -873,6 +886,16 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
     function putRole() {{
       return putRoleInput.value.trim();
+    }}
+
+    function listCapturesLimit() {{
+      const value = Number(listCapturesLimitInput.value);
+      return Number.isFinite(value) ? Math.max(0, Math.min(200, Math.floor(value))) : 10;
+    }}
+
+    function listCapturesOffset() {{
+      const value = Number(listCapturesOffsetInput.value);
+      return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
     }}
 
     function secondsSinceMidnight() {{
@@ -925,7 +948,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
 
     function listCapturesCurlCommand() {{
-      return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?limit=10`);
+      return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?limit=${{listCapturesLimit()}}&offset=${{listCapturesOffset()}}`);
     }}
 
     function updateCurl() {{
@@ -941,6 +964,14 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       document.getElementById("put-status").textContent = "Payload generated. Edit it, then PUT.";
       document.getElementById("put-result").textContent = "";
       updateCurl();
+    }}
+
+    async function copyCurlCommand(event) {{
+      const target = document.getElementById(event.currentTarget.dataset.copyTarget);
+      if (!target) return;
+      await navigator.clipboard.writeText(target.textContent);
+      event.currentTarget.textContent = "Copied";
+      window.setTimeout(() => {{ event.currentTarget.textContent = "Copy curl"; }}, 1200);
     }}
 
     async function getState() {{
@@ -1148,7 +1179,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       status.textContent = "Loading...";
       result.textContent = "";
       try {{
-        const response = await fetch("/api/camera/captures?limit=10&offset=0");
+        const response = await fetch(`/api/camera/captures?limit=${{listCapturesLimit()}}&offset=${{listCapturesOffset()}}`);
         const text = await response.text();
         let display = text;
         try {{
@@ -1246,8 +1277,13 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("put-state").addEventListener("click", putState);
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
+    for (const button of document.querySelectorAll(".copy-curl")) {{
+      button.addEventListener("click", copyCurlCommand);
+    }}
     getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
+    listCapturesLimitInput.addEventListener("input", updateCurl);
+    listCapturesOffsetInput.addEventListener("input", updateCurl);
     payload.addEventListener("input", updateCurl);
     updateCurl();
   </script>
