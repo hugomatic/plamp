@@ -89,21 +89,51 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("10.0 GB", html)
         self.assertIn("52.0 GB", html)
 
-    def test_api_test_page_includes_camera_capture_controls(self):
+    def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 
         self.assertIn("<title>Plamp API test</title>", html)
-        self.assertIn("POST /api/camera/captures", html)
-        self.assertIn('id="camera-capture-curl-command"', html)
-        self.assertIn('id="camera-capture"', html)
-        self.assertIn('id="camera-capture-status"', html)
-        self.assertIn('id="camera-capture-result"', html)
-        self.assertIn('id="camera-capture-preview"', html)
-        self.assertIn('id="list-captures-curl-command"', html)
-        self.assertIn('id="list-captures"', html)
-        self.assertIn('id="list-captures-result"', html)
-        self.assertIn("GET /api/camera/captures", html)
-        self.assertIn("/api/camera/captures?limit=10&offset=0", html)
+        for title in [
+            "POST /api/camera/captures",
+            "GET /api/camera/captures",
+            "GET /api/timers/{role}",
+            "GET /api/timers/{role}?stream=true",
+            "PUT /api/timers/{role}",
+        ]:
+            self.assertIn(f"<legend>{title}</legend>", html)
+        self.assertIn("Captures a new image and returns capture metadata.", html)
+        self.assertIn("Lists captures newest first. Options: limit and offset.", html)
+        self.assertIn("Reads the current timer state for one role.", html)
+        self.assertIn("Streams timer events with server-sent events.", html)
+        self.assertIn("Writes timer state JSON and sends it to the Pico.", html)
+        self.assertIn('<p class="helper-title">Helper: Generate 5s pin test</p>', html)
+        self.assertIn('<p class="helper-title">Helper: Generate pump/lights</p>', html)
+        self.assertNotIn("Payload helpers", html)
+        self.assertNotIn("<h3>Generate 5s pin test</h3>", html)
+        self.assertNotIn("<h3>PUT curl</h3>", html)
+        self.assertLess(
+            html.index('<p class="helper-title">Helper: Generate 5s pin test</p>'),
+            html.index("<label>JSON payload"),
+        )
+
+    def test_api_test_page_has_copyable_curl_commands_and_camera_paging_inputs(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        for target in [
+            "camera-capture-curl-command",
+            "list-captures-curl-command",
+            "get-curl-command",
+            "stream-curl-command",
+            "put-curl-command",
+        ]:
+            self.assertIn(f'data-copy-target="{target}"', html)
+        self.assertIn('id="list-captures-limit"', html)
+        self.assertIn('id="list-captures-offset"', html)
+        self.assertIn("listCapturesLimit()", html)
+        self.assertIn("listCapturesOffset()", html)
+        self.assertIn("copyCurlCommand", html)
+        self.assertIn("navigator.clipboard.writeText", html)
+        self.assertIn("/api/camera/captures?limit=10&amp;offset=0", html)
 
     def test_api_test_page_keeps_timer_controls(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
