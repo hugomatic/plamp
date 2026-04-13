@@ -19,8 +19,9 @@ from typing import Any
 
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
-from plamp_web.pages import render_settings_page, render_timer_dashboard_page, render_timer_test_page
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from plamp_web import camera_capture
+from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -1051,6 +1052,28 @@ def host_time_summary() -> dict[str, Any]:
     return {"iso": now.isoformat(timespec="seconds"), "seconds_since_midnight": seconds, "display": display}
 
 
+
+def human_bytes(value: int) -> str:
+    amount = float(value)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if amount < 1024 or unit == "TB":
+            return f"{amount:.1f} {unit}"
+        amount /= 1024
+    return f"{amount:.1f} TB"
+
+
+def storage_summary(path: Path = REPO_ROOT) -> dict[str, Any]:
+    usage = shutil.disk_usage(path)
+    return {
+        "path": str(path),
+        "free_bytes": usage.free,
+        "used_bytes": usage.used,
+        "total_bytes": usage.total,
+        "free": human_bytes(usage.free),
+        "used": human_bytes(usage.used),
+        "total": human_bytes(usage.total),
+    }
+
 def settings_summary() -> dict[str, Any]:
     return {
         "host_time": host_time_summary(),
@@ -1066,6 +1089,7 @@ def settings_summary() -> dict[str, Any]:
             "mpremote": shutil.which("mpremote"),
             "pyserial": getattr(serial, "VERSION", "unknown"),
         },
+        "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
         "state": {
             "path": str(STATE_FILE),
@@ -1091,6 +1115,61 @@ def get_timer_config() -> dict[str, Any]:
 @app.get("/api/host-time")
 def get_host_time() -> dict[str, Any]:
     return host_time_summary()
+
+
+@app.get("/api/camera/captures")
+def get_camera_captures(
+    source: str = "all",
+    grow_id: str | None = None,
+    limit: int = 24,
+    offset: int = 0,
+) -> dict[str, Any]:
+    safe_limit = max(0, min(limit, 200))
+    safe_offset = max(0, offset)
+    captures = camera_capture.list_camera_captures(
+        repo_root=camera_capture.REPO_ROOT,
+        data_dir=camera_capture.DATA_DIR,
+        grows_dir=camera_capture.GROWS_DIR,
+        source=source,
+        grow_id=grow_id,
+        limit=safe_limit + 1,
+        offset=safe_offset,
+    )
+    return {
+        "captures": captures[:safe_limit],
+        "limit": safe_limit,
+        "offset": safe_offset,
+        "has_more": len(captures) > safe_limit,
+    }
+
+
+@app.get("/api/camera/images/{image_key}")
+def get_camera_image_by_key(image_key: str) -> FileResponse:
+    image_path = camera_capture.resolve_capture_image_key(image_key, repo_root=camera_capture.REPO_ROOT)
+    if image_path is None:
+        raise HTTPException(status_code=404, detail="unknown camera image")
+    return FileResponse(image_path, media_type="image/jpeg")
+
+
+@app.post("/api/camera/captures")
+def post_camera_capture() -> dict[str, Any]:
+    try:
+        return camera_capture.capture_camera_image(
+            repo_root=camera_capture.REPO_ROOT,
+            data_dir=camera_capture.DATA_DIR,
+            config_file=camera_capture.CONFIG_FILE,
+            grow_config_file=camera_capture.TRANSITIONAL_GROW_CONFIG_FILE,
+        )
+    except camera_capture.CameraCaptureError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.get("/api/camera/captures/{capture_id}/image")
+def get_camera_capture_image(capture_id: str) -> FileResponse:
+    image_path = camera_capture.find_capture_image(capture_id, data_dir=camera_capture.DATA_DIR)
+    if image_path is None:
+        raise HTTPException(status_code=404, detail=f"unknown camera capture: {capture_id}")
+    return FileResponse(image_path, media_type="image/jpeg")
 
 
 @app.post("/api/timers/{role}/channels/{channel_id}/schedule")
@@ -1141,12 +1220,21 @@ def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
 
 
-@app.get("/timers/test", response_class=HTMLResponse)
-def timer_test_page() -> HTMLResponse:
+def api_test_page_response() -> HTMLResponse:
     roles = configured_timer_roles()
     default_role = roles[0] if roles else "pump_lights"
     default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
-    return HTMLResponse(render_timer_test_page(roles, default_role, default_payload, configured_time_format()))
+    return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format()))
+
+
+@app.get("/api/test", response_class=HTMLResponse)
+def api_test_page() -> HTMLResponse:
+    return api_test_page_response()
+
+
+@app.get("/timers/test", response_class=HTMLResponse)
+def timer_test_page() -> HTMLResponse:
+    return api_test_page_response()
 
 
 @app.get("/settings.json")
