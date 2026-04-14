@@ -1003,6 +1003,32 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="list-captures-result">GET response will appear here.</pre>
   </fieldset>
 
+  <h2>Config</h2>
+  <fieldset>
+    <legend>GET /api/config</legend>
+    <p>Reads configured meaning plus detected local hardware choices.</p>
+    <pre id="get-config-curl-command">curl http://localhost:8000/api/config</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-config-curl-command">Copy curl</button>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/controllers</legend>
+    <p>Saves named local Pico controllers.</p>
+    <pre id="put-config-controllers-curl-command">curl -X PUT http://localhost:8000/api/config/controllers -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-controllers-curl-command">Copy curl</button>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/devices</legend>
+    <p>Saves device mappings to controllers and pins.</p>
+    <pre id="put-config-devices-curl-command">curl -X PUT http://localhost:8000/api/config/devices -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-devices-curl-command">Copy curl</button>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/cameras</legend>
+    <p>Saves camera names and user-confirmed IR filter values.</p>
+    <pre id="put-config-cameras-curl-command">curl -X PUT http://localhost:8000/api/config/cameras -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-cameras-curl-command">Copy curl</button>
+  </fieldset>
+
   <h2>Timers</h2>
 
   <fieldset>

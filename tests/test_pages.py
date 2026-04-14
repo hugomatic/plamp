@@ -173,6 +173,19 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('"/api/config/devices"', html)
         self.assertIn('"/api/config/cameras"', html)
 
+    def test_api_test_page_includes_config_routes(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        for route in [
+            "GET /api/config",
+            "PUT /api/config/controllers",
+            "PUT /api/config/devices",
+            "PUT /api/config/cameras",
+        ]:
+            self.assertIn(f"<legend>{route}</legend>", html)
+        self.assertIn('data-copy-target="get-config-curl-command"', html)
+        self.assertIn('data-copy-target="put-config-devices-curl-command"', html)
+
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 
