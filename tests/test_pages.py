@@ -179,6 +179,17 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('"/api/config/devices"', html)
         self.assertIn('"/api/config/cameras"', html)
 
+    def test_config_page_includes_blank_rows_for_new_controller_and_device(self):
+        html = render_config_page({"controllers": {}, "devices": {}, "cameras": {}}, {"picos": [], "cameras": []})
+
+        self.assertIn('class="controller-row new-row" data-controller-key=""', html)
+        self.assertIn('placeholder="pump_lights"', html)
+        self.assertIn('class="device-row new-row" data-device-id=""', html)
+        self.assertIn('placeholder="pump"', html)
+        self.assertIn('const key = row.dataset.controllerKey || `controller:${name}`;', html)
+        self.assertNotIn("No configured controllers", html)
+        self.assertNotIn("No configured devices", html)
+
     def test_api_test_page_includes_config_routes(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 

@@ -44,10 +44,10 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     detected_rpicam_keys = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
     all_rpicam_keys = sorted(set(cameras) | set(detected_rpicam_keys))
 
-    controller_rows = "\n".join(
+    existing_controller_rows = "\n".join(
         '<tr class="controller-row" data-controller-key="{key}">'
         '<td><code>{hardware_label}</code><div class="muted">{hardware_detail}</div></td>'
-        '<td><input class="controller-name" value="{name}"></td>'
+        '<td><input class="controller-name" placeholder="pump_lights" value="{name}"></td>'
         '<td><select class="controller-type">{type_options}</select></td>'
         '<td><select class="controller-pico-serial">{pico_options}</select></td>'
         '</tr>'.format(
@@ -59,12 +59,24 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             pico_options=pico_options(picos, str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "")),
         )
         for key in all_controller_keys
-    ) or '<tr><td colspan="4">No configured controllers. Add a logical controller such as controller:pump_lights.</td></tr>'
+    )
+    new_controller_row = (
+        '<tr class="controller-row new-row" data-controller-key="">'
+        '<td><code>New</code><div class="muted">Type a name, assign a Pico, then save.</div></td>'
+        '<td><input class="controller-name" placeholder="pump_lights" value=""></td>'
+        '<td><select class="controller-type">{type_options}</select></td>'
+        '<td><select class="controller-pico-serial">{pico_options}</select></td>'
+        '</tr>'.format(
+            type_options="".join(option_tag(value, value, "pico_scheduler") for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
+            pico_options=pico_options(picos, ""),
+        )
+    )
+    controller_rows = "\n".join(row for row in [existing_controller_rows, new_controller_row] if row)
 
-    device_rows = "\n".join(
+    existing_device_rows = "\n".join(
         '<tr class="device-row" data-device-id="{device_id}">'
-        '<td><input class="device-id" value="{device_id}"></td>'
-        '<td><input class="device-name" value="{name}"></td>'
+        '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
+        '<td><input class="device-name" placeholder="Pump" value="{name}"></td>'
         '<td><select class="device-type"><option value="gpio" selected>gpio</option></select></td>'
         '<td><select class="device-controller">{controller_options_html}</select></td>'
         '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
@@ -78,7 +90,21 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         )
         for device_id, device in devices.items()
         if isinstance(device, dict)
-    ) or '<tr><td colspan="6">No configured devices.</td></tr>'
+    )
+    new_device_row = (
+        '<tr class="device-row new-row" data-device-id="">'
+        '<td><input class="device-id" placeholder="pump" value=""></td>'
+        '<td><input class="device-name" placeholder="Pump" value=""></td>'
+        '<td><select class="device-type"><option value="gpio" selected>gpio</option></select></td>'
+        '<td><select class="device-controller">{controller_options_html}</select></td>'
+        '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
+        '<td><select class="device-editor">{editor_options}</select></td>'
+        '</tr>'.format(
+            controller_options_html=controller_options(controllers, ""),
+            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+        )
+    )
+    device_rows = "\n".join(row for row in [existing_device_rows, new_device_row] if row)
 
     camera_rows = "\n".join(
         '<tr class="camera-row" data-camera-key="{key}">'
@@ -131,7 +157,8 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         const name = row.querySelector(".controller-name").value.trim();
         if (!name) continue;
         const picoSerial = row.querySelector(".controller-pico-serial").value || null;
-        result[row.dataset.controllerKey] = {{name, type: row.querySelector(".controller-type").value, match: {{pico_serial: picoSerial}}}};
+        const key = row.dataset.controllerKey || `controller:${{name}}`;
+        result[key] = {{name, type: row.querySelector(".controller-type").value, match: {{pico_serial: picoSerial}}}};
       }}
       return result;
     }}

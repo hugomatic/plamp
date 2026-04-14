@@ -45,6 +45,23 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["config"]["devices"]["pump"]["pin"], 3)
         self.assertEqual(saved["timers"][0]["channels"][0]["id"], "pump")
 
+
+    def test_api_test_page_uses_empty_payload_when_default_timer_state_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(root, {"timers": [{"role": "pump_n_lights", "pico_serial": "abc"}]})
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+            ):
+                response = server.api_test_page_response()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"pump_n_lights", response.body)
+        self.assertIn(b"{}", response.body)
+
     def test_put_config_devices_rejects_unknown_controller(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

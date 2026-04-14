@@ -1288,10 +1288,21 @@ def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
 
 
+def default_timer_payload_for_api_test(default_role: str | None) -> str:
+    if not default_role:
+        return "{}"
+    try:
+        return json.dumps(load_json_file(timer_state_path(default_role)), indent=2)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return "{}"
+        raise
+
+
 def api_test_page_response() -> HTMLResponse:
     roles = configured_timer_roles()
     default_role = roles[0] if roles else "pump_lights"
-    default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
+    default_payload = default_timer_payload_for_api_test(default_role if roles else None)
     return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format()))
 
 
