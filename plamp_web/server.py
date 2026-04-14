@@ -23,6 +23,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.hardware_config import apply_hardware_section, hardware_view
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -1130,6 +1131,48 @@ def settings_summary() -> dict[str, Any]:
 @app.get("/api/logs")
 def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
+
+
+def config_response() -> dict[str, Any]:
+    config = load_config()
+    return {
+        "config": hardware_view(config),
+        "detected": {
+            "picos": enumerate_picos(),
+            "cameras": hardware_inventory.detect_rpicam_cameras(),
+        },
+    }
+
+
+@app.get("/api/config")
+def get_config() -> dict[str, Any]:
+    return config_response()
+
+
+def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
+    with config_lock:
+        config = load_config()
+        try:
+            updated = apply_hardware_section(config, section, value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        atomic_write_json(CONFIG_FILE, updated)
+    return config_response()
+
+
+@app.put("/api/config/controllers")
+def put_config_controllers(controllers: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("controllers", controllers)
+
+
+@app.put("/api/config/devices")
+def put_config_devices(devices: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("devices", devices)
+
+
+@app.put("/api/config/cameras")
+def put_config_cameras(cameras: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("cameras", cameras)
 
 
 @app.get("/api/timer-config")
