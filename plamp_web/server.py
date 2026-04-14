@@ -21,7 +21,7 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from plamp_web import camera_capture
+from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
@@ -1113,6 +1113,7 @@ def settings_summary() -> dict[str, Any]:
             "pyserial": getattr(serial, "VERSION", "unknown"),
         },
         "software": software_summary(),
+        "cameras": {"rpicam": hardware_inventory.detect_rpicam_cameras()},
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
         "state": {

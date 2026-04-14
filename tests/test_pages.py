@@ -117,6 +117,22 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Git dirty", html)
         self.assertIn("yes", html)
 
+    def test_settings_page_includes_detected_raspberry_pi_cameras(self):
+        html = render_settings_page({
+            "host_time": {"display": "1:23 PM"},
+            "host": {"hostname": "plamp", "network": []},
+            "picos": [],
+            "tools": {"mpremote": None, "pyserial": "3.5"},
+            "software": {"git_short_commit": "d5883da", "git_branch": "main", "git_dirty": False},
+            "cameras": {"rpicam": [{"key": "rpicam:cam0", "connector": "cam0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/imx708@1a"}]},
+            "storage": {"path": "/tmp", "free": "42.0 GB", "used": "10.0 GB", "total": "52.0 GB"},
+        })
+
+        self.assertIn("Raspberry Pi cameras", html)
+        self.assertIn("rpicam:cam0", html)
+        self.assertIn("imx708_wide", html)
+        self.assertIn("wide", html)
+
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 

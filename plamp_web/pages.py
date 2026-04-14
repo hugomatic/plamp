@@ -11,6 +11,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     picos = summary["picos"]
     networks = host["network"]
     storage = summary.get("storage") if isinstance(summary.get("storage"), dict) else {}
+    cameras = summary.get("cameras") if isinstance(summary.get("cameras"), dict) else {}
+    rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else []
 
     pico_rows = "\n".join(
         "<tr>"
@@ -22,6 +24,17 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         "</tr>"
         for item in picos
     ) or '<tr><td colspan="5">No Picos found.</td></tr>'
+
+    camera_rows = "\n".join(
+        "<tr>"
+        f"<td><code>{html.escape(str(item.get('key') or '-'))}</code></td>"
+        f"<td>{html.escape(str(item.get('model') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
+        f"<td><code>{html.escape(str(item.get('path') or '-'))}</code></td>"
+        "</tr>"
+        for item in rpicam_cameras
+    ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
 
     network_rows = "\n".join(
         "<tr>"
@@ -93,6 +106,12 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <table>
     <thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
     <tbody>{pico_rows}</tbody>
+  </table>
+
+  <h2>Raspberry Pi cameras</h2>
+  <table>
+    <thead><tr><th>Key</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead>
+    <tbody>{camera_rows}</tbody>
   </table>
 
   <h2>Network</h2>
