@@ -5,6 +5,168 @@ import json
 from typing import Any
 
 
+def option_tag(value: str, label: str, selected: str | None) -> str:
+    selected_attr = " selected" if value == selected else ""
+    return f'<option value="{html.escape(value)}"{selected_attr}>{html.escape(label)}</option>'
+
+
+def controller_options(controllers: dict[str, Any], selected: str | None) -> str:
+    return "\n".join(
+        option_tag(key, str(item.get("name") or key), selected)
+        for key, item in controllers.items()
+        if isinstance(item, dict)
+    )
+
+
+def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
+    options = [option_tag("", "Unassigned", selected)]
+    seen = set()
+    for pico in picos:
+        serial = str(pico.get("serial") or "")
+        if not serial:
+            continue
+        seen.add(serial)
+        label = f"{serial} {pico.get('port') or ''}".strip()
+        options.append(option_tag(serial, label, selected))
+    if selected and selected not in seen:
+        options.append(option_tag(selected, f"{selected} (not detected)", selected))
+    return "\n".join(options)
+
+
+def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
+    controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
+    devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
+    cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
+    picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
+    detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    detected_picos_by_serial = {str(item.get("serial")): item for item in picos if isinstance(item, dict) and item.get("serial")}
+    all_controller_keys = sorted(controllers)
+    detected_rpicam_keys = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    all_rpicam_keys = sorted(set(cameras) | set(detected_rpicam_keys))
+
+    controller_rows = "\n".join(
+        '<tr class="controller-row" data-controller-key="{key}">'
+        '<td><code>{key_label}</code><div class="muted">{detected}</div></td>'
+        '<td><input class="controller-name" value="{name}"></td>'
+        '<td><select class="controller-type">{type_options}</select></td>'
+        '<td><select class="controller-pico-serial">{pico_options}</select></td>'
+        '</tr>'.format(
+            key=html.escape(key, quote=True),
+            key_label=html.escape(key),
+            detected=html.escape(str(detected_picos_by_serial.get(str(controllers.get(key, {}).get("match", {}).get("pico_serial")), {}).get("port") or "configured")),
+            name=html.escape(str(controllers.get(key, {}).get("name") or ""), quote=True),
+            type_options="".join(option_tag(value, value, str(controllers.get(key, {}).get("type") or "pico_scheduler")) for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
+            pico_options=pico_options(picos, str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "")),
+        )
+        for key in all_controller_keys
+    ) or '<tr><td colspan="4">No configured controllers. Add a logical controller such as controller:pump_lights.</td></tr>'
+
+    device_rows = "\n".join(
+        '<tr class="device-row" data-device-id="{device_id}">'
+        '<td><input class="device-id" value="{device_id}"></td>'
+        '<td><input class="device-name" value="{name}"></td>'
+        '<td><select class="device-type"><option value="gpio" selected>gpio</option></select></td>'
+        '<td><select class="device-controller">{controller_options_html}</select></td>'
+        '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+        '<td><select class="device-editor">{editor_options}</select></td>'
+        '</tr>'.format(
+            device_id=html.escape(device_id, quote=True),
+            name=html.escape(str(device.get("name") or ""), quote=True),
+            controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
+            pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+            editor_options="".join(option_tag(value, value, str(device.get("default_editor") or "cycle")) for value in ["cycle", "clock_window"]),
+        )
+        for device_id, device in devices.items()
+        if isinstance(device, dict)
+    ) or '<tr><td colspan="6">No configured devices.</td></tr>'
+
+    camera_rows = "\n".join(
+        '<tr class="camera-row" data-camera-key="{key}">'
+        '<td><code>{key_label}</code><div class="muted">{detected}</div></td>'
+        '<td><input class="camera-name" value="{name}"></td>'
+        '<td><select class="camera-ir-filter">{ir_options}</select></td>'
+        '</tr>'.format(
+            key=html.escape(key, quote=True),
+            key_label=html.escape(key),
+            detected=html.escape(" ".join(str(detected_rpicam_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured"),
+            name=html.escape(str(cameras.get(key, {}).get("name") or ""), quote=True),
+            ir_options="".join(option_tag(value, value, str(cameras.get(key, {}).get("ir_filter") or "unknown")) for value in ["unknown", "normal", "noir"]),
+        )
+        for key in all_rpicam_keys
+    ) or '<tr><td colspan="3">No detected or configured cameras.</td></tr>'
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plamp config</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 1100px; }}
+    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f4f4f4; }}
+    input, select {{ box-sizing: border-box; max-width: 100%; padding: .35rem; }}
+    button {{ border: 1px solid #222; border-radius: 6px; margin: .4rem .4rem .4rem 0; padding: .45rem .7rem; background: #fff; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .muted, .status {{ color: #555; font-size: .9rem; }}
+  </style>
+</head>
+<body>
+  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
+  <h1>Plamp config</h1>
+  <h2>Controllers</h2>
+  <table><thead><tr><th>Controller</th><th>Name</th><th>Type</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows}</tbody></table>
+  <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
+  <h2>Devices</h2>
+  <table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Controller</th><th>Pin</th><th>Default editor</th></tr></thead><tbody>{device_rows}</tbody></table>
+  <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
+  <h2>Cameras</h2>
+  <table><thead><tr><th>Detected key</th><th>Name</th><th>IR filter</th></tr></thead><tbody>{camera_rows}</tbody></table>
+  <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
+  <script>
+    function collectControllers() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".controller-row")) {{
+        const name = row.querySelector(".controller-name").value.trim();
+        if (!name) continue;
+        const picoSerial = row.querySelector(".controller-pico-serial").value || null;
+        result[row.dataset.controllerKey] = {{name, type: row.querySelector(".controller-type").value, match: {{pico_serial: picoSerial}}}};
+      }}
+      return result;
+    }}
+    function collectDevices() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".device-row")) {{
+        const id = row.querySelector(".device-id").value.trim();
+        if (!id) continue;
+        result[id] = {{name: row.querySelector(".device-name").value.trim(), type: row.querySelector(".device-type").value, controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), default_editor: row.querySelector(".device-editor").value}};
+      }}
+      return result;
+    }}
+    function collectCameras() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".camera-row")) {{
+        const name = row.querySelector(".camera-name").value.trim();
+        if (!name) continue;
+        result[row.dataset.cameraKey] = {{name, ir_filter: row.querySelector(".camera-ir-filter").value}};
+      }}
+      return result;
+    }}
+    async function saveSection(statusId, url, payload) {{
+      const status = document.getElementById(statusId);
+      status.textContent = "Saving...";
+      const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
+      status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
+    }}
+    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config/controllers", collectControllers()));
+    document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));
+    document.getElementById("save-cameras").addEventListener("click", () => saveSection("cameras-status", "/api/config/cameras", collectCameras()));
+  </script>
+</body>
+</html>"""
+
+
 def render_settings_page(summary: dict[str, Any]) -> str:
     host = summary["host"]
     host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
@@ -99,7 +261,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/api/test">API test</a> | <a href="/settings.json">Settings JSON</a></nav>
+  <nav><a href="/">Plamp</a> | <a href="/config">Config</a> | <a href="/api/test">API test</a> | <a href="/settings.json">Settings JSON</a></nav>
   <h1>Plamp settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <h2>Picos</h2>

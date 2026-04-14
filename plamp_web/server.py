@@ -22,7 +22,7 @@ import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_config_page, render_settings_page, render_timer_dashboard_page
 from plamp_web.hardware_config import apply_hardware_section, hardware_view
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
@@ -1313,6 +1313,12 @@ def get_settings_json() -> dict[str, Any]:
 @app.get("/runtime")
 def get_runtime() -> dict[str, Any]:
     return settings_summary()
+
+
+@app.get("/config", response_class=HTMLResponse)
+def get_config_page() -> HTMLResponse:
+    data = config_response()
+    return HTMLResponse(render_config_page(data["config"], data["detected"]))
 
 
 @app.get("/settings", response_class=HTMLResponse)

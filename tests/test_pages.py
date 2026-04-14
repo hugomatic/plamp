@@ -1,6 +1,6 @@
 import unittest
 
-from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_config_page, render_settings_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
@@ -132,6 +132,46 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("rpicam:cam0", html)
         self.assertIn("imx708_wide", html)
         self.assertIn("wide", html)
+
+    def test_config_page_includes_form_rows_for_controllers_devices_and_cameras(self):
+        html = render_config_page(
+            {
+                "controllers": {"controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}},
+                "devices": {"pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}},
+                "cameras": {"rpicam:cam0": {"name": "Tent camera", "ir_filter": "unknown"}},
+            },
+            {"picos": [{"serial": "e66038b71387a039", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
+        )
+
+        self.assertIn("<title>Plamp config</title>", html)
+        self.assertIn("<h2>Controllers</h2>", html)
+        self.assertIn('data-controller-key="controller:pump_lights"', html)
+        self.assertIn('value="pump_lights"', html)
+        self.assertIn("pico_scheduler", html)
+        self.assertIn('class="controller-pico-serial"', html)
+        self.assertIn('value="e66038b71387a039"', html)
+        self.assertIn("/dev/ttyACM0", html)
+        self.assertIn("<h2>Devices</h2>", html)
+        self.assertIn('data-device-id="pump"', html)
+        self.assertIn('value="Pump"', html)
+        self.assertIn('value="3"', html)
+        self.assertIn("<h2>Cameras</h2>", html)
+        self.assertIn('data-camera-key="rpicam:cam0"', html)
+        self.assertIn("imx708_wide", html)
+        self.assertIn("Save controllers", html)
+        self.assertIn("Save devices", html)
+        self.assertIn("Save cameras", html)
+        self.assertNotIn("<textarea", html)
+
+    def test_config_page_posts_section_updates_from_forms(self):
+        html = render_config_page({"controllers": {}, "devices": {}, "cameras": {}}, {"picos": [], "cameras": []})
+
+        self.assertIn("collectControllers()", html)
+        self.assertIn("collectDevices()", html)
+        self.assertIn("collectCameras()", html)
+        self.assertIn('"/api/config/controllers"', html)
+        self.assertIn('"/api/config/devices"', html)
+        self.assertIn('"/api/config/cameras"', html)
 
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
