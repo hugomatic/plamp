@@ -13,11 +13,11 @@
 ## File Structure
 
 - Create `plamp_web/hardware_config.py`: Pure functions for normalizing `hardware` config, initializing from legacy `timers`, validating section updates, and projecting `pico_scheduler` controller/device mappings back into legacy `timers` entries.
-- Create `plamp_web/camera_inventory.py`: Pure parser for `rpicam-hello --list-cameras` output plus command runner with `libcamera-hello` fallback.
+- Create `plamp_web/hardware_inventory.py`: Local hardware inventory helpers. Move/reuse Pico enumeration here and add a pure parser for `rpicam-hello --list-cameras` output plus command runner with `libcamera-hello` fallback.
 - Modify `plamp_web/server.py`: Import new helpers, add `GET /api/config`, `PUT /api/config/controllers`, `PUT /api/config/devices`, `PUT /api/config/cameras`, add `GET /config`, include detected Raspberry Pi cameras in `settings_summary()`.
 - Modify `plamp_web/pages.py`: Add `render_config_page(...)`, link Config from Settings navigation, and show detected camera model/lens in Settings.
 - Create `tests/test_hardware_config.py`: Pure unit tests for config normalization, validation, and timer compatibility projection.
-- Create `tests/test_camera_inventory.py`: Pure unit tests for camera parser and command fallback behavior.
+- Create `tests/test_hardware_inventory.py`: Pure unit tests for camera parser and command fallback behavior.
 - Create `tests/test_config_api.py`: API tests for config GET and section PUT endpoints.
 - Modify `tests/test_pages.py`: Page render tests for Settings camera summary and Config page sections/save controls.
 - Modify `plamp_web/README.md`: Document the Config page, `hardware` config shape, camera detection behavior, and `timers` compatibility.
@@ -63,18 +63,18 @@ class HardwareConfigTests(unittest.TestCase):
             hardware_config_from_timers(config),
             {
                 "controllers": {
-                    "pico:e66038b71387a039": {"name": "pump_lights", "type": "pico_scheduler"}
+                    "controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}
                 },
                 "devices": {
-                    "pump": {"name": "Pump", "type": "gpio", "controller": "pico:e66038b71387a039", "pin": 3, "default_editor": "cycle"},
-                    "lights": {"name": "Lights", "type": "gpio", "controller": "pico:e66038b71387a039", "pin": 2, "default_editor": "clock_window"},
+                    "pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"},
+                    "lights": {"name": "Lights", "type": "gpio", "controller": "controller:pump_lights", "pin": 2, "default_editor": "clock_window"},
                 },
                 "cameras": {},
             },
         )
 
     def test_hardware_view_prefers_existing_hardware(self):
-        config = {"timers": [], "hardware": {"controllers": {"pico:abc": {"name": "pump_lights", "type": "pico_scheduler"}}, "devices": {}, "cameras": {}}}
+        config = {"timers": [], "hardware": {"controllers": {"controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "abc"}}}, "devices": {}, "cameras": {}}}
 
         self.assertEqual(hardware_view(config), config["hardware"])
 
@@ -82,7 +82,7 @@ class HardwareConfigTests(unittest.TestCase):
         config = {"hardware": {"controllers": {}, "devices": {}, "cameras": {}}}
 
         with self.assertRaises(ValueError) as cm:
-            apply_hardware_section(config, "devices", {"pump": {"name": "Pump", "type": "gpio", "controller": "pico:missing", "pin": 3}})
+            apply_hardware_section(config, "devices", {"pump": {"name": "Pump", "type": "gpio", "controller": "controller:missing", "pin": 3}})
 
         self.assertIn("unknown controller", str(cm.exception))
 
@@ -90,7 +90,7 @@ class HardwareConfigTests(unittest.TestCase):
         config = {"hardware": {"controllers": {}, "devices": {}, "cameras": {}}}
 
         with self.assertRaises(ValueError) as cm:
-            apply_hardware_section(config, "cameras", {"rpicam:0": {"name": "Tent", "ir_filter": "magic"}})
+            apply_hardware_section(config, "cameras", {"rpicam:cam0": {"name": "Tent", "ir_filter": "magic"}})
 
         self.assertIn("ir_filter", str(cm.exception))
 
@@ -98,10 +98,10 @@ class HardwareConfigTests(unittest.TestCase):
         config = {
             "timers": [{"role": "old", "pico_serial": "oldserial"}],
             "hardware": {
-                "controllers": {"pico:e66038b71387a039": {"name": "pump_lights", "type": "pico_scheduler"}},
+                "controllers": {"controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}},
                 "devices": {
-                    "pump": {"name": "Pump", "type": "gpio", "controller": "pico:e66038b71387a039", "pin": 3, "default_editor": "cycle"},
-                    "lights": {"name": "Lights", "type": "gpio", "controller": "pico:e66038b71387a039", "pin": 2, "default_editor": "clock_window"},
+                    "pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"},
+                    "lights": {"name": "Lights", "type": "gpio", "controller": "controller:pump_lights", "pin": 2, "default_editor": "clock_window"},
                 },
                 "cameras": {},
             },
@@ -149,14 +149,8 @@ ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def pico_key(serial: str) -> str:
-    return f"pico:{serial}"
-
-
-def serial_from_pico_key(key: str) -> str:
-    if not key.startswith("pico:") or len(key) <= len("pico:"):
-        raise ValueError(f"invalid Pico controller key: {key}")
-    return key.split(":", 1)[1]
+def controller_key(role: str) -> str:
+    return f"controller:{role}"
 
 
 def empty_hardware() -> dict[str, Any]:
@@ -172,8 +166,8 @@ def hardware_config_from_timers(config: dict[str, Any]) -> dict[str, Any]:
         serial = timer.get("pico_serial")
         if not isinstance(role, str) or not isinstance(serial, str) or not role or not serial:
             continue
-        controller_key = pico_key(serial)
-        hardware["controllers"][controller_key] = {"name": role, "type": "pico_scheduler"}
+        key = controller_key(role)
+        hardware["controllers"][key] = {"name": role, "type": "pico_scheduler", "match": {"pico_serial": serial}}
         for channel in timer.get("channels", []):
             if not isinstance(channel, dict):
                 continue
@@ -184,7 +178,7 @@ def hardware_config_from_timers(config: dict[str, Any]) -> dict[str, Any]:
             hardware["devices"][device_id] = {
                 "name": str(channel.get("name") or device_id),
                 "type": str(channel.get("type") or "gpio"),
-                "controller": controller_key,
+                "controller": key,
                 "pin": pin,
                 "default_editor": str(channel.get("default_editor") or "cycle"),
             }
@@ -208,12 +202,16 @@ def validate_controllers(controllers: Any) -> dict[str, dict[str, Any]]:
     result = {}
     seen_names = set()
     for key, item in controllers.items():
-        if not isinstance(key, str) or not key.startswith("pico:"):
-            raise ValueError("controller keys must be pico:<serial>")
+        if not isinstance(key, str) or not key.startswith("controller:"):
+            raise ValueError("controller keys must be controller:<role>")
         if not isinstance(item, dict):
             raise ValueError(f"controller {key} must be an object")
         name = item.get("name")
         controller_type = item.get("type")
+        match = item.get("match") if isinstance(item.get("match"), dict) else {}
+        pico_serial = match.get("pico_serial")
+        if pico_serial is not None and not isinstance(pico_serial, str):
+            raise ValueError(f"controller {key} has invalid pico_serial")
         if not isinstance(name, str) or not name or not ROLE_RE.match(name):
             raise ValueError(f"controller {key} has invalid name")
         if name in seen_names:
@@ -221,7 +219,7 @@ def validate_controllers(controllers: Any) -> dict[str, dict[str, Any]]:
         if controller_type not in CONTROLLER_TYPES:
             raise ValueError(f"controller {key} has unsupported type")
         seen_names.add(name)
-        result[key] = {"name": name, "type": controller_type}
+        result[key] = {"name": name, "type": controller_type, "match": {"pico_serial": pico_serial}}
     return result
 
 
@@ -259,7 +257,7 @@ def validate_cameras(cameras: Any) -> dict[str, dict[str, Any]]:
     result = {}
     for key, item in cameras.items():
         if not isinstance(key, str) or not key.startswith("rpicam:"):
-            raise ValueError("camera keys must be rpicam:<index>")
+            raise ValueError("camera keys must be rpicam:cam0 or rpicam:cam1")
         if not isinstance(item, dict):
             raise ValueError(f"camera {key} must be an object")
         name = item.get("name")
@@ -299,7 +297,10 @@ def project_timers_from_hardware(config: dict[str, Any]) -> dict[str, Any]:
             if device.get("controller") != controller_key:
                 continue
             channels.append({"id": device_id, "name": device["name"], "pin": device["pin"], "type": device["type"], "default_editor": device["default_editor"]})
-        timers.append({"role": controller["name"], "pico_serial": serial_from_pico_key(controller_key), "channels": channels})
+        pico_serial = (controller.get("match") or {}).get("pico_serial")
+        if not pico_serial:
+            continue
+        timers.append({"role": controller["name"], "pico_serial": pico_serial, "channels": channels})
     result = copy.deepcopy(config)
     result["hardware"] = hardware
     result["timers"] = timers
@@ -322,22 +323,22 @@ git commit -m "Add hardware config helpers"
 ## Task 2: Add Raspberry Pi Camera Detection
 
 **Files:**
-- Create: `plamp_web/camera_inventory.py`
-- Create: `tests/test_camera_inventory.py`
+- Create: `plamp_web/hardware_inventory.py`
+- Create: `tests/test_hardware_inventory.py`
 - Modify: `plamp_web/server.py`
 - Modify: `plamp_web/pages.py`
 - Modify: `tests/test_pages.py`
 
 - [ ] **Step 1: Write failing parser and settings tests**
 
-Create `tests/test_camera_inventory.py`:
+Create `tests/test_hardware_inventory.py`:
 
 ```python
 import subprocess
 import unittest
 from unittest.mock import patch
 
-from plamp_web.camera_inventory import camera_key, detect_rpicam_cameras, parse_rpicam_list_cameras
+from plamp_web.hardware_inventory import rpicam_key, detect_rpicam_cameras, parse_rpicam_list_cameras
 
 
 RPICAM_OUTPUT = """
@@ -349,18 +350,18 @@ Available cameras
 """
 
 
-class CameraInventoryTests(unittest.TestCase):
+class HardwareInventoryTests(unittest.TestCase):
     def test_parse_rpicam_list_cameras_detects_sensor_and_wide_lens(self):
         self.assertEqual(
             parse_rpicam_list_cameras(RPICAM_OUTPUT),
             [
-                {"key": "rpicam:0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/soc/i2c0mux/i2c@1/imx708@1a"},
-                {"key": "rpicam:1", "index": 1, "sensor": "ov5647", "model": "ov5647", "lens": "normal", "path": "/base/soc/i2c0mux/i2c@2/ov5647@36"},
+                {"key": "rpicam:cam0", "connector": "cam0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/soc/i2c0mux/i2c@1/imx708@1a"},
+                {"key": "rpicam:cam1", "connector": "cam1", "index": 1, "sensor": "ov5647", "model": "ov5647", "lens": "normal", "path": "/base/soc/i2c0mux/i2c@2/ov5647@36"},
             ],
         )
 
-    def test_camera_key_uses_rpicam_index(self):
-        self.assertEqual(camera_key(2), "rpicam:2")
+    def test_rpicam_key_uses_connector_name(self):
+        self.assertEqual(rpicam_key("cam0"), "rpicam:cam0")
 
     def test_detect_rpicam_cameras_falls_back_to_libcamera_hello(self):
         calls = []
@@ -371,11 +372,11 @@ class CameraInventoryTests(unittest.TestCase):
                 raise FileNotFoundError("missing")
             return RPICAM_OUTPUT
 
-        with patch("plamp_web.camera_inventory.subprocess.check_output", side_effect=fake_check_output):
+        with patch("plamp_web.hardware_inventory.subprocess.check_output", side_effect=fake_check_output):
             cameras = detect_rpicam_cameras()
 
         self.assertEqual([call[0] for call in calls], ["rpicam-hello", "libcamera-hello"])
-        self.assertEqual(cameras[0]["key"], "rpicam:0")
+        self.assertEqual(cameras[0]["key"], "rpicam:cam0")
 ```
 
 Add to `tests/test_pages.py`:
@@ -388,25 +389,25 @@ Add to `tests/test_pages.py`:
             "picos": [],
             "tools": {"mpremote": None, "pyserial": "3.5"},
             "software": {"git_short_commit": "d5883da", "git_branch": "main", "git_dirty": False},
-            "cameras": {"rpicam": [{"key": "rpicam:0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/imx708@1a"}]},
+            "cameras": {"rpicam": [{"key": "rpicam:cam0", "connector": "cam0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/imx708@1a"}]},
             "storage": {"path": "/tmp", "free": "42.0 GB", "used": "10.0 GB", "total": "52.0 GB"},
         })
 
         self.assertIn("Raspberry Pi cameras", html)
-        self.assertIn("rpicam:0", html)
+        self.assertIn("rpicam:cam0", html)
         self.assertIn("imx708_wide", html)
         self.assertIn("wide", html)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `/home/hugo/.local/bin/uv run python -m unittest tests.test_camera_inventory tests.test_pages.PageRenderTests.test_settings_page_includes_detected_raspberry_pi_cameras -v`
+Run: `/home/hugo/.local/bin/uv run python -m unittest tests.test_hardware_inventory tests.test_pages.PageRenderTests.test_settings_page_includes_detected_raspberry_pi_cameras -v`
 
-Expected: FAIL because `plamp_web.camera_inventory` and Settings camera rendering do not exist.
+Expected: FAIL because `plamp_web.hardware_inventory` and Settings camera rendering do not exist.
 
 - [ ] **Step 3: Implement camera inventory helper**
 
-Create `plamp_web/camera_inventory.py`:
+Create `plamp_web/hardware_inventory.py`:
 
 ```python
 from __future__ import annotations
@@ -418,8 +419,8 @@ from typing import Any
 CAMERA_RE = re.compile(r"^\s*(\d+)\s*:\s*([^\s\[]+)\s*\[[^\]]*\]\s*\(([^)]+)\)")
 
 
-def camera_key(index: int) -> str:
-    return f"rpicam:{index}"
+def rpicam_key(connector: str) -> str:
+    return f"rpicam:{connector}"
 
 
 def sensor_from_model(model: str) -> str:
@@ -439,7 +440,8 @@ def parse_rpicam_list_cameras(output: str) -> list[dict[str, Any]]:
         index = int(match.group(1))
         model = match.group(2)
         cameras.append({
-            "key": camera_key(index),
+            "key": rpicam_key(f"cam{index}"),
+            "connector": f"cam{index}",
             "index": index,
             "sensor": sensor_from_model(model),
             "model": model,
@@ -464,14 +466,14 @@ def detect_rpicam_cameras() -> list[dict[str, Any]]:
 Modify `plamp_web/server.py`:
 
 ```python
-from plamp_web import camera_capture, camera_inventory
+from plamp_web import camera_capture, hardware_inventory
 ```
 
 Add to `settings_summary()`:
 
 ```python
 "cameras": {
-    "rpicam": camera_inventory.detect_rpicam_cameras(),
+    "rpicam": hardware_inventory.detect_rpicam_cameras(),
 },
 ```
 
@@ -504,14 +506,14 @@ Insert after the Picos table:
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `/home/hugo/.local/bin/uv run python -m unittest tests.test_camera_inventory tests.test_pages -v`
+Run: `/home/hugo/.local/bin/uv run python -m unittest tests.test_hardware_inventory tests.test_pages -v`
 
 Expected: all listed tests pass.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add plamp_web/camera_inventory.py plamp_web/server.py plamp_web/pages.py tests/test_camera_inventory.py tests/test_pages.py
+git add plamp_web/hardware_inventory.py plamp_web/server.py plamp_web/pages.py tests/test_hardware_inventory.py tests/test_pages.py
 git commit -m "Add Raspberry Pi camera inventory"
 ```
 
@@ -551,22 +553,22 @@ class ConfigApiTests(unittest.TestCase):
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
-                patch.object(server.camera_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
             ):
                 data = server.get_config()
 
         self.assertIn("config", data)
         self.assertIn("detected", data)
-        self.assertEqual(data["config"]["controllers"]["pico:abc"]["name"], "pump_lights")
+        self.assertEqual(data["config"]["controllers"]["controller:pump_lights"]["name"], "pump_lights")
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
-        self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam:0")
+        self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam:cam0")
 
     def test_put_config_devices_updates_hardware_and_timers_projection(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config_file = self.make_config(root, {"timers": [], "hardware": {"controllers": {"pico:abc": {"name": "pump_lights", "type": "pico_scheduler"}}, "devices": {}, "cameras": {}}})
+            config_file = self.make_config(root, {"timers": [], "hardware": {"controllers": {"controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}}, "devices": {}, "cameras": {}}})
             with patch.object(server, "CONFIG_FILE", config_file):
-                data = server.put_config_devices({"pump": {"name": "Pump", "type": "gpio", "controller": "pico:abc", "pin": 3, "default_editor": "cycle"}})
+                data = server.put_config_devices({"pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}})
 
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
@@ -579,7 +581,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(root, {"timers": [], "hardware": {"controllers": {}, "devices": {}, "cameras": {}}})
             with patch.object(server, "CONFIG_FILE", config_file):
                 with self.assertRaises(HTTPException) as cm:
-                    server.put_config_devices({"pump": {"name": "Pump", "type": "gpio", "controller": "pico:missing", "pin": 3}})
+                    server.put_config_devices({"pump": {"name": "Pump", "type": "gpio", "controller": "controller:missing", "pin": 3}})
 
         self.assertEqual(cm.exception.status_code, 422)
         self.assertIn("unknown controller", cm.exception.detail)
@@ -596,7 +598,7 @@ Expected: FAIL because `get_config` and section PUT functions do not exist.
 Modify `plamp_web/server.py` imports:
 
 ```python
-from plamp_web import camera_capture, camera_inventory
+from plamp_web import camera_capture, hardware_inventory
 from plamp_web.hardware_config import apply_hardware_section, hardware_view
 ```
 
@@ -609,7 +611,7 @@ def config_response() -> dict[str, Any]:
         "config": hardware_view(config),
         "detected": {
             "picos": enumerate_picos(),
-            "cameras": camera_inventory.detect_rpicam_cameras(),
+            "cameras": hardware_inventory.detect_rpicam_cameras(),
         },
     }
 ```
@@ -682,24 +684,27 @@ Add tests:
     def test_config_page_includes_form_rows_for_controllers_devices_and_cameras(self):
         html = render_config_page(
             {
-                "controllers": {"pico:abc": {"name": "pump_lights", "type": "pico_scheduler"}},
-                "devices": {"pump": {"name": "Pump", "type": "gpio", "controller": "pico:abc", "pin": 3, "default_editor": "cycle"}},
-                "cameras": {"rpicam:0": {"name": "Tent camera", "ir_filter": "unknown"}},
+                "controllers": {"controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}},
+                "devices": {"pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}},
+                "cameras": {"rpicam:cam0": {"name": "Tent camera", "ir_filter": "unknown"}},
             },
-            {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
+            {"picos": [{"serial": "e66038b71387a039", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
         )
 
         self.assertIn("<title>Plamp config</title>", html)
         self.assertIn("<h2>Controllers</h2>", html)
-        self.assertIn('data-controller-key="pico:abc"', html)
+        self.assertIn('data-controller-key="controller:pump_lights"', html)
         self.assertIn('value="pump_lights"', html)
         self.assertIn("pico_scheduler", html)
+        self.assertIn('class="controller-pico-serial"', html)
+        self.assertIn('value="e66038b71387a039"', html)
+        self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<h2>Devices</h2>", html)
         self.assertIn('data-device-id="pump"', html)
         self.assertIn('value="Pump"', html)
         self.assertIn('value="3"', html)
         self.assertIn("<h2>Cameras</h2>", html)
-        self.assertIn('data-camera-key="rpicam:0"', html)
+        self.assertIn('data-camera-key="rpicam:cam0"', html)
         self.assertIn("imx708_wide", html)
         self.assertIn("Save controllers", html)
         self.assertIn("Save devices", html)
@@ -739,6 +744,21 @@ def controller_options(controllers: dict[str, Any], selected: str | None) -> str
         for key, item in controllers.items()
         if isinstance(item, dict)
     )
+
+
+def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
+    options = [option_tag("", "Unassigned", selected)]
+    seen = set()
+    for pico in picos:
+        serial = str(pico.get("serial") or "")
+        if not serial:
+            continue
+        seen.add(serial)
+        label = f"{serial} {pico.get('port') or ''}".strip()
+        options.append(option_tag(serial, label, selected))
+    if selected and selected not in seen:
+        options.append(option_tag(selected, f"{selected} (not detected)", selected))
+    return "\n".join(options)
 ```
 
 Add `render_config_page(config, detected)` with this structure:
@@ -750,25 +770,27 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
-    detected_controller_keys = {f"pico:{item.get('serial')}": item for item in picos if isinstance(item, dict) and item.get("serial")}
-    all_controller_keys = sorted(set(controllers) | set(detected_controller_keys))
-    detected_camera_keys = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
-    all_camera_keys = sorted(set(cameras) | set(detected_camera_keys))
+    detected_picos_by_serial = {str(item.get("serial")): item for item in picos if isinstance(item, dict) and item.get("serial")}
+    all_controller_keys = sorted(controllers)
+    detected_rpicam_keys = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    all_rpicam_keys = sorted(set(cameras) | set(detected_rpicam_keys))
 
     controller_rows = "\n".join(
         '<tr class="controller-row" data-controller-key="{key}">' \
         '<td><code>{key_label}</code><div class="muted">{detected}</div></td>' \
         '<td><input class="controller-name" value="{name}"></td>' \
         '<td><select class="controller-type">{type_options}</select></td>' \
+        '<td><select class="controller-pico-serial">{pico_options}</select></td>' \
         '</tr>'.format(
-            key=html.escape(key),
+            key=html.escape(key, quote=True),
             key_label=html.escape(key),
-            detected=html.escape(str(detected_controller_keys.get(key, {}).get("port") or "configured")),
+            detected=html.escape(str(detected_picos_by_serial.get(str(controllers.get(key, {}).get("match", {}).get("pico_serial")), {}).get("port") or "configured")),
             name=html.escape(str(controllers.get(key, {}).get("name") or ""), quote=True),
             type_options="".join(option_tag(value, value, str(controllers.get(key, {}).get("type") or "pico_scheduler")) for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
+            pico_options=pico_options(picos, str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "")),
         )
         for key in all_controller_keys
-    ) or '<tr><td colspan="3">No detected or configured controllers.</td></tr>'
+    ) or '<tr><td colspan="4">No configured controllers. Add a logical controller such as controller:pump_lights.</td></tr>'
 
     device_rows = "\n".join(
         '<tr class="device-row" data-device-id="{device_id}">' \
@@ -797,11 +819,11 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         '</tr>'.format(
             key=html.escape(key, quote=True),
             key_label=html.escape(key),
-            detected=html.escape(" ".join(str(detected_camera_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured"),
+            detected=html.escape(" ".join(str(detected_rpicam_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured"),
             name=html.escape(str(cameras.get(key, {}).get("name") or ""), quote=True),
             ir_options="".join(option_tag(value, value, str(cameras.get(key, {}).get("ir_filter") or "unknown")) for value in ["unknown", "normal", "noir"]),
         )
-        for key in all_camera_keys
+        for key in all_rpicam_keys
     ) or '<tr><td colspan="3">No detected or configured cameras.</td></tr>'
 
     return f"""<!doctype html>
@@ -825,7 +847,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
   <h1>Plamp config</h1>
   <h2>Controllers</h2>
-  <table><thead><tr><th>Detected key</th><th>Name</th><th>Type</th></tr></thead><tbody>{controller_rows}</tbody></table>
+  <table><thead><tr><th>Controller</th><th>Name</th><th>Type</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows}</tbody></table>
   <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
   <h2>Devices</h2>
   <table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Controller</th><th>Pin</th><th>Default editor</th></tr></thead><tbody>{device_rows}</tbody></table>
@@ -839,7 +861,8 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".controller-row")) {{
         const name = row.querySelector(".controller-name").value.trim();
         if (!name) continue;
-        result[row.dataset.controllerKey] = {{name, type: row.querySelector(".controller-type").value}};
+        const picoSerial = row.querySelector(".controller-pico-serial").value || null;
+        result[row.dataset.controllerKey] = {{name, type: row.querySelector(".controller-type").value, match: {{pico_serial: picoSerial}}}};
       }}
       return result;
     }}
@@ -1022,13 +1045,13 @@ Example `data/config.json` shape:
   ],
   "hardware": {
     "controllers": {
-      "pico:e66038b71387a039": {"name": "pump_lights", "type": "pico_scheduler"}
+      "controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}
     },
     "devices": {
-      "pump": {"name": "Pump", "type": "gpio", "controller": "pico:e66038b71387a039", "pin": 3, "default_editor": "cycle"}
+      "pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}
     },
     "cameras": {
-      "rpicam:0": {"name": "Tent camera", "ir_filter": "unknown"}
+      "rpicam:cam0": {"name": "Tent camera", "ir_filter": "unknown"}
     }
   }
 }
@@ -1042,7 +1065,7 @@ The `timers` section remains the runtime compatibility projection used by existi
 Run:
 
 ```bash
-python -m py_compile plamp_web/server.py plamp_web/pages.py plamp_web/hardware_config.py plamp_web/camera_inventory.py tests/test_hardware_config.py tests/test_camera_inventory.py tests/test_config_api.py tests/test_pages.py
+python -m py_compile plamp_web/server.py plamp_web/pages.py plamp_web/hardware_config.py plamp_web/hardware_inventory.py tests/test_hardware_config.py tests/test_hardware_inventory.py tests/test_config_api.py tests/test_pages.py
 /home/hugo/.local/bin/uv run python -m unittest discover -s tests -v
 ```
 

@@ -8,7 +8,8 @@ The first version is local-only. It does not configure remote nodes, USB webcams
 
 ## Goals
 
-- Let the user name detected Pico controllers before mapping devices to them.
+- Let the user define logical Pico controllers, such as `controller:pump_lights`, before mapping devices to them.
+- Let the user bind detected Pico serials to those logical controllers when hardware is present, without requiring that binding for reusable config templates.
 - Let the user map meaningful devices, such as `pump` and `lights`, to a named controller and Pico pin.
 - Use existing Pico firmware vocabulary for device types, such as `gpio`, instead of inventing aliases like `gpio_actuator`.
 - Let the user name local Raspberry Pi cameras and set the IR filter variant when software cannot detect it.
@@ -28,7 +29,9 @@ The first version is local-only. It does not configure remote nodes, USB webcams
 Use two layers:
 
 - Detected status: live facts the server can introspect, such as connected Pico serials, ports, camera sensor, camera lens, and camera index.
-- Configured meaning: user-maintained names and mappings, such as `pump_lights`, `pump`, `lights`, pin numbers, and camera IR filter.
+- Configured meaning: reusable user-maintained names and mappings, such as `controller:pump_lights`, `pump`, `lights`, pin numbers, `rpicam:cam0`, and camera IR filter.
+
+The configured layer must be usable as a template before hardware is connected. Logical controller keys and camera connector keys are therefore preferred over serial-number or detected-index keys.
 
 Settings displays detected status. Config edits configured meaning.
 
@@ -40,29 +43,32 @@ Store annotations and mappings under `hardware` in `data/config.json`:
 {
   "hardware": {
     "controllers": {
-      "pico:e66038b71387a039": {
+      "controller:pump_lights": {
         "name": "pump_lights",
-        "type": "pico_scheduler"
+        "type": "pico_scheduler",
+        "match": {
+          "pico_serial": null
+        }
       }
     },
     "devices": {
       "pump": {
         "name": "Pump",
         "type": "gpio",
-        "controller": "pico:e66038b71387a039",
+        "controller": "controller:pump_lights",
         "pin": 3,
         "default_editor": "cycle"
       },
       "lights": {
         "name": "Lights",
         "type": "gpio",
-        "controller": "pico:e66038b71387a039",
+        "controller": "controller:pump_lights",
         "pin": 2,
         "default_editor": "clock_window"
       }
     },
     "cameras": {
-      "rpicam:0": {
+      "rpicam:cam0": {
         "name": "Tent camera",
         "ir_filter": "unknown"
       }
@@ -71,13 +77,13 @@ Store annotations and mappings under `hardware` in `data/config.json`:
 }
 ```
 
-`controllers` are keyed by stable detected identities. For Pico boards, use `pico:<serial>`. `devices` are keyed by stable device ids used by Plamp and Pico state, such as `pump`. `cameras` are keyed by local camera identifiers. In this slice use `rpicam:<index>`.
+`controllers` are keyed by logical names, not detected serials. Use `controller:<role>`, for example `controller:pump_lights`. The optional `match.pico_serial` field binds that logical controller to the physical Pico on one installed system; it may be `null` in reusable templates. `devices` are keyed by stable device ids used by Plamp and Pico state, such as `pump`, and reference logical controller keys. `cameras` are keyed by expected local Raspberry Pi camera connectors. In this slice use `rpicam:cam0` and `rpicam:cam1` rather than a detected index or long device path.
 
 Do not persist camera sensor, model family, or lens as authoritative config in the first slice. Those are detected live and merged into the UI. If a camera disappears, the configured camera name remains, and the UI can show it as missing.
 
 ## Compatibility
 
-The current app uses `timers` entries with roles, Pico serials, and optional channels. During the transition, keep that behavior working by preserving `timers` as a compatibility projection. The Config page writes the new `hardware` section and, when saving `pico_scheduler` controllers/devices, updates the corresponding `timers` entries so existing dashboard and timer APIs keep working. If `hardware` is absent, the page initializes its controller/device view from the existing `timers` config.
+The current app uses `timers` entries with roles, Pico serials, and optional channels. During the transition, keep that behavior working by preserving `timers` as a compatibility projection. The Config page writes the new `hardware` section and, when saving `pico_scheduler` controllers/devices, updates the corresponding `timers` entries for controllers that have `match.pico_serial` set. If `hardware` is absent, the page initializes its controller/device view from the existing `timers` config, using `controller:<role>` keys and copying `pico_serial` into `match.pico_serial`.
 
 The Pico runtime state files under `data/timers/<role>.json` remain separate. They still contain the firmware event state and are still what the app sends to the Pico.
 
@@ -89,11 +95,12 @@ The Config page has three sections with section-level save buttons:
 
 ### Controllers
 
-Show detected Pico boards and existing configured controllers. Each controller row includes:
+Show logical controllers and detected Pico boards that can be assigned to them. Each controller row includes:
 
-- Detected identity, such as Pico serial and connection status.
+- Controller key, such as `controller:pump_lights`.
 - Name, such as `pump_lights`.
 - Type, initially including `pico_scheduler`, `food_dispenser`, and `ph_dispenser`.
+- Assigned Pico serial from `match.pico_serial`, with an option to choose from detected Pico boards when present.
 
 Users save this section with `Save controllers`.
 
@@ -114,8 +121,8 @@ Users save this section with `Save devices`.
 
 Show detected local Raspberry Pi cameras and existing configured camera names. Each camera row includes:
 
-- Camera key, such as `rpicam:0`.
-- Detected sensor/family/lens, such as `imx708 wide`.
+- Camera key, such as `rpicam:cam0` or `rpicam:cam1`.
+- Detected sensor/family/lens, such as `imx708 wide`, when hardware is connected.
 - Name, such as `Tent camera`.
 - IR filter: `unknown`, `normal`, or `noir`.
 
@@ -137,9 +144,20 @@ Save sections independently:
 
 Each endpoint validates only its section and preserves the other sections. Invalid mappings should produce clear 422 responses. Missing/unplugged detected hardware should not force deletion of saved config.
 
+## API Test Page
+
+Add Config route cards to the existing API test/debug page. Each card should use the same pattern as the other route docs: the full route in the section title, a short description of what the route reads or saves, a concrete curl block, and a copy-to-clipboard button. Cover:
+
+- `GET /api/config` for the merged saved config plus detected local hardware view.
+- `PUT /api/config/controllers` for logical controller names, types, and optional Pico serial matches.
+- `PUT /api/config/devices` for device-to-controller pin mappings.
+- `PUT /api/config/cameras` for camera names and IR filter values.
+
+The API test page remains a debug/documentation surface. The main `/config` page remains the normal form UI for users who do not want to edit JSON by hand.
+
 ## Camera Detection
 
-Detect local Raspberry Pi cameras with `rpicam-hello --list-cameras`, falling back to `libcamera-hello --list-cameras` if needed. Parse camera index, sensor/family, and lens when available. Wide vs normal should be detected when present in command output. NoIR should remain a user-confirmed field because it is not reliably distinguishable from the sensor name alone.
+Detect local Raspberry Pi cameras with `rpicam-hello --list-cameras`, falling back to `libcamera-hello --list-cameras` if needed. Parse camera index, sensor/family, and lens when available. Wide vs normal should be detected when present in command output. NoIR should remain a user-confirmed field because it is not reliably distinguishable from the sensor name alone. Map detected cameras to expected connector keys such as `rpicam:cam0` and `rpicam:cam1` when the output exposes connector identity; otherwise use index as a best-effort runtime match only, without requiring users to type device-tree paths.
 
 Camera capture remains compatible with the current one-camera capture path in the first slice. Passing a camera selector to the capture script can be added later after the settings/config model is in place.
 
@@ -148,7 +166,7 @@ Camera capture remains compatible with the current one-camera capture path in th
 - Preserve configured controllers, devices, and cameras even when detected hardware is missing.
 - Show missing hardware as missing in the UI rather than deleting it.
 - Reject duplicate controller names only if they would make the UI ambiguous; controller keys remain the source of truth.
-- Reject device mappings that reference unknown configured controllers.
+- Reject device mappings that reference unknown logical controllers.
 - Reject invalid pins for `gpio` devices when validation can determine the pin is invalid.
 - Reject unsupported `ir_filter` values.
 
