@@ -366,7 +366,7 @@ def render_timer_dashboard_page(
   </style>
 </head>
 <body>
-  <nav><a href="/settings">Settings</a></nav>
+  <nav><a href="/config">Config</a> | <a href="/settings">Settings</a></nav>
   <h1>Plamp</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>

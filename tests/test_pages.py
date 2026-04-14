@@ -4,6 +4,11 @@ from plamp_web.pages import render_api_test_page, render_config_page, render_set
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_timer_dashboard_page_links_to_config(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn('<a href="/config">Config</a>', html)
+
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
