@@ -46,14 +46,14 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
 
     controller_rows = "\n".join(
         '<tr class="controller-row" data-controller-key="{key}">'
-        '<td><code>{key_label}</code><div class="muted">{detected}</div></td>'
+        '<td><code>{hardware_label}</code><div class="muted">{hardware_detail}</div></td>'
         '<td><input class="controller-name" value="{name}"></td>'
         '<td><select class="controller-type">{type_options}</select></td>'
         '<td><select class="controller-pico-serial">{pico_options}</select></td>'
         '</tr>'.format(
             key=html.escape(key, quote=True),
-            key_label=html.escape(key),
-            detected=html.escape(str(detected_picos_by_serial.get(str(controllers.get(key, {}).get("match", {}).get("pico_serial")), {}).get("port") or "configured")),
+            hardware_label=html.escape(str(detected_picos_by_serial.get(str(controllers.get(key, {}).get("match", {}).get("pico_serial")), {}).get("port") or "Not assigned")),
+            hardware_detail=html.escape(str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "Choose a Pico in the Assigned Pico column")),
             name=html.escape(str(controllers.get(key, {}).get("name") or ""), quote=True),
             type_options="".join(option_tag(value, value, str(controllers.get(key, {}).get("type") or "pico_scheduler")) for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
             pico_options=pico_options(picos, str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "")),
@@ -88,7 +88,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         '</tr>'.format(
             key=html.escape(key, quote=True),
             key_label=html.escape(key),
-            detected=html.escape(" ".join(str(detected_rpicam_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured"),
+            detected=html.escape("Detected: " + (" ".join(str(detected_rpicam_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured")),
             name=html.escape(str(cameras.get(key, {}).get("name") or ""), quote=True),
             ir_options="".join(option_tag(value, value, str(cameras.get(key, {}).get("ir_filter") or "unknown")) for value in ["unknown", "normal", "noir"]),
         )
