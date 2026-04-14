@@ -108,6 +108,45 @@ It has separate GET and PUT sections, separate role inputs for each section, an 
 
 GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI. PUT always copies state to the Pico and resets it.
 
+## Config page
+
+Open the local config editor:
+
+```text
+http://localhost:8000/config
+```
+
+Settings reports detected local hardware and software status. Config stores user-maintained meaning for that hardware. The first supported local hardware mappings are Pico controllers, Pico `gpio` devices, and Raspberry Pi cameras detected through `rpicam-hello --list-cameras`.
+
+Example `data/config.json` shape:
+
+```json
+{
+  "timers": [
+    {
+      "role": "pump_lights",
+      "pico_serial": "e66038b71387a039",
+      "channels": [
+        {"id": "pump", "name": "Pump", "pin": 3, "type": "gpio", "default_editor": "cycle"}
+      ]
+    }
+  ],
+  "hardware": {
+    "controllers": {
+      "controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}
+    },
+    "devices": {
+      "pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}
+    },
+    "cameras": {
+      "rpicam:cam0": {"name": "Tent camera", "ir_filter": "unknown"}
+    }
+  }
+}
+```
+
+The `timers` section remains the runtime compatibility projection used by existing timer APIs. The Pico runtime state files under `data/timers/<role>.json` remain separate and are still what gets sent to the Pico.
+
 ## Run The Settings Page
 
 During development, run with reload on port 8000:
