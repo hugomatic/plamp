@@ -1,13 +1,14 @@
 import unittest
 
-from plamp_web.pages import render_api_test_page, render_config_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
-    def test_timer_dashboard_page_links_to_config(self):
+    def test_timer_dashboard_page_links_to_settings(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('<a href="/config">Config</a>', html)
+        self.assertIn('<a href="/settings">Settings</a>', html)
+        self.assertNotIn('href="/config"', html)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -181,46 +182,36 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("imx708_wide", html)
         self.assertIn("wide", html)
 
-    def test_config_page_includes_form_rows_for_controllers_devices_and_cameras(self):
-        html = render_config_page(
+    def test_settings_page_includes_plamp_setup_system_status_and_device_control(self):
+        html = render_settings_page(
             {
-                "controllers": {"pump_lights": {"pico_serial": "e66038b71387a039"}},
-                "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
-                "cameras": {"rpicam_cam0": {}},
-            },
-            {"picos": [{"serial": "e66038b71387a039", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
+                "config": {
+                    "controllers": {"pump_lights": {"pico_serial": "abc", "label": "Pump lights"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle", "label": "Main pump"}},
+                    "cameras": {"rpicam_cam0": {"label": "Tent cam"}},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
         )
 
-        self.assertIn("<title>Plamp config</title>", html)
-        self.assertIn("<h2>Controllers</h2>", html)
-        self.assertIn('data-controller-key="pump_lights"', html)
-        self.assertIn('class="controller-id"', html)
-        self.assertIn('value="pump_lights"', html)
-        self.assertIn('class="controller-pico-serial"', html)
-        self.assertIn('value="e66038b71387a039"', html)
-        self.assertIn("/dev/ttyACM0", html)
-        self.assertIn("<h2>Devices</h2>", html)
-        self.assertIn('data-device-id="pump"', html)
-        self.assertIn('class="device-controller"', html)
-        self.assertIn('value="3"', html)
-        self.assertIn("<h2>Cameras</h2>", html)
-        self.assertIn('data-camera-key="rpicam_cam0"', html)
-        self.assertIn('value="rpicam_cam0"', html)
-        self.assertIn("Detected: imx708_wide wide", html)
-        self.assertNotIn('data-camera-key="rpicam:cam0"', html)
-        self.assertIn("Save controllers", html)
-        self.assertIn("Save devices", html)
-        self.assertIn("Save cameras", html)
-        self.assertNotIn("<textarea", html)
-        self.assertNotIn('class="controller-name"', html)
-        self.assertNotIn('class="controller-type"', html)
-        self.assertNotIn('class="device-name"', html)
-        self.assertNotIn('class="device-type"', html)
-        self.assertNotIn(">Default editor<", html)
-        self.assertNotIn("default_editor", html)
+        self.assertIn("Plamp setup", html)
+        self.assertIn("System status", html)
+        self.assertIn("Device control", html)
+        self.assertIn("<th>Label</th>", html)
+        self.assertIn("Peripherals", html)
+        self.assertIn("Pump lights", html)
+        self.assertIn("Main pump", html)
+        self.assertIn("Tent cam", html)
+        self.assertIn('href="/settings"', html)
+        self.assertIn('href="/api/test"', html)
+        self.assertNotIn('href="/config"', html)
 
-    def test_config_page_posts_section_updates_from_forms(self):
-        html = render_config_page({"controllers": {}, "devices": {}, "cameras": {}}, {"picos": [], "cameras": []})
+    def test_settings_page_posts_config_section_updates_from_forms(self):
+        html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
         self.assertIn("collectControllers()", html)
         self.assertIn("collectDevices()", html)
@@ -228,19 +219,35 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('"/api/config/controllers"', html)
         self.assertIn('"/api/config/devices"', html)
         self.assertIn('"/api/config/cameras"', html)
-        self.assertIn('result[key] = {controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), editor: row.querySelector(".device-editor").value};', html)
-        self.assertNotIn("default_editor", html)
+        self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
+        self.assertIn('label: row.querySelector(".controller-label").value.trim()', html)
+        self.assertIn('label: row.querySelector(".camera-label").value.trim()', html)
 
-    def test_config_page_includes_blank_rows_for_new_controller_and_device(self):
-        html = render_config_page({"controllers": {}, "devices": {}, "cameras": {}}, {"picos": [], "cameras": []})
+    def test_settings_page_includes_blank_rows_for_new_controller_device_and_camera(self):
+        html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
         self.assertIn('class="controller-row new-row" data-controller-key=""', html)
         self.assertIn('placeholder="pump_lights"', html)
         self.assertIn('class="device-row new-row" data-device-id=""', html)
         self.assertIn('placeholder="pump"', html)
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
-        self.assertNotIn("No configured controllers", html)
-        self.assertNotIn("No configured devices", html)
+
+    def test_settings_page_includes_hostname_confirm_apply_controls(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('id="hostname-input"', html)
+        self.assertIn('id="hostname-confirm"', html)
+        self.assertIn('id="hostname-status"', html)
+        self.assertIn('/api/host-config/hostname', html)
 
     def test_api_test_page_includes_config_routes(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
