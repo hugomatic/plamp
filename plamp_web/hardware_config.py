@@ -1,170 +1,118 @@
+"""Validation helpers for the persisted hardware config."""
+
 from __future__ import annotations
 
-import copy
+from collections.abc import Mapping
 import re
-from typing import Any
-
-CONTROLLER_TYPES = {"pico_scheduler", "food_dispenser", "ph_dispenser"}
-DEVICE_TYPES = {"gpio"}
-DEFAULT_EDITORS = {"cycle", "clock_window"}
-IR_FILTERS = {"unknown", "normal", "noir"}
-ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def controller_key(role: str) -> str:
-    return f"controller:{role}"
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_EDITORS = {"cycle", "clock_window"}
+_CONFIG_KEYS = ("controllers", "devices", "cameras")
 
 
-def empty_hardware() -> dict[str, Any]:
-    return {"controllers": {}, "devices": {}, "cameras": {}}
+def empty_config() -> dict:
+    return {key: {} for key in _CONFIG_KEYS}
 
 
-def hardware_config_from_timers(config: dict[str, Any]) -> dict[str, Any]:
-    hardware = empty_hardware()
-    for timer in config.get("timers", []):
-        if not isinstance(timer, dict):
-            continue
-        role = timer.get("role")
-        serial = timer.get("pico_serial")
-        if not isinstance(role, str) or not isinstance(serial, str) or not role or not serial:
-            continue
-        key = controller_key(role)
-        hardware["controllers"][key] = {"name": role, "type": "pico_scheduler", "match": {"pico_serial": serial}}
-        for channel in timer.get("channels", []):
-            if not isinstance(channel, dict):
-                continue
-            device_id = channel.get("id")
-            pin = channel.get("pin")
-            if not isinstance(device_id, str) or not isinstance(pin, int):
-                continue
-            hardware["devices"][device_id] = {
-                "name": str(channel.get("name") or device_id),
-                "type": str(channel.get("type") or "gpio"),
-                "controller": key,
-                "pin": pin,
-                "default_editor": str(channel.get("default_editor") or "cycle"),
-            }
-    return hardware
+def _is_valid_id(value: object) -> bool:
+    return isinstance(value, str) and bool(_ID_RE.fullmatch(value))
 
 
-def hardware_view(config: dict[str, Any]) -> dict[str, Any]:
-    hardware = config.get("hardware")
-    if isinstance(hardware, dict):
-        return {
-            "controllers": dict(hardware.get("controllers") or {}),
-            "devices": dict(hardware.get("devices") or {}),
-            "cameras": dict(hardware.get("cameras") or {}),
-        }
-    return hardware_config_from_timers(config)
+def _as_mapping(value: object, label: str) -> Mapping:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a mapping")
+    return value
 
 
-def validate_controllers(controllers: Any) -> dict[str, dict[str, Any]]:
-    if not isinstance(controllers, dict):
-        raise ValueError("controllers must be an object")
-    result = {}
-    seen_names = set()
-    for key, item in controllers.items():
-        if not isinstance(key, str) or not key.startswith("controller:"):
-            raise ValueError("controller keys must be controller:<role>")
-        if not isinstance(item, dict):
-            raise ValueError(f"controller {key} must be an object")
-        name = item.get("name")
-        controller_type = item.get("type")
-        match = item.get("match") if isinstance(item.get("match"), dict) else {}
-        pico_serial = match.get("pico_serial")
-        if pico_serial is not None and not isinstance(pico_serial, str):
-            raise ValueError(f"controller {key} has invalid pico_serial")
-        if not isinstance(name, str) or not name or not ROLE_RE.match(name):
-            raise ValueError(f"controller {key} has invalid name")
-        if name in seen_names:
-            raise ValueError(f"duplicate controller name: {name}")
-        if controller_type not in CONTROLLER_TYPES:
-            raise ValueError(f"controller {key} has unsupported type")
-        seen_names.add(name)
-        result[key] = {"name": name, "type": controller_type, "match": {"pico_serial": pico_serial}}
-    return result
+def validate_controllers(value):
+    value = _as_mapping(value, "controllers")
+    controllers = {}
+    for controller_id, controller_value in value.items():
+        if not _is_valid_id(controller_id):
+            raise ValueError(f"invalid controller id: {controller_id!r}")
+        controller_value = _as_mapping(controller_value, f"controller {controller_id}")
+        extra_keys = set(controller_value) - {"pico_serial"}
+        if extra_keys:
+            raise ValueError(f"controller {controller_id} has unknown keys: {sorted(extra_keys)!r}")
+        pico_serial = controller_value.get("pico_serial")
+        if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
+            raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
+        controllers[controller_id] = {}
+        if pico_serial is not None:
+            controllers[controller_id]["pico_serial"] = pico_serial
+    return controllers
 
 
-def validate_devices(devices: Any, controllers: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    if not isinstance(devices, dict):
-        raise ValueError("devices must be an object")
-    result = {}
-    for key, item in devices.items():
-        if not isinstance(key, str) or not DEVICE_ID_RE.match(key):
-            raise ValueError("device ids must use letters, numbers, underscore, or dash")
-        if not isinstance(item, dict):
-            raise ValueError(f"device {key} must be an object")
-        name = item.get("name")
-        device_type = item.get("type")
-        controller = item.get("controller")
-        pin = item.get("pin")
-        default_editor = item.get("default_editor", "cycle")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"device {key} has invalid name")
-        if device_type not in DEVICE_TYPES:
-            raise ValueError(f"device {key} has unsupported type")
+def validate_devices(value, controllers):
+    value = _as_mapping(value, "devices")
+    controllers = validate_controllers(controllers)
+    devices = {}
+    for device_id, device_value in value.items():
+        if not _is_valid_id(device_id):
+            raise ValueError(f"invalid device id: {device_id!r}")
+        device_value = _as_mapping(device_value, f"device {device_id}")
+        extra_keys = set(device_value) - {"controller", "pin", "editor"}
+        if extra_keys:
+            raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
+        controller = device_value.get("controller")
+        pin = device_value.get("pin")
+        editor = device_value.get("editor")
         if controller not in controllers:
-            raise ValueError(f"device {key} references unknown controller")
-        if not isinstance(pin, int) or pin < 0 or pin > 29:
-            raise ValueError(f"device {key} has invalid pin")
-        if default_editor not in DEFAULT_EDITORS:
-            raise ValueError(f"device {key} has unsupported default_editor")
-        result[key] = {"name": name, "type": device_type, "controller": controller, "pin": pin, "default_editor": default_editor}
-    return result
+            raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
+        if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
+            raise ValueError(f"device {device_id} pin must be an int in 0..29")
+        if editor not in _EDITORS:
+            raise ValueError(f"device {device_id} editor must be one of {sorted(_EDITORS)!r}")
+        devices[device_id] = {
+            "controller": controller,
+            "pin": pin,
+            "editor": editor,
+        }
+    return devices
 
 
-def validate_cameras(cameras: Any) -> dict[str, dict[str, Any]]:
-    if not isinstance(cameras, dict):
-        raise ValueError("cameras must be an object")
-    result = {}
-    for key, item in cameras.items():
-        if not isinstance(key, str) or not key.startswith("rpicam:"):
-            raise ValueError("camera keys must be rpicam:cam0 or rpicam:cam1")
-        if not isinstance(item, dict):
-            raise ValueError(f"camera {key} must be an object")
-        name = item.get("name")
-        ir_filter = item.get("ir_filter", "unknown")
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"camera {key} has invalid name")
-        if ir_filter not in IR_FILTERS:
-            raise ValueError(f"camera {key} has unsupported ir_filter")
-        result[key] = {"name": name, "ir_filter": ir_filter}
-    return result
+def validate_cameras(value):
+    value = _as_mapping(value, "cameras")
+    cameras = {}
+    for camera_id, camera_value in value.items():
+        if not _is_valid_id(camera_id):
+            raise ValueError(f"invalid camera id: {camera_id!r}")
+        camera_value = _as_mapping(camera_value, f"camera {camera_id}")
+        if camera_value:
+            raise ValueError(f"camera {camera_id} must be empty")
+        cameras[camera_id] = {}
+    return cameras
 
 
-def apply_hardware_section(config: dict[str, Any], section: str, value: Any) -> dict[str, Any]:
-    updated = copy.deepcopy(config)
-    hardware = hardware_view(updated)
+def config_view(config):
+    config = _as_mapping(config, "config")
+    controllers = validate_controllers(config.get("controllers", {}))
+    return {
+        "controllers": controllers,
+        "devices": validate_devices(config.get("devices", {}), controllers),
+        "cameras": validate_cameras(config.get("cameras", {})),
+    }
+
+
+def apply_config_section(config, section, value):
+    config = config_view(config)
     if section == "controllers":
-        hardware["controllers"] = validate_controllers(value)
-        hardware["devices"] = validate_devices(hardware.get("devices", {}), hardware["controllers"])
+        config["controllers"] = validate_controllers(value)
+        config["devices"] = validate_devices(config["devices"], config["controllers"])
     elif section == "devices":
-        hardware["devices"] = validate_devices(value, hardware.get("controllers", {}))
+        config["devices"] = validate_devices(value, config["controllers"])
     elif section == "cameras":
-        hardware["cameras"] = validate_cameras(value)
+        config["cameras"] = validate_cameras(value)
     else:
-        raise ValueError(f"unknown hardware section: {section}")
-    updated["hardware"] = hardware
-    return project_timers_from_hardware(updated)
+        raise ValueError(f"unknown section: {section!r}")
+    return config
 
 
-def project_timers_from_hardware(config: dict[str, Any]) -> dict[str, Any]:
-    hardware = hardware_view(config)
-    timers = []
-    for controller_key, controller in sorted(hardware.get("controllers", {}).items(), key=lambda item: item[1]["name"]):
-        if controller.get("type") != "pico_scheduler":
-            continue
-        channels = []
-        for device_id, device in sorted(hardware.get("devices", {}).items()):
-            if device.get("controller") != controller_key:
-                continue
-            channels.append({"id": device_id, "name": device["name"], "pin": device["pin"], "type": device["type"], "default_editor": device["default_editor"]})
-        pico_serial = (controller.get("match") or {}).get("pico_serial")
-        if not pico_serial:
-            continue
-        timers.append({"role": controller["name"], "pico_serial": pico_serial, "channels": channels})
-    result = copy.deepcopy(config)
-    result["hardware"] = hardware
-    result["timers"] = timers
-    return result
+def runtime_controller_serials(config):
+    controllers = config_view(config)["controllers"]
+    return {
+        controller_id: controller_value["pico_serial"]
+        for controller_id, controller_value in controllers.items()
+        if "pico_serial" in controller_value
+    }
