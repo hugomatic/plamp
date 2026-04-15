@@ -10,6 +10,28 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<a href="/settings">Settings</a>', html)
         self.assertNotIn('href="/config"', html)
 
+
+    def test_pages_use_same_three_link_nav(self):
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>'
+        settings_summary = {
+            "config": {"controllers": {}, "devices": {}, "cameras": {}},
+            "detected": {"picos": [], "cameras": []},
+            "host": {"hostname": "plamp", "network": []},
+            "picos": [],
+            "software": {},
+            "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+        }
+
+        pages = [
+            render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0),
+            render_settings_page(settings_summary),
+            render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h"),
+        ]
+
+        for html in pages:
+            self.assertIn(expected, html)
+            self.assertEqual(html.count("<nav>"), 1)
+
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

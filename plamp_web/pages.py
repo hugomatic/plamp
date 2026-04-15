@@ -5,6 +5,8 @@ import json
 import re
 from typing import Any
 
+MAIN_NAV = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>'
+
 
 def normalize_camera_key(value: Any) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
@@ -168,7 +170,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
+  {MAIN_NAV}
   <h1>Plamp config</h1>
   <h2>Controllers</h2>
   <table><thead><tr><th>ID</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows_html}</tbody></table>
@@ -420,7 +422,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>
+  {MAIN_NAV}
   <h1>Settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
 
@@ -611,7 +613,7 @@ def render_timer_dashboard_page(
   </style>
 </head>
 <body>
-  <nav><a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>
+  __MAIN_NAV__
   <h1>Plamp</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
@@ -1231,7 +1233,7 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__TIME_FORMAT__", json.dumps(time_format))
+        template.replace("__MAIN_NAV__", MAIN_NAV).replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
@@ -1285,7 +1287,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
+  {MAIN_NAV}
   <h1>Plamp API test</h1>
 
   <h2>Camera</h2>
