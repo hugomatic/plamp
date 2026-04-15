@@ -122,30 +122,25 @@ Example `data/config.json` shape:
 
 ```json
 {
-  "timers": [
-    {
-      "role": "pump_lights",
-      "pico_serial": "e66038b71387a039",
-      "channels": [
-        {"id": "pump", "name": "Pump", "pin": 3, "type": "gpio", "default_editor": "cycle"}
-      ]
+  "controllers": {
+    "pump_lights": {
+      "pico_serial": "e66038b71387a039"
     }
-  ],
-  "hardware": {
-    "controllers": {
-      "controller:pump_lights": {"name": "pump_lights", "type": "pico_scheduler", "match": {"pico_serial": "e66038b71387a039"}}
-    },
-    "devices": {
-      "pump": {"name": "Pump", "type": "gpio", "controller": "controller:pump_lights", "pin": 3, "default_editor": "cycle"}
-    },
-    "cameras": {
-      "rpicam:cam0": {"name": "Tent camera", "ir_filter": "unknown"}
+  },
+  "devices": {
+    "pump": {
+      "controller": "pump_lights",
+      "pin": 3,
+      "editor": "cycle"
     }
+  },
+  "cameras": {
+    "cam0": {}
   }
 }
 ```
 
-The `timers` section remains the runtime compatibility projection used by existing timer APIs. The Pico runtime state files under `data/timers/<role>.json` remain separate and are still what gets sent to the Pico.
+`/` is driven by configured controllers and devices. Pico reports only provide live state for configured pins; extra reported pins are ignored.
 
 ## Run The Settings Page
 
