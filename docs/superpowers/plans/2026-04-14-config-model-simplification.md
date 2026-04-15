@@ -609,12 +609,19 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
             event_type = str(event.get("type") or "gpio")
             if event_type not in {"gpio", "pwm"}:
                 event_type = "gpio"
+            live_pin = pin
+            try:
+                candidate_pin = int(event.get("ch"))
+            except (TypeError, ValueError):
+                candidate_pin = pin
+            if 0 <= candidate_pin <= 29:
+                live_pin = candidate_pin
             result.append(
                 {
                     "role": role,
                     "id": device_id,
                     "name": device_id,
-                    "pin": pin,
+                    "pin": live_pin,
                     "type": event_type,
                     "default_editor": default_editor,
                 }
