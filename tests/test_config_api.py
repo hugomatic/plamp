@@ -228,3 +228,79 @@ class ConfigApiTests(unittest.TestCase):
         self.assertIs(monitor_map["keep"], new_keep)
         self.assertEqual(monitor_map["keep"].pico_serial, "KEEP_NEW")
         self.assertNotIn("drop", monitor_map)
+
+    def test_post_timer_channel_schedule_uses_saved_state_not_stale_live_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"},
+                        "lights": {"controller": "pump_lights", "pin": 3, "editor": "clock_window"},
+                    },
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            (timers_dir / "pump_lights.json").write_text(
+                json.dumps(
+                    {
+                        "report_every": 1,
+                        "events": [
+                            {"id": "pump", "type": "gpio", "ch": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stale_live = {
+                "report_every": 1,
+                "events": [
+                    {"id": "test_pin", "type": "gpio", "ch": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+                ],
+            }
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "latest_timer_state", return_value=stale_live),
+                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+            ):
+                server.post_timer_channel_schedule("pump_lights", "lights", {"mode": "clock_window", "on_time": "06:00", "off_time": "18:00"})
+
+            saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
+
+        self.assertEqual([event["id"] for event in saved["events"]], ["pump", "lights"])
+        self.assertEqual(saved["events"][0]["ch"], 2)
+        self.assertEqual(saved["events"][1]["ch"], 3)
+
+    def test_post_timer_channel_schedule_reports_saved_when_pico_is_offline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            (timers_dir / "pump_lights.json").write_text(json.dumps({"report_every": 1, "events": []}), encoding="utf-8")
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "latest_timer_state", return_value=None),
+                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="Pico for role pump_lights is not connected: abc")),
+            ):
+                response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
+
+            saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(response["success"])
+        self.assertIn("saved", response["message"])
+        self.assertIn("not connected", response["message"])
+        self.assertEqual(saved["events"][0]["id"], "pump")

@@ -468,6 +468,8 @@ def render_timer_dashboard_page(
     let cameraCaptureOffset = 0;
     const cameraCapturePageSize = 30;
     let selectedCameraImageUrl = "";
+    let activeEditor = null;
+    let pendingTimerRender = false;
 
     function formatChangeTime(secondsFromNow) {
       const when = new Date(Date.now() + secondsFromNow * 1000);
@@ -583,6 +585,11 @@ def render_timer_dashboard_page(
 
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
+      const eventPin = Number(event?.ch);
+      if (Number.isFinite(eventPin)) {
+        const byPin = channels.find((channel) => Number(channel.pin) === eventPin);
+        if (byPin) return byPin;
+      }
       const eventId = event.id || "pin-" + (event.ch ?? index);
       return channels.find((channel) => channel.id === eventId) || {
         role,
@@ -647,12 +654,43 @@ def render_timer_dashboard_page(
       }[char]));
     }
 
-    function openScheduleEditor(role, event, index) {
-      const channel = channelForEvent(role, event, index);
+    function captureEditorFocus() {
+      if (!activeEditor || !timerEditorPanel.contains(document.activeElement)) return null;
+      const field = document.activeElement;
+      const fieldName = field?.name;
+      if (!fieldName) return null;
+      return {
+        name: fieldName,
+        selectionStart: typeof field.selectionStart === "number" ? field.selectionStart : null,
+        selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null,
+      };
+    }
+
+    function restoreEditorFocus(focusState) {
+      if (!focusState) return;
+      const form = timerEditorPanel.querySelector("#timer-schedule-form");
+      const field = form?.elements?.[focusState.name];
+      if (!field || typeof field.focus !== "function") return;
+      field.focus();
+      if (typeof field.setSelectionRange === "function" && focusState.selectionStart !== null && focusState.selectionEnd !== null) {
+        field.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+      }
+    }
+
+    function flushPendingTimerRender() {
+      if (!pendingTimerRender) return;
+      if (activeEditor && timerEditorPanel.contains(document.activeElement)) return;
+      pendingTimerRender = false;
+      renderTimerStatus();
+    }
+
+    function openScheduleEditor(role, channel, event) {
       const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
       const onUnit = chooseUnit(durations.on);
       const offUnit = chooseUnit(durations.off);
       const clock = clockValuesForEvent(event);
+      stopPageAutoRefresh();
+      activeEditor = {role, channelId: channel.id};
       timerEditorPanel.hidden = false;
       timerEditorPanel.dataset.role = role;
       timerEditorPanel.dataset.channelId = channel.id;
@@ -693,7 +731,9 @@ def render_timer_dashboard_page(
       form.elements.offUnit.value = offUnit.unit;
       syncEditorMode(form);
       form.elements.mode.addEventListener("change", () => syncEditorMode(form));
-      form.elements.cancel.addEventListener("click", () => { timerEditorPanel.hidden = true; });
+      form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
+      form.elements.cancel.addEventListener("click", () => { activeEditor = null; timerEditorPanel.hidden = true; renderTimerStatus(); });
+      renderTimerStatus();
       form.addEventListener("submit", submitScheduleEditor);
     }
 
@@ -730,20 +770,37 @@ def render_timer_dashboard_page(
         if (!response.ok) {
           throw new Error(parsed?.detail || text || `${response.status} ${response.statusText}`);
         }
-        showEditorMessage(message, "editor-success", "Schedule applied. Waiting for report...");
+        showEditorMessage(message, "editor-success", parsed?.message || "Schedule applied. Waiting for report...");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }
     }
 
     function renderTimerStatus() {
+      if (activeEditor && timerEditorPanel.contains(document.activeElement)) {
+        pendingTimerRender = true;
+        return;
+      }
+      pendingTimerRender = false;
+      const focusState = captureEditorFocus();
       timerBoard.replaceChildren();
       let rendered = 0;
+      let editorPlaced = false;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
         const events = timerEventsFromMessage(message);
-        for (const [index, event] of events.entries()) {
-          const channel = channelForEvent(role, event, index);
+        const channels = timerChannels[role] || [];
+        const liveByPin = new Map();
+        for (const event of events) {
+          const pin = Number(event?.ch);
+          if (Number.isFinite(pin)) liveByPin.set(pin, event);
+        }
+        const items = channels.length
+          ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
+          : events.map((event, index) => ({channel: channelForEvent(role, event, index), event, index}));
+        for (const item of items) {
+          const channel = item.channel;
+          const event = item.event || {id: channel.id, ch: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
           const isOn = value > 0;
@@ -761,7 +818,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+          meta.textContent = "pin " + (channel.pin ?? event.ch ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -773,13 +830,22 @@ def render_timer_dashboard_page(
           const edit = document.createElement("button");
           edit.type = "button";
           edit.textContent = "Edit schedule";
-          edit.addEventListener("click", () => openScheduleEditor(role, event, index));
+          edit.addEventListener("click", () => openScheduleEditor(role, channel, event));
           actions.append(edit);
           card.append(top, meta, bar, actions);
           timerBoard.append(card);
+          if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {
+            timerBoard.append(timerEditorPanel);
+            timerEditorPanel.hidden = false;
+            editorPlaced = true;
+          }
           rendered += 1;
         }
       }
+      if (!editorPlaced) {
+        timerEditorPanel.hidden = true;
+      }
+      restoreEditorFocus(focusState);
       if (!rendered) {
         timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
       }

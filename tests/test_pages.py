@@ -16,6 +16,31 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("let refreshSeconds = 30;", html)
         self.assertIn("window.location.reload();", html)
 
+    def test_timer_dashboard_page_uses_server_schedule_success_message(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn('showEditorMessage(message, "editor-success", parsed?.message || "Schedule applied. Waiting for report...");', html)
+
+    def test_timer_dashboard_page_places_editor_under_active_timer_and_pauses_refresh(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("let activeEditor = null;", html)
+        self.assertIn("function openScheduleEditor(role, channel, event) {", html)
+        self.assertIn("activeEditor = {role, channelId: channel.id};", html)
+        self.assertIn("stopPageAutoRefresh();", html)
+        self.assertIn("activeEditor = null;", html)
+        self.assertIn('edit.addEventListener("click", () => openScheduleEditor(role, channel, event));', html)
+        self.assertIn("if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {", html)
+        self.assertIn("timerBoard.append(timerEditorPanel);", html)
+
+    def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("let pendingTimerRender = false;", html)
+        self.assertIn("function flushPendingTimerRender() {", html)
+        self.assertIn("if (activeEditor && timerEditorPanel.contains(document.activeElement)) {", html)
+        self.assertIn("pendingTimerRender = true;", html)
+        self.assertIn('form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));', html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -72,6 +97,24 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('cameraCaptureFilter.addEventListener("change", () => {', html)
         self.assertIn("cameraCaptureOffset = 0;", html)
         self.assertIn("refreshCameraCaptures();", html)
+
+    def test_timer_dashboard_page_ignores_unconfigured_runtime_pins(self):
+        html = render_timer_dashboard_page(
+            ["pump_lights"],
+            "12h",
+            {
+                "pump_lights": [
+                    {"role": "pump_lights", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "cycle"},
+                    {"role": "pump_lights", "id": "lights", "name": "lights", "pin": 3, "type": "gpio", "default_editor": "clock_window"},
+                ]
+            },
+            0,
+        )
+
+        self.assertIn("const liveByPin = new Map();", html)
+        self.assertIn("const byPin = channels.find((channel) => Number(channel.pin) === eventPin);", html)
+        self.assertIn("channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))", html)
+        self.assertIn("const event = item.event || {id: channel.id, ch: channel.pin, type: channel.type || \"gpio\"};", html)
 
 
     def test_settings_page_includes_storage_summary(self):

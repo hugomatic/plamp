@@ -193,6 +193,16 @@ def _resync_unedited_event(event: dict[str, Any], live_event: dict[str, Any] | N
     return updated
 
 
+def _new_channel_event(channel: dict[str, Any], channel_id: str) -> dict[str, Any]:
+    return {
+        "id": channel_id,
+        "type": channel.get("type", "gpio"),
+        "ch": channel.get("pin"),
+        "current_t": 0,
+        "reschedule": 1,
+    }
+
+
 def patch_channel_schedule(
     state: dict[str, Any],
     channels: list[dict[str, Any]],
@@ -251,7 +261,28 @@ def patch_channel_schedule(
         else:
             updated_events.append(_resync_unedited_event(event, live_event))
     if not found:
-        raise ValueError(f"missing scheduler event for channel: {channel_id}")
+        base_event = _new_channel_event(channel, channel_id)
+        mode = schedule.get("mode")
+        if mode == "cycle":
+            updated_events.append(
+                apply_cycle_schedule(
+                    base_event,
+                    on_seconds=_as_int(schedule.get("on_seconds"), "on_seconds"),
+                    off_seconds=_as_int(schedule.get("off_seconds"), "off_seconds"),
+                    start_at_seconds=_as_int(schedule.get("start_at_seconds", 0), "start_at_seconds"),
+                )
+            )
+        elif mode == "clock_window":
+            updated_events.append(
+                apply_clock_window_schedule(
+                    base_event,
+                    on_time=str(schedule.get("on_time", "")),
+                    off_time=str(schedule.get("off_time", "")),
+                    now=now,
+                )
+            )
+        else:
+            raise ValueError("mode must be cycle or clock_window")
     updated = dict(state)
     updated["events"] = updated_events
     return updated

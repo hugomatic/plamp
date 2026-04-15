@@ -1310,11 +1310,14 @@ def get_camera_capture_image(capture_id: str) -> FileResponse:
 def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
     config = load_config()
     timer_role(role)
-    current_state = state_for_role(role)
-    channels = channel_metadata_for_role(role, config, current_state)
+    path = timer_state_path(role)
+    saved_state = load_json_file(path)
+    live_state = latest_timer_state(role)
+    channel_state = live_state if isinstance(live_state, dict) else saved_state
+    channels = channel_metadata_for_role(role, config, channel_state)
     try:
         updated = patch_channel_schedule(
-            current_state,
+            saved_state,
             channels,
             channel_id,
             schedule,
@@ -1324,15 +1327,20 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     validated = validate_timer_state(updated)
-    path = timer_state_path(role)
+    sent = None
+    message = "schedule saved and sent to Pico"
     with lock_for(role_locks, role):
         atomic_write_json(path, validated)
-        sent = apply_timer_state(role, path)
+        try:
+            sent = apply_timer_state(role, path)
+        except HTTPException as exc:
+            detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
+            message = f"schedule saved; {detail}"
     return {
         "role": role,
         "channel": channel_id,
         "success": True,
-        "message": "schedule saved and sent to Pico",
+        "message": message,
         "pico": sent,
         "state": state_with_current_values(validated),
     }

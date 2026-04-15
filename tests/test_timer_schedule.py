@@ -152,6 +152,29 @@ class TimerScheduleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pin/type"):
             patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 0})
 
+    def test_patch_channel_schedule_creates_missing_configured_event(self):
+        state = {
+            "report_every": 1,
+            "events": [
+                {"id": "test_pin", "type": "gpio", "ch": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+            ],
+        }
+        channels = [{"id": "pump", "pin": 2, "type": "gpio", "default_editor": "cycle"}]
+
+        updated = patch_channel_schedule(
+            state,
+            channels,
+            "pump",
+            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 7},
+            now=time(12, 0, 0),
+        )
+
+        self.assertEqual(updated["events"][0]["id"], "test_pin")
+        self.assertEqual(updated["events"][1]["id"], "pump")
+        self.assertEqual(updated["events"][1]["ch"], 2)
+        self.assertEqual(updated["events"][1]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["events"][1]["current_t"], 7)
+
 
 if __name__ == "__main__":
     unittest.main()
