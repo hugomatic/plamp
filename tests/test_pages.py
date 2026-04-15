@@ -181,7 +181,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<th>Camera</th>", html)
         self.assertIn("cam0", html)
         self.assertNotIn("<th>Key</th>", html)
-        self.assertIn("imx708_wide", html)
+        self.assertIn("Camera Module 3 Wide", html)
+        self.assertIn("imx708", html)
         self.assertIn("wide", html)
 
     def test_settings_page_includes_plamp_setup_system_status_and_device_control(self):

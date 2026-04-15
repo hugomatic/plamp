@@ -10,6 +10,22 @@ def normalize_camera_key(value: Any) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
 
 
+def camera_model_label(item: dict[str, Any]) -> str:
+    raw_model = str(item.get("model") or "")
+    sensor = str(item.get("sensor") or raw_model.split("_", 1)[0]).lower()
+    lens = str(item.get("lens") or "").lower()
+    raw_lower = raw_model.lower()
+    wide = "wide" in lens or "wide" in raw_lower
+    model_by_sensor = {
+        "imx708": "Camera Module 3 Wide" if wide else "Camera Module 3",
+        "imx219": "Camera Module 2",
+        "ov5647": "Camera Module 1",
+        "imx477": "HQ Camera",
+        "imx296": "Global Shutter Camera",
+    }
+    return model_by_sensor.get(sensor, raw_model or "-")
+
+
 def option_tag(value: str, label: str, selected: str | None) -> str:
     selected_attr = " selected" if value == selected else ""
     return f'<option value="{html.escape(value)}"{selected_attr}>{html.escape(label)}</option>'
@@ -113,7 +129,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             (item for item in detected_cameras if isinstance(item, dict) and str(item.get("key")) == camera_id),
             {},
         )
-        detail = " ".join(str(detected_camera.get(field) or "") for field in ["model", "lens"]).strip()
+        detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
         camera_rows.append(
             '<tr class="camera-row" data-camera-key="{camera_id}">'
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
@@ -299,7 +315,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     for camera_id in all_camera_keys:
         camera = configured_cameras.get(camera_id, {}) if isinstance(configured_cameras.get(camera_id, {}), dict) else {}
         detected_camera = next((item for item in detected_cameras if isinstance(item, dict) and str(item.get("key")) == camera_id), {})
-        detail = " ".join(str(detected_camera.get(field) or "") for field in ["model", "lens"]).strip()
+        detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
         camera_setup_rows.append(
             '<tr class="camera-row" data-camera-key="{camera_id}">'
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
@@ -342,7 +358,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     camera_rows = "\n".join(
         "<tr>"
         f"<td>{html.escape(camera_status_name(item))}</td>"
-        f"<td>{html.escape(str(item.get('model') or '-'))}</td>"
+        f"<td>{html.escape(camera_model_label(item))}</td>"
         f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
         f"<td><code>{html.escape(str(item.get('path') or '-'))}</code></td>"
