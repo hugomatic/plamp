@@ -2,8 +2,10 @@ import unittest
 
 from plamp_web.hardware_config import (
     apply_config_section,
+    apply_hardware_section,
     config_view,
     empty_config,
+    hardware_view,
     runtime_controller_serials,
     validate_cameras,
     validate_controllers,
@@ -45,6 +47,12 @@ class HardwareConfigTests(unittest.TestCase):
             {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
         )
 
+    def test_validate_devices_defaults_missing_editor(self):
+        self.assertEqual(
+            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3}}, {"ctrl_a": {}}),
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+        )
+
     def test_validate_devices_requires_known_controller(self):
         with self.assertRaises(ValueError):
             validate_devices({"dev_1": {"controller": "missing", "pin": 3, "editor": "cycle"}}, {})
@@ -58,6 +66,29 @@ class HardwareConfigTests(unittest.TestCase):
 
     def test_validate_cameras(self):
         self.assertEqual(validate_cameras({"cam_1": {}}), {"cam_1": {}})
+
+    def test_apply_config_section_devices_happy_path(self):
+        config = {"controllers": {"ctrl_a": {}}, "devices": {}, "cameras": {}}
+        updated = apply_config_section(
+            config,
+            "devices",
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"}},
+        )
+        self.assertEqual(updated["devices"], {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"}})
+
+    def test_apply_config_section_controllers_happy_path_and_runtime_serials(self):
+        config = {
+            "controllers": {"ctrl_a": {}, "ctrl_b": {"pico_serial": "OLD"}},
+            "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+            "cameras": {},
+        }
+        updated = apply_config_section(
+            config,
+            "controllers",
+            {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
+        )
+        self.assertEqual(updated["controllers"], {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}})
+        self.assertEqual(runtime_controller_serials(updated), {"ctrl_b": "PICO123"})
 
     def test_apply_config_section_validates_dependent_devices(self):
         config = {
@@ -76,6 +107,11 @@ class HardwareConfigTests(unittest.TestCase):
             "timers": {"legacy": {}},
         }
         self.assertEqual(runtime_controller_serials(config), {"ctrl_b": "PICO123"})
+
+    def test_compatibility_wrappers_resolve(self):
+        config = empty_config()
+        self.assertEqual(hardware_view(config), config_view(config))
+        self.assertEqual(apply_hardware_section(config, "cameras", {}), config_view(config))
 
 
 if __name__ == "__main__":

@@ -57,7 +57,7 @@ def validate_devices(value, controllers):
             raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
         controller = device_value.get("controller")
         pin = device_value.get("pin")
-        editor = device_value.get("editor")
+        editor = device_value.get("editor", "cycle")
         if controller not in controllers:
             raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
@@ -116,3 +116,12 @@ def runtime_controller_serials(config):
         for controller_id, controller_value in controllers.items()
         if "pico_serial" in controller_value
     }
+
+
+
+def hardware_view(config):
+    return config_view(config)
+
+
+def apply_hardware_section(config, section, value):
+    return apply_config_section(config, section, value)
