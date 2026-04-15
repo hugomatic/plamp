@@ -2,53 +2,101 @@
 
 ## Overview
 
-Issue `#19` asks for a single page that combines Plamp configuration with the machine and hardware status currently shown elsewhere. The goal is one clear admin page, not a migration or a new workspace model.
+Issue `#19` should produce a real admin-page redesign, not a light merge of the old `/config` and `/settings` pages. The new `/settings` page becomes the single place to configure Plamp, inspect the machine, and perform careful host-level actions.
 
-This design makes `/settings` the main admin page. It will contain editable Plamp configuration first, then read-only host and hardware status below it. `/config` will become a redirect to `/settings`.
+This design makes `/settings` the only admin page. The old `/config` route is removed entirely.
 
 ## Goals
 
-- Make `/settings` the single page for Plamp admin work.
-- Put editable Plamp config first: controllers, devices, and cameras.
-- Keep host and detected hardware information visible on the same page, but read-only in this slice.
-- Rename `Picos` to `Peripherals` in the UI.
+- Make `/settings` the only admin page.
+- Make `Plamp setup` the first and dominant section.
+- Keep `System status` available, but visually secondary.
+- Add a separate `Device control` section for cautious host-level actions.
 - Add optional display labels without changing stable ids.
 - Keep config as the source of truth for the main page.
 - Make config changes affect `/` immediately, as they do now.
+- Add hostname editing with an explicit confirm/apply flow.
+- Leave room for future Wi-Fi editing without implementing it in this slice.
 
 ## Non-Goals
 
 - No config migration step.
 - No workspace or multi-node model.
-- No change to the underlying runtime authority rules: config still wins over what a Pico reports.
-- No renaming of internal JSON or API fields from `picos` in this slice.
-- No editing of network, software, storage, or detected peripheral status in this slice.
+- No `/config` compatibility route.
+- No Wi-Fi editing in this slice.
+- No change to the current rule that config wins over stray Pico-reported names.
+- No attempt to guarantee the browser session survives risky host changes.
 
-## Page Shape
+## Page Structure
 
-`/settings` becomes the main admin page with this order:
+`/settings` becomes one admin page with three clear bands:
 
-1. Editable Plamp config
-2. Read-only machine and hardware status
+1. `Plamp setup`
+2. `System status`
+3. `Device control`
 
-The editable Plamp config section contains:
+The page should feel like one deliberate admin surface, not two old pages stacked together.
+
+### Plamp setup
+
+This is the main purpose of the page and appears first.
+
+It contains editable sections for:
 
 - Controllers
 - Devices
 - Cameras
 
-The read-only status section contains:
+Each section is task-oriented, with:
+
+- short intro text
+- editable table
+- local save control
+- clear validation feedback
+
+### System status
+
+This appears below setup and is visually secondary.
+
+It contains compact read-only summaries for:
 
 - Peripherals
 - Network
 - Software
 - Storage
 
-`/config` will redirect to `/settings`.
+This section is for inspection, not primary workflow.
+
+### Device control
+
+This appears last and is visually cautious.
+
+It contains host-level actions and settings that deserve explicit confirmation.
+
+For this slice it includes:
+
+- current hostname
+- pending hostname field
+- confirm/apply action
+- warning text that reconnect or reboot may be needed
+
+The section should visibly leave room for future controls such as Wi-Fi.
+
+## Navigation
+
+Main navigation becomes:
+
+- `/`
+- `/settings`
+- `/api/test`
+
+The `/settings` link may include a small gear icon.
+
+There is no `/config` route in this design.
 
 ## Config Model
 
-Keep the current top-level config-driven model and extend it with optional labels.
+Keep the current top-level config model and extend it with optional `label` fields.
 
 ```json
 {
@@ -82,19 +130,19 @@ Keep the current top-level config-driven model and extend it with optional label
 
 Rules:
 
-- Ids stay stable and remain the config keys.
-- `label` is optional for controllers, devices, and cameras.
-- A blank or missing `label` means the UI falls back to the id.
-- Existing configs without labels continue to work.
+- ids stay stable and remain the config keys
+- `label` is optional for controllers, devices, and cameras
+- blank or missing `label` falls back to the id in the UI
+- existing configs without labels continue to work
 
 ## Meaning Of Id And Label
 
-Use two levels of naming:
+Use two naming levels:
 
-- `id`: stable key used by config, routes, and internal matching
-- `label`: optional higher-level display text for the UI
+- `id`: stable internal key used by config, routes, and matching
+- `label`: optional display text for the UI
 
-This keeps matching and saved references stable while letting the user show friendlier names.
+This keeps matching stable while allowing higher-level naming.
 
 ## UI Behavior
 
@@ -108,7 +156,7 @@ Each row includes:
 - `Label`
 - assigned peripheral selector
 
-UI wording says `Peripherals`, but the saved field remains `pico_serial`.
+The user-facing word is `Peripherals`, even if the saved field remains `pico_serial`.
 
 ### Devices
 
@@ -134,21 +182,36 @@ Each row includes:
 - `Label`
 - detected summary
 
-This slice keeps camera detection read-only, while camera naming stays editable.
+Camera naming is editable in this slice. Camera detection details remain status data.
 
-### Status Sections
+## Hostname Control Behavior
 
-Peripherals, network, software, and storage stay read-only.
+Hostname editing belongs in `Device control`, not in the normal Plamp config sections.
 
-These sections move onto `/settings` below the editable config area. They do not get save controls in this slice.
+Behavior:
 
-## Routing
+- user can type a pending hostname
+- no change is made until explicit confirm/apply
+- apply action returns clear next-step text
+- UI warns that reconnect or reboot may be needed
+- UI does not pretend the current session will safely survive the change
 
-- `GET /settings` renders the combined page.
-- `GET /config` redirects to `/settings`.
-- Existing config section save endpoints remain in place.
+This makes hostname editing available from the device itself, including a kiosk-style use case, without bundling it into the normal config save flow.
 
-This keeps the current save flow and avoids extra API churn.
+## API Shape
+
+Keep current config section save endpoints for:
+
+- controllers
+- devices
+- cameras
+
+Add separate host-control endpoints for hostname:
+
+- `GET /api/host-config`
+- `POST /api/host-config/hostname`
+
+This keeps risky host operations separate from normal Plamp config saves.
 
 ## Validation
 
@@ -156,12 +219,18 @@ Continue current validation and add optional label handling.
 
 Rules:
 
-- `ID` is required.
-- `Label` is optional.
-- Unknown controller references on devices are rejected.
-- Duplicate device pin per controller is rejected.
-- Existing editor validation remains unchanged.
-- Labels are plain strings and do not participate in identity.
+- `ID` is required
+- `Label` is optional
+- unknown controller references on devices are rejected
+- duplicate device pin per controller is rejected
+- existing editor validation remains unchanged
+- labels do not participate in identity
+
+For hostname:
+
+- reject invalid or empty hostname values
+- return clear error text when apply fails
+- return explicit follow-up guidance when apply succeeds
 
 ## Main Page Behavior
 
@@ -169,43 +238,46 @@ The main page remains config-driven.
 
 Implications:
 
-- Adding or removing devices in config changes what `/` shows.
-- Scheduling remains based on configured devices, not stray Pico event names.
-- Display text may use labels where appropriate, but matching still uses ids and pins.
+- adding or removing devices in config changes what `/` shows
+- scheduling remains based on configured devices, not stray Pico event names
+- display text may use labels where appropriate, but matching still uses ids and pins
 
 ## Wording
 
 User-facing wording changes in this slice:
 
-- `Picos` becomes `Peripherals` on `/settings`.
-- Internal config keys and APIs may still use existing names such as `pico_serial`.
-
-This keeps the user vocabulary cleaner without creating a migration.
+- `Picos` becomes `Peripherals`
+- `/settings` is the admin page
+- `Plamp setup`, `System status`, and `Device control` become the major section names
 
 ## Error Handling
 
-- Keep partial section saves as they work now.
-- Preserve unrelated config sections when saving one section.
-- Redirecting `/config` should be simple and unconditional.
-- Missing detected peripherals or cameras should not erase saved config.
+- keep partial section saves as they work now
+- preserve unrelated config sections when saving one section
+- missing detected peripherals or cameras must not erase saved config
+- hostname apply should be explicit about possible reconnect impact
+- risky actions should be isolated in `Device control`
 
 ## Testing
 
 Add or update tests for:
 
-- combined `/settings` page render
-- `/config` redirect to `/settings`
+- `/settings` rendering the three-band layout
+- absence of `/config`
 - optional `label` support in config validation and section saves
 - page render coverage for `ID` and `Label` columns
-- existing main-page behavior still reflecting config changes immediately
-- existing status sections still render on the merged page
+- main-page behavior still reflecting config changes immediately
+- hostname read/apply endpoint behavior
+- nav showing `/settings` and `/api/test`
 
 ## Recommended Implementation Shape
 
 1. Extend config validation helpers to allow optional `label` fields.
-2. Move config form rendering into `/settings`.
-3. Append existing read-only status sections below the config forms.
-4. Change `/config` to redirect.
-5. Update tests.
+2. Redesign `/settings` as a single admin page with three bands.
+3. Move editable config sections into `Plamp setup`.
+4. Move existing host and hardware summaries into `System status`.
+5. Add `Device control` with hostname confirm/apply flow.
+6. Remove the `/config` route and update navigation.
+7. Update tests.
 
-This keeps the change local, preserves the current config APIs, and matches the current simple-system constraint.
+This keeps the system simple, makes `/settings` feel genuinely new, and leaves room for future Wi-Fi controls without taking that risk in this slice.
