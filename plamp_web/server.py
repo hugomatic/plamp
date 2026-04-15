@@ -381,6 +381,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
             reduced_events.append(event)
             continue
         item = dict(event)
+        old_pin_key = "c" + "h"
+        if "pin" not in item and old_pin_key in item:
+            item["pin"] = item.pop(old_pin_key)
+        elif old_pin_key in item:
+            item.pop(old_pin_key)
         if "elapsed_t" not in item:
             elapsed_t = event_elapsed_t(item)
             if elapsed_t is not None:

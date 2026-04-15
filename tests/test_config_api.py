@@ -196,6 +196,32 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
         self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
 
+    def test_reduce_report_normalizes_old_pin_key(self):
+        old_pin_key = "c" + "h"
+        report = {
+            "kind": "report",
+            "content": {
+                "events": [
+                    {
+                        "id": "pump",
+                        "type": "gpio",
+                        old_pin_key: 2,
+                        "current_t": 0,
+                        "reschedule": 1,
+                        "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                    }
+                ]
+            },
+        }
+
+        reduced = server.reduce_report(report)
+
+        event = reduced["content"]["events"][0]
+        self.assertEqual(event["pin"], 2)
+        self.assertNotIn(old_pin_key, event)
+        self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
+        self.assertNotIn(old_pin_key, reduced["pins"]["pump"])
+
     def test_get_timer_config_reflects_config_device_changes_immediately(self):
         state = {
             "report_every": 1,
