@@ -62,7 +62,13 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('id="camera-capture-links"', html)
         self.assertNotIn("thumbnailCaptures", html)
 
+    def test_timer_dashboard_places_take_picture_button_below_image(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
+        self.assertLess(
+            html.index('<img id="camera-viewer"'),
+            html.index('<div class="camera-actions">'),
+        )
 
     def test_timer_dashboard_capture_list_is_compact_and_scrollable(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)

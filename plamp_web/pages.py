@@ -621,11 +621,11 @@ def render_timer_dashboard_page(
 
   <h2>Camera</h2>
   <section class="camera-panel" aria-label="Camera captures">
+    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <div class="camera-actions">
       <button id="camera-capture" type="button">Take picture</button>
       <span id="camera-capture-status">Ready.</span>
     </div>
-    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <label>Show
       <select id="camera-capture-filter">
         <option value="all">All</option>
