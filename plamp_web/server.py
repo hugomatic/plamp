@@ -157,32 +157,32 @@ def normalized_detected_cameras(cameras: Any) -> list[dict[str, Any]]:
 
 
 def timer_roles() -> dict[str, dict[str, Any]]:
-    config_data = load_json_file(CONFIG_FILE)
-    if not isinstance(config_data, dict):
-        raise HTTPException(status_code=500, detail="config.json must be an object")
-    timers = config_data.get("timers", [])
-    if not isinstance(timers, list):
-        return {}
-    roles: dict[str, dict[str, Any]] = {}
-    for index, item in enumerate(timers):
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=500, detail=f"config timer {index} must be an object")
-        role = item.get("role")
-        serial = item.get("pico_serial")
+    config = load_config()
+    controllers = config.get("controllers", {})
+    if not isinstance(controllers, dict):
+        raise HTTPException(status_code=500, detail="config controllers must be an object")
+    return controllers
+
+
+def configured_monitor_serials() -> dict[str, str]:
+    result: dict[str, str] = {}
+    for role, item in timer_roles().items():
         if not isinstance(role, str) or not ROLE_RE.match(role):
-            raise HTTPException(status_code=500, detail=f"config timer {index} has invalid role")
-        if not isinstance(serial, str) or not serial:
-            raise HTTPException(status_code=500, detail=f"config timer {role} missing pico_serial")
-        roles[role] = item
-    return roles
+            raise HTTPException(status_code=500, detail=f"invalid controller role: {role}")
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=500, detail=f"controller {role} must be an object")
+        serial = item.get("pico_serial")
+        if isinstance(serial, str) and serial:
+            result[role] = serial
+    return result
 
 
 def role_for_serial(serial: str | None) -> str | None:
     if not serial:
         return None
     try:
-        for role, item in timer_roles().items():
-            if item.get("pico_serial") == serial:
+        for role, configured_serial in configured_monitor_serials().items():
+            if configured_serial == serial:
                 return role
     except HTTPException:
         return None
@@ -195,6 +195,13 @@ def timer_role(role: str) -> dict[str, Any]:
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown timer role: {role}")
     return item
+
+
+def pico_serial_for_role(role: str) -> str:
+    serial = timer_role(role).get("pico_serial")
+    if not isinstance(serial, str) or not serial:
+        raise HTTPException(status_code=409, detail=f"timer role {role} has no configured pico_serial")
+    return serial
 
 
 def timer_state_path(role: str) -> Path:
@@ -287,7 +294,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 
 
 def pico_for_role(role: str) -> dict[str, Any]:
-    serial = timer_role(role)["pico_serial"]
+    serial = pico_serial_for_role(role)
     for pico in enumerate_picos():
         if pico.get("serial") == serial:
             return pico
@@ -712,8 +719,7 @@ class PicoMonitor:
 
 
 def get_or_start_monitor(role: str) -> PicoMonitor:
-    item = timer_role(role)
-    pico_serial = str(item["pico_serial"])
+    pico_serial = pico_serial_for_role(role)
     with monitors_lock:
         monitor = monitors.get(role)
         if monitor is None or monitor.pico_serial != pico_serial:
@@ -727,7 +733,7 @@ def get_or_start_monitor(role: str) -> PicoMonitor:
 
 def start_configured_monitors() -> None:
     try:
-        roles = timer_roles()
+        roles = configured_monitor_serials()
     except HTTPException:
         return
     for role in roles:
@@ -1057,14 +1063,18 @@ def configured_timer_roles() -> list[str]:
 def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     try:
-        roles = timer_roles()
+        config = load_config()
+        roles = sorted(config.get("controllers", {}))
     except HTTPException:
         return result
-    for role, item in roles.items():
+    for role in roles:
         try:
             state = state_for_role(role)
-            result[role] = channel_metadata_for_role(role, item, state)
-        except (HTTPException, ValueError):
+        except HTTPException:
+            state = None
+        try:
+            result[role] = channel_metadata_for_role(role, config, state)
+        except ValueError:
             result[role] = []
     return result
 
@@ -1279,9 +1289,10 @@ def get_camera_capture_image(capture_id: str) -> FileResponse:
 
 @app.post("/api/timers/{role}/channels/{channel_id}/schedule")
 def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    role_config = timer_role(role)
+    config = load_config()
+    timer_role(role)
     current_state = state_for_role(role)
-    channels = channel_metadata_for_role(role, role_config, current_state)
+    channels = channel_metadata_for_role(role, config, current_state)
     try:
         updated = patch_channel_schedule(
             current_state,

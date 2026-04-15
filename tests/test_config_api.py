@@ -83,6 +83,35 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
         self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
 
+    def test_timer_dashboard_page_reflects_config_device_changes_immediately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"sprouter": {"pico_serial": "abc"}},
+                    "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+            ):
+                initial = server.get_timer_dashboard_page()
+                server.put_config_devices({"fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"}})
+                updated = server.get_timer_dashboard_page()
+
+        self.assertEqual(initial.status_code, 200)
+        self.assertIn(b'"sprouter"', initial.body)
+        self.assertIn(b'"lamp"', initial.body)
+        self.assertNotIn(b'"fan"', initial.body)
+        self.assertEqual(updated.status_code, 200)
+        self.assertIn(b'"fan"', updated.body)
+        self.assertNotIn(b'"lamp"', updated.body)
+
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

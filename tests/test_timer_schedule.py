@@ -11,34 +11,42 @@ from plamp_web.timer_schedule import (
 
 
 class TimerScheduleTests(unittest.TestCase):
-    def test_channel_metadata_uses_configured_channels(self):
-        role_config = {
-            "role": "sprouter",
-            "pico_serial": "abc123",
-            "channels": [
-                {"id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
-                {"id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
-            ],
+    def test_channel_metadata_uses_configured_devices_for_role(self):
+        config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}, "other": {"pico_serial": "def456"}},
+            "devices": {
+                "lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"},
+                "fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"},
+                "pump": {"controller": "other", "pin": 4, "editor": "cycle"},
+            },
         }
-        state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"id": "fan", "type": "gpio", "ch": 3}]}
+        state = {
+            "events": [
+                {"id": "runtime-lamp", "type": "pwm", "ch": 2},
+                {"id": "runtime-fan", "type": "gpio", "ch": 3},
+                {"id": "stray", "type": "gpio", "ch": 9},
+            ]
+        }
 
         self.assertEqual(
-            channel_metadata_for_role("sprouter", role_config, state),
+            channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
-                {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
             ],
         )
 
-    def test_channel_metadata_falls_back_to_state_events(self):
-        role_config = {"role": "sprouter", "pico_serial": "abc123"}
-        state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"type": "gpio", "ch": 3}]}
+    def test_channel_metadata_ignores_unconfigured_runtime_events(self):
+        config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}},
+            "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
+        }
+        state = {"events": [{"id": "lamp-live", "type": "gpio", "ch": 2}, {"type": "gpio", "ch": 3}]}
 
         self.assertEqual(
-            channel_metadata_for_role("sprouter", role_config, state),
+            channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "cycle"},
-                {"role": "sprouter", "id": "pin-3", "name": "pin 3", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
             ],
         )
 
