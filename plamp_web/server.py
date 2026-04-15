@@ -23,7 +23,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_config_page, render_settings_page, render_timer_dashboard_page
-from plamp_web.hardware_config import apply_hardware_section, hardware_view
+from plamp_web.hardware_config import apply_config_section, config_view, empty_config
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -72,7 +72,7 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     TIMERS_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
-        atomic_write_json(CONFIG_FILE, {"timers": []})
+        atomic_write_json(CONFIG_FILE, empty_config())
 
 
 def configure_logging() -> None:
@@ -121,15 +121,27 @@ def load_config() -> dict[str, Any]:
     data = load_json_file(CONFIG_FILE)
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail="config.json must be an object")
-    timers = data.get("timers")
-    if not isinstance(timers, list):
-        raise HTTPException(status_code=500, detail="config.json timers must be a list")
-    return data
+    result = {}
+    for section in ("controllers", "devices", "cameras"):
+        value = data.get(section, {})
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=500, detail=f"config.json {section} must be an object")
+        result[section] = value
+    try:
+        return config_view(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def timer_roles() -> dict[str, dict[str, Any]]:
+    config_data = load_json_file(CONFIG_FILE)
+    if not isinstance(config_data, dict):
+        raise HTTPException(status_code=500, detail="config.json must be an object")
+    timers = config_data.get("timers", [])
+    if not isinstance(timers, list):
+        return {}
     roles: dict[str, dict[str, Any]] = {}
-    for index, item in enumerate(load_config()["timers"]):
+    for index, item in enumerate(timers):
         if not isinstance(item, dict):
             raise HTTPException(status_code=500, detail=f"config timer {index} must be an object")
         role = item.get("role")
@@ -1134,9 +1146,8 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
 
 
 def config_response() -> dict[str, Any]:
-    config = load_config()
     return {
-        "config": hardware_view(config),
+        "config": load_config(),
         "detected": {
             "picos": enumerate_picos(),
             "cameras": hardware_inventory.detect_rpicam_cameras(),
@@ -1153,7 +1164,7 @@ def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
     with config_lock:
         config = load_config()
         try:
-            updated = apply_hardware_section(config, section, value)
+            updated = apply_config_section(config, section, value)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         atomic_write_json(CONFIG_FILE, updated)

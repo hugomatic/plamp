@@ -11,11 +11,7 @@ def option_tag(value: str, label: str, selected: str | None) -> str:
 
 
 def controller_options(controllers: dict[str, Any], selected: str | None) -> str:
-    return "\n".join(
-        option_tag(key, str(item.get("name") or key), selected)
-        for key, item in controllers.items()
-        if isinstance(item, dict)
-    )
+    return "\n".join(option_tag(key, key, selected) for key in sorted(controllers))
 
 
 def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
@@ -39,63 +35,49 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
-    detected_picos_by_serial = {str(item.get("serial")): item for item in picos if isinstance(item, dict) and item.get("serial")}
-    all_controller_keys = sorted(controllers)
-    detected_rpicam_keys = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
-    all_rpicam_keys = sorted(set(cameras) | set(detected_rpicam_keys))
 
-    existing_controller_rows = "\n".join(
-        '<tr class="controller-row" data-controller-key="{key}">'
-        '<td><code>{hardware_label}</code><div class="muted">{hardware_detail}</div></td>'
-        '<td><input class="controller-name" placeholder="pump_lights" value="{name}"></td>'
-        '<td><select class="controller-type">{type_options}</select></td>'
-        '<td><select class="controller-pico-serial">{pico_options}</select></td>'
-        '</tr>'.format(
-            key=html.escape(key, quote=True),
-            hardware_label=html.escape(str(detected_picos_by_serial.get(str(controllers.get(key, {}).get("match", {}).get("pico_serial")), {}).get("port") or "Not assigned")),
-            hardware_detail=html.escape(str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "Choose a Pico in the Assigned Pico column")),
-            name=html.escape(str(controllers.get(key, {}).get("name") or ""), quote=True),
-            type_options="".join(option_tag(value, value, str(controllers.get(key, {}).get("type") or "pico_scheduler")) for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
-            pico_options=pico_options(picos, str(controllers.get(key, {}).get("match", {}).get("pico_serial") or "")),
+    controller_rows = []
+    for controller_id in sorted(controllers):
+        controller = controllers.get(controller_id, {})
+        if not isinstance(controller, dict):
+            continue
+        controller_rows.append(
+            '<tr class="controller-row" data-controller-key="{controller_id}">'
+            '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
+            '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+            '</tr>'.format(
+                controller_id=html.escape(controller_id, quote=True),
+                pico_options_html=pico_options(picos, str(controller.get("pico_serial") or "")),
+            )
         )
-        for key in all_controller_keys
-    )
-    new_controller_row = (
+    controller_rows.append(
         '<tr class="controller-row new-row" data-controller-key="">'
-        '<td><code>New</code><div class="muted">Type a name, assign a Pico, then save.</div></td>'
-        '<td><input class="controller-name" placeholder="pump_lights" value=""></td>'
-        '<td><select class="controller-type">{type_options}</select></td>'
-        '<td><select class="controller-pico-serial">{pico_options}</select></td>'
-        '</tr>'.format(
-            type_options="".join(option_tag(value, value, "pico_scheduler") for value in ["pico_scheduler", "food_dispenser", "ph_dispenser"]),
-            pico_options=pico_options(picos, ""),
-        )
+        '<td><input class="controller-id" placeholder="pump_lights" value=""></td>'
+        '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+        '</tr>'.format(pico_options_html=pico_options(picos, ""))
     )
-    controller_rows = "\n".join(row for row in [existing_controller_rows, new_controller_row] if row)
 
-    existing_device_rows = "\n".join(
-        '<tr class="device-row" data-device-id="{device_id}">'
-        '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
-        '<td><input class="device-name" placeholder="Pump" value="{name}"></td>'
-        '<td><select class="device-type"><option value="gpio" selected>gpio</option></select></td>'
-        '<td><select class="device-controller">{controller_options_html}</select></td>'
-        '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
-        '<td><select class="device-editor">{editor_options}</select></td>'
-        '</tr>'.format(
-            device_id=html.escape(device_id, quote=True),
-            name=html.escape(str(device.get("name") or ""), quote=True),
-            controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
-            pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
-            editor_options="".join(option_tag(value, value, str(device.get("default_editor") or "cycle")) for value in ["cycle", "clock_window"]),
+    device_rows = []
+    for device_id in sorted(devices):
+        device = devices.get(device_id, {})
+        if not isinstance(device, dict):
+            continue
+        device_rows.append(
+            '<tr class="device-row" data-device-id="{device_id}">'
+            '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
+            '<td><select class="device-controller">{controller_options_html}</select></td>'
+            '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+            '<td><select class="device-editor">{editor_options}</select></td>'
+            '</tr>'.format(
+                device_id=html.escape(device_id, quote=True),
+                controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
+                pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
+            )
         )
-        for device_id, device in devices.items()
-        if isinstance(device, dict)
-    )
-    new_device_row = (
+    device_rows.append(
         '<tr class="device-row new-row" data-device-id="">'
         '<td><input class="device-id" placeholder="pump" value=""></td>'
-        '<td><input class="device-name" placeholder="Pump" value=""></td>'
-        '<td><select class="device-type"><option value="gpio" selected>gpio</option></select></td>'
         '<td><select class="device-controller">{controller_options_html}</select></td>'
         '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
         '<td><select class="device-editor">{editor_options}</select></td>'
@@ -104,22 +86,39 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
         )
     )
-    device_rows = "\n".join(row for row in [existing_device_rows, new_device_row] if row)
 
-    camera_rows = "\n".join(
-        '<tr class="camera-row" data-camera-key="{key}">'
-        '<td><code>{key_label}</code><div class="muted">{detected}</div></td>'
-        '<td><input class="camera-name" value="{name}"></td>'
-        '<td><select class="camera-ir-filter">{ir_options}</select></td>'
-        '</tr>'.format(
-            key=html.escape(key, quote=True),
-            key_label=html.escape(key),
-            detected=html.escape("Detected: " + (" ".join(str(detected_rpicam_keys.get(key, {}).get(field) or "") for field in ["model", "lens"]).strip() or "configured")),
-            name=html.escape(str(cameras.get(key, {}).get("name") or ""), quote=True),
-            ir_options="".join(option_tag(value, value, str(cameras.get(key, {}).get("ir_filter") or "unknown")) for value in ["unknown", "normal", "noir"]),
+    detected_camera_keys = [
+        str(item.get("key"))
+        for item in detected_cameras
+        if isinstance(item, dict) and item.get("key")
+    ]
+    all_camera_keys = sorted(set(cameras) | set(detected_camera_keys))
+    camera_rows = []
+    for camera_id in all_camera_keys:
+        detected_camera = next(
+            (item for item in detected_cameras if isinstance(item, dict) and str(item.get("key")) == camera_id),
+            {},
         )
-        for key in all_rpicam_keys
-    ) or '<tr><td colspan="3">No detected or configured cameras.</td></tr>'
+        detail = " ".join(str(detected_camera.get(field) or "") for field in ["model", "lens"]).strip()
+        camera_rows.append(
+            '<tr class="camera-row" data-camera-key="{camera_id}">'
+            '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
+            '<td class="muted">{detail}</td>'
+            '</tr>'.format(
+                camera_id=html.escape(camera_id, quote=True),
+                detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
+            )
+        )
+    camera_rows.append(
+        '<tr class="camera-row new-row" data-camera-key="">'
+        '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
+        '<td class="muted">Add a camera id to save it.</td>'
+        '</tr>'
+    )
+
+    controller_rows_html = "\n".join(controller_rows)
+    device_rows_html = "\n".join(device_rows)
+    camera_rows_html = "\n".join(camera_rows)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -142,41 +141,40 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
   <h1>Plamp config</h1>
   <h2>Controllers</h2>
-  <table><thead><tr><th>Controller</th><th>Name</th><th>Type</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows}</tbody></table>
+  <table><thead><tr><th>ID</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows_html}</tbody></table>
   <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
   <h2>Devices</h2>
-  <table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Controller</th><th>Pin</th><th>Default editor</th></tr></thead><tbody>{device_rows}</tbody></table>
+  <table><thead><tr><th>ID</th><th>Controller</th><th>Pin</th><th>Editor</th></tr></thead><tbody>{device_rows_html}</tbody></table>
   <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
   <h2>Cameras</h2>
-  <table><thead><tr><th>Detected key</th><th>Name</th><th>IR filter</th></tr></thead><tbody>{camera_rows}</tbody></table>
+  <table><thead><tr><th>ID</th><th>Detected</th></tr></thead><tbody>{camera_rows_html}</tbody></table>
   <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   <script>
     function collectControllers() {{
       const result = {{}};
       for (const row of document.querySelectorAll(".controller-row")) {{
-        const name = row.querySelector(".controller-name").value.trim();
-        if (!name) continue;
-        const picoSerial = row.querySelector(".controller-pico-serial").value || null;
-        const key = row.dataset.controllerKey || `controller:${{name}}`;
-        result[key] = {{name, type: row.querySelector(".controller-type").value, match: {{pico_serial: picoSerial}}}};
+        const key = row.querySelector(".controller-id").value.trim();
+        if (!key) continue;
+        const picoSerial = row.querySelector(".controller-pico-serial").value;
+        result[key] = picoSerial ? {{pico_serial: picoSerial}} : {{}};
       }}
       return result;
     }}
     function collectDevices() {{
       const result = {{}};
       for (const row of document.querySelectorAll(".device-row")) {{
-        const id = row.querySelector(".device-id").value.trim();
-        if (!id) continue;
-        result[id] = {{name: row.querySelector(".device-name").value.trim(), type: row.querySelector(".device-type").value, controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), default_editor: row.querySelector(".device-editor").value}};
+        const key = row.querySelector(".device-id").value.trim();
+        if (!key) continue;
+        result[key] = {{controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), editor: row.querySelector(".device-editor").value}};
       }}
       return result;
     }}
     function collectCameras() {{
       const result = {{}};
       for (const row of document.querySelectorAll(".camera-row")) {{
-        const name = row.querySelector(".camera-name").value.trim();
-        if (!name) continue;
-        result[row.dataset.cameraKey] = {{name, ir_filter: row.querySelector(".camera-ir-filter").value}};
+        const key = row.querySelector(".camera-id").value.trim();
+        if (!key) continue;
+        result[key] = {{}};
       }}
       return result;
     }}
