@@ -791,17 +791,17 @@ def render_timer_dashboard_page(
 
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
-      const eventPin = Number(event?.ch);
+      const eventPin = Number(event?.pin);
       if (Number.isFinite(eventPin)) {
         const byPin = channels.find((channel) => Number(channel.pin) === eventPin);
         if (byPin) return byPin;
       }
-      const eventId = event.id || "pin-" + (event.ch ?? index);
+      const eventId = event.id || "pin-" + (event.pin ?? index);
       return channels.find((channel) => channel.id === eventId) || {
         role,
         id: eventId,
-        name: event.id || "pin " + (event.ch ?? index),
-        pin: event.ch,
+        name: event.id || "pin " + (event.pin ?? index),
+        pin: event.pin,
         type: event.type || "gpio",
         default_editor: "cycle",
       };
@@ -998,7 +998,7 @@ def render_timer_dashboard_page(
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
         for (const event of events) {
-          const pin = Number(event?.ch);
+          const pin = Number(event?.pin);
           if (Number.isFinite(pin)) liveByPin.set(pin, event);
         }
         const items = channels.length
@@ -1006,7 +1006,7 @@ def render_timer_dashboard_page(
           : events.map((event, index) => ({channel: channelForEvent(role, event, index), event, index}));
         for (const item of items) {
           const channel = item.channel;
-          const event = item.event || {id: channel.id, ch: channel.pin, type: channel.type || "gpio"};
+          const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
           const isOn = value > 0;
@@ -1024,7 +1024,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (channel.pin ?? event.ch ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -1668,7 +1668,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         top.className = "timer-top";
         const name = document.createElement("span");
         name.className = "timer-name";
-        name.textContent = event.id || "pin " + (event.ch ?? index);
+        name.textContent = event.id || "pin " + (event.pin ?? index);
         const badge = document.createElement("span");
         badge.className = "timer-value " + (isOn ? "on" : "off");
         badge.textContent = isOn ? "ON" : "OFF";
@@ -1676,7 +1676,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
         const meta = document.createElement("div");
         meta.className = "timer-meta";
-        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+        meta.textContent = "pin " + (event.pin ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
         const bar = document.createElement("div");
         bar.className = "timer-bar";
@@ -1835,7 +1835,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         events: [{{
           id: "test_pin",
           type: "gpio",
-          ch: Number(document.getElementById("test-pin").value),
+          pin: Number(document.getElementById("test-pin").value),
           current_t: 0,
           reschedule: 1,
           pattern: [{{val: 1, dur: 5}}, {{val: 0, dur: 5}}],
@@ -1856,7 +1856,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
           {{
             id: "pump",
             type: "gpio",
-            ch: Number(document.getElementById("pump-pin").value),
+            pin: Number(document.getElementById("pump-pin").value),
             current_t: 0,
             reschedule: 1,
             pattern: [
@@ -1867,7 +1867,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
           {{
             id: "lights",
             type: "gpio",
-            ch: Number(document.getElementById("lights-pin").value),
+            pin: Number(document.getElementById("lights-pin").value),
             current_t: currentTForWindow(lightsOn, lightsOff),
             reschedule: 1,
             pattern: [{{val: 1, dur: lightsOnDur}}, {{val: 0, dur: lightsOffDur}}],

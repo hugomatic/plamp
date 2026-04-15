@@ -240,18 +240,18 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
     for i, src in enumerate(raw_events):
         if not isinstance(src, dict):
             raise HTTPException(status_code=422, detail=f"event {i} must be an object")
-        for name in ["type", "ch", "current_t", "reschedule", "pattern"]:
+        for name in ["type", "pin", "current_t", "reschedule", "pattern"]:
             if name not in src:
                 raise HTTPException(status_code=422, detail=f"event {i} missing field: {name}")
 
         event_type = src["type"]
         if event_type not in {"gpio", "pwm"}:
             raise HTTPException(status_code=422, detail=f"event {i} type must be gpio or pwm")
-        ch = require_int(src["ch"], f"event {i} ch must be an integer")
+        pin = require_int(src["pin"], f"event {i} pin must be an integer")
         current_t = require_int(src["current_t"], f"event {i} current_t must be an integer")
         reschedule = 1 if require_int(src["reschedule"], f"event {i} reschedule must be an integer") else 0
-        if ch < 0 or ch > 29:
-            raise HTTPException(status_code=422, detail=f"event {i} ch must be in range 0..29")
+        if pin < 0 or pin > 29:
+            raise HTTPException(status_code=422, detail=f"event {i} pin must be in range 0..29")
         if current_t < 0:
             raise HTTPException(status_code=422, detail=f"event {i} current_t must be >= 0")
 
@@ -282,7 +282,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 
         event = {
             "type": event_type,
-            "ch": ch,
+            "pin": pin,
             "current_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,
@@ -393,11 +393,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
             value = current_value_for_event(item)
             if value is not None:
                 item["current_value"] = value
-        event_id = str(item.get("id") or item.get("ch") or index)
+        event_id = str(item.get("id") or item.get("pin") or index)
         pins[event_id] = {
             "id": item.get("id"),
             "type": item.get("type"),
-            "ch": item.get("ch"),
+            "pin": item.get("pin"),
             "elapsed_t": item.get("elapsed_t"),
             "cycle_t": item.get("cycle_t"),
             "current_value": item.get("current_value"),

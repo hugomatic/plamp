@@ -21,7 +21,7 @@ def _events_by_pin(events: list[dict[str, Any]] | None) -> dict[int, dict[str, A
         if not isinstance(event, dict):
             continue
         try:
-            pin = int(event.get("ch"))
+            pin = int(event.get("pin"))
         except (TypeError, ValueError):
             continue
         if 0 <= pin <= 29:
@@ -59,7 +59,7 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
         live_pin = pin
         if isinstance(live_event, dict):
             try:
-                candidate_pin = int(live_event.get("ch"))
+                candidate_pin = int(live_event.get("pin"))
             except (TypeError, ValueError):
                 candidate_pin = pin
             if 0 <= candidate_pin <= 29:
@@ -168,7 +168,7 @@ def _event_key(event: dict[str, Any], index: int) -> str:
     event_id = event.get("id")
     if isinstance(event_id, str) and event_id:
         return event_id
-    pin = event.get("ch")
+    pin = event.get("pin")
     return f"pin-{pin if pin is not None else index}"
 
 
@@ -197,7 +197,7 @@ def _new_channel_event(channel: dict[str, Any], channel_id: str) -> dict[str, An
     return {
         "id": channel_id,
         "type": channel.get("type", "gpio"),
-        "ch": channel.get("pin"),
+        "pin": channel.get("pin"),
         "current_t": 0,
         "reschedule": 1,
     }
@@ -230,12 +230,12 @@ def patch_channel_schedule(
         event_id = _event_key(event, index)
         live_event = live_by_id.get(event_id)
         if live_event is None:
-            live_event = live_by_pin.get(event.get("ch"))
-        if event_id == channel_id or event.get("ch") == channel.get("pin"):
+            live_event = live_by_pin.get(event.get("pin"))
+        if event_id == channel_id or event.get("pin") == channel.get("pin"):
             found = True
             updated_event = dict(event)
             updated_event["id"] = channel_id
-            if updated_event.get("ch") != channel.get("pin") or updated_event.get("type") != channel.get("type"):
+            if updated_event.get("pin") != channel.get("pin") or updated_event.get("type") != channel.get("type"):
                 raise ValueError(f"channel {channel_id} does not match scheduler event pin/type")
             mode = schedule.get("mode")
             if mode == "cycle":

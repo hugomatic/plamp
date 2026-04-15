@@ -121,7 +121,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("const liveByPin = new Map();", html)
         self.assertIn("const byPin = channels.find((channel) => Number(channel.pin) === eventPin);", html)
         self.assertIn("channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))", html)
-        self.assertIn("const event = item.event || {id: channel.id, ch: channel.pin, type: channel.type || \"gpio\"};", html)
+        self.assertIn("const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || \"gpio\"};", html)
 
 
     def test_settings_page_includes_storage_summary(self):

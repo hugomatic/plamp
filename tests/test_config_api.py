@@ -200,8 +200,8 @@ class ConfigApiTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "events": [
-                {"id": "runtime-lamp", "type": "gpio", "ch": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
-                {"id": "runtime-fan", "type": "pwm", "ch": 3, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-fan", "type": "pwm", "pin": 3, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
             ],
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -345,7 +345,7 @@ class ConfigApiTests(unittest.TestCase):
                     {
                         "report_every": 1,
                         "events": [
-                            {"id": "pump", "type": "gpio", "ch": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
                         ],
                     }
                 ),
@@ -354,7 +354,7 @@ class ConfigApiTests(unittest.TestCase):
             stale_live = {
                 "report_every": 1,
                 "events": [
-                    {"id": "test_pin", "type": "gpio", "ch": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+                    {"id": "test_pin", "type": "gpio", "pin": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
                 ],
             }
             with (
@@ -368,8 +368,8 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
 
         self.assertEqual([event["id"] for event in saved["events"]], ["pump", "lights"])
-        self.assertEqual(saved["events"][0]["ch"], 2)
-        self.assertEqual(saved["events"][1]["ch"], 3)
+        self.assertEqual(saved["events"][0]["pin"], 2)
+        self.assertEqual(saved["events"][1]["pin"], 3)
 
     def test_post_timer_channel_schedule_reports_saved_when_pico_is_offline(self):
         with tempfile.TemporaryDirectory() as tmp:
