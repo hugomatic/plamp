@@ -463,35 +463,45 @@ git commit -m "Update config API and page for simplified model"
 
 - [ ] **Step 1: Write the failing runtime tests**
 
-Update `tests/test_timer_schedule.py` so device metadata is built from config devices grouped by controller id instead of `role_config["channels"]`:
+Update `tests/test_timer_schedule.py` so device metadata is built from config devices grouped by controller id instead of `role_config["channels"]`. These assertions cover runtime metadata, so they still include derived `name`, `type`, and `default_editor` fields even though persisted config devices only store `controller`, `pin`, and `editor`:
 
 ```python
 class TimerScheduleTests(unittest.TestCase):
-    def test_channel_metadata_uses_configured_devices_for_controller(self):
+    def test_channel_metadata_uses_configured_devices_for_role(self):
         config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}, "other": {"pico_serial": "def456"}},
             "devices": {
-                "lamp": {"controller": "sprouter", "pin": 2, "name": "Lamp", "default_editor": "clock_window"},
-                "fan": {"controller": "sprouter", "pin": 3, "name": "Fan", "default_editor": "cycle"},
-                "pump": {"controller": "other", "pin": 4, "name": "Pump", "default_editor": "cycle"},
-            }
+                "lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"},
+                "fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"},
+                "pump": {"controller": "other", "pin": 4, "editor": "cycle"},
+            },
+        }
+        state = {
+            "events": [
+                {"id": "runtime-lamp", "type": "pwm", "ch": 2},
+                {"id": "runtime-fan", "type": "gpio", "ch": 3},
+                {"id": "stray", "type": "gpio", "ch": 9},
+            ]
+        }
+
+        self.assertEqual(
+            channel_metadata_for_role("sprouter", config, state),
+            [
+                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
+            ],
+        )
+
+    def test_channel_metadata_ignores_unconfigured_runtime_events(self):
+        config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}},
+            "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
         }
         state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"id": "fan", "type": "gpio", "ch": 3}]}
 
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
-            [
-                {"role": "sprouter", "id": "fan", "pin": 3, "name": "Fan", "default_editor": "cycle"},
-                {"role": "sprouter", "id": "lamp", "pin": 2, "name": "Lamp", "default_editor": "clock_window"},
-            ],
-        )
-
-    def test_channel_metadata_ignores_unconfigured_pins(self):
-        config = {"devices": {"lamp": {"controller": "sprouter", "pin": 2, "name": "Lamp", "default_editor": "clock_window"}}}
-        state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"id": "fan", "type": "gpio", "ch": 3}]}
-
-        self.assertEqual(
-            channel_metadata_for_role("sprouter", config, state),
-            [{"role": "sprouter", "id": "lamp", "pin": 2, "name": "Lamp", "default_editor": "clock_window"}],
+            [{"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"}],
         )
 ```
 
@@ -574,7 +584,7 @@ def start_configured_monitors() -> None:
         get_or_start_monitor(role)
 ```
 
-In `plamp_web/timer_schedule.py`, build device metadata from top-level devices and overlay only configured pins:
+In `plamp_web/timer_schedule.py`, build runtime device metadata from top-level devices and overlay only configured pins. The returned records are dashboard/runtime metadata, not persisted config rows:
 
 ```python
 def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -593,13 +603,20 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
                 continue
             pin = _as_int(device.get("pin"), f"device {device_id} pin")
             event = event_by_pin.get(pin, {})
+            default_editor = str(device.get("editor") or "cycle")
+            if default_editor not in {"cycle", "clock_window"}:
+                default_editor = "cycle"
+            event_type = str(event.get("type") or "gpio")
+            if event_type not in {"gpio", "pwm"}:
+                event_type = "gpio"
             result.append(
                 {
                     "role": role,
                     "id": device_id,
+                    "name": device_id,
                     "pin": pin,
-                    "type": str(event.get("type") or "gpio"),
-                    "editor": str(device.get("editor") or "cycle"),
+                    "type": event_type,
+                    "default_editor": default_editor,
                 }
             )
         return result
