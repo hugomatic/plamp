@@ -603,7 +603,7 @@ def render_timer_dashboard_page(
     .camera-viewer { max-width: min(100%, 820px); }
     .camera-viewer[hidden] { display: none; }
     .capture-list { border: 1px solid #d0d0d0; display: grid; gap: 0; max-height: 22rem; max-width: 980px; overflow-y: auto; }
-    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; margin: 0; padding: .35rem .5rem; text-align: left; }
+    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; border-radius: 0; display: block; margin: 0; padding: .35rem .5rem; text-align: left; width: 100%; }
     .capture-list button:nth-child(odd) { background: #fff; }
     .capture-list button:nth-child(even) { background: #f6f7f8; }
     .capture-list button:hover { background: #e9f2ff; }

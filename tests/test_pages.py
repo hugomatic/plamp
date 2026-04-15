@@ -117,6 +117,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn(".capture-list button:nth-child(even)", html)
         self.assertIn(".capture-list button:nth-child(odd)", html)
         self.assertIn("border: 0;", html)
+        self.assertIn("border-radius: 0;", html)
+        self.assertIn("width: 100%;", html)
         self.assertIn("border-left: 4px solid #174ea6;", html)
         self.assertIn("padding: .35rem .5rem;", html)
 
