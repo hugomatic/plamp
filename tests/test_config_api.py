@@ -83,6 +83,21 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
         self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
 
+    def test_configured_time_format_reads_top_level_value_from_raw_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {},
+                    "devices": {},
+                    "cameras": {},
+                    "time_format": "24h",
+                },
+            )
+            with patch.object(server, "CONFIG_FILE", config_file):
+                self.assertEqual(server.configured_time_format(), "24h")
+
     def test_api_test_page_uses_empty_payload_when_default_timer_state_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

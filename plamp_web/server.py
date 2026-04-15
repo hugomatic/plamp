@@ -1071,7 +1071,7 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
 
 def configured_time_format() -> str:
     try:
-        config = load_config()
+        config = load_raw_config()
     except HTTPException:
         config = {}
     return "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
