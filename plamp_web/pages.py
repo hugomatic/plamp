@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Any
+
+
+def normalize_camera_key(value: Any) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
 
 
 def option_tag(value: str, label: str, selected: str | None) -> str:
@@ -34,7 +39,16 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
     cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
-    detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    raw_detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    detected_cameras = []
+    for item in raw_detected_cameras:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        key = normalize_camera_key(item.get("key"))
+        if key:
+            normalized["key"] = key
+        detected_cameras.append(normalized)
 
     controller_rows = []
     for controller_id in sorted(controllers):

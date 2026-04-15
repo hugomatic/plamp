@@ -30,7 +30,7 @@ class ConfigApiTests(unittest.TestCase):
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
-                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam_cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
             ):
                 data = server.get_config()
 
@@ -58,6 +58,29 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
         self.assertEqual(data["config"]["devices"]["pump"]["pin"], 3)
+        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
+
+    def test_put_config_devices_preserves_unrelated_top_level_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "e66038b71387a039"}},
+                    "devices": {},
+                    "cameras": {"rpicam_cam0": {}},
+                    "time_format": "12h",
+                    "camera": {"ir_filter": "auto"},
+                },
+            )
+            with patch.object(server, "CONFIG_FILE", config_file):
+                server.put_config_devices({"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}})
+
+            saved = json.loads(config_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["time_format"], "12h")
+        self.assertEqual(saved["camera"], {"ir_filter": "auto"})
+        self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
         self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
 
     def test_api_test_page_uses_empty_payload_when_default_timer_state_is_missing(self):

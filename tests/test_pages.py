@@ -145,7 +145,7 @@ class PageRenderTests(unittest.TestCase):
                 "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
                 "cameras": {"rpicam_cam0": {}},
             },
-            {"picos": [{"serial": "e66038b71387a039", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam_cam0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
+            {"picos": [{"serial": "e66038b71387a039", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]},
         )
 
         self.assertIn("<title>Plamp config</title>", html)
@@ -162,7 +162,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('value="3"', html)
         self.assertIn("<h2>Cameras</h2>", html)
         self.assertIn('data-camera-key="rpicam_cam0"', html)
+        self.assertIn('value="rpicam_cam0"', html)
         self.assertIn("Detected: imx708_wide wide", html)
+        self.assertNotIn('data-camera-key="rpicam:cam0"', html)
         self.assertIn("Save controllers", html)
         self.assertIn("Save devices", html)
         self.assertIn("Save cameras", html)

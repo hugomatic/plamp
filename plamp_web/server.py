@@ -116,21 +116,44 @@ def atomic_write_json(path: Path, data: Any) -> None:
     os.replace(tmp, path)
 
 
-def load_config() -> dict[str, Any]:
+def load_raw_config() -> dict[str, Any]:
     ensure_data_dir()
     data = load_json_file(CONFIG_FILE)
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail="config.json must be an object")
-    result = {}
     for section in ("controllers", "devices", "cameras"):
         value = data.get(section, {})
         if not isinstance(value, dict):
             raise HTTPException(status_code=500, detail=f"config.json {section} must be an object")
-        result[section] = value
+    return data
+
+
+def load_config() -> dict[str, Any]:
+    data = load_raw_config()
+    result = {section: data.get(section, {}) for section in ("controllers", "devices", "cameras")}
     try:
         return config_view(result)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def normalize_camera_key(value: Any) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
+
+
+def normalized_detected_cameras(cameras: Any) -> list[dict[str, Any]]:
+    if not isinstance(cameras, list):
+        return []
+    result = []
+    for item in cameras:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        key = normalize_camera_key(item.get("key"))
+        if key:
+            normalized["key"] = key
+        result.append(normalized)
+    return result
 
 
 def timer_roles() -> dict[str, dict[str, Any]]:
@@ -1150,7 +1173,7 @@ def config_response() -> dict[str, Any]:
         "config": load_config(),
         "detected": {
             "picos": enumerate_picos(),
-            "cameras": hardware_inventory.detect_rpicam_cameras(),
+            "cameras": normalized_detected_cameras(hardware_inventory.detect_rpicam_cameras()),
         },
     }
 
@@ -1162,12 +1185,15 @@ def get_config() -> dict[str, Any]:
 
 def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
     with config_lock:
-        config = load_config()
+        raw_config = load_raw_config()
+        config = {name: raw_config.get(name, {}) for name in ("controllers", "devices", "cameras")}
         try:
             updated = apply_config_section(config, section, value)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        atomic_write_json(CONFIG_FILE, updated)
+        saved = dict(raw_config)
+        saved.update(updated)
+        atomic_write_json(CONFIG_FILE, saved)
     return config_response()
 
 
