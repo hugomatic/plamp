@@ -25,6 +25,15 @@ def _as_mapping(value: object, label: str) -> Mapping:
     return value
 
 
+def _optional_label(item: Mapping, label: str) -> str | None:
+    value = item.get("label")
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{label} label must be a string")
+    return value
+
+
 def validate_controllers(value):
     value = _as_mapping(value, "controllers")
     controllers = {}
@@ -32,15 +41,18 @@ def validate_controllers(value):
         if not _is_valid_id(controller_id):
             raise ValueError(f"invalid controller id: {controller_id!r}")
         controller_value = _as_mapping(controller_value, f"controller {controller_id}")
-        extra_keys = set(controller_value) - {"pico_serial"}
+        extra_keys = set(controller_value) - {"pico_serial", "label"}
         if extra_keys:
             raise ValueError(f"controller {controller_id} has unknown keys: {sorted(extra_keys)!r}")
         pico_serial = controller_value.get("pico_serial")
         if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
+        label = _optional_label(controller_value, f"controller {controller_id}")
         controllers[controller_id] = {}
         if pico_serial is not None:
             controllers[controller_id]["pico_serial"] = pico_serial
+        if label:
+            controllers[controller_id]["label"] = label
     return controllers
 
 
@@ -53,7 +65,7 @@ def validate_devices(value, controllers):
         if not _is_valid_id(device_id):
             raise ValueError(f"invalid device id: {device_id!r}")
         device_value = _as_mapping(device_value, f"device {device_id}")
-        extra_keys = set(device_value) - {"controller", "pin", "editor"}
+        extra_keys = set(device_value) - {"controller", "pin", "editor", "label"}
         if extra_keys:
             raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
         controller = device_value.get("controller")
@@ -69,11 +81,14 @@ def validate_devices(value, controllers):
         if pin_key in used_pins:
             raise ValueError(f"device {device_id} uses duplicate pin {pin} for controller {controller}")
         used_pins.add(pin_key)
+        label = _optional_label(device_value, f"device {device_id}")
         devices[device_id] = {
             "controller": controller,
             "pin": pin,
             "editor": editor,
         }
+        if label:
+            devices[device_id]["label"] = label
     return devices
 
 
@@ -84,9 +99,13 @@ def validate_cameras(value):
         if not _is_valid_id(camera_id):
             raise ValueError(f"invalid camera id: {camera_id!r}")
         camera_value = _as_mapping(camera_value, f"camera {camera_id}")
-        if camera_value:
-            raise ValueError(f"camera {camera_id} must be empty")
+        extra_keys = set(camera_value) - {"label"}
+        if extra_keys:
+            raise ValueError(f"camera {camera_id} has unknown keys: {sorted(extra_keys)!r}")
+        label = _optional_label(camera_value, f"camera {camera_id}")
         cameras[camera_id] = {}
+        if label:
+            cameras[camera_id]["label"] = label
     return cameras
 
 

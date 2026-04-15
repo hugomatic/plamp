@@ -79,6 +79,26 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_cameras(self):
         self.assertEqual(validate_cameras({"cam_1": {}}), {"cam_1": {}})
 
+
+    def test_validate_controllers_allows_optional_label(self):
+        self.assertEqual(
+            validate_controllers({"ctrl_a": {"pico_serial": "PICO123", "label": "Pump lights"}}),
+            {"ctrl_a": {"pico_serial": "PICO123", "label": "Pump lights"}},
+        )
+
+    def test_validate_devices_allows_optional_label(self):
+        self.assertEqual(
+            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "label": "Main pump"}}, {"ctrl_a": {}}),
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "label": "Main pump"}},
+        )
+
+    def test_validate_cameras_allows_optional_label(self):
+        self.assertEqual(validate_cameras({"cam_1": {"label": "Tent"}}), {"cam_1": {"label": "Tent"}})
+
+    def test_validate_rejects_non_string_label(self):
+        with self.assertRaisesRegex(ValueError, "label"):
+            validate_controllers({"ctrl_a": {"label": 123}})
+
     def test_apply_config_section_devices_happy_path(self):
         config = {"controllers": {"ctrl_a": {}}, "devices": {}, "cameras": {}}
         updated = apply_config_section(
