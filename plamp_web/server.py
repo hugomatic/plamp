@@ -1076,7 +1076,7 @@ def live_events_for_role(role: str) -> list[dict[str, Any]]:
 
 def configured_timer_roles() -> list[str]:
     try:
-        return sorted(timer_roles())
+        return list(timer_roles())
     except HTTPException:
         return []
 
@@ -1085,7 +1085,7 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     try:
         config = load_config()
-        roles = sorted(config.get("controllers", {}))
+        roles = list(config.get("controllers", {}))
     except HTTPException:
         return result
     for role in roles:
@@ -1258,6 +1258,22 @@ def config_response() -> dict[str, Any]:
 
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
+    return config_response()
+
+
+@app.put("/api/config")
+def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    with config_lock:
+        raw_config = load_raw_config()
+        submitted = {name: config.get(name, {}) for name in ("controllers", "devices", "cameras")}
+        try:
+            updated = config_view(submitted)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        saved = dict(raw_config)
+        saved.update(updated)
+        atomic_write_json(CONFIG_FILE, saved)
+    reconcile_configured_monitors()
     return config_response()
 
 

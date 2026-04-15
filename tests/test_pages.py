@@ -178,7 +178,9 @@ class PageRenderTests(unittest.TestCase):
         })
 
         self.assertIn("Raspberry Pi cameras", html)
-        self.assertIn("rpicam:cam0", html)
+        self.assertIn("<th>Camera</th>", html)
+        self.assertIn("cam0", html)
+        self.assertNotIn("<th>Key</th>", html)
         self.assertIn("imx708_wide", html)
         self.assertIn("wide", html)
 
@@ -203,6 +205,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Device control", html)
         self.assertIn("<th>Label</th>", html)
         self.assertIn("Peripherals", html)
+        self.assertIn("<th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th>", html)
+        self.assertNotIn("<th>Role</th>", html)
         self.assertIn("Pump lights", html)
         self.assertIn("Main pump", html)
         self.assertIn("Tent cam", html)
@@ -210,13 +214,37 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('href="/api/test"', html)
         self.assertNotIn('href="/config"', html)
 
+    def test_settings_page_preserves_config_order_for_setup_rows(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {"second": {"pico_serial": "2"}, "first": {"pico_serial": "1"}},
+                    "devices": {
+                        "lights": {"controller": "second", "pin": 3, "editor": "clock_window"},
+                        "pump": {"controller": "second", "pin": 2, "editor": "cycle"},
+                    },
+                    "cameras": {},
+                },
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertLess(html.index('data-controller-key="second"'), html.index('data-controller-key="first"'))
+        self.assertLess(html.index('data-device-id="lights"'), html.index('data-device-id="pump"'))
+
     def test_settings_page_posts_config_section_updates_from_forms(self):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
         self.assertIn("collectControllers()", html)
         self.assertIn("collectDevices()", html)
         self.assertIn("collectCameras()", html)
-        self.assertIn('"/api/config/controllers"', html)
+        self.assertIn("function controllerRenames()", html)
+        self.assertIn("collectConfigWithControllerRenames()", html)
+        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
         self.assertIn('"/api/config/devices"', html)
         self.assertIn('"/api/config/cameras"', html)
         self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
@@ -254,6 +282,7 @@ class PageRenderTests(unittest.TestCase):
 
         for route in [
             "GET /api/config",
+            "PUT /api/config",
             "PUT /api/config/controllers",
             "PUT /api/config/devices",
             "PUT /api/config/cameras",

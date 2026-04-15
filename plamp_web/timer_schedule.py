@@ -40,7 +40,7 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
     live_by_pin = _events_by_pin(events)
 
     result: list[dict[str, Any]] = []
-    for device_id in sorted(devices):
+    for device_id in devices:
         device = devices[device_id]
         if not isinstance(device, dict):
             raise ValueError(f"device {device_id} must be an object")

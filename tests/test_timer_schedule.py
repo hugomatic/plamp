@@ -31,8 +31,8 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
                 {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
+                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
             ],
         )
 

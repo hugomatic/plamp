@@ -127,6 +127,33 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["hostname"], "plamp-kiosk")
         self.assertEqual(data["message"], "hostname updated")
 
+    def test_put_config_updates_controller_rename_and_dependent_devices_atomically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {"lights": {"controller": "pump_lights", "pin": 3, "editor": "clock_window"}},
+                    "cameras": {},
+                    "time_format": "24h",
+                },
+            )
+            payload = {
+                "controllers": {"grow_box": {"pico_serial": "abc"}},
+                "devices": {"lights": {"controller": "grow_box", "pin": 3, "editor": "clock_window"}},
+                "cameras": {},
+            }
+            with patch.object(server, "CONFIG_FILE", config_file):
+                data = server.put_config(payload)
+
+            saved = json.loads(config_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(data["config"]["devices"]["lights"]["controller"], "grow_box")
+        self.assertEqual(saved["controllers"], {"grow_box": {"pico_serial": "abc"}})
+        self.assertEqual(saved["devices"]["lights"]["controller"], "grow_box")
+        self.assertEqual(saved["time_format"], "24h")
+
     def test_put_config_devices_updates_top_level_devices(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -16,7 +16,7 @@ def option_tag(value: str, label: str, selected: str | None) -> str:
 
 
 def controller_options(controllers: dict[str, Any], selected: str | None) -> str:
-    return "\n".join(option_tag(key, key, selected) for key in sorted(controllers))
+    return "\n".join(option_tag(key, key, selected) for key in controllers)
 
 
 def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
@@ -51,7 +51,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         detected_cameras.append(normalized)
 
     controller_rows = []
-    for controller_id in sorted(controllers):
+    for controller_id in controllers:
         controller = controllers.get(controller_id, {})
         if not isinstance(controller, dict):
             continue
@@ -72,7 +72,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     )
 
     device_rows = []
-    for device_id in sorted(devices):
+    for device_id in devices:
         device = devices.get(device_id, {})
         if not isinstance(device, dict):
             continue
@@ -234,7 +234,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
 
     controller_rows = []
-    for controller_id in sorted(controllers):
+    for controller_id in controllers:
         controller = controllers.get(controller_id, {})
         if not isinstance(controller, dict):
             continue
@@ -258,7 +258,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     )
 
     device_rows = []
-    for device_id in sorted(devices):
+    for device_id in devices:
         device = devices.get(device_id, {})
         if not isinstance(device, dict):
             continue
@@ -291,7 +291,10 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     )
 
     detected_camera_keys = [str(item.get("key")) for item in detected_cameras if isinstance(item, dict) and item.get("key")]
-    all_camera_keys = sorted(set(configured_cameras) | set(detected_camera_keys))
+    all_camera_keys = list(configured_cameras)
+    for camera_key in detected_camera_keys:
+        if camera_key not in all_camera_keys:
+            all_camera_keys.append(camera_key)
     camera_setup_rows = []
     for camera_id in all_camera_keys:
         camera = configured_cameras.get(camera_id, {}) if isinstance(configured_cameras.get(camera_id, {}), dict) else {}
@@ -318,18 +321,27 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     pico_rows = "\n".join(
         "<tr>"
-        f"<td>{html.escape(str(item.get('role') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('port') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('usb_device') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('serial') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('vendor_id') or '-'))}:{html.escape(str(item.get('product_id') or '-'))}</td>"
         "</tr>"
         for item in status_picos
-    ) or '<tr><td colspan="5">No peripherals found.</td></tr>'
+    ) or '<tr><td colspan="4">No peripherals found.</td></tr>'
+
+    def camera_status_name(item: dict[str, Any]) -> str:
+        connector = item.get("connector")
+        if connector:
+            return str(connector)
+        index = item.get("index")
+        if index is not None:
+            return f"cam{index}"
+        key = normalize_camera_key(item.get("key"))
+        return key or "-"
 
     camera_rows = "\n".join(
         "<tr>"
-        f"<td><code>{html.escape(str(item.get('key') or '-'))}</code></td>"
+        f"<td>{html.escape(camera_status_name(item))}</td>"
         f"<td>{html.escape(str(item.get('model') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
@@ -413,9 +425,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <h2>System status</h2>
     <p class="muted">Detected hardware and host status.</p>
     <h3>Peripherals</h3>
-    <table><thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
+    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
     <h3>Raspberry Pi cameras</h3>
-    <table><thead><tr><th>Key</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
+    <table><thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
     <h3>Network</h3>
     <p><strong>Hostname:</strong> {html.escape(hostname)}</p>
     <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
@@ -469,13 +481,33 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       }}
       return result;
     }}
+    function controllerRenames() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".controller-row")) {{
+        const oldKey = row.dataset.controllerKey || "";
+        const newKey = row.querySelector(".controller-id").value.trim();
+        if (oldKey && newKey && oldKey !== newKey) result[oldKey] = newKey;
+      }}
+      return result;
+    }}
+    function collectDevicesWithControllerRenames() {{
+      const devices = collectDevices();
+      const renames = controllerRenames();
+      for (const device of Object.values(devices)) {{
+        if (renames[device.controller]) device.controller = renames[device.controller];
+      }}
+      return devices;
+    }}
+    function collectConfigWithControllerRenames() {{
+      return {{controllers: collectControllers(), devices: collectDevicesWithControllerRenames(), cameras: collectCameras()}};
+    }}
     async function saveSection(statusId, url, payload) {{
       const status = document.getElementById(statusId);
       status.textContent = "Saving...";
       const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
       status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
     }}
-    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config/controllers", collectControllers()));
+    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames()));
     document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));
     document.getElementById("save-cameras").addEventListener("click", () => saveSection("cameras-status", "/api/config/cameras", collectCameras()));
     document.getElementById("hostname-confirm").addEventListener("click", async () => {{
@@ -1256,6 +1288,12 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <p>Reads configured meaning plus detected local hardware choices.</p>
     <pre id="get-config-curl-command">curl http://localhost:8000/api/config</pre>
     <button class="copy-curl" type="button" data-copy-target="get-config-curl-command">Copy curl</button>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config</legend>
+    <p>Saves controllers, devices, and cameras together.</p>
+    <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"devices":{{}},"cameras":{{}}}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-curl-command">Copy curl</button>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/controllers</legend>
