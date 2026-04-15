@@ -83,7 +83,14 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
         self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
 
-    def test_timer_dashboard_page_reflects_config_device_changes_immediately(self):
+    def test_get_timer_config_reflects_config_device_changes_immediately(self):
+        state = {
+            "report_every": 1,
+            "events": [
+                {"id": "runtime-lamp", "type": "gpio", "ch": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-fan", "type": "pwm", "ch": 3, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
+            ],
+        }
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -94,23 +101,38 @@ class ConfigApiTests(unittest.TestCase):
                     "cameras": {},
                 },
             )
-            timers_dir = root / "data" / "timers"
-            timers_dir.mkdir(parents=True)
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "state_for_role", return_value=state),
             ):
-                initial = server.get_timer_dashboard_page()
+                initial = server.get_timer_config()
                 server.put_config_devices({"fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"}})
-                updated = server.get_timer_dashboard_page()
+                updated = server.get_timer_config()
 
-        self.assertEqual(initial.status_code, 200)
-        self.assertIn(b'"sprouter"', initial.body)
-        self.assertIn(b'"lamp"', initial.body)
-        self.assertNotIn(b'"fan"', initial.body)
-        self.assertEqual(updated.status_code, 200)
-        self.assertIn(b'"fan"', updated.body)
-        self.assertNotIn(b'"lamp"', updated.body)
+        self.assertEqual(
+            initial,
+            {
+                "roles": ["sprouter"],
+                "channels": {
+                    "sprouter": [
+                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"}
+                    ]
+                },
+                "time_format": "12h",
+            },
+        )
+        self.assertEqual(
+            updated,
+            {
+                "roles": ["sprouter"],
+                "channels": {
+                    "sprouter": [
+                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle"}
+                    ]
+                },
+                "time_format": "12h",
+            },
+        )
 
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:

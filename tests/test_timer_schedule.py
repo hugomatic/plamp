@@ -115,6 +115,36 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["events"][1]["pattern"], [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}])
         self.assertEqual(updated["events"][1]["current_t"], 7200)
 
+    def test_patch_channel_schedule_matches_target_by_pin_and_rewrites_event_id(self):
+        state = {
+            "report_every": 1,
+            "events": [
+                {"id": "runtime-lamp", "type": "gpio", "ch": 2, "current_t": 5, "reschedule": 1, "pattern": [{"val": 1, "dur": 15}, {"val": 0, "dur": 45}]},
+                {"id": "fan", "type": "gpio", "ch": 3, "current_t": 9, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 90}]},
+            ],
+        }
+        channels = [
+            {"id": "lamp", "pin": 2, "type": "gpio", "default_editor": "cycle"},
+            {"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+        ]
+        live_events = [{"id": "runtime-lamp", "cycle_t": 12}, {"id": "fan", "cycle_t": 44}]
+
+        updated = patch_channel_schedule(
+            state,
+            channels,
+            "lamp",
+            {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 12},
+            live_events=live_events,
+            now=time(12, 0, 0),
+        )
+
+        self.assertEqual(updated["events"][0]["id"], "lamp")
+        self.assertEqual(updated["events"][0]["ch"], 2)
+        self.assertEqual(updated["events"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["events"][0]["current_t"], 12)
+        self.assertEqual(updated["events"][1]["id"], "fan")
+        self.assertEqual(updated["events"][1]["current_t"], 44)
+
     def test_patch_channel_schedule_rejects_pin_type_mismatch(self):
         state = {"report_every": 1, "events": [{"id": "fan", "type": "gpio", "ch": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
