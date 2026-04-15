@@ -195,7 +195,8 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".device-row")) {{
         const key = row.querySelector(".device-id").value.trim();
         if (!key) continue;
-        result[key] = {{controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), editor: row.querySelector(".device-editor").value}};
+        const pinValue = row.querySelector(".device-pin").value;
+        result[key] = {{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), editor: row.querySelector(".device-editor").value}};
       }}
       return result;
     }}
@@ -484,7 +485,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".device-row")) {{
         const key = row.querySelector(".device-id").value.trim();
         if (!key) continue;
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(row.querySelector(".device-pin").value), editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        const pinValue = row.querySelector(".device-pin").value;
+        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}
@@ -522,6 +524,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       status.textContent = "Saving...";
       const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
       status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
+      if (response.ok) window.location.reload();
     }}
     document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames()));
     document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));

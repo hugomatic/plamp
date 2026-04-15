@@ -251,6 +251,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
         self.assertIn('label: row.querySelector(".controller-label").value.trim()', html)
         self.assertIn('label: row.querySelector(".camera-label").value.trim()', html)
+        self.assertIn('const pinValue = row.querySelector(".device-pin").value', html)
+        self.assertIn('pin: pinValue === "" ? null : Number(pinValue)', html)
+        self.assertIn("if (response.ok) window.location.reload();", html)
 
     def test_settings_page_includes_blank_rows_for_new_controller_device_and_camera(self):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
