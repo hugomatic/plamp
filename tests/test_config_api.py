@@ -96,7 +96,7 @@ class ConfigApiTests(unittest.TestCase):
             response = server.get_settings_page()
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Plamp setup", response.body)
+        self.assertIn(b"Plamp config", response.body)
 
     def test_config_route_is_removed(self):
         routes = {route.path for route in server.app.routes}

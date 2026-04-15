@@ -424,8 +424,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <h1>Settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
 
-  <section aria-label="Plamp setup">
-    <h2>Plamp setup</h2>
+  <section aria-label="Plamp config">
+    <h2>Plamp config</h2>
     <p class="muted">Configure controllers, devices, and cameras.</p>
     <h3>Controllers</h3>
     <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead><tbody>{''.join(controller_rows)}</tbody></table>
@@ -1320,30 +1320,45 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <p>Reads configured meaning plus detected local hardware choices.</p>
     <pre id="get-config-curl-command">curl http://localhost:8000/api/config</pre>
     <button class="copy-curl" type="button" data-copy-target="get-config-curl-command">Copy curl</button>
+    <button id="get-config" type="button">Run request</button>
+    <div><span id="get-config-status">Ready.</span></div>
+    <pre id="get-config-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config</legend>
     <p>Saves controllers, devices, and cameras together.</p>
     <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"devices":{{}},"cameras":{{}}}}'</pre>
     <button class="copy-curl" type="button" data-copy-target="put-config-curl-command">Copy curl</button>
+    <button id="put-config" type="button">Run request</button>
+    <div><span id="put-config-status">Ready.</span></div>
+    <pre id="put-config-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/controllers</legend>
     <p>Saves named local Pico controllers.</p>
     <pre id="put-config-controllers-curl-command">curl -X PUT http://localhost:8000/api/config/controllers -H 'content-type: application/json' --data '{{}}'</pre>
     <button class="copy-curl" type="button" data-copy-target="put-config-controllers-curl-command">Copy curl</button>
+    <button id="put-config-controllers" type="button">Run request</button>
+    <div><span id="put-config-controllers-status">Ready.</span></div>
+    <pre id="put-config-controllers-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/devices</legend>
     <p>Saves device mappings to controllers and pins.</p>
     <pre id="put-config-devices-curl-command">curl -X PUT http://localhost:8000/api/config/devices -H 'content-type: application/json' --data '{{}}'</pre>
     <button class="copy-curl" type="button" data-copy-target="put-config-devices-curl-command">Copy curl</button>
+    <button id="put-config-devices" type="button">Run request</button>
+    <div><span id="put-config-devices-status">Ready.</span></div>
+    <pre id="put-config-devices-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/cameras</legend>
     <p>Saves camera names and user-confirmed IR filter values.</p>
     <pre id="put-config-cameras-curl-command">curl -X PUT http://localhost:8000/api/config/cameras -H 'content-type: application/json' --data '{{}}'</pre>
     <button class="copy-curl" type="button" data-copy-target="put-config-cameras-curl-command">Copy curl</button>
+    <button id="put-config-cameras" type="button">Run request</button>
+    <div><span id="put-config-cameras-status">Ready.</span></div>
+    <pre id="put-config-cameras-result">PUT response will appear here.</pre>
   </fieldset>
 
   <h2>Timers</h2>
@@ -1513,6 +1528,55 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       await navigator.clipboard.writeText(target.textContent);
       event.currentTarget.textContent = "Copied";
       window.setTimeout(() => {{ event.currentTarget.textContent = "Copy curl"; }}, 1200);
+    }}
+
+    function prettyResponseText(text) {{
+      try {{
+        return JSON.stringify(JSON.parse(text), null, 2);
+      }} catch (error) {{
+        return text;
+      }}
+    }}
+
+    async function runConfigRequest(kind) {{
+      const specs = {{
+        get: {{method: "GET", url: "/api/config", statusId: "get-config-status", resultId: "get-config-result"}},
+        full: {{method: "PUT", url: "/api/config", statusId: "put-config-status", resultId: "put-config-result", section: null}},
+        controllers: {{method: "PUT", url: "/api/config/controllers", statusId: "put-config-controllers-status", resultId: "put-config-controllers-result", section: "controllers"}},
+        devices: {{method: "PUT", url: "/api/config/devices", statusId: "put-config-devices-status", resultId: "put-config-devices-result", section: "devices"}},
+        cameras: {{method: "PUT", url: "/api/config/cameras", statusId: "put-config-cameras-status", resultId: "put-config-cameras-result", section: "cameras"}},
+      }};
+      const spec = specs[kind];
+      const status = document.getElementById(spec.statusId);
+      const result = document.getElementById(spec.resultId);
+      status.textContent = spec.method === "GET" ? "Loading..." : "Saving current config...";
+      result.textContent = "";
+      try {{
+        let options = {{method: spec.method}};
+        if (spec.method === "PUT") {{
+          if (!window.confirm(`PUT ${{spec.url}} with current config?`)) {{
+            status.textContent = "Cancelled.";
+            return;
+          }}
+          const currentResponse = await fetch("/api/config");
+          const currentText = await currentResponse.text();
+          if (!currentResponse.ok) {{
+            status.textContent = `${{currentResponse.status}} ${{currentResponse.statusText}}`;
+            result.textContent = prettyResponseText(currentText);
+            return;
+          }}
+          const currentConfig = JSON.parse(currentText).config || {{}};
+          const body = spec.section ? currentConfig[spec.section] || {{}} : currentConfig;
+          options = {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(body)}};
+        }}
+        const response = await fetch(spec.url, options);
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
     }}
 
     async function getState() {{
@@ -1812,6 +1876,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }});
     }});
 
+    document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
+    document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
+    document.getElementById("put-config-controllers").addEventListener("click", () => runConfigRequest("controllers"));
+    document.getElementById("put-config-devices").addEventListener("click", () => runConfigRequest("devices"));
+    document.getElementById("put-config-cameras").addEventListener("click", () => runConfigRequest("cameras"));
     document.getElementById("get-state").addEventListener("click", getState);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);

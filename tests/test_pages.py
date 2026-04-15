@@ -201,7 +201,7 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("Plamp setup", html)
+        self.assertIn("Plamp config", html)
         self.assertIn("System status", html)
         self.assertIn("Device control", html)
         self.assertIn("<th>Label</th>", html)
@@ -297,6 +297,24 @@ class PageRenderTests(unittest.TestCase):
             self.assertIn(f"<legend>{route}</legend>", html)
         self.assertIn('data-copy-target="get-config-curl-command"', html)
         self.assertIn('data-copy-target="put-config-devices-curl-command"', html)
+        for button_id in [
+            "get-config",
+            "put-config",
+            "put-config-controllers",
+            "put-config-devices",
+            "put-config-cameras",
+        ]:
+            self.assertIn(f'id="{button_id}"', html)
+        for result_id in [
+            "get-config-result",
+            "put-config-result",
+            "put-config-controllers-result",
+            "put-config-devices-result",
+            "put-config-cameras-result",
+        ]:
+            self.assertIn(f'id="{result_id}"', html)
+        self.assertIn("async function runConfigRequest", html)
+        self.assertIn('document.getElementById("put-config-devices").addEventListener("click", () => runConfigRequest("devices"));', html)
 
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
