@@ -9,6 +9,24 @@ from fastapi import HTTPException
 import plamp_web.server as server
 
 
+class DummyMonitor:
+    def __init__(self, pico_serial: str):
+        self.pico_serial = pico_serial
+        self.started = False
+        self.stopped = False
+        self.joined = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def join(self) -> None:
+        self.joined = True
+
+
+
 class ConfigApiTests(unittest.TestCase):
     def make_config(self, root: Path, data: dict) -> Path:
         path = root / "data" / "config.json"
@@ -176,3 +194,37 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(cm.exception.status_code, 422)
         self.assertIn("unknown controller", cm.exception.detail)
+
+    def test_put_config_controllers_reconciles_running_monitors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {
+                        "keep": {"pico_serial": "KEEP_NEW"},
+                        "drop": {"pico_serial": "DROP_OLD"},
+                    },
+                    "devices": {},
+                    "cameras": {},
+                },
+            )
+            old_keep = DummyMonitor("KEEP_OLD")
+            old_drop = DummyMonitor("DROP_OLD")
+            new_keep = DummyMonitor("KEEP_NEW")
+            monitor_map = {"keep": old_keep, "drop": old_drop}
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "monitors", monitor_map),
+                patch.object(server, "PicoMonitor", side_effect=[new_keep]),
+            ):
+                server.put_config_controllers({"keep": {"pico_serial": "KEEP_NEW"}})
+
+        self.assertTrue(old_keep.stopped)
+        self.assertFalse(old_keep.started)
+        self.assertTrue(old_drop.stopped)
+        self.assertFalse(old_drop.started)
+        self.assertTrue(new_keep.started)
+        self.assertIs(monitor_map["keep"], new_keep)
+        self.assertEqual(monitor_map["keep"].pico_serial, "KEEP_NEW")
+        self.assertNotIn("drop", monitor_map)

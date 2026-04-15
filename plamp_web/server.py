@@ -740,6 +740,24 @@ def start_configured_monitors() -> None:
         get_or_start_monitor(role)
 
 
+def reconcile_configured_monitors() -> None:
+    try:
+        serials = configured_monitor_serials()
+    except HTTPException:
+        return
+    stale = []
+    with monitors_lock:
+        for role, monitor in list(monitors.items()):
+            if role not in serials or monitor.pico_serial != serials[role]:
+                stale.append(monitors.pop(role))
+    for monitor in stale:
+        monitor.stop()
+    for monitor in stale:
+        monitor.join()
+    for role in sorted(serials):
+        get_or_start_monitor(role)
+
+
 def stop_monitors() -> None:
     with monitors_lock:
         active = list(monitors.values())
@@ -1204,6 +1222,7 @@ def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
         saved = dict(raw_config)
         saved.update(updated)
         atomic_write_json(CONFIG_FILE, saved)
+    reconcile_configured_monitors()
     return config_response()
 
 

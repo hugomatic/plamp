@@ -64,6 +64,18 @@ class HardwareConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "bad"}}, controllers)
 
+    def test_validate_devices_rejects_duplicate_pin_per_controller(self):
+        controllers = {"ctrl_a": {}, "ctrl_b": {}}
+        with self.assertRaisesRegex(ValueError, "duplicate pin"):
+            validate_devices(
+                {
+                    "dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"},
+                    "dev_2": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"},
+                    "dev_3": {"controller": "ctrl_b", "pin": 3, "editor": "cycle"},
+                },
+                controllers,
+            )
+
     def test_validate_cameras(self):
         self.assertEqual(validate_cameras({"cam_1": {}}), {"cam_1": {}})
 

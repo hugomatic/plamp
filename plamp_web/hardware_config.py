@@ -48,6 +48,7 @@ def validate_devices(value, controllers):
     value = _as_mapping(value, "devices")
     controllers = validate_controllers(controllers)
     devices = {}
+    used_pins = set()
     for device_id, device_value in value.items():
         if not _is_valid_id(device_id):
             raise ValueError(f"invalid device id: {device_id!r}")
@@ -64,6 +65,10 @@ def validate_devices(value, controllers):
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
         if editor not in _EDITORS:
             raise ValueError(f"device {device_id} editor must be one of {sorted(_EDITORS)!r}")
+        pin_key = (controller, pin)
+        if pin_key in used_pins:
+            raise ValueError(f"device {device_id} uses duplicate pin {pin} for controller {controller}")
+        used_pins.add(pin_key)
         devices[device_id] = {
             "controller": controller,
             "pin": pin,
