@@ -37,6 +37,9 @@ LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+HOSTNAME_RE = re.compile(
+    r"^(?=.{1,63}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
+)
 LOGGER = logging.getLogger("plamp_web")
 
 config_lock = threading.Lock()
@@ -1192,6 +1195,50 @@ def settings_summary() -> dict[str, Any]:
             "exists": LOG_FILE.exists(),
         },
     }
+
+
+def validate_hostname(value: object) -> str:
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="hostname must be a string")
+    hostname = value.strip()
+    if not HOSTNAME_RE.fullmatch(hostname):
+        raise HTTPException(
+            status_code=422,
+            detail="hostname must be 1-63 letters, numbers, or hyphens, and cannot start or end with a hyphen",
+        )
+    return hostname
+
+
+def apply_hostname(hostname: str) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            ["hostnamectl", "set-hostname", hostname],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="hostname update timed out") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"hostname update failed: {exc}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "hostname update failed").strip()
+        raise HTTPException(status_code=409, detail=detail)
+    return {
+        "hostname": hostname,
+        "message": "hostname updated; reconnect or reboot may be required",
+    }
+
+
+@app.get("/api/host-config")
+def get_host_config() -> dict[str, Any]:
+    return {"hostname": socket.gethostname()}
+
+
+@app.post("/api/host-config/hostname")
+def post_host_config_hostname(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return apply_hostname(validate_hostname(payload.get("hostname")))
 
 
 @app.get("/api/logs")

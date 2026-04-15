@@ -26,7 +26,6 @@ class DummyMonitor:
         self.joined = True
 
 
-
 class ConfigApiTests(unittest.TestCase):
     def make_config(self, root: Path, data: dict) -> Path:
         path = root / "data" / "config.json"
@@ -58,7 +57,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["config"]["devices"]["pump"]["editor"], "cycle")
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
-
 
     def test_settings_summary_includes_config_and_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -103,6 +101,31 @@ class ConfigApiTests(unittest.TestCase):
     def test_config_route_is_removed(self):
         routes = {route.path for route in server.app.routes}
         self.assertNotIn("/config", routes)
+
+    def test_get_host_config_returns_hostname(self):
+        with patch.object(server.socket, "gethostname", return_value="plamp"):
+            data = server.get_host_config()
+
+        self.assertEqual(data, {"hostname": "plamp"})
+
+    def test_post_host_config_hostname_rejects_invalid_value(self):
+        with self.assertRaises(HTTPException) as cm:
+            server.post_host_config_hostname({"hostname": "bad host name"})
+
+        self.assertEqual(cm.exception.status_code, 422)
+        self.assertIn("hostname", cm.exception.detail)
+
+    def test_post_host_config_hostname_applies_value(self):
+        with patch.object(
+            server,
+            "apply_hostname",
+            return_value={"hostname": "plamp-kiosk", "message": "hostname updated"},
+        ) as apply_hostname:
+            data = server.post_host_config_hostname({"hostname": "plamp-kiosk"})
+
+        apply_hostname.assert_called_once_with("plamp-kiosk")
+        self.assertEqual(data["hostname"], "plamp-kiosk")
+        self.assertEqual(data["message"], "hostname updated")
 
     def test_put_config_devices_updates_top_level_devices(self):
         with tempfile.TemporaryDirectory() as tmp:
