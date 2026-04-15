@@ -76,7 +76,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="camera-capture-list"', html)
         self.assertIn('id="camera-capture-prev"', html)
         self.assertIn('id="camera-capture-next"', html)
-        self.assertIn('fetch(`/api/camera/captures?limit=${cameraCapturePageSize}&offset=${cameraCaptureOffset}`)', html)
+        self.assertIn("fetch(cameraCaptureRequestUrl())", html)
         self.assertIn("|| captures[0];", html)
         self.assertIn("selectCameraCapture(selected);", html)
         self.assertIn("cameraViewer.src = capture.image_url;", html)
@@ -126,6 +126,16 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('cameraCaptureFilter.addEventListener("change", () => {', html)
         self.assertIn("cameraCaptureOffset = 0;", html)
         self.assertIn("refreshCameraCaptures();", html)
+
+    def test_timer_dashboard_capture_filter_is_applied_before_paging(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("function cameraCaptureRequestUrl()", html)
+        self.assertIn('params.set("source", "camera_roll");', html)
+        self.assertIn('params.set("source", "grow");', html)
+        self.assertIn('params.set("grow_id", filter.slice(5));', html)
+        self.assertIn("fetch(cameraCaptureRequestUrl())", html)
+        self.assertNotIn("visibleCameraCaptures", html)
 
     def test_timer_dashboard_page_ignores_unconfigured_runtime_pins(self):
         html = render_timer_dashboard_page(

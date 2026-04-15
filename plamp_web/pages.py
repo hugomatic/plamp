@@ -1062,6 +1062,9 @@ def render_timer_dashboard_page(
     function updateCameraFilters() {
       const selected = cameraCaptureFilter.value;
       const options = new Map([["all", "All"], ["camera_roll", "Camera roll"]]);
+      if (selected.startsWith("grow:")) {
+        options.set(selected, cameraCaptureFilter.selectedOptions[0]?.textContent || selected.slice(5));
+      }
       for (const capture of cameraCaptures) {
         if (capture.grow_id) {
           options.set("grow:" + capture.grow_id, capture.grow_name || capture.grow_id);
@@ -1077,11 +1080,16 @@ def render_timer_dashboard_page(
       cameraCaptureFilter.value = options.has(selected) ? selected : "all";
     }
 
-    function visibleCameraCaptures() {
+    function cameraCaptureRequestUrl() {
+      const params = new URLSearchParams({limit: String(cameraCapturePageSize), offset: String(cameraCaptureOffset)});
       const filter = cameraCaptureFilter.value;
-      if (filter === "camera_roll") return cameraCaptures.filter((capture) => capture.source === "camera_roll");
-      if (filter.startsWith("grow:")) return cameraCaptures.filter((capture) => capture.grow_id === filter.slice(5));
-      return cameraCaptures;
+      if (filter === "camera_roll") {
+        params.set("source", "camera_roll");
+      } else if (filter.startsWith("grow:")) {
+        params.set("source", "grow");
+        params.set("grow_id", filter.slice(5));
+      }
+      return `/api/camera/captures?${params.toString()}`;
     }
 
     function selectCameraCapture(capture) {
@@ -1104,7 +1112,7 @@ def render_timer_dashboard_page(
 
     function renderCameraCaptures() {
       updateCameraFilters();
-      const captures = visibleCameraCaptures();
+      const captures = cameraCaptures;
       cameraCaptureList.replaceChildren();
       if (!captures.length) {
         cameraCaptureList.textContent = cameraCaptureOffset ? "No more captures." : "No captures found.";
@@ -1136,7 +1144,7 @@ def render_timer_dashboard_page(
     async function refreshCameraCaptures() {
       cameraCaptureList.textContent = "Loading captures...";
       try {
-        const response = await fetch(`/api/camera/captures?limit=${cameraCapturePageSize}&offset=${cameraCaptureOffset}`);
+        const response = await fetch(cameraCaptureRequestUrl());
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
         cameraCaptures = Array.isArray(data.captures) ? data.captures : [];
