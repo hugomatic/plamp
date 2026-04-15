@@ -89,12 +89,12 @@ class HardwareConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "references missing controller"):
             apply_config_section(
                 {
-                    "controllers": {},
+                    "controllers": {"pump_lights": {}},
                     "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
                     "cameras": {},
                 },
-                "devices",
-                {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                "controllers",
+                {},
             )
 ```
 
@@ -470,9 +470,9 @@ class TimerScheduleTests(unittest.TestCase):
     def test_channel_metadata_uses_configured_devices_for_controller(self):
         config = {
             "devices": {
-                "lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"},
-                "fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"},
-                "pump": {"controller": "other", "pin": 4, "editor": "cycle"},
+                "lamp": {"controller": "sprouter", "pin": 2, "name": "Lamp", "default_editor": "clock_window"},
+                "fan": {"controller": "sprouter", "pin": 3, "name": "Fan", "default_editor": "cycle"},
+                "pump": {"controller": "other", "pin": 4, "name": "Pump", "default_editor": "cycle"},
             }
         }
         state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"id": "fan", "type": "gpio", "ch": 3}]}
@@ -480,18 +480,18 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "fan", "pin": 3, "type": "gpio", "editor": "cycle"},
-                {"role": "sprouter", "id": "lamp", "pin": 2, "type": "gpio", "editor": "clock_window"},
+                {"role": "sprouter", "id": "fan", "pin": 3, "name": "Fan", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "lamp", "pin": 2, "name": "Lamp", "default_editor": "clock_window"},
             ],
         )
 
     def test_channel_metadata_ignores_unconfigured_pins(self):
-        config = {"devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}}}
+        config = {"devices": {"lamp": {"controller": "sprouter", "pin": 2, "name": "Lamp", "default_editor": "clock_window"}}}
         state = {"events": [{"id": "lamp", "type": "gpio", "ch": 2}, {"id": "fan", "type": "gpio", "ch": 3}]}
 
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
-            [{"role": "sprouter", "id": "lamp", "pin": 2, "type": "gpio", "editor": "clock_window"}],
+            [{"role": "sprouter", "id": "lamp", "pin": 2, "name": "Lamp", "default_editor": "clock_window"}],
         )
 ```
 
