@@ -564,7 +564,14 @@ def render_timer_dashboard_page(
     time_format: str,
     channels_by_role: dict[str, list[dict[str, Any]]] | None = None,
     host_seconds_since_midnight: int = 0,
+    camera_ids: list[str] | None = None,
 ) -> str:
+    camera_options = "".join(
+        f'<option value="{html.escape(camera_id, quote=True)}">{html.escape(camera_id)}</option>'
+        for camera_id in (camera_ids or [])
+    )
+    if not camera_options:
+        camera_options = '<option value="">Default camera</option>'
     template = """<!doctype html>
 <html lang="en">
 <head>
@@ -625,6 +632,7 @@ def render_timer_dashboard_page(
   <section class="camera-panel" aria-label="Camera captures">
     <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <div class="camera-actions">
+      <label>Camera <select id="camera-capture-camera">__CAMERA_OPTIONS__</select></label>
       <button id="camera-capture" type="button">Take picture</button>
       <span id="camera-capture-status">Ready.</span>
     </div>
@@ -636,6 +644,8 @@ def render_timer_dashboard_page(
     </label>
     <div id="camera-capture-list" class="capture-list">Loading captures...</div>
     <div class="capture-pager">
+      <label>Page <input id="camera-capture-page" type="number" min="1" step="1" value="1"></label>
+      <button id="camera-capture-go" type="button">Go</button>
       <button id="camera-capture-prev" type="button">Previous</button>
       <button id="camera-capture-next" type="button">Next</button>
       <span id="camera-capture-page-status"></span>
@@ -661,10 +671,13 @@ def render_timer_dashboard_page(
     const refreshStatus = document.getElementById("refresh-status");
     const resumeRefreshButton = document.getElementById("resume-refresh");
     const cameraCaptureButton = document.getElementById("camera-capture");
+    const cameraCaptureCamera = document.getElementById("camera-capture-camera");
     const cameraCaptureStatus = document.getElementById("camera-capture-status");
     const cameraViewer = document.getElementById("camera-viewer");
     const cameraCaptureFilter = document.getElementById("camera-capture-filter");
     const cameraCaptureList = document.getElementById("camera-capture-list");
+    const cameraCapturePage = document.getElementById("camera-capture-page");
+    const cameraCaptureGo = document.getElementById("camera-capture-go");
     const cameraCapturePrev = document.getElementById("camera-capture-prev");
     const cameraCaptureNext = document.getElementById("camera-capture-next");
     const cameraCapturePageStatus = document.getElementById("camera-capture-page-status");
@@ -674,6 +687,8 @@ def render_timer_dashboard_page(
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
+    let cameraCaptureTotal = 0;
+    let cameraCaptureTotalPages = 1;
     const cameraCapturePageSize = 30;
     let selectedCameraImageUrl = "";
     let activeEditor = null;
@@ -1092,6 +1107,21 @@ def render_timer_dashboard_page(
       return `/api/camera/captures?${params.toString()}`;
     }
 
+    function cameraCapturePostUrl() {
+      const params = new URLSearchParams();
+      if (cameraCaptureCamera.value) {
+        params.set("camera_id", cameraCaptureCamera.value);
+      }
+      const query = params.toString();
+      return query ? `/api/camera/captures?${query}` : "/api/camera/captures";
+    }
+
+    function pageOffset() {
+      const value = Number(cameraCapturePage.value || 1);
+      const page = Math.max(1, Math.floor(Number.isFinite(value) ? value : 1));
+      return (page - 1) * cameraCapturePageSize;
+    }
+
     function selectCameraCapture(capture) {
       if (!capture || typeof capture.image_url !== "string") return;
       selectedCameraImageUrl = capture.image_url;
@@ -1106,6 +1136,7 @@ def render_timer_dashboard_page(
       const parts = [];
       if (capture.timestamp) parts.push(new Date(capture.timestamp).toLocaleString());
       parts.push(capture.grow_name || (capture.source === "camera_roll" ? "Camera roll" : "Grow capture"));
+      if (capture.camera_id) parts.push("camera " + capture.camera_id);
       if (capture.brightness_mean !== undefined) parts.push("brightness " + capture.brightness_mean);
       return parts.join(" | ");
     }
@@ -1121,7 +1152,9 @@ def render_timer_dashboard_page(
         selectedCameraImageUrl = "";
         cameraCapturePrev.disabled = cameraCaptureOffset === 0;
         cameraCaptureNext.disabled = true;
-        cameraCapturePageStatus.textContent = cameraCaptureOffset ? "Older page" : "";
+        cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+        cameraCapturePage.value = String(Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1));
+        cameraCapturePageStatus.textContent = cameraCaptureTotal ? `Page ${Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1)} of ${cameraCaptureTotalPages} | Showing 0 of ${cameraCaptureTotal}` : "No captures";
         return;
       }
       for (const capture of captures) {
@@ -1136,9 +1169,12 @@ def render_timer_dashboard_page(
       selectCameraCapture(selected);
       cameraCapturePrev.disabled = cameraCaptureOffset === 0;
       cameraCaptureNext.disabled = !cameraCaptureHasMore;
+      cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+      cameraCapturePage.value = String(Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1);
       const start = cameraCaptureOffset + 1;
       const end = cameraCaptureOffset + captures.length;
-      cameraCapturePageStatus.textContent = `Showing ${start}-${end}`;
+      const currentPage = Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1;
+      cameraCapturePageStatus.textContent = `Page ${currentPage} of ${cameraCaptureTotalPages} | Showing ${start}-${end} of ${cameraCaptureTotal}`;
     }
 
     async function refreshCameraCaptures() {
@@ -1148,6 +1184,9 @@ def render_timer_dashboard_page(
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
         cameraCaptures = Array.isArray(data.captures) ? data.captures : [];
+        const total = Number(data.total ?? 0);
+        cameraCaptureTotal = Number.isFinite(total) ? total : 0;
+        cameraCaptureTotalPages = Math.max(1, Math.ceil(cameraCaptureTotal / cameraCapturePageSize));
         cameraCaptureHasMore = Boolean(data.has_more);
         renderCameraCaptures();
       } catch (error) {
@@ -1160,7 +1199,7 @@ def render_timer_dashboard_page(
       cameraCaptureButton.disabled = true;
       cameraCaptureStatus.textContent = "Capturing...";
       try {
-        const response = await fetch("/api/camera/captures", {method: "POST"});
+        const response = await fetch(cameraCapturePostUrl(), {method: "POST"});
         const text = await response.text();
         let data = null;
         try { data = JSON.parse(text); } catch (error) {}
@@ -1220,6 +1259,11 @@ def render_timer_dashboard_page(
       cameraCaptureOffset = 0;
       refreshCameraCaptures();
     });
+    cameraCaptureGo.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = pageOffset();
+      refreshCameraCaptures();
+    });
     cameraCapturePrev.addEventListener("click", () => {
       stopPageAutoRefresh();
       cameraCaptureOffset = Math.max(0, cameraCaptureOffset - cameraCapturePageSize);
@@ -1244,6 +1288,7 @@ def render_timer_dashboard_page(
         template.replace("__MAIN_NAV__", MAIN_NAV).replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
+        .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
 

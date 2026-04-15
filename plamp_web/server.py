@@ -1105,6 +1105,15 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     return result
 
 
+
+def configured_camera_ids() -> list[str]:
+    try:
+        config = load_config()
+    except HTTPException:
+        return []
+    cameras = config.get("cameras", {})
+    return list(cameras) if isinstance(cameras, dict) else []
+
 def configured_time_format() -> str:
     try:
         config = load_raw_config()
@@ -1331,20 +1340,20 @@ def get_camera_captures(
 ) -> dict[str, Any]:
     safe_limit = max(0, min(limit, 200))
     safe_offset = max(0, offset)
-    captures = camera_capture.list_camera_captures(
+    all_captures = camera_capture.collect_camera_captures(
         repo_root=camera_capture.REPO_ROOT,
         data_dir=camera_capture.DATA_DIR,
         grows_dir=camera_capture.GROWS_DIR,
         source=source,
         grow_id=grow_id,
-        limit=safe_limit + 1,
-        offset=safe_offset,
     )
+    captures = all_captures[safe_offset : safe_offset + safe_limit + 1]
     return {
         "captures": captures[:safe_limit],
         "limit": safe_limit,
         "offset": safe_offset,
         "has_more": len(captures) > safe_limit,
+        "total": len(all_captures),
     }
 
 
@@ -1357,13 +1366,14 @@ def get_camera_image_by_key(image_key: str) -> FileResponse:
 
 
 @app.post("/api/camera/captures")
-def post_camera_capture() -> dict[str, Any]:
+def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
     try:
         return camera_capture.capture_camera_image(
             repo_root=camera_capture.REPO_ROOT,
             data_dir=camera_capture.DATA_DIR,
             config_file=camera_capture.CONFIG_FILE,
             grow_config_file=camera_capture.TRANSITIONAL_GROW_CONFIG_FILE,
+            camera_id=camera_id,
         )
     except camera_capture.CameraCaptureError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -1485,5 +1495,6 @@ def get_timer_dashboard_page() -> HTMLResponse:
             configured_time_format(),
             configured_timer_channels(),
             seconds_since_midnight(),
+            configured_camera_ids(),
         )
     )

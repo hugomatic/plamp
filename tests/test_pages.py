@@ -71,6 +71,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Camera</h2>", html)
         self.assertIn('id="camera-capture"', html)
         self.assertIn('id="camera-capture-status"', html)
+        self.assertIn('id="camera-capture-camera"', html)
+        self.assertIn('id="camera-capture-page"', html)
+        self.assertIn('id="camera-capture-go"', html)
         self.assertIn('id="camera-capture-filter"', html)
         self.assertIn('id="camera-viewer"', html)
         self.assertIn('id="camera-capture-list"', html)
@@ -91,6 +94,19 @@ class PageRenderTests(unittest.TestCase):
             html.index('<img id="camera-viewer"'),
             html.index('<div class="camera-actions">'),
         )
+
+
+    def test_timer_dashboard_camera_controls_include_camera_selector_and_total(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0, ["rpicam_cam0", "rpicam_cam1"])
+
+        self.assertIn('<option value="rpicam_cam0">rpicam_cam0</option>', html)
+        self.assertIn('<option value="rpicam_cam1">rpicam_cam1</option>', html)
+        self.assertIn('params.set("camera_id", cameraCaptureCamera.value);', html)
+        self.assertIn('const total = Number(data.total ?? 0);', html)
+        self.assertIn('cameraCapturePageStatus.textContent = `Page ${currentPage} of ${cameraCaptureTotalPages} | Showing ${start}-${end} of ${cameraCaptureTotal}`;', html)
+        self.assertIn('cameraCaptureOffset = pageOffset();', html)
+        self.assertIn('cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));', html)
+        self.assertIn('if (capture.camera_id) parts.push("camera " + capture.camera_id);', html)
 
     def test_timer_dashboard_capture_list_is_compact_and_scrollable(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
