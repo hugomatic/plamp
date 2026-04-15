@@ -59,6 +59,51 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
 
+
+    def test_settings_summary_includes_config_and_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc", "label": "Pump lights"}},
+                    "devices": {},
+                    "cameras": {},
+                },
+            )
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "enumerate_picos", return_value=[]),
+                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[]),
+            ):
+                summary = server.settings_summary()
+
+        self.assertIn("config", summary)
+        self.assertIn("detected", summary)
+        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["label"], "Pump lights")
+
+    def test_get_settings_page_uses_combined_settings_payload(self):
+        with patch.object(
+            server,
+            "settings_summary",
+            return_value={
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            },
+        ):
+            response = server.get_settings_page()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Plamp setup", response.body)
+
+    def test_config_route_is_removed(self):
+        routes = {route.path for route in server.app.routes}
+        self.assertNotIn("/config", routes)
+
     def test_put_config_devices_updates_top_level_devices(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
