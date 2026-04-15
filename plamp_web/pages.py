@@ -420,7 +420,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/settings">&#9881; Settings</a> | <a href="/api/test">API test</a></nav>
+  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>
   <h1>Settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
 
