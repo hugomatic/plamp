@@ -486,7 +486,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const key = row.querySelector(".device-id").value.trim();
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
+        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}
@@ -522,13 +523,25 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     async function saveSection(statusId, url, payload) {{
       const status = document.getElementById(statusId);
       status.textContent = "Saving...";
-      const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
-      status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
-      if (response.ok) window.location.reload();
+      try {{
+        const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
+        status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
+        if (response.ok) window.location.reload();
+      }} catch (error) {{
+        status.textContent = error.message || String(error);
+      }}
     }}
-    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames()));
-    document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));
-    document.getElementById("save-cameras").addEventListener("click", () => saveSection("cameras-status", "/api/config/cameras", collectCameras()));
+    function runSave(statusId, callback) {{
+      const status = document.getElementById(statusId);
+      try {{
+        callback();
+      }} catch (error) {{
+        status.textContent = error.message || String(error);
+      }}
+    }}
+    document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
+    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config/devices", collectDevices())));
+    document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
     document.getElementById("hostname-confirm").addEventListener("click", async () => {{
       const hostname = document.getElementById("hostname-input").value.trim();
       if (!window.confirm(`Apply hostname "${{hostname}}"? You may need to reconnect.`)) return;
