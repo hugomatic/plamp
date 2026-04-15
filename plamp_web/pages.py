@@ -28,6 +28,31 @@ def camera_model_label(item: dict[str, Any]) -> str:
     return model_by_sensor.get(sensor, raw_model or "-")
 
 
+def camera_detected_matches(configured_cameras: dict[str, Any], detected_cameras: list[dict[str, Any]]) -> tuple[dict[str, str], list[str]]:
+    detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    unmatched_detected_keys = list(detected_by_key)
+    matches: dict[str, str] = {}
+
+    for camera_id, camera in configured_cameras.items():
+        camera = camera if isinstance(camera, dict) else {}
+        detected_key = normalize_camera_key(camera.get("detected_key"))
+        if detected_key and detected_key in detected_by_key:
+            matches[camera_id] = detected_key
+        elif camera_id in detected_by_key:
+            matches[camera_id] = camera_id
+        else:
+            continue
+        if matches[camera_id] in unmatched_detected_keys:
+            unmatched_detected_keys.remove(matches[camera_id])
+
+    for camera_id in configured_cameras:
+        if camera_id in matches or not unmatched_detected_keys:
+            continue
+        matches[camera_id] = unmatched_detected_keys.pop(0)
+
+    return matches, unmatched_detected_keys
+
+
 def option_tag(value: str, label: str, selected: str | None) -> str:
     selected_attr = " selected" if value == selected else ""
     return f'<option value="{html.escape(value)}"{selected_attr}>{html.escape(label)}</option>'
@@ -142,7 +167,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             )
         )
     camera_rows.append(
-        '<tr class="camera-row new-row" data-camera-key="">'
+        '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
         '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
         '<td class="muted">Add a camera id to save it.</td>'
         '</tr>'
@@ -309,29 +334,29 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         )
     )
 
-    detected_camera_keys = [str(item.get("key")) for item in detected_cameras if isinstance(item, dict) and item.get("key")]
-    all_camera_keys = list(configured_cameras)
-    for camera_key in detected_camera_keys:
-        if camera_key not in all_camera_keys:
-            all_camera_keys.append(camera_key)
+    detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    camera_detected_keys, unmatched_detected_keys = camera_detected_matches(configured_cameras, detected_cameras)
+    all_camera_keys = list(configured_cameras) + unmatched_detected_keys
     camera_setup_rows = []
     for camera_id in all_camera_keys:
         camera = configured_cameras.get(camera_id, {}) if isinstance(configured_cameras.get(camera_id, {}), dict) else {}
-        detected_camera = next((item for item in detected_cameras if isinstance(item, dict) and str(item.get("key")) == camera_id), {})
+        detected_key = camera_detected_keys.get(camera_id, camera_id if camera_id in detected_by_key else "")
+        detected_camera = detected_by_key.get(detected_key, {})
         detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
         camera_setup_rows.append(
-            '<tr class="camera-row" data-camera-key="{camera_id}">'
+            '<tr class="camera-row" data-camera-key="{camera_id}" data-camera-detected-key="{detected_key}">'
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
             '<td><input class="camera-label" placeholder="Tent camera" value="{label}"></td>'
             '<td class="muted">{detail}</td>'
             '</tr>'.format(
                 camera_id=html.escape(camera_id, quote=True),
+                detected_key=html.escape(detected_key, quote=True),
                 label=html.escape(str(camera.get("label") or ""), quote=True),
                 detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
             )
         )
     camera_setup_rows.append(
-        '<tr class="camera-row new-row" data-camera-key="">'
+        '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
         '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
         '<td><input class="camera-label" placeholder="Tent camera" value=""></td>'
         '<td class="muted">Add a camera id to save it.</td>'
@@ -498,7 +523,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".camera-row")) {{
         const key = row.querySelector(".camera-id").value.trim();
         if (!key) continue;
-        result[key] = cleanObject({{label: row.querySelector(".camera-label").value.trim()}});
+        result[key] = cleanObject({{label: row.querySelector(".camera-label").value.trim(), detected_key: row.dataset.cameraDetectedKey || ""}});
       }}
       return result;
     }}

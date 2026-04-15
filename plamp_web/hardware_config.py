@@ -99,13 +99,20 @@ def validate_cameras(value):
         if not _is_valid_id(camera_id):
             raise ValueError(f"invalid camera id: {camera_id!r}")
         camera_value = _as_mapping(camera_value, f"camera {camera_id}")
-        extra_keys = set(camera_value) - {"label"}
+        extra_keys = set(camera_value) - {"label", "detected_key"}
         if extra_keys:
             raise ValueError(f"camera {camera_id} has unknown keys: {sorted(extra_keys)!r}")
         label = _optional_label(camera_value, f"camera {camera_id}")
+        detected_key = camera_value.get("detected_key")
+        if detected_key in (None, ""):
+            detected_key = None
+        elif not _is_valid_id(detected_key):
+            raise ValueError(f"camera {camera_id} detected_key must be a valid id")
         cameras[camera_id] = {}
         if label:
             cameras[camera_id]["label"] = label
+        if detected_key:
+            cameras[camera_id]["detected_key"] = detected_key
     return cameras
 
 

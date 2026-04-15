@@ -293,6 +293,40 @@ class PageRenderTests(unittest.TestCase):
         self.assertLess(html.index('data-controller-key="second"'), html.index('data-controller-key="first"'))
         self.assertLess(html.index('data-device-id="lights"'), html.index('data-device-id="pump"'))
 
+    def test_settings_page_merges_renamed_camera_with_detected_hardware(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {"picam0": {"label": "Tent", "detected_key": "rpicam_cam0"}}},
+                "detected": {"picos": [], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn('value="picam0"', html)
+        self.assertIn('data-camera-detected-key="rpicam_cam0"', html)
+        self.assertIn("Detected: Camera Module 3 Wide wide", html)
+        self.assertNotIn('value="rpicam_cam0"', html)
+        self.assertEqual(html.count('class="camera-row"'), 1)
+
+    def test_settings_page_pairs_existing_renamed_camera_without_saved_detected_key(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {"picam0": {}}},
+                "detected": {"picos": [], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn('value="picam0"', html)
+        self.assertIn('data-camera-detected-key="rpicam_cam0"', html)
+        self.assertNotIn('value="rpicam_cam0"', html)
+
     def test_settings_page_posts_config_section_updates_from_forms(self):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
@@ -307,6 +341,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
         self.assertIn('label: row.querySelector(".controller-label").value.trim()', html)
         self.assertIn('label: row.querySelector(".camera-label").value.trim()', html)
+        self.assertIn('detected_key: row.dataset.cameraDetectedKey || ""', html)
         self.assertIn('const pinValue = row.querySelector(".device-pin").value', html)
         self.assertIn('pin: Number(pinValue)', html)
         self.assertIn("if (response.ok) window.location.reload();", html)

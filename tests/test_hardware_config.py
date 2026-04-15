@@ -95,6 +95,12 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_cameras_allows_optional_label(self):
         self.assertEqual(validate_cameras({"cam_1": {"label": "Tent"}}), {"cam_1": {"label": "Tent"}})
 
+    def test_validate_cameras_allows_detected_key(self):
+        self.assertEqual(
+            validate_cameras({"picam0": {"label": "Tent", "detected_key": "rpicam_cam0"}}),
+            {"picam0": {"label": "Tent", "detected_key": "rpicam_cam0"}},
+        )
+
     def test_validate_rejects_non_string_label(self):
         with self.assertRaisesRegex(ValueError, "label"):
             validate_controllers({"ctrl_a": {"label": 123}})
