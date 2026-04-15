@@ -1,8 +1,8 @@
 # plamp
 
-![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
-
 Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
+
+![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
 
 ## Install
 
