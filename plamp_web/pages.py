@@ -2,26 +2,411 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Any
+
+GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
+GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
+MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
+
+
+def normalize_camera_key(value: Any) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
+
+
+def camera_model_label(item: dict[str, Any]) -> str:
+    raw_model = str(item.get("model") or "")
+    sensor = str(item.get("sensor") or raw_model.split("_", 1)[0]).lower()
+    lens = str(item.get("lens") or "").lower()
+    raw_lower = raw_model.lower()
+    wide = "wide" in lens or "wide" in raw_lower
+    model_by_sensor = {
+        "imx708": "Camera Module 3 Wide" if wide else "Camera Module 3",
+        "imx219": "Camera Module 2",
+        "ov5647": "Camera Module 1",
+        "imx477": "HQ Camera",
+        "imx296": "Global Shutter Camera",
+    }
+    return model_by_sensor.get(sensor, raw_model or "-")
+
+
+def camera_detected_matches(configured_cameras: dict[str, Any], detected_cameras: list[dict[str, Any]]) -> tuple[dict[str, str], list[str]]:
+    detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    unmatched_detected_keys = list(detected_by_key)
+    matches: dict[str, str] = {}
+
+    for camera_id, camera in configured_cameras.items():
+        camera = camera if isinstance(camera, dict) else {}
+        detected_key = normalize_camera_key(camera.get("detected_key"))
+        if detected_key and detected_key in detected_by_key:
+            matches[camera_id] = detected_key
+        elif camera_id in detected_by_key:
+            matches[camera_id] = camera_id
+        else:
+            continue
+        if matches[camera_id] in unmatched_detected_keys:
+            unmatched_detected_keys.remove(matches[camera_id])
+
+    for camera_id in configured_cameras:
+        if camera_id in matches or not unmatched_detected_keys:
+            continue
+        matches[camera_id] = unmatched_detected_keys.pop(0)
+
+    return matches, unmatched_detected_keys
+
+
+def option_tag(value: str, label: str, selected: str | None) -> str:
+    selected_attr = " selected" if value == selected else ""
+    return f'<option value="{html.escape(value)}"{selected_attr}>{html.escape(label)}</option>'
+
+
+def controller_options(controllers: dict[str, Any], selected: str | None) -> str:
+    return "\n".join(option_tag(key, key, selected) for key in controllers)
+
+
+def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
+    options = [option_tag("", "Unassigned", selected)]
+    seen = set()
+    for pico in picos:
+        serial = str(pico.get("serial") or "")
+        if not serial:
+            continue
+        seen.add(serial)
+        label = f"{serial} {pico.get('port') or ''}".strip()
+        options.append(option_tag(serial, label, selected))
+    if selected and selected not in seen:
+        options.append(option_tag(selected, f"{selected} (not detected)", selected))
+    return "\n".join(options)
+
+
+def pin_type_options(selected: str | None) -> str:
+    return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
+
+
+def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
+    controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
+    devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
+    cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
+    picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
+    raw_detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    detected_cameras = []
+    for item in raw_detected_cameras:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        key = normalize_camera_key(item.get("key"))
+        if key:
+            normalized["key"] = key
+        detected_cameras.append(normalized)
+
+    controller_rows = []
+    for controller_id in controllers:
+        controller = controllers.get(controller_id, {})
+        if not isinstance(controller, dict):
+            continue
+        controller_rows.append(
+            '<tr class="controller-row" data-controller-key="{controller_id}">'
+            '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
+            '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+            '</tr>'.format(
+                controller_id=html.escape(controller_id, quote=True),
+                pico_options_html=pico_options(picos, str(controller.get("pico_serial") or "")),
+            )
+        )
+    controller_rows.append(
+        '<tr class="controller-row new-row" data-controller-key="">'
+        '<td><input class="controller-id" placeholder="pump_lights" value=""></td>'
+        '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+        '</tr>'.format(pico_options_html=pico_options(picos, ""))
+    )
+
+    device_rows = []
+    for device_id in devices:
+        device = devices.get(device_id, {})
+        if not isinstance(device, dict):
+            continue
+        device_rows.append(
+            '<tr class="device-row" data-device-id="{device_id}">'
+            '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
+            '<td><select class="device-controller">{controller_options_html}</select></td>'
+            '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+            '<td><select class="device-type">{type_options}</select></td>'
+            '<td><select class="device-editor">{editor_options}</select></td>'
+            '</tr>'.format(
+                device_id=html.escape(device_id, quote=True),
+                controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
+                pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("type") or "gpio")),
+                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
+            )
+        )
+    device_rows.append(
+        '<tr class="device-row new-row" data-device-id="">'
+        '<td><input class="device-id" placeholder="pump" value=""></td>'
+        '<td><select class="device-controller">{controller_options_html}</select></td>'
+        '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
+        '<td><select class="device-type">{type_options}</select></td>'
+        '<td><select class="device-editor">{editor_options}</select></td>'
+        '</tr>'.format(
+            controller_options_html=controller_options(controllers, ""),
+            type_options=pin_type_options("gpio"),
+            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+        )
+    )
+
+    detected_camera_keys = [
+        str(item.get("key"))
+        for item in detected_cameras
+        if isinstance(item, dict) and item.get("key")
+    ]
+    all_camera_keys = sorted(set(cameras) | set(detected_camera_keys))
+    camera_rows = []
+    for camera_id in all_camera_keys:
+        detected_camera = next(
+            (item for item in detected_cameras if isinstance(item, dict) and str(item.get("key")) == camera_id),
+            {},
+        )
+        detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
+        camera_rows.append(
+            '<tr class="camera-row" data-camera-key="{camera_id}">'
+            '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
+            '<td class="muted">{detail}</td>'
+            '</tr>'.format(
+                camera_id=html.escape(camera_id, quote=True),
+                detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
+            )
+        )
+    camera_rows.append(
+        '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
+        '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
+        '<td class="muted">Add a camera id to save it.</td>'
+        '</tr>'
+    )
+
+    controller_rows_html = "\n".join(controller_rows)
+    device_rows_html = "\n".join(device_rows)
+    camera_rows_html = "\n".join(camera_rows)
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plamp config</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 1100px; }}
+    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f4f4f4; }}
+    input, select {{ box-sizing: border-box; max-width: 100%; padding: .35rem; }}
+    button {{ border: 1px solid #222; border-radius: 6px; margin: .4rem .4rem .4rem 0; padding: .45rem .7rem; background: #fff; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .muted, .status {{ color: #555; font-size: .9rem; }}
+  </style>
+</head>
+<body>
+  {MAIN_NAV}
+  <h1>Plamp config</h1>
+  <h2>Controllers</h2>
+  <table><thead><tr><th>ID</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows_html}</tbody></table>
+  <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
+  <h2>Devices</h2>
+  <table><thead><tr><th>ID</th><th>Controller</th><th>Pin</th><th>Type</th><th>Editor</th></tr></thead><tbody>{device_rows_html}</tbody></table>
+  <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
+  <h2>Cameras</h2>
+  <table><thead><tr><th>ID</th><th>Detected</th></tr></thead><tbody>{camera_rows_html}</tbody></table>
+  <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
+  <script>
+    function collectControllers() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".controller-row")) {{
+        const key = row.querySelector(".controller-id").value.trim();
+        if (!key) continue;
+        const picoSerial = row.querySelector(".controller-pico-serial").value;
+        result[key] = picoSerial ? {{pico_serial: picoSerial}} : {{}};
+      }}
+      return result;
+    }}
+    function collectDevices() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".device-row")) {{
+        const key = row.querySelector(".device-id").value.trim();
+        if (!key) continue;
+        const pinValue = row.querySelector(".device-pin").value;
+        result[key] = {{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value}};
+      }}
+      return result;
+    }}
+    function collectCameras() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".camera-row")) {{
+        const key = row.querySelector(".camera-id").value.trim();
+        if (!key) continue;
+        result[key] = {{}};
+      }}
+      return result;
+    }}
+    async function saveSection(statusId, url, payload) {{
+      const status = document.getElementById(statusId);
+      status.textContent = "Saving...";
+      const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
+      status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
+    }}
+    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config/controllers", collectControllers()));
+    document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));
+    document.getElementById("save-cameras").addEventListener("click", () => saveSection("cameras-status", "/api/config/cameras", collectCameras()));
+  </script>
+</body>
+</html>"""
 
 
 def render_settings_page(summary: dict[str, Any]) -> str:
-    host = summary["host"]
+    config = summary.get("config") if isinstance(summary.get("config"), dict) else {}
+    detected = summary.get("detected") if isinstance(summary.get("detected"), dict) else {}
+    controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
+    devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
+    configured_cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
+    setup_picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
+    raw_detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    detected_cameras = []
+    for item in raw_detected_cameras:
+        if not isinstance(item, dict):
+            continue
+        normalized = dict(item)
+        key = normalize_camera_key(item.get("key"))
+        if key:
+            normalized["key"] = key
+        detected_cameras.append(normalized)
+
+    host = summary.get("host") if isinstance(summary.get("host"), dict) else {"hostname": "", "network": []}
     host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
-    picos = summary["picos"]
-    networks = host["network"]
+    status_picos = summary.get("picos") if isinstance(summary.get("picos"), list) else setup_picos
+    networks = host.get("network") if isinstance(host.get("network"), list) else []
     storage = summary.get("storage") if isinstance(summary.get("storage"), dict) else {}
+    cameras = summary.get("cameras") if isinstance(summary.get("cameras"), dict) else {}
+    rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
+    tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
+
+    controller_rows = []
+    for controller_id in controllers:
+        controller = controllers.get(controller_id, {})
+        if not isinstance(controller, dict):
+            continue
+        controller_rows.append(
+            '<tr class="controller-row" data-controller-key="{controller_id}">'
+            '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
+            '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
+            '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+            '</tr>'.format(
+                controller_id=html.escape(controller_id, quote=True),
+                label=html.escape(str(controller.get("label") or ""), quote=True),
+                pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
+            )
+        )
+    controller_rows.append(
+        '<tr class="controller-row new-row" data-controller-key="">'
+        '<td><input class="controller-id" placeholder="pump_lights" value=""></td>'
+        '<td><input class="controller-label" placeholder="Pump and lights" value=""></td>'
+        '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
+        '</tr>'.format(pico_options_html=pico_options(setup_picos, ""))
+    )
+
+    device_rows = []
+    for device_id in devices:
+        device = devices.get(device_id, {})
+        if not isinstance(device, dict):
+            continue
+        device_rows.append(
+            '<tr class="device-row" data-device-id="{device_id}">'
+            '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
+            '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
+            '<td><select class="device-controller">{controller_options_html}</select></td>'
+            '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+            '<td><select class="device-type">{type_options}</select></td>'
+            '<td><select class="device-editor">{editor_options}</select></td>'
+            '</tr>'.format(
+                device_id=html.escape(device_id, quote=True),
+                label=html.escape(str(device.get("label") or ""), quote=True),
+                controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
+                pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("type") or "gpio")),
+                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
+            )
+        )
+    device_rows.append(
+        '<tr class="device-row new-row" data-device-id="">'
+        '<td><input class="device-id" placeholder="pump" value=""></td>'
+        '<td><input class="device-label" placeholder="Water pump" value=""></td>'
+        '<td><select class="device-controller">{controller_options_html}</select></td>'
+        '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
+        '<td><select class="device-type">{type_options}</select></td>'
+        '<td><select class="device-editor">{editor_options}</select></td>'
+        '</tr>'.format(
+            controller_options_html=controller_options(controllers, ""),
+            type_options=pin_type_options("gpio"),
+            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+        )
+    )
+
+    detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
+    camera_detected_keys, unmatched_detected_keys = camera_detected_matches(configured_cameras, detected_cameras)
+    all_camera_keys = list(configured_cameras) + unmatched_detected_keys
+    camera_setup_rows = []
+    for camera_id in all_camera_keys:
+        camera = configured_cameras.get(camera_id, {}) if isinstance(configured_cameras.get(camera_id, {}), dict) else {}
+        detected_key = camera_detected_keys.get(camera_id, camera_id if camera_id in detected_by_key else "")
+        detected_camera = detected_by_key.get(detected_key, {})
+        detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
+        camera_setup_rows.append(
+            '<tr class="camera-row" data-camera-key="{camera_id}" data-camera-detected-key="{detected_key}">'
+            '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
+            '<td><input class="camera-label" placeholder="Tent camera" value="{label}"></td>'
+            '<td class="muted">{detail}</td>'
+            '</tr>'.format(
+                camera_id=html.escape(camera_id, quote=True),
+                detected_key=html.escape(detected_key, quote=True),
+                label=html.escape(str(camera.get("label") or ""), quote=True),
+                detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
+            )
+        )
+    camera_setup_rows.append(
+        '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
+        '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
+        '<td><input class="camera-label" placeholder="Tent camera" value=""></td>'
+        '<td class="muted">Add a camera id to save it.</td>'
+        '</tr>'
+    )
 
     pico_rows = "\n".join(
         "<tr>"
-        f"<td>{html.escape(str(item.get('role') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('port') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('usb_device') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('serial') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('vendor_id') or '-'))}:{html.escape(str(item.get('product_id') or '-'))}</td>"
         "</tr>"
-        for item in picos
-    ) or '<tr><td colspan="5">No Picos found.</td></tr>'
+        for item in status_picos
+    ) or '<tr><td colspan="4">No peripherals found.</td></tr>'
+
+    def camera_status_name(item: dict[str, Any]) -> str:
+        connector = item.get("connector")
+        if connector:
+            return str(connector)
+        index = item.get("index")
+        if index is not None:
+            return f"cam{index}"
+        key = normalize_camera_key(item.get("key"))
+        return key or "-"
+
+    camera_rows = "\n".join(
+        "<tr>"
+        f"<td>{html.escape(camera_status_name(item))}</td>"
+        f"<td>{html.escape(camera_model_label(item))}</td>"
+        f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
+        f"<td><code>{html.escape(str(item.get('path') or '-'))}</code></td>"
+        "</tr>"
+        for item in rpicam_cameras
+    ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
 
     network_rows = "\n".join(
         "<tr>"
@@ -38,26 +423,11 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     git_dirty = software.get("git_dirty")
     git_dirty_display = "unknown" if git_dirty is None else ("yes" if git_dirty else "no")
     software_rows = (
-        "<tr>"
-        "<td>Git commit</td>"
-        f"<td><code>{html.escape(str(git_short_commit))}</code></td>"
-        "</tr>"
-        "<tr>"
-        "<td>Git branch</td>"
-        f"<td><code>{html.escape(str(git_branch))}</code></td>"
-        "</tr>"
-        "<tr>"
-        "<td>Git dirty</td>"
-        f"<td><code>{html.escape(git_dirty_display)}</code></td>"
-        "</tr>"
-        "<tr>"
-        "<td>mpremote</td>"
-        f"<td><code>{html.escape(str(summary['tools']['mpremote'] or 'not found'))}</code></td>"
-        "</tr>"
-        "<tr>"
-        "<td>pyserial</td>"
-        f"<td><code>{html.escape(str(summary['tools']['pyserial']))}</code></td>"
-        "</tr>"
+        "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
+        "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
+        "<tr><td>Git dirty</td>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
+        "<tr><td>mpremote</td>" f"<td><code>{html.escape(str(tools.get('mpremote') or 'not found'))}</code></td></tr>"
+        "<tr><td>pyserial</td>" f"<td><code>{html.escape(str(tools.get('pyserial') or '-'))}</code></td></tr>"
     )
 
     storage_rows = (
@@ -68,6 +438,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         f"<td>{html.escape(str(storage.get('total') or '-'))}</td>"
         "</tr>"
     )
+    hostname = str(host.get("hostname") or "")
 
     return f"""<!doctype html>
 <html lang="en">
@@ -77,66 +448,170 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <title>Plamp settings</title>
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
-    table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 960px; }}
-    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    section {{ border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 1rem; }}
+    table {{ border-collapse: collapse; margin: 1rem 0 1.5rem; width: 100%; max-width: 1100px; }}
+    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
     th {{ background: #f4f4f4; }}
+    input, select {{ box-sizing: border-box; max-width: 100%; padding: .35rem; }}
+    button {{ border: 1px solid #222; border-radius: 6px; margin: .4rem .4rem .4rem 0; padding: .45rem .7rem; background: #fff; }}
     code {{ background: #f4f4f4; padding: .1rem .25rem; }}
-    footer {{ color: #555; font-size: .9rem; margin-top: 2rem; }}
+    .muted, .status {{ color: #555; font-size: .9rem; }}
     .host-clock {{ color: #555; font-size: .95rem; }}
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/api/test">API test</a> | <a href="/settings.json">Settings JSON</a></nav>
-  <h1>Plamp settings</h1>
+  {MAIN_NAV}
+  <h1>Settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
-  <h2>Picos</h2>
-  <table>
-    <thead><tr><th>Role</th><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
-    <tbody>{pico_rows}</tbody>
-  </table>
+  <p><a href="{GITHUB_NEW_ISSUE_URL}">Report an issue</a></p>
 
-  <h2>Network</h2>
-  <p><strong>Hostname:</strong> {html.escape(host['hostname'])}</p>
-  <table>
-    <thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead>
-    <tbody>{network_rows}</tbody>
-  </table>
+  <section aria-label="Plamp config">
+    <h2>Plamp config</h2>
+    <p class="muted">Configure controllers, devices, and cameras.</p>
+    <h3>Controllers</h3>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead><tbody>{''.join(controller_rows)}</tbody></table>
+    <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
+    <h3>Devices</h3>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Controller</th><th>Pin</th><th>Type</th><th>Editor</th></tr></thead><tbody>{''.join(device_rows)}</tbody></table>
+    <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
+    <h3>Cameras</h3>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
+    <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
+  </section>
 
-  <h2>Software</h2>
-  <table>
-    <thead><tr><th>Tool</th><th>Path</th></tr></thead>
-    <tbody>{software_rows}</tbody>
-  </table>
+  <section aria-label="System status">
+    <h2>System status</h2>
+    <p class="muted">Detected hardware and host status.</p>
+    <h3>Peripherals</h3>
+    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
+    <h3>Raspberry Pi cameras</h3>
+    <table><thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
+    <h3>Network</h3>
+    <p><strong>Hostname:</strong> {html.escape(hostname)}</p>
+    <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
+    <h3>Software</h3>
+    <table><thead><tr><th>Tool</th><th>Path</th></tr></thead><tbody>{software_rows}</tbody></table>
+    <h2>Storage</h2>
+    <table><thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead><tbody>{storage_rows}</tbody></table>
+  </section>
 
-  <h2>Storage</h2>
-  <table>
-    <thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead>
-    <tbody>{storage_rows}</tbody>
-  </table>
+  <section aria-label="Device control">
+    <h2>Device control</h2>
+    <p class="muted">Changes here may require reconnecting to the device.</p>
+    <label>Hostname <input id="hostname-input" value="{html.escape(hostname, quote=True)}"></label>
+    <button id="hostname-confirm" type="button">Apply hostname</button>
+    <span id="hostname-status" class="status">Ready.</span>
+  </section>
 
-  <footer>Refreshing in <span id="refresh-countdown">30</span>s</footer>
   <script>
-    let seconds = 30;
-    const countdown = document.getElementById("refresh-countdown");
-    setInterval(() => {{
-      seconds -= 1;
-      if (seconds <= 0) {{
-        window.location.reload();
-        return;
+    function cleanObject(value) {{
+      const result = {{}};
+      for (const [key, item] of Object.entries(value)) {{
+        if (item !== "" && item !== null && item !== undefined) result[key] = item;
       }}
-      countdown.textContent = String(seconds);
-    }}, 1000);
+      return result;
+    }}
+    function collectControllers() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".controller-row")) {{
+        const key = row.querySelector(".controller-id").value.trim();
+        if (!key) continue;
+        const picoSerial = row.querySelector(".controller-pico-serial").value;
+        result[key] = cleanObject({{pico_serial: picoSerial, label: row.querySelector(".controller-label").value.trim()}});
+      }}
+      return result;
+    }}
+    function collectDevices() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".device-row")) {{
+        const key = row.querySelector(".device-id").value.trim();
+        if (!key) continue;
+        const pinValue = row.querySelector(".device-pin").value;
+        if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
+        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+      }}
+      return result;
+    }}
+    function collectCameras() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".camera-row")) {{
+        const key = row.querySelector(".camera-id").value.trim();
+        if (!key) continue;
+        result[key] = cleanObject({{label: row.querySelector(".camera-label").value.trim(), detected_key: row.dataset.cameraDetectedKey || ""}});
+      }}
+      return result;
+    }}
+    function controllerRenames() {{
+      const result = {{}};
+      for (const row of document.querySelectorAll(".controller-row")) {{
+        const oldKey = row.dataset.controllerKey || "";
+        const newKey = row.querySelector(".controller-id").value.trim();
+        if (oldKey && newKey && oldKey !== newKey) result[oldKey] = newKey;
+      }}
+      return result;
+    }}
+    function collectDevicesWithControllerRenames() {{
+      const devices = collectDevices();
+      const renames = controllerRenames();
+      for (const device of Object.values(devices)) {{
+        if (renames[device.controller]) device.controller = renames[device.controller];
+      }}
+      return devices;
+    }}
+    function collectConfigWithControllerRenames() {{
+      return {{controllers: collectControllers(), devices: collectDevicesWithControllerRenames(), cameras: collectCameras()}};
+    }}
+    async function saveSection(statusId, url, payload) {{
+      const status = document.getElementById(statusId);
+      status.textContent = "Saving...";
+      try {{
+        const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
+        status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
+        if (response.ok) window.location.reload();
+      }} catch (error) {{
+        status.textContent = error.message || String(error);
+      }}
+    }}
+    function runSave(statusId, callback) {{
+      const status = document.getElementById(statusId);
+      try {{
+        callback();
+      }} catch (error) {{
+        status.textContent = error.message || String(error);
+      }}
+    }}
+    document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
+    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config/devices", collectDevices())));
+    document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
+    document.getElementById("hostname-confirm").addEventListener("click", async () => {{
+      const hostname = document.getElementById("hostname-input").value.trim();
+      if (!window.confirm(`Apply hostname "${{hostname}}"? You may need to reconnect.`)) return;
+      const status = document.getElementById("hostname-status");
+      status.textContent = "Applying...";
+      const response = await fetch("/api/host-config/hostname", {{method: "POST", headers: {{"content-type": "application/json"}}, body: JSON.stringify({{hostname}})}});
+      const text = await response.text();
+      let parsed = null;
+      try {{ parsed = JSON.parse(text); }} catch (error) {{}}
+      status.textContent = response.ok ? (parsed?.message || "Hostname updated; reconnect or reboot may be required.") : `${{response.status}} ${{parsed?.detail || text}}`;
+    }});
   </script>
 </body>
 </html>"""
-
 
 def render_timer_dashboard_page(
     roles: list[str],
     time_format: str,
     channels_by_role: dict[str, list[dict[str, Any]]] | None = None,
     host_seconds_since_midnight: int = 0,
+    camera_ids: list[str] | None = None,
 ) -> str:
+    camera_options = "".join(
+        f'<option value="{html.escape(camera_id, quote=True)}">{html.escape(camera_id)}</option>'
+        for camera_id in (camera_ids or [])
+    )
+    if not camera_options:
+        camera_options = '<option value="">Default camera</option>'
     template = """<!doctype html>
 <html lang="en">
 <head>
@@ -168,7 +643,7 @@ def render_timer_dashboard_page(
     .camera-viewer { max-width: min(100%, 820px); }
     .camera-viewer[hidden] { display: none; }
     .capture-list { border: 1px solid #d0d0d0; display: grid; gap: 0; max-height: 22rem; max-width: 980px; overflow-y: auto; }
-    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; margin: 0; padding: .35rem .5rem; text-align: left; }
+    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; border-radius: 0; display: block; margin: 0; padding: .35rem .5rem; text-align: left; width: 100%; }
     .capture-list button:nth-child(odd) { background: #fff; }
     .capture-list button:nth-child(even) { background: #f6f7f8; }
     .capture-list button:hover { background: #e9f2ff; }
@@ -185,7 +660,7 @@ def render_timer_dashboard_page(
   </style>
 </head>
 <body>
-  <nav><a href="/settings">Settings</a></nav>
+  __MAIN_NAV__
   <h1>Plamp</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
@@ -195,11 +670,12 @@ def render_timer_dashboard_page(
 
   <h2>Camera</h2>
   <section class="camera-panel" aria-label="Camera captures">
+    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <div class="camera-actions">
+      <label>Camera <select id="camera-capture-camera">__CAMERA_OPTIONS__</select></label>
       <button id="camera-capture" type="button">Take picture</button>
       <span id="camera-capture-status">Ready.</span>
     </div>
-    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <label>Show
       <select id="camera-capture-filter">
         <option value="all">All</option>
@@ -208,6 +684,8 @@ def render_timer_dashboard_page(
     </label>
     <div id="camera-capture-list" class="capture-list">Loading captures...</div>
     <div class="capture-pager">
+      <label>Page <input id="camera-capture-page" type="number" min="1" step="1" value="1"></label>
+      <button id="camera-capture-go" type="button">Go</button>
       <button id="camera-capture-prev" type="button">Previous</button>
       <button id="camera-capture-next" type="button">Next</button>
       <span id="camera-capture-page-status"></span>
@@ -233,10 +711,13 @@ def render_timer_dashboard_page(
     const refreshStatus = document.getElementById("refresh-status");
     const resumeRefreshButton = document.getElementById("resume-refresh");
     const cameraCaptureButton = document.getElementById("camera-capture");
+    const cameraCaptureCamera = document.getElementById("camera-capture-camera");
     const cameraCaptureStatus = document.getElementById("camera-capture-status");
     const cameraViewer = document.getElementById("camera-viewer");
     const cameraCaptureFilter = document.getElementById("camera-capture-filter");
     const cameraCaptureList = document.getElementById("camera-capture-list");
+    const cameraCapturePage = document.getElementById("camera-capture-page");
+    const cameraCaptureGo = document.getElementById("camera-capture-go");
     const cameraCapturePrev = document.getElementById("camera-capture-prev");
     const cameraCaptureNext = document.getElementById("camera-capture-next");
     const cameraCapturePageStatus = document.getElementById("camera-capture-page-status");
@@ -246,8 +727,12 @@ def render_timer_dashboard_page(
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
+    let cameraCaptureTotal = 0;
+    let cameraCaptureTotalPages = 1;
     const cameraCapturePageSize = 30;
     let selectedCameraImageUrl = "";
+    let activeEditor = null;
+    let pendingTimerRender = false;
 
     function formatChangeTime(secondsFromNow) {
       const when = new Date(Date.now() + secondsFromNow * 1000);
@@ -363,12 +848,17 @@ def render_timer_dashboard_page(
 
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
-      const eventId = event.id || "pin-" + (event.ch ?? index);
+      const eventPin = Number(event?.pin);
+      if (Number.isFinite(eventPin)) {
+        const byPin = channels.find((channel) => Number(channel.pin) === eventPin);
+        if (byPin) return byPin;
+      }
+      const eventId = event.id || "pin-" + (event.pin ?? index);
       return channels.find((channel) => channel.id === eventId) || {
         role,
         id: eventId,
-        name: event.id || "pin " + (event.ch ?? index),
-        pin: event.ch,
+        name: event.id || "pin " + (event.pin ?? index),
+        pin: event.pin,
         type: event.type || "gpio",
         default_editor: "cycle",
       };
@@ -427,12 +917,43 @@ def render_timer_dashboard_page(
       }[char]));
     }
 
-    function openScheduleEditor(role, event, index) {
-      const channel = channelForEvent(role, event, index);
+    function captureEditorFocus() {
+      if (!activeEditor || !timerEditorPanel.contains(document.activeElement)) return null;
+      const field = document.activeElement;
+      const fieldName = field?.name;
+      if (!fieldName) return null;
+      return {
+        name: fieldName,
+        selectionStart: typeof field.selectionStart === "number" ? field.selectionStart : null,
+        selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null,
+      };
+    }
+
+    function restoreEditorFocus(focusState) {
+      if (!focusState) return;
+      const form = timerEditorPanel.querySelector("#timer-schedule-form");
+      const field = form?.elements?.[focusState.name];
+      if (!field || typeof field.focus !== "function") return;
+      field.focus();
+      if (typeof field.setSelectionRange === "function" && focusState.selectionStart !== null && focusState.selectionEnd !== null) {
+        field.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+      }
+    }
+
+    function flushPendingTimerRender() {
+      if (!pendingTimerRender) return;
+      if (activeEditor && timerEditorPanel.contains(document.activeElement)) return;
+      pendingTimerRender = false;
+      renderTimerStatus();
+    }
+
+    function openScheduleEditor(role, channel, event) {
       const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
       const onUnit = chooseUnit(durations.on);
       const offUnit = chooseUnit(durations.off);
       const clock = clockValuesForEvent(event);
+      stopPageAutoRefresh();
+      activeEditor = {role, channelId: channel.id};
       timerEditorPanel.hidden = false;
       timerEditorPanel.dataset.role = role;
       timerEditorPanel.dataset.channelId = channel.id;
@@ -473,7 +994,9 @@ def render_timer_dashboard_page(
       form.elements.offUnit.value = offUnit.unit;
       syncEditorMode(form);
       form.elements.mode.addEventListener("change", () => syncEditorMode(form));
-      form.elements.cancel.addEventListener("click", () => { timerEditorPanel.hidden = true; });
+      form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
+      form.elements.cancel.addEventListener("click", () => { activeEditor = null; timerEditorPanel.hidden = true; renderTimerStatus(); });
+      renderTimerStatus();
       form.addEventListener("submit", submitScheduleEditor);
     }
 
@@ -510,20 +1033,37 @@ def render_timer_dashboard_page(
         if (!response.ok) {
           throw new Error(parsed?.detail || text || `${response.status} ${response.statusText}`);
         }
-        showEditorMessage(message, "editor-success", "Schedule applied. Waiting for report...");
+        showEditorMessage(message, "editor-success", parsed?.message || "Schedule applied. Waiting for report...");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }
     }
 
     function renderTimerStatus() {
+      if (activeEditor && timerEditorPanel.contains(document.activeElement)) {
+        pendingTimerRender = true;
+        return;
+      }
+      pendingTimerRender = false;
+      const focusState = captureEditorFocus();
       timerBoard.replaceChildren();
       let rendered = 0;
+      let editorPlaced = false;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
         const events = timerEventsFromMessage(message);
-        for (const [index, event] of events.entries()) {
-          const channel = channelForEvent(role, event, index);
+        const channels = timerChannels[role] || [];
+        const liveByPin = new Map();
+        for (const event of events) {
+          const pin = Number(event?.pin);
+          if (Number.isFinite(pin)) liveByPin.set(pin, event);
+        }
+        const items = channels.length
+          ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
+          : events.map((event, index) => ({channel: channelForEvent(role, event, index), event, index}));
+        for (const item of items) {
+          const channel = item.channel;
+          const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
           const isOn = value > 0;
@@ -541,7 +1081,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -553,13 +1093,22 @@ def render_timer_dashboard_page(
           const edit = document.createElement("button");
           edit.type = "button";
           edit.textContent = "Edit schedule";
-          edit.addEventListener("click", () => openScheduleEditor(role, event, index));
+          edit.addEventListener("click", () => openScheduleEditor(role, channel, event));
           actions.append(edit);
           card.append(top, meta, bar, actions);
           timerBoard.append(card);
+          if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {
+            timerBoard.append(timerEditorPanel);
+            timerEditorPanel.hidden = false;
+            editorPlaced = true;
+          }
           rendered += 1;
         }
       }
+      if (!editorPlaced) {
+        timerEditorPanel.hidden = true;
+      }
+      restoreEditorFocus(focusState);
       if (!rendered) {
         timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
       }
@@ -568,6 +1117,9 @@ def render_timer_dashboard_page(
     function updateCameraFilters() {
       const selected = cameraCaptureFilter.value;
       const options = new Map([["all", "All"], ["camera_roll", "Camera roll"]]);
+      if (selected.startsWith("grow:")) {
+        options.set(selected, cameraCaptureFilter.selectedOptions[0]?.textContent || selected.slice(5));
+      }
       for (const capture of cameraCaptures) {
         if (capture.grow_id) {
           options.set("grow:" + capture.grow_id, capture.grow_name || capture.grow_id);
@@ -583,11 +1135,31 @@ def render_timer_dashboard_page(
       cameraCaptureFilter.value = options.has(selected) ? selected : "all";
     }
 
-    function visibleCameraCaptures() {
+    function cameraCaptureRequestUrl() {
+      const params = new URLSearchParams({limit: String(cameraCapturePageSize), offset: String(cameraCaptureOffset)});
       const filter = cameraCaptureFilter.value;
-      if (filter === "camera_roll") return cameraCaptures.filter((capture) => capture.source === "camera_roll");
-      if (filter.startsWith("grow:")) return cameraCaptures.filter((capture) => capture.grow_id === filter.slice(5));
-      return cameraCaptures;
+      if (filter === "camera_roll") {
+        params.set("source", "camera_roll");
+      } else if (filter.startsWith("grow:")) {
+        params.set("source", "grow");
+        params.set("grow_id", filter.slice(5));
+      }
+      return `/api/camera/captures?${params.toString()}`;
+    }
+
+    function cameraCapturePostUrl() {
+      const params = new URLSearchParams();
+      if (cameraCaptureCamera.value) {
+        params.set("camera_id", cameraCaptureCamera.value);
+      }
+      const query = params.toString();
+      return query ? `/api/camera/captures?${query}` : "/api/camera/captures";
+    }
+
+    function pageOffset() {
+      const value = Number(cameraCapturePage.value || 1);
+      const page = Math.max(1, Math.floor(Number.isFinite(value) ? value : 1));
+      return (page - 1) * cameraCapturePageSize;
     }
 
     function selectCameraCapture(capture) {
@@ -604,13 +1176,14 @@ def render_timer_dashboard_page(
       const parts = [];
       if (capture.timestamp) parts.push(new Date(capture.timestamp).toLocaleString());
       parts.push(capture.grow_name || (capture.source === "camera_roll" ? "Camera roll" : "Grow capture"));
+      if (capture.camera_id) parts.push("camera " + capture.camera_id);
       if (capture.brightness_mean !== undefined) parts.push("brightness " + capture.brightness_mean);
       return parts.join(" | ");
     }
 
     function renderCameraCaptures() {
       updateCameraFilters();
-      const captures = visibleCameraCaptures();
+      const captures = cameraCaptures;
       cameraCaptureList.replaceChildren();
       if (!captures.length) {
         cameraCaptureList.textContent = cameraCaptureOffset ? "No more captures." : "No captures found.";
@@ -619,7 +1192,9 @@ def render_timer_dashboard_page(
         selectedCameraImageUrl = "";
         cameraCapturePrev.disabled = cameraCaptureOffset === 0;
         cameraCaptureNext.disabled = true;
-        cameraCapturePageStatus.textContent = cameraCaptureOffset ? "Older page" : "";
+        cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+        cameraCapturePage.value = String(Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1));
+        cameraCapturePageStatus.textContent = cameraCaptureTotal ? `Page ${Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1)} of ${cameraCaptureTotalPages} | Showing 0 of ${cameraCaptureTotal}` : "No captures";
         return;
       }
       for (const capture of captures) {
@@ -634,18 +1209,24 @@ def render_timer_dashboard_page(
       selectCameraCapture(selected);
       cameraCapturePrev.disabled = cameraCaptureOffset === 0;
       cameraCaptureNext.disabled = !cameraCaptureHasMore;
+      cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+      cameraCapturePage.value = String(Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1);
       const start = cameraCaptureOffset + 1;
       const end = cameraCaptureOffset + captures.length;
-      cameraCapturePageStatus.textContent = `Showing ${start}-${end}`;
+      const currentPage = Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1;
+      cameraCapturePageStatus.textContent = `Page ${currentPage} of ${cameraCaptureTotalPages} | Showing ${start}-${end} of ${cameraCaptureTotal}`;
     }
 
     async function refreshCameraCaptures() {
       cameraCaptureList.textContent = "Loading captures...";
       try {
-        const response = await fetch(`/api/camera/captures?limit=${cameraCapturePageSize}&offset=${cameraCaptureOffset}`);
+        const response = await fetch(cameraCaptureRequestUrl());
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
         cameraCaptures = Array.isArray(data.captures) ? data.captures : [];
+        const total = Number(data.total ?? 0);
+        cameraCaptureTotal = Number.isFinite(total) ? total : 0;
+        cameraCaptureTotalPages = Math.max(1, Math.ceil(cameraCaptureTotal / cameraCapturePageSize));
         cameraCaptureHasMore = Boolean(data.has_more);
         renderCameraCaptures();
       } catch (error) {
@@ -658,7 +1239,7 @@ def render_timer_dashboard_page(
       cameraCaptureButton.disabled = true;
       cameraCaptureStatus.textContent = "Capturing...";
       try {
-        const response = await fetch("/api/camera/captures", {method: "POST"});
+        const response = await fetch(cameraCapturePostUrl(), {method: "POST"});
         const text = await response.text();
         let data = null;
         try { data = JSON.parse(text); } catch (error) {}
@@ -718,6 +1299,11 @@ def render_timer_dashboard_page(
       cameraCaptureOffset = 0;
       refreshCameraCaptures();
     });
+    cameraCaptureGo.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = pageOffset();
+      refreshCameraCaptures();
+    });
     cameraCapturePrev.addEventListener("click", () => {
       stopPageAutoRefresh();
       cameraCaptureOffset = Math.max(0, cameraCaptureOffset - cameraCapturePageSize);
@@ -739,9 +1325,10 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__TIME_FORMAT__", json.dumps(time_format))
+        template.replace("__MAIN_NAV__", MAIN_NAV).replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
+        .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
 
@@ -793,7 +1380,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </style>
 </head>
 <body>
-  <nav><a href="/">Plamp</a> | <a href="/settings">Settings</a></nav>
+  {MAIN_NAV}
   <h1>Plamp API test</h1>
 
   <h2>Camera</h2>
@@ -820,6 +1407,53 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <button id="list-captures" type="button">Run request</button>
     <div><span id="list-captures-status">Ready.</span></div>
     <pre id="list-captures-result">GET response will appear here.</pre>
+  </fieldset>
+
+  <h2>Config</h2>
+  <fieldset>
+    <legend>GET /api/config</legend>
+    <p>Reads configured meaning plus detected local hardware choices.</p>
+    <pre id="get-config-curl-command">curl http://localhost:8000/api/config</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-config-curl-command">Copy curl</button>
+    <button id="get-config" type="button">Run request</button>
+    <div><span id="get-config-status">Ready.</span></div>
+    <pre id="get-config-result">GET response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config</legend>
+    <p>Saves controllers, devices, and cameras together.</p>
+    <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"devices":{{}},"cameras":{{}}}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-curl-command">Copy curl</button>
+    <button id="put-config" type="button">Run request</button>
+    <div><span id="put-config-status">Ready.</span></div>
+    <pre id="put-config-result">PUT response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/controllers</legend>
+    <p>Saves named local Pico controllers.</p>
+    <pre id="put-config-controllers-curl-command">curl -X PUT http://localhost:8000/api/config/controllers -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-controllers-curl-command">Copy curl</button>
+    <button id="put-config-controllers" type="button">Run request</button>
+    <div><span id="put-config-controllers-status">Ready.</span></div>
+    <pre id="put-config-controllers-result">PUT response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/devices</legend>
+    <p>Saves device mappings to controllers and pins.</p>
+    <pre id="put-config-devices-curl-command">curl -X PUT http://localhost:8000/api/config/devices -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-devices-curl-command">Copy curl</button>
+    <button id="put-config-devices" type="button">Run request</button>
+    <div><span id="put-config-devices-status">Ready.</span></div>
+    <pre id="put-config-devices-result">PUT response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/cameras</legend>
+    <p>Saves camera names and user-confirmed IR filter values.</p>
+    <pre id="put-config-cameras-curl-command">curl -X PUT http://localhost:8000/api/config/cameras -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-cameras-curl-command">Copy curl</button>
+    <button id="put-config-cameras" type="button">Run request</button>
+    <div><span id="put-config-cameras-status">Ready.</span></div>
+    <pre id="put-config-cameras-result">PUT response will appear here.</pre>
   </fieldset>
 
   <h2>Timers</h2>
@@ -991,6 +1625,55 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       window.setTimeout(() => {{ event.currentTarget.textContent = "Copy curl"; }}, 1200);
     }}
 
+    function prettyResponseText(text) {{
+      try {{
+        return JSON.stringify(JSON.parse(text), null, 2);
+      }} catch (error) {{
+        return text;
+      }}
+    }}
+
+    async function runConfigRequest(kind) {{
+      const specs = {{
+        get: {{method: "GET", url: "/api/config", statusId: "get-config-status", resultId: "get-config-result"}},
+        full: {{method: "PUT", url: "/api/config", statusId: "put-config-status", resultId: "put-config-result", section: null}},
+        controllers: {{method: "PUT", url: "/api/config/controllers", statusId: "put-config-controllers-status", resultId: "put-config-controllers-result", section: "controllers"}},
+        devices: {{method: "PUT", url: "/api/config/devices", statusId: "put-config-devices-status", resultId: "put-config-devices-result", section: "devices"}},
+        cameras: {{method: "PUT", url: "/api/config/cameras", statusId: "put-config-cameras-status", resultId: "put-config-cameras-result", section: "cameras"}},
+      }};
+      const spec = specs[kind];
+      const status = document.getElementById(spec.statusId);
+      const result = document.getElementById(spec.resultId);
+      status.textContent = spec.method === "GET" ? "Loading..." : "Saving current config...";
+      result.textContent = "";
+      try {{
+        let options = {{method: spec.method}};
+        if (spec.method === "PUT") {{
+          if (!window.confirm(`PUT ${{spec.url}} with current config?`)) {{
+            status.textContent = "Cancelled.";
+            return;
+          }}
+          const currentResponse = await fetch("/api/config");
+          const currentText = await currentResponse.text();
+          if (!currentResponse.ok) {{
+            status.textContent = `${{currentResponse.status}} ${{currentResponse.statusText}}`;
+            result.textContent = prettyResponseText(currentText);
+            return;
+          }}
+          const currentConfig = JSON.parse(currentText).config || {{}};
+          const body = spec.section ? currentConfig[spec.section] || {{}} : currentConfig;
+          options = {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(body)}};
+        }}
+        const response = await fetch(spec.url, options);
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
     async function getState() {{
       const getStatus = document.getElementById("get-status");
       const getResult = document.getElementById("get-result");
@@ -1080,7 +1763,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         top.className = "timer-top";
         const name = document.createElement("span");
         name.className = "timer-name";
-        name.textContent = event.id || "pin " + (event.ch ?? index);
+        name.textContent = event.id || "pin " + (event.pin ?? index);
         const badge = document.createElement("span");
         badge.className = "timer-value " + (isOn ? "on" : "off");
         badge.textContent = isOn ? "ON" : "OFF";
@@ -1088,7 +1771,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
         const meta = document.createElement("div");
         meta.className = "timer-meta";
-        meta.textContent = "pin " + (event.ch ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+        meta.textContent = "pin " + (event.pin ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
         const bar = document.createElement("div");
         bar.className = "timer-bar";
@@ -1247,7 +1930,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         events: [{{
           id: "test_pin",
           type: "gpio",
-          ch: Number(document.getElementById("test-pin").value),
+          pin: Number(document.getElementById("test-pin").value),
           current_t: 0,
           reschedule: 1,
           pattern: [{{val: 1, dur: 5}}, {{val: 0, dur: 5}}],
@@ -1268,7 +1951,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
           {{
             id: "pump",
             type: "gpio",
-            ch: Number(document.getElementById("pump-pin").value),
+            pin: Number(document.getElementById("pump-pin").value),
             current_t: 0,
             reschedule: 1,
             pattern: [
@@ -1279,7 +1962,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
           {{
             id: "lights",
             type: "gpio",
-            ch: Number(document.getElementById("lights-pin").value),
+            pin: Number(document.getElementById("lights-pin").value),
             current_t: currentTForWindow(lightsOn, lightsOff),
             reschedule: 1,
             pattern: [{{val: 1, dur: lightsOnDur}}, {{val: 0, dur: lightsOffDur}}],
@@ -1288,6 +1971,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }});
     }});
 
+    document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
+    document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
+    document.getElementById("put-config-controllers").addEventListener("click", () => runConfigRequest("controllers"));
+    document.getElementById("put-config-devices").addEventListener("click", () => runConfigRequest("devices"));
+    document.getElementById("put-config-cameras").addEventListener("click", () => runConfigRequest("cameras"));
     document.getElementById("get-state").addEventListener("click", getState);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);

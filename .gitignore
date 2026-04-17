@@ -23,3 +23,5 @@ grow/grows/*/summaries/
 grow/grows/*/predictions/
 grow/grows/*/amendments/
 grow/cron-capture.log
+# Local git worktrees
+.worktrees/

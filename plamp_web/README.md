@@ -1,153 +1,86 @@
 # plamp_web
 
-FastAPI web server for the Plamp dashboard, settings pages, and Pico scheduler APIs.
+FastAPI web server for Plamp.
 
-This is host-only code. The MicroPython firmware stays in `../pico_scheduler/`, and the API reads host runtime information while leaving the Pico serial port alone.
+## Run
 
-## Setup
-
-Install `uv` on the Raspberry Pi if it is not already available. The standalone Linux installer from Astral is:
+From the repo root:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000
 ```
 
-After installation, restart the shell or reload your shell profile so the new `uv` binary is on `PATH`, then check it:
+Open:
 
-```bash
-command -v uv
-uv --version
+```text
+http://<raspberry-pi-ip>:8000/
 ```
 
-From the repo root, `uv run` will install the Python requirements from `pyproject.toml` into uv's managed environment.
+Pages:
 
-```bash
-cd /home/hugo/.openclaw/workspace/code/plamp
-uv run python -c "import fastapi, serial, uvicorn"
+- `/` - timers and camera
+- `/settings` - system status and Plamp config
+- `/api/test` - manual API requests
+
+## Config
+
+Runtime config is local:
+
+```text
+data/config.json
 ```
 
-## Timer API
+Use `/settings` to edit:
 
-Timer roles are configured in `../data/config.json`. The app creates `../data/`, `../data/timers/`, and an empty config file if they do not exist. The `data/` directory is local runtime data and is ignored by git. Each role maps to a Pico serial number:
+- Pico controllers
+- devices and their pins
+- cameras
+- hostname
+
+The main page is based on this config. Extra pins reported by a Pico are ignored.
+
+## Timer State
+
+Each controller has a saved state file:
+
+```text
+data/timers/<controller-id>.json
+```
+
+Timer events use `pin`:
 
 ```json
 {
-  "timers": [
+  "report_every": 10,
+  "events": [
     {
-      "role": "pump_lights",
-      "pico_serial": "e66038b71387a039"
-    }
-  ]
-}
-```
-
-Each timer role has a scheduler state file under `../data/timers/`. For example, `../data/timers/pump_lights.json` is the state file for the `pump_lights` Pico role. Event IDs such as `pump` and `lights` identify the timer on that board, while `ch` identifies the GPIO pin on that board.
-
-Timer roles may also define channels for the main-page schedule editor:
-
-```json
-{
-  "timers": [
-    {
-      "role": "pump_lights",
-      "pico_serial": "e66038b71387a039",
-      "channels": [
-        {
-          "id": "pump",
-          "name": "Pump",
-          "pin": 15,
-          "type": "gpio",
-          "default_editor": "cycle"
-        },
-        {
-          "id": "lights",
-          "name": "Lights",
-          "pin": 2,
-          "type": "gpio",
-          "default_editor": "clock_window"
-        }
+      "id": "pump",
+      "type": "gpio",
+      "pin": 15,
+      "current_t": 0,
+      "reschedule": 1,
+      "pattern": [
+        {"val": 1, "dur": 300},
+        {"val": 0, "dur": 1800}
       ]
     }
   ]
 }
 ```
 
-The `id`, `pin`, and `type` fields should match events in `../data/timers/<role>.json`. Board and channel setup still happens by editing JSON; the main page only edits schedules. Use `cycle` for duration-based editing and `clock_window` for a 24-hour on/off window that is applied using the host clock.
-
-Read the timer state:
-
-```bash
-curl http://localhost:8000/api/timers/pump_lights
-```
-
-Stream timer state changes for that role:
-
-```bash
-curl -N 'http://localhost:8000/api/timers/pump_lights?stream=true'
-```
-
-Each timer role gets one background monitor thread at server startup. The monitor owns the Pico serial connection, keeps the timer state current from Pico reports, emits stream events to connected HTTP clients, and temporarily closes serial before copying state and resetting the Pico. Reported timer state uses `elapsed_t` for total elapsed seconds, `cycle_t` for the current pattern-cycle offset, and `current_value` for the output value.
-
-Write a new timer state. PUT always saves the host state file, copies it to the Pico, and resets the timer:
-
-```bash
-curl -X PUT http://localhost:8000/api/timers/pump_lights \
-  -H 'content-type: application/json' \
-  --data @data/timers/pump_lights.json
-```
-
-A successful PUT returns a short success message. If the Pico is disconnected or `mpremote` fails, the response explains which step failed and the monitor keeps retrying the serial connection by Pico serial.
-
-The browser test page is available at:
-
-```text
-http://localhost:8000/timers/test
-```
-
-It has separate GET and PUT sections, separate role inputs for each section, an editable JSON payload, generator groups for a quick 5-second on/off pin test and a pump/lights example, and generated curl commands for both GET and PUT.
-
-GET and PUT each show their own confirmation prompt, HTTP status, and response body so the page can be used before building a real UI. PUT always copies state to the Pico and resets it.
-
-## Run The Settings Page
-
-During development, run with reload on port 8000:
-
-```bash
-cd /home/hugo/.openclaw/workspace/code/plamp
-uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-For deployment, use port 80 through a service or reverse proxy instead of the development reload server.
-
-Open the main timer page:
-
-```text
-http://<hostname>:8000/
-```
-
-Or use the Pi IP address directly:
-
-```text
-http://<raspberry-pi-ip>:8000/
-```
-
-The settings JSON version is available at:
-
-```bash
-curl http://localhost:8000/settings.json
-```
-
-The app log is written under local runtime data and rotated when it reaches 1 MB:
+## Logs
 
 ```text
 data/plamp.log
-data/plamp.log.1
 ```
 
-Read recent log lines through the API:
+Recent logs:
 
 ```bash
 curl 'http://localhost:8000/api/logs?lines=200'
 ```
 
-The page reports detected Pico boards, network devices, monitor state, log path, and host software paths. The JSON keeps a default-route field because it is useful when debugging which network interface and gateway the Pi is actually using, but the page keeps that detail out of the main view.
+## More
+
+- [`../README.md`](../README.md)
+- [`../pico_scheduler/README.md`](../pico_scheduler/README.md)

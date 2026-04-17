@@ -22,7 +22,7 @@ def report():
     for ev in events:
         item = {
             "type": ev["type"],
-            "ch": ev["ch"],
+            "pin": ev["pin"],
             "elapsed_t": ev["elapsed_t"],
             "cycle_t": ev["elapsed_t"] % ev["total_t"] if ev["reschedule"] else ev["elapsed_t"],
             "reschedule": ev["reschedule"],
@@ -74,7 +74,7 @@ def load_state():
         if not isinstance(src, dict):
             return error("event %d must be an object" % i)
 
-        required = ["type", "ch", "current_t", "reschedule", "pattern"]
+        required = ["type", "pin", "current_t", "reschedule", "pattern"]
         for name in required:
             if name not in src:
                 return error("event %d missing field: %s" % (i, name))
@@ -84,14 +84,14 @@ def load_state():
             return error("event %d type must be gpio or pwm" % i)
 
         try:
-            ch = int(src["ch"])
+            pin = int(src["pin"])
             current_t = int(src["current_t"])
             reschedule = 1 if int(src["reschedule"]) else 0
         except:
-            return error("event %d ch/current_t/reschedule must be integers" % i)
+            return error("event %d pin/current_t/reschedule must be integers" % i)
 
-        if ch < 0 or ch > 29:
-            return error("event %d ch must be in range 0..29" % i)
+        if pin < 0 or pin > 29:
+            return error("event %d pin must be in range 0..29" % i)
         if current_t < 0:
             return error("event %d current_t must be >= 0" % i)
 
@@ -134,14 +134,14 @@ def load_state():
             current_t = total_t
 
         if event_type == "gpio":
-            output = Pin(ch, Pin.OUT)
+            output = Pin(pin, Pin.OUT)
         else:
-            output = PWM(Pin(ch))
+            output = PWM(Pin(pin))
             output.freq(PWM_FREQ)
 
         ev = {
             "type": event_type,
-            "ch": ch,
+            "pin": pin,
             "elapsed_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,

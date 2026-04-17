@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import os
 import secrets
 import subprocess
 import time
@@ -64,7 +65,7 @@ def parse_camera_output(stdout: str) -> dict[str, str]:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if key in {"timestamp", "image", "command", "exit_code", "log"}:
+        if key in {"timestamp", "image", "command", "exit_code", "log", "camera_id"}:
             summary[key] = value
     return summary
 
@@ -109,6 +110,7 @@ def capture_camera_image(
     config_file: Path = CONFIG_FILE,
     grow_config_file: Path = TRANSITIONAL_GROW_CONFIG_FILE,
     capture_id: str | None = None,
+    camera_id: str | None = None,
 ) -> dict[str, Any]:
     script = configured_capture_script(config_file, grow_config_file)
     if not script.exists():
@@ -121,9 +123,13 @@ def capture_camera_image(
     image_path = day_dir / f"{final_capture_id}.jpg"
     sidecar_path = image_path.with_suffix(".json")
     command = [str(script), str(image_path)]
+    env = os.environ.copy()
+    selected_camera_id = str(camera_id or "").strip()
+    if selected_camera_id:
+        env["PLAMP_CAMERA_ID"] = selected_camera_id
 
     try:
-        completed = subprocess.run(command, check=True, capture_output=True, text=True)
+        completed = subprocess.run(command, check=True, capture_output=True, text=True, env=env)
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         detail = f"camera command failed with exit code {exc.returncode}"
@@ -145,6 +151,8 @@ def capture_camera_image(
         "camera_summary": parse_camera_output(completed.stdout),
         "camera_stderr": completed.stderr.strip(),
     }
+    if selected_camera_id:
+        metadata["camera_id"] = selected_camera_id
     if brightness is not None:
         metadata["brightness_mean"] = brightness
 
@@ -254,18 +262,18 @@ def normalized_capture_from_sidecar(
     }
     if "brightness_mean" in metadata:
         item["brightness_mean"] = metadata["brightness_mean"]
+    if isinstance(metadata.get("camera_id"), str) and metadata["camera_id"]:
+        item["camera_id"] = metadata["camera_id"]
     return item
 
 
-def list_camera_captures(
+def collect_camera_captures(
     *,
     repo_root: Path = REPO_ROOT,
     data_dir: Path = DATA_DIR,
     grows_dir: Path = GROWS_DIR,
     source: str = "all",
     grow_id: str | None = None,
-    limit: int = 24,
-    offset: int = 0,
 ) -> list[dict[str, Any]]:
     if source not in {"all", "camera_roll", "grow"}:
         source = "all"
@@ -286,6 +294,20 @@ def list_camera_captures(
         captures.append(item)
 
     captures.sort(key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+    return captures
+
+
+def list_camera_captures(
+    *,
+    repo_root: Path = REPO_ROOT,
+    data_dir: Path = DATA_DIR,
+    grows_dir: Path = GROWS_DIR,
+    source: str = "all",
+    grow_id: str | None = None,
+    limit: int = 24,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    captures = collect_camera_captures(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir, source=source, grow_id=grow_id)
     start = max(0, offset)
     stop = start + max(0, limit)
     return captures[start:stop]

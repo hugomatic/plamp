@@ -3,7 +3,7 @@
   "events": [
     {
       "type": "gpio",
-      "ch": 25,
+      "pin": 25,
       "current_t": 3,
       "reschedule": 1,
       "pattern": [

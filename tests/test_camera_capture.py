@@ -65,6 +65,32 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(json.loads(sidecar_path.read_text(encoding="utf-8")), metadata)
             self.assertEqual(find_capture_image("cap-test123", data_dir=root / "data"), image_path)
 
+    def test_successful_capture_stores_selected_camera_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = root / "data" / "config.json"
+            script = self.make_script(
+                root,
+                "#!/usr/bin/env bash\n"
+                "printf 'jpg' > \"$1\"\n"
+                "echo camera_id=$PLAMP_CAMERA_ID\n",
+            )
+            self.write_config(config_file, script)
+
+            metadata = capture_camera_image(
+                repo_root=root,
+                data_dir=root / "data",
+                config_file=config_file,
+                grow_config_file=root / "grow" / "missing" / "grow.json",
+                capture_id="cap-cam0",
+                camera_id="rpicam_cam0",
+            )
+
+            sidecar = root / metadata["sidecar_path"]
+            self.assertEqual(metadata["camera_id"], "rpicam_cam0")
+            self.assertEqual(metadata["camera_summary"]["camera_id"], "rpicam_cam0")
+            self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8"))["camera_id"], "rpicam_cam0")
+
     def test_grow_config_is_transitional_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

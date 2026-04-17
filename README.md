@@ -1,62 +1,105 @@
 # plamp
 
-Tools and hardware notes for claws that want to grow things.
+Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
 
-## What is here
+![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
 
-### Grow loop
+## Install
 
-A minimal filesystem-first grow tending loop lives in:
+Install `uv` on the Raspberry Pi:
 
-- [`grow/`](./grow/)
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-It keeps one canonical grow folder per grow, captures photos into that folder, appends structured JSONL events, and stores sidecar metadata for later image comparison.
+Reload your shell, then check it:
 
-The grow loop now assumes a multi-frequency operating model: cron owns hourly capture, heartbeat acts as an auditor/repair loop, and slower 12-hour/daily/weekly/monthly reviews build on the artifacts created by faster layers.
+```bash
+uv --version
+```
 
-Start here:
+Clone this repo and enter it:
 
-- [`grow/README.md`](./grow/README.md)
+```bash
+git clone https://github.com/hugomatic/plamp.git
+cd plamp
+```
 
-### Pico scheduler
+Install Python requirements:
 
-A minimal Raspberry Pi Pico scheduler lives in:
+```bash
+uv run python -c "import fastapi, serial, uvicorn"
+```
 
-- [`pico_scheduler/`](./pico_scheduler/)
+## Run
 
-It reads a complete `state.json`, drives GPIO/PWM outputs, and emits structured JSON `startup`, `report`, and `error` messages.
+Start the web server:
 
-Host-side deployment uses `mpremote`. The Plamp web server lives in `plamp_web/` and runs with `uv run`.
-Start here:
+```bash
+uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000
+```
+
+Open:
+
+```text
+http://<raspberry-pi-ip>:8000/
+```
+
+Useful pages:
+
+- `/` - main timer page
+- `/settings` - system status and Plamp config
+- `/api/test` - API test page
+
+## Configure
+
+Use `/settings` to configure:
+
+- Pico controllers
+- devices such as lights, pumps, and fans
+- Raspberry Pi cameras
+- hostname
+
+Runtime config is stored in:
+
+```text
+data/config.json
+```
+
+`data/` is local runtime data and is ignored by git.
+
+## Pico Firmware
+
+The Pico firmware is in:
+
+```text
+pico_scheduler/
+```
+
+Install `mpremote` on the Raspberry Pi:
+
+```bash
+python3 -m pip install --user mpremote
+```
+
+Copy firmware and state to the Pico:
+
+```bash
+cd pico_scheduler
+mpremote cp main.py :main.py
+mpremote cp state.json :state.json
+mpremote reset
+```
+
+More detail:
 
 - [`pico_scheduler/README.md`](./pico_scheduler/README.md)
 - [`plamp_web/README.md`](./plamp_web/README.md)
 
-### Things / printable parts
+## Repo Map
 
-3D-printable parts and generators live in:
+- [`plamp_web/`](./plamp_web/) - web server and pages
+- [`pico_scheduler/`](./pico_scheduler/) - MicroPython Pico firmware
+- [`grow/`](./grow/) - grow log tools
+- [`things/`](./things/) - printable parts
 
-- [`things/`](./things/)
-
-Current example:
-
-- [`things/plamp_stand/`](./things/plamp_stand/)
-
-Reference photo:
-
-![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
-
-See also:
-
-- [`things/README.md`](./things/README.md)
-- [`CHECKLIST.md`](./CHECKLIST.md)
-
-## Repo habits
-
-- prefer simple tools with one obvious contract
-- keep runtime state and configured state clearly separated
-- document manual validation paths when hardware is involved
-- when changing generation or deployment flow, update the relevant README and checklist too
-- for grow loops, prefer directly invokable primitives (`log_event.py`, `capture_photo.py`, `compare_light.py`) before adding scheduling glue
-- for grow loops, treat predictions as durable artifacts and amendments as new records, not history rewrites
-- for grow loops, prefer answer-first sidecars/logs/summaries over plumbing-heavy output when a short result will do

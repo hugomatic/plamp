@@ -40,6 +40,26 @@ class CameraApiTests(unittest.TestCase):
             self.assertTrue((root / data["sidecar_path"]).exists())
 
 
+
+    def test_post_camera_capture_accepts_camera_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = self.make_script(root)
+            data_dir = root / "data"
+            config_file = data_dir / "config.json"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(json.dumps({"camera": {"capture_script": str(script)}}), encoding="utf-8")
+
+            with (
+                patch.object(server.camera_capture, "REPO_ROOT", root),
+                patch.object(server.camera_capture, "DATA_DIR", data_dir),
+                patch.object(server.camera_capture, "CONFIG_FILE", config_file),
+                patch.object(server.camera_capture, "TRANSITIONAL_GROW_CONFIG_FILE", root / "grow.json"),
+            ):
+                data = server.post_camera_capture(camera_id="rpicam_cam0")
+
+            self.assertEqual(data["camera_id"], "rpicam_cam0")
+
     def test_get_camera_captures_returns_normalized_items(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -95,6 +115,7 @@ class CameraApiTests(unittest.TestCase):
             self.assertEqual(data["limit"], 1)
             self.assertEqual(data["offset"], 1)
             self.assertTrue(data["has_more"])
+            self.assertEqual(data["total"], 3)
 
     def test_get_camera_image_by_key_returns_file_response(self):
         with tempfile.TemporaryDirectory() as tmp:

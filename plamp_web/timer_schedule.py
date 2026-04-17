@@ -15,59 +15,69 @@ def _as_int(value: Any, field: str) -> int:
         raise ValueError(f"{field} must be an integer") from exc
 
 
-def channel_metadata_for_role(role: str, role_config: dict[str, Any], state: dict[str, Any] | None) -> list[dict[str, Any]]:
-    channels = role_config.get("channels")
-    if isinstance(channels, list):
-        result: list[dict[str, Any]] = []
-        for index, channel in enumerate(channels):
-            if not isinstance(channel, dict):
-                raise ValueError(f"channel {index} must be an object")
-            channel_id = channel.get("id")
-            name = channel.get("name") or channel_id
-            pin = channel.get("pin")
-            event_type = channel.get("type", "gpio")
-            default_editor = channel.get("default_editor", "cycle")
-            if not isinstance(channel_id, str) or not channel_id:
-                raise ValueError(f"channel {index} id must be a non-empty string")
-            if not isinstance(name, str) or not name:
-                raise ValueError(f"channel {channel_id} name must be a non-empty string")
-            pin_int = _as_int(pin, f"channel {channel_id} pin")
-            if pin_int < 0 or pin_int > 29:
-                raise ValueError(f"channel {channel_id} pin must be in range 0..29")
-            if event_type not in {"gpio", "pwm"}:
-                raise ValueError(f"channel {channel_id} type must be gpio or pwm")
-            if default_editor not in {"cycle", "clock_window"}:
-                default_editor = "cycle"
-            result.append(
-                {
-                    "role": role,
-                    "id": channel_id,
-                    "name": name,
-                    "pin": pin_int,
-                    "type": event_type,
-                    "default_editor": default_editor,
-                }
-            )
-        return result
-
-    events = state.get("events", []) if isinstance(state, dict) else []
-    result = []
-    if not isinstance(events, list):
-        return result
-    for index, event in enumerate(events):
+def _events_by_pin(events: list[dict[str, Any]] | None) -> dict[int, dict[str, Any]]:
+    result: dict[int, dict[str, Any]] = {}
+    for event in events or []:
         if not isinstance(event, dict):
             continue
-        pin = event.get("ch")
-        event_id = event.get("id") if isinstance(event.get("id"), str) and event.get("id") else f"pin-{pin if pin is not None else index}"
-        name = event.get("id") if isinstance(event.get("id"), str) and event.get("id") else f"pin {pin if pin is not None else index}"
+        try:
+            pin = int(event.get("pin"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= pin <= 29:
+            result[pin] = event
+    return result
+
+
+def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str, Any] | None) -> list[dict[str, Any]]:
+    devices = config.get("devices", {})
+    if not isinstance(devices, dict):
+        raise ValueError("devices must be an object")
+
+    events = state.get("events", []) if isinstance(state, dict) else []
+    if not isinstance(events, list):
+        events = []
+    live_by_pin = _events_by_pin(events)
+
+    result: list[dict[str, Any]] = []
+    for device_id in devices:
+        device = devices[device_id]
+        if not isinstance(device, dict):
+            raise ValueError(f"device {device_id} must be an object")
+        if device.get("controller") != role:
+            continue
+        pin = _as_int(device.get("pin"), f"device {device_id} pin")
+        if pin < 0 or pin > 29:
+            raise ValueError(f"device {device_id} pin must be in range 0..29")
+        default_editor = device.get("editor", "cycle")
+        if default_editor not in {"cycle", "clock_window"}:
+            default_editor = "cycle"
+        live_event = live_by_pin.get(pin)
+        configured_type = device.get("type")
+        if configured_type in {"gpio", "pwm"}:
+            event_type = configured_type
+        elif isinstance(live_event, dict):
+            event_type = live_event.get("type", "gpio")
+        else:
+            event_type = "gpio"
+        if event_type not in {"gpio", "pwm"}:
+            event_type = "gpio"
+        live_pin = pin
+        if isinstance(live_event, dict):
+            try:
+                candidate_pin = int(live_event.get("pin"))
+            except (TypeError, ValueError):
+                candidate_pin = pin
+            if 0 <= candidate_pin <= 29:
+                live_pin = candidate_pin
         result.append(
             {
                 "role": role,
-                "id": event_id,
-                "name": name,
-                "pin": pin,
-                "type": event.get("type", "gpio"),
-                "default_editor": "cycle",
+                "id": device_id,
+                "name": device_id,
+                "pin": live_pin,
+                "type": event_type,
+                "default_editor": default_editor,
             }
         )
     return result
@@ -164,7 +174,7 @@ def _event_key(event: dict[str, Any], index: int) -> str:
     event_id = event.get("id")
     if isinstance(event_id, str) and event_id:
         return event_id
-    pin = event.get("ch")
+    pin = event.get("pin")
     return f"pin-{pin if pin is not None else index}"
 
 
@@ -189,6 +199,16 @@ def _resync_unedited_event(event: dict[str, Any], live_event: dict[str, Any] | N
     return updated
 
 
+def _new_channel_event(channel: dict[str, Any], channel_id: str) -> dict[str, Any]:
+    return {
+        "id": channel_id,
+        "type": channel.get("type", "gpio"),
+        "pin": channel.get("pin"),
+        "current_t": 0,
+        "reschedule": 1,
+    }
+
+
 def patch_channel_schedule(
     state: dict[str, Any],
     channels: list[dict[str, Any]],
@@ -206,6 +226,7 @@ def patch_channel_schedule(
     if channel is None:
         raise ValueError(f"unknown channel: {channel_id}")
     live_by_id = _live_event_by_id(live_events)
+    live_by_pin = _events_by_pin(live_events)
     updated_events = []
     found = False
     for index, event in enumerate(events):
@@ -214,15 +235,22 @@ def patch_channel_schedule(
             continue
         event_id = _event_key(event, index)
         live_event = live_by_id.get(event_id)
-        if event_id == channel_id:
+        if live_event is None:
+            live_event = live_by_pin.get(event.get("pin"))
+        if event_id == channel_id or event.get("pin") == channel.get("pin"):
             found = True
-            if event.get("ch") != channel.get("pin") or event.get("type") != channel.get("type"):
+            updated_event = dict(event)
+            updated_event["id"] = channel_id
+            if event_id == channel_id:
+                updated_event["pin"] = channel.get("pin")
+                updated_event["type"] = channel.get("type")
+            elif updated_event.get("pin") != channel.get("pin") or updated_event.get("type") != channel.get("type"):
                 raise ValueError(f"channel {channel_id} does not match scheduler event pin/type")
             mode = schedule.get("mode")
             if mode == "cycle":
                 updated_events.append(
                     apply_cycle_schedule(
-                        event,
+                        updated_event,
                         on_seconds=_as_int(schedule.get("on_seconds"), "on_seconds"),
                         off_seconds=_as_int(schedule.get("off_seconds"), "off_seconds"),
                         start_at_seconds=_as_int(schedule.get("start_at_seconds", 0), "start_at_seconds"),
@@ -231,7 +259,7 @@ def patch_channel_schedule(
             elif mode == "clock_window":
                 updated_events.append(
                     apply_clock_window_schedule(
-                        event,
+                        updated_event,
                         on_time=str(schedule.get("on_time", "")),
                         off_time=str(schedule.get("off_time", "")),
                         now=now,
@@ -242,7 +270,28 @@ def patch_channel_schedule(
         else:
             updated_events.append(_resync_unedited_event(event, live_event))
     if not found:
-        raise ValueError(f"missing scheduler event for channel: {channel_id}")
+        base_event = _new_channel_event(channel, channel_id)
+        mode = schedule.get("mode")
+        if mode == "cycle":
+            updated_events.append(
+                apply_cycle_schedule(
+                    base_event,
+                    on_seconds=_as_int(schedule.get("on_seconds"), "on_seconds"),
+                    off_seconds=_as_int(schedule.get("off_seconds"), "off_seconds"),
+                    start_at_seconds=_as_int(schedule.get("start_at_seconds", 0), "start_at_seconds"),
+                )
+            )
+        elif mode == "clock_window":
+            updated_events.append(
+                apply_clock_window_schedule(
+                    base_event,
+                    on_time=str(schedule.get("on_time", "")),
+                    off_time=str(schedule.get("off_time", "")),
+                    now=now,
+                )
+            )
+        else:
+            raise ValueError("mode must be cycle or clock_window")
     updated = dict(state)
     updated["events"] = updated_events
     return updated

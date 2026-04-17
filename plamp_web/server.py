@@ -21,8 +21,9 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from plamp_web import camera_capture
+from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.hardware_config import apply_config_section, config_view, empty_config
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -36,6 +37,9 @@ LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+HOSTNAME_RE = re.compile(
+    r"^(?=.{1,63}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
+)
 LOGGER = logging.getLogger("plamp_web")
 
 config_lock = threading.Lock()
@@ -71,7 +75,7 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     TIMERS_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
-        atomic_write_json(CONFIG_FILE, {"timers": []})
+        atomic_write_json(CONFIG_FILE, empty_config())
 
 
 def configure_logging() -> None:
@@ -115,38 +119,73 @@ def atomic_write_json(path: Path, data: Any) -> None:
     os.replace(tmp, path)
 
 
-def load_config() -> dict[str, Any]:
+def load_raw_config() -> dict[str, Any]:
     ensure_data_dir()
     data = load_json_file(CONFIG_FILE)
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail="config.json must be an object")
-    timers = data.get("timers")
-    if not isinstance(timers, list):
-        raise HTTPException(status_code=500, detail="config.json timers must be a list")
+    for section in ("controllers", "devices", "cameras"):
+        value = data.get(section, {})
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=500, detail=f"config.json {section} must be an object")
     return data
 
 
-def timer_roles() -> dict[str, dict[str, Any]]:
-    roles: dict[str, dict[str, Any]] = {}
-    for index, item in enumerate(load_config()["timers"]):
+def load_config() -> dict[str, Any]:
+    data = load_raw_config()
+    result = {section: data.get(section, {}) for section in ("controllers", "devices", "cameras")}
+    try:
+        return config_view(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def normalize_camera_key(value: Any) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "").strip())
+
+
+def normalized_detected_cameras(cameras: Any) -> list[dict[str, Any]]:
+    if not isinstance(cameras, list):
+        return []
+    result = []
+    for item in cameras:
         if not isinstance(item, dict):
-            raise HTTPException(status_code=500, detail=f"config timer {index} must be an object")
-        role = item.get("role")
-        serial = item.get("pico_serial")
+            continue
+        normalized = dict(item)
+        key = normalize_camera_key(item.get("key"))
+        if key:
+            normalized["key"] = key
+        result.append(normalized)
+    return result
+
+
+def timer_roles() -> dict[str, dict[str, Any]]:
+    config = load_config()
+    controllers = config.get("controllers", {})
+    if not isinstance(controllers, dict):
+        raise HTTPException(status_code=500, detail="config controllers must be an object")
+    return controllers
+
+
+def configured_monitor_serials() -> dict[str, str]:
+    result: dict[str, str] = {}
+    for role, item in timer_roles().items():
         if not isinstance(role, str) or not ROLE_RE.match(role):
-            raise HTTPException(status_code=500, detail=f"config timer {index} has invalid role")
-        if not isinstance(serial, str) or not serial:
-            raise HTTPException(status_code=500, detail=f"config timer {role} missing pico_serial")
-        roles[role] = item
-    return roles
+            raise HTTPException(status_code=500, detail=f"invalid controller role: {role}")
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=500, detail=f"controller {role} must be an object")
+        serial = item.get("pico_serial")
+        if isinstance(serial, str) and serial:
+            result[role] = serial
+    return result
 
 
 def role_for_serial(serial: str | None) -> str | None:
     if not serial:
         return None
     try:
-        for role, item in timer_roles().items():
-            if item.get("pico_serial") == serial:
+        for role, configured_serial in configured_monitor_serials().items():
+            if configured_serial == serial:
                 return role
     except HTTPException:
         return None
@@ -159,6 +198,13 @@ def timer_role(role: str) -> dict[str, Any]:
     if item is None:
         raise HTTPException(status_code=404, detail=f"unknown timer role: {role}")
     return item
+
+
+def pico_serial_for_role(role: str) -> str:
+    serial = timer_role(role).get("pico_serial")
+    if not isinstance(serial, str) or not serial:
+        raise HTTPException(status_code=409, detail=f"timer role {role} has no configured pico_serial")
+    return serial
 
 
 def timer_state_path(role: str) -> Path:
@@ -194,18 +240,18 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
     for i, src in enumerate(raw_events):
         if not isinstance(src, dict):
             raise HTTPException(status_code=422, detail=f"event {i} must be an object")
-        for name in ["type", "ch", "current_t", "reschedule", "pattern"]:
+        for name in ["type", "pin", "current_t", "reschedule", "pattern"]:
             if name not in src:
                 raise HTTPException(status_code=422, detail=f"event {i} missing field: {name}")
 
         event_type = src["type"]
         if event_type not in {"gpio", "pwm"}:
             raise HTTPException(status_code=422, detail=f"event {i} type must be gpio or pwm")
-        ch = require_int(src["ch"], f"event {i} ch must be an integer")
+        pin = require_int(src["pin"], f"event {i} pin must be an integer")
         current_t = require_int(src["current_t"], f"event {i} current_t must be an integer")
         reschedule = 1 if require_int(src["reschedule"], f"event {i} reschedule must be an integer") else 0
-        if ch < 0 or ch > 29:
-            raise HTTPException(status_code=422, detail=f"event {i} ch must be in range 0..29")
+        if pin < 0 or pin > 29:
+            raise HTTPException(status_code=422, detail=f"event {i} pin must be in range 0..29")
         if current_t < 0:
             raise HTTPException(status_code=422, detail=f"event {i} current_t must be >= 0")
 
@@ -236,7 +282,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 
         event = {
             "type": event_type,
-            "ch": ch,
+            "pin": pin,
             "current_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,
@@ -251,7 +297,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 
 
 def pico_for_role(role: str) -> dict[str, Any]:
-    serial = timer_role(role)["pico_serial"]
+    serial = pico_serial_for_role(role)
     for pico in enumerate_picos():
         if pico.get("serial") == serial:
             return pico
@@ -335,6 +381,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
             reduced_events.append(event)
             continue
         item = dict(event)
+        old_pin_key = "c" + "h"
+        if "pin" not in item and old_pin_key in item:
+            item["pin"] = item.pop(old_pin_key)
+        elif old_pin_key in item:
+            item.pop(old_pin_key)
         if "elapsed_t" not in item:
             elapsed_t = event_elapsed_t(item)
             if elapsed_t is not None:
@@ -347,11 +398,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
             value = current_value_for_event(item)
             if value is not None:
                 item["current_value"] = value
-        event_id = str(item.get("id") or item.get("ch") or index)
+        event_id = str(item.get("id") or item.get("pin") or index)
         pins[event_id] = {
             "id": item.get("id"),
             "type": item.get("type"),
-            "ch": item.get("ch"),
+            "pin": item.get("pin"),
             "elapsed_t": item.get("elapsed_t"),
             "cycle_t": item.get("cycle_t"),
             "current_value": item.get("current_value"),
@@ -676,8 +727,7 @@ class PicoMonitor:
 
 
 def get_or_start_monitor(role: str) -> PicoMonitor:
-    item = timer_role(role)
-    pico_serial = str(item["pico_serial"])
+    pico_serial = pico_serial_for_role(role)
     with monitors_lock:
         monitor = monitors.get(role)
         if monitor is None or monitor.pico_serial != pico_serial:
@@ -691,10 +741,28 @@ def get_or_start_monitor(role: str) -> PicoMonitor:
 
 def start_configured_monitors() -> None:
     try:
-        roles = timer_roles()
+        roles = configured_monitor_serials()
     except HTTPException:
         return
     for role in roles:
+        get_or_start_monitor(role)
+
+
+def reconcile_configured_monitors() -> None:
+    try:
+        serials = configured_monitor_serials()
+    except HTTPException:
+        return
+    stale = []
+    with monitors_lock:
+        for role, monitor in list(monitors.items()):
+            if role not in serials or monitor.pico_serial != serials[role]:
+                stale.append(monitors.pop(role))
+    for monitor in stale:
+        monitor.stop()
+    for monitor in stale:
+        monitor.join()
+    for role in sorted(serials):
         get_or_start_monitor(role)
 
 
@@ -1013,7 +1081,7 @@ def live_events_for_role(role: str) -> list[dict[str, Any]]:
 
 def configured_timer_roles() -> list[str]:
     try:
-        return sorted(timer_roles())
+        return list(timer_roles())
     except HTTPException:
         return []
 
@@ -1021,21 +1089,34 @@ def configured_timer_roles() -> list[str]:
 def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     try:
-        roles = timer_roles()
+        config = load_config()
+        roles = list(config.get("controllers", {}))
     except HTTPException:
         return result
-    for role, item in roles.items():
+    for role in roles:
         try:
             state = state_for_role(role)
-            result[role] = channel_metadata_for_role(role, item, state)
-        except (HTTPException, ValueError):
+        except HTTPException:
+            state = None
+        try:
+            result[role] = channel_metadata_for_role(role, config, state)
+        except ValueError:
             result[role] = []
     return result
 
 
-def configured_time_format() -> str:
+
+def configured_camera_ids() -> list[str]:
     try:
         config = load_config()
+    except HTTPException:
+        return []
+    cameras = config.get("cameras", {})
+    return list(cameras) if isinstance(cameras, dict) else []
+
+def configured_time_format() -> str:
+    try:
+        config = load_raw_config()
     except HTTPException:
         config = {}
     return "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
@@ -1098,7 +1179,10 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
 
 
 def settings_summary() -> dict[str, Any]:
+    config_data = config_response()
     return {
+        "config": config_data["config"],
+        "detected": config_data["detected"],
         "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
@@ -1113,6 +1197,7 @@ def settings_summary() -> dict[str, Any]:
             "pyserial": getattr(serial, "VERSION", "unknown"),
         },
         "software": software_summary(),
+        "cameras": {"rpicam": hardware_inventory.detect_rpicam_cameras()},
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
         "state": {
@@ -1126,9 +1211,114 @@ def settings_summary() -> dict[str, Any]:
     }
 
 
+def validate_hostname(value: object) -> str:
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="hostname must be a string")
+    hostname = value.strip()
+    if not HOSTNAME_RE.fullmatch(hostname):
+        raise HTTPException(
+            status_code=422,
+            detail="hostname must be 1-63 letters, numbers, or hyphens, and cannot start or end with a hyphen",
+        )
+    return hostname
+
+
+def apply_hostname(hostname: str) -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            ["hostnamectl", "set-hostname", hostname],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="hostname update timed out") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"hostname update failed: {exc}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "hostname update failed").strip()
+        raise HTTPException(status_code=409, detail=detail)
+    return {
+        "hostname": hostname,
+        "message": "hostname updated; reconnect or reboot may be required",
+    }
+
+
+@app.get("/api/host-config")
+def get_host_config() -> dict[str, Any]:
+    return {"hostname": socket.gethostname()}
+
+
+@app.post("/api/host-config/hostname")
+def post_host_config_hostname(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return apply_hostname(validate_hostname(payload.get("hostname")))
+
+
 @app.get("/api/logs")
 def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
+
+
+def config_response() -> dict[str, Any]:
+    return {
+        "config": load_config(),
+        "detected": {
+            "picos": enumerate_picos(),
+            "cameras": normalized_detected_cameras(hardware_inventory.detect_rpicam_cameras()),
+        },
+    }
+
+
+@app.get("/api/config")
+def get_config() -> dict[str, Any]:
+    return config_response()
+
+
+@app.put("/api/config")
+def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    with config_lock:
+        raw_config = load_raw_config()
+        submitted = {name: config.get(name, {}) for name in ("controllers", "devices", "cameras")}
+        try:
+            updated = config_view(submitted)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        saved = dict(raw_config)
+        saved.update(updated)
+        atomic_write_json(CONFIG_FILE, saved)
+    reconcile_configured_monitors()
+    return config_response()
+
+
+def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
+    with config_lock:
+        raw_config = load_raw_config()
+        config = {name: raw_config.get(name, {}) for name in ("controllers", "devices", "cameras")}
+        try:
+            updated = apply_config_section(config, section, value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        saved = dict(raw_config)
+        saved.update(updated)
+        atomic_write_json(CONFIG_FILE, saved)
+    reconcile_configured_monitors()
+    return config_response()
+
+
+@app.put("/api/config/controllers")
+def put_config_controllers(controllers: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("controllers", controllers)
+
+
+@app.put("/api/config/devices")
+def put_config_devices(devices: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("devices", devices)
+
+
+@app.put("/api/config/cameras")
+def put_config_cameras(cameras: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return put_config_section("cameras", cameras)
 
 
 @app.get("/api/timer-config")
@@ -1150,20 +1340,20 @@ def get_camera_captures(
 ) -> dict[str, Any]:
     safe_limit = max(0, min(limit, 200))
     safe_offset = max(0, offset)
-    captures = camera_capture.list_camera_captures(
+    all_captures = camera_capture.collect_camera_captures(
         repo_root=camera_capture.REPO_ROOT,
         data_dir=camera_capture.DATA_DIR,
         grows_dir=camera_capture.GROWS_DIR,
         source=source,
         grow_id=grow_id,
-        limit=safe_limit + 1,
-        offset=safe_offset,
     )
+    captures = all_captures[safe_offset : safe_offset + safe_limit + 1]
     return {
         "captures": captures[:safe_limit],
         "limit": safe_limit,
         "offset": safe_offset,
         "has_more": len(captures) > safe_limit,
+        "total": len(all_captures),
     }
 
 
@@ -1176,13 +1366,14 @@ def get_camera_image_by_key(image_key: str) -> FileResponse:
 
 
 @app.post("/api/camera/captures")
-def post_camera_capture() -> dict[str, Any]:
+def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
     try:
         return camera_capture.capture_camera_image(
             repo_root=camera_capture.REPO_ROOT,
             data_dir=camera_capture.DATA_DIR,
             config_file=camera_capture.CONFIG_FILE,
             grow_config_file=camera_capture.TRANSITIONAL_GROW_CONFIG_FILE,
+            camera_id=camera_id,
         )
     except camera_capture.CameraCaptureError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -1198,12 +1389,16 @@ def get_camera_capture_image(capture_id: str) -> FileResponse:
 
 @app.post("/api/timers/{role}/channels/{channel_id}/schedule")
 def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    role_config = timer_role(role)
-    current_state = state_for_role(role)
-    channels = channel_metadata_for_role(role, role_config, current_state)
+    config = load_config()
+    timer_role(role)
+    path = timer_state_path(role)
+    saved_state = load_json_file(path)
+    live_state = latest_timer_state(role)
+    channel_state = live_state if isinstance(live_state, dict) else saved_state
+    channels = channel_metadata_for_role(role, config, channel_state)
     try:
         updated = patch_channel_schedule(
-            current_state,
+            saved_state,
             channels,
             channel_id,
             schedule,
@@ -1213,15 +1408,20 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     validated = validate_timer_state(updated)
-    path = timer_state_path(role)
+    sent = None
+    message = "schedule saved and sent to Pico"
     with lock_for(role_locks, role):
         atomic_write_json(path, validated)
-        sent = apply_timer_state(role, path)
+        try:
+            sent = apply_timer_state(role, path)
+        except HTTPException as exc:
+            detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
+            message = f"schedule saved; {detail}"
     return {
         "role": role,
         "channel": channel_id,
         "success": True,
-        "message": "schedule saved and sent to Pico",
+        "message": message,
         "pico": sent,
         "state": state_with_current_values(validated),
     }
@@ -1244,10 +1444,21 @@ def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
 
 
+def default_timer_payload_for_api_test(default_role: str | None) -> str:
+    if not default_role:
+        return "{}"
+    try:
+        return json.dumps(load_json_file(timer_state_path(default_role)), indent=2)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return "{}"
+        raise
+
+
 def api_test_page_response() -> HTMLResponse:
     roles = configured_timer_roles()
     default_role = roles[0] if roles else "pump_lights"
-    default_payload = json.dumps(load_json_file(timer_state_path(default_role)), indent=2) if roles else "{}"
+    default_payload = default_timer_payload_for_api_test(default_role if roles else None)
     return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format()))
 
 
@@ -1284,5 +1495,6 @@ def get_timer_dashboard_page() -> HTMLResponse:
             configured_time_format(),
             configured_timer_channels(),
             seconds_since_midnight(),
+            configured_camera_ids(),
         )
     )
