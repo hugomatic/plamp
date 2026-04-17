@@ -27,7 +27,7 @@ class HardwareConfigTests(unittest.TestCase):
     def test_config_view_ignores_legacy_top_level_keys(self):
         config = {
             "controllers": {"ctrl_a": {"pico_serial": "PICO123"}},
-            "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+            "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
             "cameras": {"cam_1": {}},
             "timers": {"legacy": {}},
             "hardware": {"legacy": True},
@@ -36,7 +36,7 @@ class HardwareConfigTests(unittest.TestCase):
             config_view(config),
             {
                 "controllers": {"ctrl_a": {"pico_serial": "PICO123"}},
-                "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+                "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
                 "cameras": {"cam_1": {}},
             },
         )
@@ -50,7 +50,13 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_devices_defaults_missing_editor(self):
         self.assertEqual(
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3}}, {"ctrl_a": {}}),
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "gpio"}},
+        )
+
+    def test_validate_devices_allows_configured_pin_type(self):
+        self.assertEqual(
+            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "pwm"}}, {"ctrl_a": {}}),
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "pwm"}},
         )
 
     def test_validate_devices_requires_known_controller(self):
@@ -63,6 +69,8 @@ class HardwareConfigTests(unittest.TestCase):
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 30, "editor": "cycle"}}, controllers)
         with self.assertRaises(ValueError):
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "bad"}}, controllers)
+        with self.assertRaises(ValueError):
+            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "bad"}}, controllers)
 
     def test_validate_devices_rejects_duplicate_pin_per_controller(self):
         controllers = {"ctrl_a": {}, "ctrl_b": {}}
@@ -89,7 +97,7 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_devices_allows_optional_label(self):
         self.assertEqual(
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "label": "Main pump"}}, {"ctrl_a": {}}),
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "label": "Main pump"}},
+            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "gpio", "label": "Main pump"}},
         )
 
     def test_validate_cameras_allows_optional_label(self):
@@ -112,7 +120,7 @@ class HardwareConfigTests(unittest.TestCase):
             "devices",
             {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"}},
         )
-        self.assertEqual(updated["devices"], {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"}})
+        self.assertEqual(updated["devices"], {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "clock_window"}})
 
     def test_apply_config_section_controllers_happy_path_and_runtime_serials(self):
         config = {

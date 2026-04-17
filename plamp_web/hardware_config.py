@@ -8,6 +8,7 @@ import re
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _EDITORS = {"cycle", "clock_window"}
+_PIN_TYPES = {"gpio", "pwm"}
 _CONFIG_KEYS = ("controllers", "devices", "cameras")
 
 
@@ -65,16 +66,19 @@ def validate_devices(value, controllers):
         if not _is_valid_id(device_id):
             raise ValueError(f"invalid device id: {device_id!r}")
         device_value = _as_mapping(device_value, f"device {device_id}")
-        extra_keys = set(device_value) - {"controller", "pin", "editor", "label"}
+        extra_keys = set(device_value) - {"controller", "pin", "type", "editor", "label"}
         if extra_keys:
             raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
         controller = device_value.get("controller")
         pin = device_value.get("pin")
+        pin_type = device_value.get("type", "gpio")
         editor = device_value.get("editor", "cycle")
         if controller not in controllers:
             raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
+        if pin_type not in _PIN_TYPES:
+            raise ValueError(f"device {device_id} type must be one of {sorted(_PIN_TYPES)!r}")
         if editor not in _EDITORS:
             raise ValueError(f"device {device_id} editor must be one of {sorted(_EDITORS)!r}")
         pin_key = (controller, pin)
@@ -85,6 +89,7 @@ def validate_devices(value, controllers):
         devices[device_id] = {
             "controller": controller,
             "pin": pin,
+            "type": pin_type,
             "editor": editor,
         }
         if label:

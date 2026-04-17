@@ -11,8 +11,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('href="/config"', html)
 
 
-    def test_pages_use_same_three_link_nav(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>'
+    def test_pages_use_same_nav_with_github_link(self):
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
         settings_summary = {
             "config": {"controllers": {}, "devices": {}, "cameras": {}},
             "detected": {"picos": [], "cameras": []},
@@ -374,6 +374,21 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="hostname-confirm"', html)
         self.assertIn('id="hostname-status"', html)
         self.assertIn('/api/host-config/hostname', html)
+
+    def test_settings_page_links_to_new_github_issue(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('href="https://github.com/hugomatic/plamp/issues/new"', html)
+        self.assertIn("Report an issue", html)
 
     def test_api_test_page_includes_config_routes(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")

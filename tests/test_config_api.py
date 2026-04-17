@@ -171,7 +171,7 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
         self.assertEqual(data["config"]["devices"]["pump"]["pin"], 3)
-        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
+        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"})
 
     def test_put_config_devices_preserves_unrelated_top_level_keys(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -194,7 +194,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["time_format"], "12h")
         self.assertEqual(saved["camera"], {"ir_filter": "auto"})
         self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
-        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "editor": "cycle"})
+        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"})
 
     def test_reduce_report_normalizes_old_pin_key(self):
         old_pin_key = "c" + "h"
@@ -245,7 +245,7 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "state_for_role", return_value=state),
             ):
                 initial = server.get_timer_config()
-                server.put_config_devices({"fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"}})
+                server.put_config_devices({"fan": {"controller": "sprouter", "pin": 3, "type": "pwm", "editor": "cycle"}})
                 updated = server.get_timer_config()
 
         self.assertEqual(

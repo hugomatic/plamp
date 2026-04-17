@@ -53,7 +53,13 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
         if default_editor not in {"cycle", "clock_window"}:
             default_editor = "cycle"
         live_event = live_by_pin.get(pin)
-        event_type = live_event.get("type", "gpio") if isinstance(live_event, dict) else "gpio"
+        configured_type = device.get("type")
+        if configured_type in {"gpio", "pwm"}:
+            event_type = configured_type
+        elif isinstance(live_event, dict):
+            event_type = live_event.get("type", "gpio")
+        else:
+            event_type = "gpio"
         if event_type not in {"gpio", "pwm"}:
             event_type = "gpio"
         live_pin = pin
@@ -235,7 +241,10 @@ def patch_channel_schedule(
             found = True
             updated_event = dict(event)
             updated_event["id"] = channel_id
-            if updated_event.get("pin") != channel.get("pin") or updated_event.get("type") != channel.get("type"):
+            if event_id == channel_id:
+                updated_event["pin"] = channel.get("pin")
+                updated_event["type"] = channel.get("type")
+            elif updated_event.get("pin") != channel.get("pin") or updated_event.get("type") != channel.get("type"):
                 raise ValueError(f"channel {channel_id} does not match scheduler event pin/type")
             mode = schedule.get("mode")
             if mode == "cycle":

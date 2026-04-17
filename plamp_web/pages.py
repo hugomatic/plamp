@@ -5,7 +5,9 @@ import json
 import re
 from typing import Any
 
-MAIN_NAV = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a></nav>'
+GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
+GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
+MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
 
 
 def normalize_camera_key(value: Any) -> str:
@@ -77,6 +79,10 @@ def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
     return "\n".join(options)
 
 
+def pin_type_options(selected: str | None) -> str:
+    return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
+
+
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
     devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
@@ -124,11 +130,13 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><select class="device-controller">{controller_options_html}</select></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+            '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
                 device_id=html.escape(device_id, quote=True),
                 controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("type") or "gpio")),
                 editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
             )
         )
@@ -137,9 +145,11 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         '<td><input class="device-id" placeholder="pump" value=""></td>'
         '<td><select class="device-controller">{controller_options_html}</select></td>'
         '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
+        '<td><select class="device-type">{type_options}</select></td>'
         '<td><select class="device-editor">{editor_options}</select></td>'
         '</tr>'.format(
             controller_options_html=controller_options(controllers, ""),
+            type_options=pin_type_options("gpio"),
             editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
         )
     )
@@ -201,7 +211,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   <table><thead><tr><th>ID</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows_html}</tbody></table>
   <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
   <h2>Devices</h2>
-  <table><thead><tr><th>ID</th><th>Controller</th><th>Pin</th><th>Editor</th></tr></thead><tbody>{device_rows_html}</tbody></table>
+  <table><thead><tr><th>ID</th><th>Controller</th><th>Pin</th><th>Type</th><th>Editor</th></tr></thead><tbody>{device_rows_html}</tbody></table>
   <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
   <h2>Cameras</h2>
   <table><thead><tr><th>ID</th><th>Detected</th></tr></thead><tbody>{camera_rows_html}</tbody></table>
@@ -223,7 +233,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         const key = row.querySelector(".device-id").value.trim();
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
-        result[key] = {{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), editor: row.querySelector(".device-editor").value}};
+        result[key] = {{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value}};
       }}
       return result;
     }}
@@ -312,12 +322,14 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
             '<td><select class="device-controller">{controller_options_html}</select></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
+            '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
                 controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("type") or "gpio")),
                 editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
             )
         )
@@ -327,9 +339,11 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<td><input class="device-label" placeholder="Water pump" value=""></td>'
         '<td><select class="device-controller">{controller_options_html}</select></td>'
         '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
+        '<td><select class="device-type">{type_options}</select></td>'
         '<td><select class="device-editor">{editor_options}</select></td>'
         '</tr>'.format(
             controller_options_html=controller_options(controllers, ""),
+            type_options=pin_type_options("gpio"),
             editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
         )
     )
@@ -450,6 +464,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   {MAIN_NAV}
   <h1>Settings</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
+  <p><a href="{GITHUB_NEW_ISSUE_URL}">Report an issue</a></p>
 
   <section aria-label="Plamp config">
     <h2>Plamp config</h2>
@@ -458,7 +473,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead><tbody>{''.join(controller_rows)}</tbody></table>
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <h3>Devices</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Controller</th><th>Pin</th><th>Editor</th></tr></thead><tbody>{''.join(device_rows)}</tbody></table>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Controller</th><th>Pin</th><th>Type</th><th>Editor</th></tr></thead><tbody>{''.join(device_rows)}</tbody></table>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
     <table><thead><tr><th>ID</th><th>Label</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
@@ -514,7 +529,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
         if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}

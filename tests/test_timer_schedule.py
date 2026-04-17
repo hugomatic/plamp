@@ -15,7 +15,7 @@ class TimerScheduleTests(unittest.TestCase):
         config = {
             "controllers": {"sprouter": {"pico_serial": "abc123"}, "other": {"pico_serial": "def456"}},
             "devices": {
-                "lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"},
+                "lamp": {"controller": "sprouter", "pin": 2, "type": "pwm", "editor": "clock_window"},
                 "fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"},
                 "pump": {"controller": "other", "pin": 4, "editor": "cycle"},
             },
@@ -33,6 +33,19 @@ class TimerScheduleTests(unittest.TestCase):
             [
                 {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
                 {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+            ],
+        )
+
+    def test_channel_metadata_uses_configured_type_when_no_live_event_exists(self):
+        config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}},
+            "devices": {"lamp": {"controller": "sprouter", "pin": 2, "type": "pwm", "editor": "clock_window"}},
+        }
+
+        self.assertEqual(
+            channel_metadata_for_role("sprouter", config, {"events": []}),
+            [
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
             ],
         )
 
@@ -145,8 +158,18 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["events"][1]["id"], "fan")
         self.assertEqual(updated["events"][1]["current_t"], 44)
 
-    def test_patch_channel_schedule_rejects_pin_type_mismatch(self):
+    def test_patch_channel_schedule_migrates_id_matched_pin_change(self):
         state = {"report_every": 1, "events": [{"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
+
+        updated = patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 0})
+
+        self.assertEqual(updated["events"][0]["pin"], 3)
+        self.assertEqual(updated["events"][0]["type"], "gpio")
+        self.assertEqual(updated["events"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+
+    def test_patch_channel_schedule_rejects_pin_match_with_wrong_type(self):
+        state = {"report_every": 1, "events": [{"id": "other", "type": "pwm", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):
