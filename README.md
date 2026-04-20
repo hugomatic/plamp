@@ -80,6 +80,41 @@ Open:
 http://<raspberry-pi-ip>/
 ```
 
+## Start on boot
+
+nginx starts on boot after installation. To also start the Plamp app on boot,
+install the systemd service from the repo root as the user that should run
+Plamp:
+
+```bash
+deploy/systemd/install-plamp-web-service.sh
+```
+
+The installer detects the current user, repo path, and `uv` path, then writes a
+machine-local `/etc/systemd/system/plamp-web.service`. It starts Uvicorn on
+`127.0.0.1:8000`, so nginx can keep serving the public port-80 URL.
+
+Check it:
+
+```bash
+sudo systemctl status plamp-web
+curl http://127.0.0.1:8000/
+curl http://127.0.0.1/
+```
+
+For development, stop the boot service before running Uvicorn manually:
+
+```bash
+sudo systemctl stop plamp-web
+uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Then restore the boot-managed server:
+
+```bash
+sudo systemctl start plamp-web
+```
+
 Useful pages:
 
 - `/` - main timer page

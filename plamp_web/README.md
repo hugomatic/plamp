@@ -35,6 +35,16 @@ Then open:
 http://<raspberry-pi-ip>/
 ```
 
+To start Uvicorn automatically after reboot, run this from the repo root as the
+user that should run Plamp:
+
+```bash
+deploy/systemd/install-plamp-web-service.sh
+```
+
+The installer writes `/etc/systemd/system/plamp-web.service` with the detected
+user, repo path, and `uv` path. nginx remains the public port-80 service.
+
 Pages:
 
 - `/` - timers and camera
