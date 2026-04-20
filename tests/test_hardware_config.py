@@ -35,7 +35,7 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(
             config_view(config),
             {
-                "controllers": {"ctrl_a": {"pico_serial": "PICO123"}},
+                "controllers": {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10}},
                 "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
                 "cameras": {"cam_1": {}},
             },
@@ -44,8 +44,31 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_controllers(self):
         self.assertEqual(
             validate_controllers({"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}}),
-            {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
+            {
+                "ctrl_a": {"type": "pico_scheduler", "report_every": 10},
+                "ctrl_b": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10},
+            },
         )
+
+    def test_validate_controllers_defaults_to_pico_scheduler_type_and_report_every(self):
+        self.assertEqual(
+            validate_controllers({"ctrl_a": {"pico_serial": "PICO123"}}),
+            {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10}},
+        )
+
+    def test_validate_controllers_accepts_pico_scheduler_report_every(self):
+        self.assertEqual(
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": 30}}),
+            {"ctrl_a": {"type": "pico_scheduler", "report_every": 30}},
+        )
+
+    def test_validate_controllers_rejects_invalid_type_and_report_every(self):
+        with self.assertRaisesRegex(ValueError, "controller ctrl_a type"):
+            validate_controllers({"ctrl_a": {"type": "ph_doser"}})
+        with self.assertRaisesRegex(ValueError, "report_every"):
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": 0}})
+        with self.assertRaisesRegex(ValueError, "report_every"):
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": True}})
 
     def test_validate_devices_defaults_missing_editor(self):
         self.assertEqual(
@@ -91,7 +114,7 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_controllers_allows_optional_label(self):
         self.assertEqual(
             validate_controllers({"ctrl_a": {"pico_serial": "PICO123", "label": "Pump lights"}}),
-            {"ctrl_a": {"pico_serial": "PICO123", "label": "Pump lights"}},
+            {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10, "label": "Pump lights"}},
         )
 
     def test_validate_devices_allows_optional_label(self):
@@ -133,7 +156,13 @@ class HardwareConfigTests(unittest.TestCase):
             "controllers",
             {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
         )
-        self.assertEqual(updated["controllers"], {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}})
+        self.assertEqual(
+            updated["controllers"],
+            {
+                "ctrl_a": {"type": "pico_scheduler", "report_every": 10},
+                "ctrl_b": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10},
+            },
+        )
         self.assertEqual(runtime_controller_serials(updated), {"ctrl_b": "PICO123"})
 
     def test_apply_config_section_validates_dependent_devices(self):

@@ -9,6 +9,9 @@ import re
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _EDITORS = {"cycle", "clock_window"}
 _PIN_TYPES = {"gpio", "pwm"}
+_CONTROLLER_TYPES = {"pico_scheduler"}
+_DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
+_DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "devices", "cameras")
 
 
@@ -35,6 +38,14 @@ def _optional_label(item: Mapping, label: str) -> str | None:
     return value
 
 
+def _required_positive_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{label} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
 def validate_controllers(value):
     value = _as_mapping(value, "controllers")
     controllers = {}
@@ -42,18 +53,31 @@ def validate_controllers(value):
         if not _is_valid_id(controller_id):
             raise ValueError(f"invalid controller id: {controller_id!r}")
         controller_value = _as_mapping(controller_value, f"controller {controller_id}")
-        extra_keys = set(controller_value) - {"pico_serial", "label"}
+        extra_keys = set(controller_value) - {"pico_serial", "label", "type", "report_every"}
         if extra_keys:
             raise ValueError(f"controller {controller_id} has unknown keys: {sorted(extra_keys)!r}")
+
+        controller_type = controller_value.get("type", _DEFAULT_CONTROLLER_TYPE)
+        if controller_type not in _CONTROLLER_TYPES:
+            raise ValueError(f"controller {controller_id} type must be one of {sorted(_CONTROLLER_TYPES)!r}")
+
         pico_serial = controller_value.get("pico_serial")
         if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
         label = _optional_label(controller_value, f"controller {controller_id}")
-        controllers[controller_id] = {}
+        controller = {"type": controller_type}
+        if controller_type == "pico_scheduler":
+            controller["report_every"] = _required_positive_int(
+                controller_value.get("report_every", _DEFAULT_REPORT_EVERY),
+                f"controller {controller_id} report_every",
+            )
+        elif "report_every" in controller_value:
+            raise ValueError(f"controller {controller_id} report_every is only valid for pico_scheduler")
         if pico_serial is not None:
-            controllers[controller_id]["pico_serial"] = pico_serial
+            controller["pico_serial"] = pico_serial
         if label:
-            controllers[controller_id]["label"] = label
+            controller["label"] = label
+        controllers[controller_id] = controller
     return controllers
 
 
