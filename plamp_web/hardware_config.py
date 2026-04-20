@@ -81,9 +81,26 @@ def validate_controllers(value):
     return controllers
 
 
+def controller_type(controller: Mapping) -> str:
+    value = controller.get("type", _DEFAULT_CONTROLLER_TYPE)
+    return str(value)
+
+
+def scheduler_controller_ids(controllers) -> set[str]:
+    controllers = _as_mapping(controllers, "controllers")
+    return {
+        controller_id
+        for controller_id, controller_value in controllers.items()
+        if isinstance(controller_id, str)
+        and isinstance(controller_value, Mapping)
+        and controller_type(controller_value) == "pico_scheduler"
+    }
+
+
 def validate_devices(value, controllers):
     value = _as_mapping(value, "devices")
     controllers = validate_controllers(controllers)
+    scheduler_controllers = scheduler_controller_ids(controllers)
     devices = {}
     used_pins = set()
     for device_id, device_value in value.items():
@@ -99,6 +116,8 @@ def validate_devices(value, controllers):
         editor = device_value.get("editor", "cycle")
         if controller not in controllers:
             raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
+        if controller not in scheduler_controllers:
+            raise ValueError(f"device {device_id} controller must reference a pico_scheduler controller: {controller!r}")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
         if pin_type not in _PIN_TYPES:

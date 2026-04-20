@@ -86,6 +86,32 @@ class HardwareConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_devices({"dev_1": {"controller": "missing", "pin": 3, "editor": "cycle"}}, {})
 
+    def test_validate_devices_requires_pico_scheduler_controller(self):
+        import plamp_web.hardware_config as hardware_config
+
+        controllers = {"timer": {"type": "pico_scheduler"}, "future": {"type": "future_controller"}}
+        original_types = hardware_config._CONTROLLER_TYPES
+        try:
+            hardware_config._CONTROLLER_TYPES = {"pico_scheduler", "future_controller"}
+            with self.assertRaisesRegex(ValueError, "pico_scheduler"):
+                validate_devices({"pump": {"controller": "future", "pin": 3}}, controllers)
+        finally:
+            hardware_config._CONTROLLER_TYPES = original_types
+
+    def test_scheduler_controller_ids_returns_only_pico_scheduler_controllers(self):
+        from plamp_web.hardware_config import scheduler_controller_ids
+
+        self.assertEqual(
+            scheduler_controller_ids(
+                {
+                    "timer": {"type": "pico_scheduler"},
+                    "legacy": {},
+                    "future": {"type": "future_controller"},
+                }
+            ),
+            {"timer", "legacy"},
+        )
+
     def test_validate_devices_requires_valid_editor_and_pin(self):
         controllers = {"ctrl_a": {}}
         with self.assertRaises(ValueError):
