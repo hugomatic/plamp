@@ -130,6 +130,25 @@ Runtime config is stored in:
 data/config.json
 ```
 
+Controller config includes the scheduler firmware type and reporting interval:
+
+```json
+{
+  "controllers": {
+    "pump_lights": {
+      "type": "pico_scheduler",
+      "pico_serial": "e66038b71387a039",
+      "report_every": 10
+    }
+  }
+}
+```
+
+`report_every` is configured on the controller in `data/config.json`. Timer
+state files keep schedule events; any older `report_every` value in
+`data/timers/<controller>.json` is legacy and is not the source of truth for
+Pico scheduler reporting cadence.
+
 `data/` is local runtime data and is ignored by git.
 
 ## Pico Firmware
