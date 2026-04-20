@@ -45,11 +45,14 @@ Open:
 http://<raspberry-pi-ip>:8000/
 ```
 
-## Port 80 with nginx
+## Run on boot with nginx
 
-Use nginx as the public port-80 proxy while the Plamp app keeps running on
-unprivileged port 8000. This keeps local development simple: you can restart
-the Uvicorn process in tmux without changing the browser URL.
+Use nginx as the public port-80 proxy and systemd to keep the Plamp app running
+on unprivileged port 8000 after boot:
+
+```text
+browser -> nginx :80 -> plamp-web.service :8000
+```
 
 Install nginx:
 
@@ -68,31 +71,16 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Keep the Plamp app running on port 8000:
-
-```bash
-uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000
-```
-
-Open:
-
-```text
-http://<raspberry-pi-ip>/
-```
-
-## Start on boot
-
-nginx starts on boot after installation. To also start the Plamp app on boot,
-install the systemd service from the repo root as the user that should run
+Install the Plamp systemd service from the repo root as the user that should run
 Plamp:
 
 ```bash
 deploy/systemd/install-plamp-web-service.sh
 ```
 
-The installer detects the current user, repo path, and `uv` path, then writes a
-machine-local `/etc/systemd/system/plamp-web.service`. It starts Uvicorn on
-`127.0.0.1:8000`, so nginx can keep serving the public port-80 URL.
+The service installer detects the current user, repo path, and `uv` path, then
+writes a machine-local `/etc/systemd/system/plamp-web.service`. nginx and
+systemd will both start after reboot.
 
 Check it:
 
@@ -100,6 +88,12 @@ Check it:
 sudo systemctl status plamp-web
 curl http://127.0.0.1:8000/
 curl http://127.0.0.1/
+```
+
+Open:
+
+```text
+http://<raspberry-pi-ip>/
 ```
 
 For development, stop the boot service before running Uvicorn manually:

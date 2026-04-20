@@ -16,7 +16,10 @@ Open:
 http://<raspberry-pi-ip>:8000/
 ```
 
-For port 80, put nginx in front of the app and keep Uvicorn on port 8000:
+## Run on boot with nginx
+
+Use nginx as the public port-80 proxy and systemd to keep Uvicorn running on
+unprivileged port 8000 after boot:
 
 ```bash
 sudo apt update
@@ -26,24 +29,39 @@ sudo ln -sf /etc/nginx/sites-available/plamp /etc/nginx/sites-enabled/plamp
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo systemctl reload nginx
-uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000
+deploy/systemd/install-plamp-web-service.sh
 ```
 
-Then open:
+The service installer writes `/etc/systemd/system/plamp-web.service` with the
+detected user, repo path, and `uv` path. nginx remains the public port-80
+service.
+
+Check it:
+
+```bash
+sudo systemctl status plamp-web
+curl http://127.0.0.1:8000/
+curl http://127.0.0.1/
+```
+
+Open:
 
 ```text
 http://<raspberry-pi-ip>/
 ```
 
-To start Uvicorn automatically after reboot, run this from the repo root as the
-user that should run Plamp:
+For development, stop the boot service before running Uvicorn manually:
 
 ```bash
-deploy/systemd/install-plamp-web-service.sh
+sudo systemctl stop plamp-web
+uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-The installer writes `/etc/systemd/system/plamp-web.service` with the detected
-user, repo path, and `uv` path. nginx remains the public port-80 service.
+Then restore the boot-managed server:
+
+```bash
+sudo systemctl start plamp-web
+```
 
 Pages:
 
