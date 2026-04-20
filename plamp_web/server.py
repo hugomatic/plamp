@@ -296,6 +296,19 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
     return {"report_every": report_every, "events": events}
 
 
+def empty_timer_state() -> dict[str, Any]:
+    return {"report_every": 1, "events": []}
+
+
+def load_timer_state_for_schedule_edit(path: Path) -> dict[str, Any]:
+    try:
+        return validate_timer_state(load_json_file(path))
+    except HTTPException as exc:
+        if exc.status_code in {404, 422, 500}:
+            return empty_timer_state()
+        raise
+
+
 def pico_for_role(role: str) -> dict[str, Any]:
     serial = pico_serial_for_role(role)
     for pico in enumerate_picos():
@@ -650,7 +663,9 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
-        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "cp", str(PICO_MAIN_FILE), ":main.py"], timeout=30)
+        interrupt_pico_program(port)
+
+        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "resume", "cp", str(PICO_MAIN_FILE), ":main.py"], timeout=30)
         if firmware_rc != 0:
             command.error_status = 502
             command.error_detail = {"step": "firmware", "returncode": firmware_rc, "stdout": firmware_out, "stderr": firmware_err}
@@ -660,7 +675,7 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
-        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "cp", str(command.path), ":state.json"], timeout=30)
+        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "resume", "cp", str(command.path), ":state.json"], timeout=30)
         if copy_rc != 0:
             command.error_status = 502
             command.error_detail = {"step": "state", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
@@ -855,6 +870,38 @@ def run_command(args: list[str], timeout: float = 2.0) -> tuple[int | None, str,
     except subprocess.TimeoutExpired:
         return None, "", "command timed out"
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def interrupt_pico_program(port: str, attempts: int = 3) -> None:
+    conn = None
+    try:
+        conn = serial.serial_for_url(
+            port,
+            do_not_open=True,
+            baudrate=115200,
+            timeout=0.2,
+            write_timeout=0.2,
+            exclusive=True,
+        )
+        conn.dtr = False
+        conn.rts = False
+        conn.open()
+        for _ in range(attempts):
+            conn.write(b"\r\x03")
+            conn.flush()
+            time.sleep(0.1)
+            try:
+                conn.read(conn.in_waiting or 1)
+            except (OSError, serial.SerialException):
+                break
+    except (OSError, serial.SerialException) as exc:
+        LOGGER.warning("could not pre-interrupt Pico on %s before mpremote: %s", port, exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except (OSError, serial.SerialException):
+                pass
 
 
 def split_nmcli_line(line: str) -> list[str]:
@@ -1392,7 +1439,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     config = load_config()
     timer_role(role)
     path = timer_state_path(role)
-    saved_state = load_json_file(path)
+    saved_state = load_timer_state_for_schedule_edit(path)
     live_state = latest_timer_state(role)
     channel_state = live_state if isinstance(live_state, dict) else saved_state
     channels = channel_metadata_for_role(role, config, channel_state)

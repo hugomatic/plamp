@@ -425,3 +425,81 @@ class ConfigApiTests(unittest.TestCase):
         self.assertIn("saved", response["message"])
         self.assertIn("not connected", response["message"])
         self.assertEqual(saved["events"][0]["id"], "pump")
+
+    def test_post_timer_channel_schedule_creates_state_when_timer_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "latest_timer_state", return_value=None),
+                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+            ):
+                response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
+
+            saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(response["success"])
+        self.assertEqual(saved["report_every"], 1)
+        self.assertEqual(saved["events"][0]["id"], "pump")
+        self.assertEqual(saved["events"][0]["pin"], 2)
+
+    def test_post_timer_channel_schedule_replaces_invalid_timer_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            (timers_dir / "pump_lights.json").write_text("{not json", encoding="utf-8")
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "latest_timer_state", return_value=None),
+                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+            ):
+                response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
+
+            saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(response["success"])
+        self.assertEqual(saved["report_every"], 1)
+        self.assertEqual(saved["events"][0]["id"], "pump")
+        self.assertEqual(saved["events"][0]["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
+
+    def test_pico_monitor_apply_copies_files_without_mpremote_soft_reset(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        command = server.ApplyCommand(path=Path("/tmp/state.json"))
+        calls = []
+
+        def fake_run_command(args, timeout=2.0):
+            calls.append(args)
+            return 0, "", ""
+
+        with (
+            patch.object(monitor, "find_port", return_value="/dev/ttyACM0"),
+            patch.object(server.shutil, "which", return_value="/usr/bin/mpremote"),
+            patch.object(server, "interrupt_pico_program", side_effect=lambda port: calls.append(["interrupt", port])),
+            patch.object(server, "run_command", side_effect=fake_run_command),
+        ):
+            monitor.handle_apply(command, None)
+
+        self.assertEqual(calls[0], ["interrupt", "/dev/ttyACM0"])
+        self.assertIn("resume", calls[1])
+        self.assertIn("resume", calls[2])
+        self.assertNotIn("resume", calls[3])
