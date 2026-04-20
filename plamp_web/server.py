@@ -10,6 +10,7 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -295,6 +296,15 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
         events.append(event)
 
     return {"report_every": report_every, "events": events}
+
+
+def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
+    state = validate_timer_state(raw_state)
+    role_config = timer_role(role)
+    report_every = require_int(role_config.get("report_every", 10), "report_every must be an integer")
+    if report_every <= 0:
+        raise HTTPException(status_code=422, detail="report_every must be > 0")
+    return {"report_every": report_every, "events": state["events"]}
 
 
 def empty_timer_state() -> dict[str, Any]:
@@ -799,7 +809,18 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
 
 
 def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    return get_or_start_monitor(role).apply(path)
+    generated = timer_state_for_pico(role, load_json_file(path))
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as temp:
+        temp_path = Path(temp.name)
+        json.dump(generated, temp, indent=2)
+        temp.write("\n")
+    try:
+        return get_or_start_monitor(role).apply(temp_path)
+    finally:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
 
 
 def sse_message(event: str, data: dict[str, Any]) -> str:
