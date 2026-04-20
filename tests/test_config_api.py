@@ -150,7 +150,7 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
         self.assertEqual(data["config"]["devices"]["lights"]["controller"], "grow_box")
-        self.assertEqual(saved["controllers"], {"grow_box": {"pico_serial": "abc"}})
+        self.assertEqual(saved["controllers"], {"grow_box": {"type": "pico_scheduler", "report_every": 10, "pico_serial": "abc"}})
         self.assertEqual(saved["devices"]["lights"]["controller"], "grow_box")
         self.assertEqual(saved["time_format"], "24h")
 
@@ -272,6 +272,25 @@ class ConfigApiTests(unittest.TestCase):
                 "time_format": "12h",
             },
         )
+
+    def test_timer_runtime_excludes_non_scheduler_controllers(self):
+        config = {
+            "controllers": {
+                "timer": {"type": "pico_scheduler", "pico_serial": "TIMER", "report_every": 10},
+                "future": {"type": "future_controller", "pico_serial": "FUTURE"},
+            },
+            "devices": {},
+            "cameras": {},
+        }
+        with patch.object(server, "load_config", return_value=config):
+            roles = server.configured_timer_roles()
+            serials = server.configured_monitor_serials()
+            timer_config = server.get_timer_config()
+
+        self.assertEqual(roles, ["timer"])
+        self.assertEqual(serials, {"timer": "TIMER"})
+        self.assertEqual(timer_config["roles"], ["timer"])
+        self.assertNotIn("future", timer_config["channels"])
 
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:
