@@ -33,7 +33,7 @@ uv run python -c "import fastapi, serial, uvicorn"
 
 ## Run
 
-Start the web server:
+Start the development web server:
 
 ```bash
 uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000
@@ -43,6 +43,41 @@ Open:
 
 ```text
 http://<raspberry-pi-ip>:8000/
+```
+
+## Port 80 with nginx
+
+Use nginx as the public port-80 proxy while the Plamp app keeps running on
+unprivileged port 8000. This keeps local development simple: you can restart
+the Uvicorn process in tmux without changing the browser URL.
+
+Install nginx:
+
+```bash
+sudo apt update
+sudo apt install nginx
+```
+
+Install the Plamp nginx site from the repo root:
+
+```bash
+sudo cp deploy/nginx/plamp.conf /etc/nginx/sites-available/plamp
+sudo ln -sf /etc/nginx/sites-available/plamp /etc/nginx/sites-enabled/plamp
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Keep the Plamp app running on port 8000:
+
+```bash
+uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000
+```
+
+Open:
+
+```text
+http://<raspberry-pi-ip>/
 ```
 
 Useful pages:
@@ -102,4 +137,3 @@ More detail:
 - [`pico_scheduler/`](./pico_scheduler/) - MicroPython Pico firmware
 - [`grow/`](./grow/) - grow log tools
 - [`things/`](./things/) - printable parts
-
