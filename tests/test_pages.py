@@ -358,6 +358,56 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('placeholder="pump"', html)
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
 
+    def test_settings_page_edits_controller_type_and_report_interval(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "pico_serial": "abc",
+                            "report_every": 15,
+                            "label": "Pump lights",
+                        }
+                    },
+                    "devices": {},
+                    "cameras": {},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn("<th>Type</th>", html)
+        self.assertIn("<th>Report every seconds</th>", html)
+        self.assertIn('class="controller-type"', html)
+        self.assertIn('class="controller-report-every"', html)
+        self.assertIn('value="15"', html)
+        self.assertIn("report_every: Number(reportEvery)", html)
+
+    def test_settings_page_labels_scheduler_devices_and_uses_output_type(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {"pump_lights": {"type": "pico_scheduler", "report_every": 10}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"}},
+                    "cameras": {},
+                },
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn("<h3>Pico scheduler devices</h3>", html)
+        self.assertIn("<th>Output type</th>", html)
+        self.assertNotIn("<h3>Devices</h3>", html)
+
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
         html = render_settings_page(
             {
