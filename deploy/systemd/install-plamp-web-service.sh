@@ -5,6 +5,8 @@ service_name="plamp-web"
 service_user=""
 repo_root=""
 uv_bin=""
+mpremote_bin=""
+service_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 host="127.0.0.1"
 port="8000"
 print_unit=0
@@ -92,6 +94,14 @@ if [[ -z "$uv_bin" ]]; then
   fi
 fi
 
+if mpremote_bin="$(command -v mpremote 2>/dev/null)"; then
+  mpremote_dir="$(dirname "$mpremote_bin")"
+  case ":$service_path:" in
+    *":$mpremote_dir:"*) ;;
+    *) service_path="$mpremote_dir:$service_path" ;;
+  esac
+fi
+
 generate_unit() {
   cat <<UNIT
 [Unit]
@@ -103,6 +113,7 @@ RequiresMountsFor=$repo_root
 Type=simple
 User=$service_user
 WorkingDirectory=$repo_root
+Environment=PATH=$service_path
 ExecStart=$uv_bin run uvicorn plamp_web.server:app --host $host --port $port
 Restart=on-failure
 RestartSec=3

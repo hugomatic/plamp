@@ -14,7 +14,6 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -1233,7 +1232,6 @@ def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
         return None
 
 
-@lru_cache(maxsize=1)
 def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     commit = git_output(["git", "rev-parse", "HEAD"], repo_root=repo_root)
     branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)

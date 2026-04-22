@@ -5,9 +5,6 @@ import plamp_web.server as server
 
 
 class SettingsSummaryTests(unittest.TestCase):
-    def setUp(self):
-        server.software_summary.cache_clear()
-
     def test_software_summary_uses_git_identity_without_version_numbers(self):
         commands = {
             ("git", "rev-parse", "HEAD"): "d5883da4abcdef\n",
@@ -38,6 +35,25 @@ class SettingsSummaryTests(unittest.TestCase):
         self.assertIsNone(data["git_branch"])
         self.assertIsNone(data["git_dirty"])
         self.assertNotIn("version", data)
+
+    def test_software_summary_reflects_git_changes_between_calls(self):
+        responses = [
+            "aaaaaaaaaaaa\n",
+            "main\n",
+            "\n",
+            "bbbbbbbbbbbb\n",
+            "feature-branch\n",
+            " M deploy/systemd/install-plamp-web-service.sh\n",
+        ]
+
+        with patch.object(server.subprocess, "check_output", side_effect=responses):
+            first = server.software_summary(repo_root=server.REPO_ROOT)
+            second = server.software_summary(repo_root=server.REPO_ROOT)
+
+        self.assertEqual(first["git_branch"], "main")
+        self.assertFalse(first["git_dirty"])
+        self.assertEqual(second["git_branch"], "feature-branch")
+        self.assertTrue(second["git_dirty"])
 
     def test_settings_summary_includes_software_identity(self):
         with (
