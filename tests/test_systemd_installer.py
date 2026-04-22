@@ -1,5 +1,7 @@
 import subprocess
+import tempfile
 import unittest
+import os
 from pathlib import Path
 
 
@@ -8,7 +10,7 @@ INSTALLER = ROOT / "deploy" / "systemd" / "install-plamp-web-service.sh"
 
 
 class SystemdInstallerTests(unittest.TestCase):
-    def print_unit(self) -> str:
+    def print_unit(self, env: dict[str, str] | None = None) -> str:
         result = subprocess.run(
             [
                 "bash",
@@ -24,6 +26,7 @@ class SystemdInstallerTests(unittest.TestCase):
             check=True,
             text=True,
             capture_output=True,
+            env=env,
         )
         return result.stdout
 
@@ -49,8 +52,23 @@ class SystemdInstallerTests(unittest.TestCase):
     def test_print_unit_has_no_machine_specific_user(self):
         unit = self.print_unit()
 
-        self.assertNotIn("/home/hugo", unit)
         self.assertNotIn("User=hugo", unit)
+
+    def test_print_unit_adds_mpremote_directory_to_service_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp)
+            mpremote = bin_dir / "mpremote"
+            mpremote.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            mpremote.chmod(0o755)
+            env = dict(os.environ)
+            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+
+            unit = self.print_unit(env=env)
+
+        self.assertIn(
+            f"Environment=PATH={bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+            unit,
+        )
 
 
 if __name__ == "__main__":

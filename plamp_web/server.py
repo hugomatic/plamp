@@ -10,10 +10,10 @@ import re
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
-from plamp_web.hardware_config import apply_config_section, config_view, empty_config
+from plamp_web.hardware_config import apply_config_section, config_view, empty_config, scheduler_controller_ids
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -164,7 +164,8 @@ def timer_roles() -> dict[str, dict[str, Any]]:
     controllers = config.get("controllers", {})
     if not isinstance(controllers, dict):
         raise HTTPException(status_code=500, detail="config controllers must be an object")
-    return controllers
+    scheduler_ids = scheduler_controller_ids(controllers)
+    return {role: controllers[role] for role in controllers if role in scheduler_ids}
 
 
 def configured_monitor_serials() -> dict[str, str]:
@@ -294,6 +295,15 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
         events.append(event)
 
     return {"report_every": report_every, "events": events}
+
+
+def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
+    state = validate_timer_state(raw_state)
+    role_config = timer_role(role)
+    report_every = require_int(role_config.get("report_every", 10), "report_every must be an integer")
+    if report_every <= 0:
+        raise HTTPException(status_code=422, detail="report_every must be > 0")
+    return {"report_every": report_every, "events": state["events"]}
 
 
 def empty_timer_state() -> dict[str, Any]:
@@ -798,7 +808,18 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
 
 
 def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    return get_or_start_monitor(role).apply(path)
+    generated = timer_state_for_pico(role, load_json_file(path))
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as temp:
+        temp_path = Path(temp.name)
+        json.dump(generated, temp, indent=2)
+        temp.write("\n")
+    try:
+        return get_or_start_monitor(role).apply(temp_path)
+    finally:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
 
 
 def sse_message(event: str, data: dict[str, Any]) -> str:
@@ -1137,7 +1158,7 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     try:
         config = load_config()
-        roles = list(config.get("controllers", {}))
+        roles = list(timer_roles())
     except HTTPException:
         return result
     for role in roles:
@@ -1211,7 +1232,6 @@ def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
         return None
 
 
-@lru_cache(maxsize=1)
 def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     commit = git_output(["git", "rev-parse", "HEAD"], repo_root=repo_root)
     branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)

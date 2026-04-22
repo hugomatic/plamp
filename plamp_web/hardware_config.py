@@ -9,6 +9,9 @@ import re
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _EDITORS = {"cycle", "clock_window"}
 _PIN_TYPES = {"gpio", "pwm"}
+_CONTROLLER_TYPES = {"pico_scheduler"}
+_DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
+_DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "devices", "cameras")
 
 
@@ -35,6 +38,14 @@ def _optional_label(item: Mapping, label: str) -> str | None:
     return value
 
 
+def _required_positive_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{label} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
 def validate_controllers(value):
     value = _as_mapping(value, "controllers")
     controllers = {}
@@ -42,24 +53,54 @@ def validate_controllers(value):
         if not _is_valid_id(controller_id):
             raise ValueError(f"invalid controller id: {controller_id!r}")
         controller_value = _as_mapping(controller_value, f"controller {controller_id}")
-        extra_keys = set(controller_value) - {"pico_serial", "label"}
+        extra_keys = set(controller_value) - {"pico_serial", "label", "type", "report_every"}
         if extra_keys:
             raise ValueError(f"controller {controller_id} has unknown keys: {sorted(extra_keys)!r}")
+
+        controller_type = controller_value.get("type", _DEFAULT_CONTROLLER_TYPE)
+        if controller_type not in _CONTROLLER_TYPES:
+            raise ValueError(f"controller {controller_id} type must be one of {sorted(_CONTROLLER_TYPES)!r}")
+
         pico_serial = controller_value.get("pico_serial")
         if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
         label = _optional_label(controller_value, f"controller {controller_id}")
-        controllers[controller_id] = {}
+        controller = {"type": controller_type}
+        if controller_type == "pico_scheduler":
+            controller["report_every"] = _required_positive_int(
+                controller_value.get("report_every", _DEFAULT_REPORT_EVERY),
+                f"controller {controller_id} report_every",
+            )
+        elif "report_every" in controller_value:
+            raise ValueError(f"controller {controller_id} report_every is only valid for pico_scheduler")
         if pico_serial is not None:
-            controllers[controller_id]["pico_serial"] = pico_serial
+            controller["pico_serial"] = pico_serial
         if label:
-            controllers[controller_id]["label"] = label
+            controller["label"] = label
+        controllers[controller_id] = controller
     return controllers
+
+
+def controller_type(controller: Mapping) -> str:
+    value = controller.get("type", _DEFAULT_CONTROLLER_TYPE)
+    return str(value)
+
+
+def scheduler_controller_ids(controllers) -> set[str]:
+    controllers = _as_mapping(controllers, "controllers")
+    return {
+        controller_id
+        for controller_id, controller_value in controllers.items()
+        if isinstance(controller_id, str)
+        and isinstance(controller_value, Mapping)
+        and controller_type(controller_value) == "pico_scheduler"
+    }
 
 
 def validate_devices(value, controllers):
     value = _as_mapping(value, "devices")
     controllers = validate_controllers(controllers)
+    scheduler_controllers = scheduler_controller_ids(controllers)
     devices = {}
     used_pins = set()
     for device_id, device_value in value.items():
@@ -75,6 +116,8 @@ def validate_devices(value, controllers):
         editor = device_value.get("editor", "cycle")
         if controller not in controllers:
             raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
+        if controller not in scheduler_controllers:
+            raise ValueError(f"device {device_id} controller must reference a pico_scheduler controller: {controller!r}")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
         if pin_type not in _PIN_TYPES:

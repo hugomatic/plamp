@@ -150,7 +150,7 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
         self.assertEqual(data["config"]["devices"]["lights"]["controller"], "grow_box")
-        self.assertEqual(saved["controllers"], {"grow_box": {"pico_serial": "abc"}})
+        self.assertEqual(saved["controllers"], {"grow_box": {"type": "pico_scheduler", "report_every": 10, "pico_serial": "abc"}})
         self.assertEqual(saved["devices"]["lights"]["controller"], "grow_box")
         self.assertEqual(saved["time_format"], "24h")
 
@@ -272,6 +272,25 @@ class ConfigApiTests(unittest.TestCase):
                 "time_format": "12h",
             },
         )
+
+    def test_timer_runtime_excludes_non_scheduler_controllers(self):
+        config = {
+            "controllers": {
+                "timer": {"type": "pico_scheduler", "pico_serial": "TIMER", "report_every": 10},
+                "future": {"type": "future_controller", "pico_serial": "FUTURE"},
+            },
+            "devices": {},
+            "cameras": {},
+        }
+        with patch.object(server, "load_config", return_value=config):
+            roles = server.configured_timer_roles()
+            serials = server.configured_monitor_serials()
+            timer_config = server.get_timer_config()
+
+        self.assertEqual(roles, ["timer"])
+        self.assertEqual(serials, {"timer": "TIMER"})
+        self.assertEqual(timer_config["roles"], ["timer"])
+        self.assertNotIn("future", timer_config["channels"])
 
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -503,3 +522,44 @@ class ConfigApiTests(unittest.TestCase):
         self.assertIn("resume", calls[1])
         self.assertIn("resume", calls[2])
         self.assertNotIn("resume", calls[3])
+
+    def test_apply_timer_state_generates_report_every_from_controller_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 42}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timer_path = root / "data" / "timers" / "pump_lights.json"
+            timer_path.parent.mkdir(parents=True)
+            timer_path.write_text(
+                json.dumps(
+                    {
+                        "report_every": 1,
+                        "events": [
+                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            applied_payloads = []
+
+            class FakeMonitor:
+                def apply(self, path):
+                    applied_payloads.append(json.loads(Path(path).read_text(encoding="utf-8")))
+                    return {"ok": True}
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=FakeMonitor()),
+            ):
+                response = server.apply_timer_state("pump_lights", timer_path)
+
+        self.assertEqual(response, {"ok": True})
+        self.assertEqual(applied_payloads[0]["report_every"], 42)
+        self.assertEqual(applied_payloads[0]["events"][0]["id"], "pump")
