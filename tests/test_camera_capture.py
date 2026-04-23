@@ -177,6 +177,45 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual([item["source"] for item in roll_only], ["camera_roll"])
             self.assertEqual([item["grow_id"] for item in grow_only], ["grow-basil"])
 
+    def test_list_camera_captures_falls_back_to_shared_grows_dir_from_data_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shared_root = root / "shared-root"
+            run_root = root / "run-root"
+            shared_root.mkdir()
+            run_root.mkdir()
+
+            data_dir = shared_root / "data"
+            data_dir.mkdir()
+            linked_data_dir = run_root / "data"
+            linked_data_dir.symlink_to(data_dir, target_is_directory=True)
+
+            grows_dir = run_root / "grow" / "grows"
+            grow_dir = grows_dir / "grow-basil"
+            grow_dir.mkdir(parents=True, exist_ok=True)
+            grow_dir.joinpath("grow.json").write_text(
+                json.dumps({"grow_id": "grow-basil", "crop": {"common_name": "Basil", "cultivar": "Siam Queen"}}),
+                encoding="utf-8",
+            )
+
+            shared_grow_image = shared_root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12" / "cap-grow.jpg"
+            self.write_sidecar(
+                shared_grow_image.with_suffix(".json"),
+                {
+                    "timestamp": "2026-04-12T10:00:01+00:00",
+                    "grow_id": "grow-basil",
+                    "image_path": str(shared_grow_image.relative_to(shared_root)),
+                    "sidecar_path": str(shared_grow_image.with_suffix(".json").relative_to(shared_root)),
+                    "brightness_mean": 73.613,
+                },
+            )
+
+            captures = list_camera_captures(repo_root=run_root, data_dir=linked_data_dir, grows_dir=grows_dir)
+
+            self.assertEqual([item["capture_id"] for item in captures], ["cap-grow"])
+            self.assertEqual(captures[0]["source"], "grow")
+            self.assertEqual(captures[0]["grow_id"], "grow-basil")
+
 
     def test_list_camera_captures_supports_offset_paging(self):
         with tempfile.TemporaryDirectory() as tmp:

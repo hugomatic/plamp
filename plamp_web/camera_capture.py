@@ -171,6 +171,16 @@ def find_capture_image(capture_id: str, *, data_dir: Path = DATA_DIR) -> Path | 
 
 
 
+def candidate_storage_roots(*, repo_root: Path, data_dir: Path, grows_dir: Path) -> list[Path]:
+    roots: list[Path] = []
+    for candidate in [repo_root, data_dir.resolve().parent, grows_dir.resolve().parents[1]]:
+        resolved = candidate.resolve()
+        if any(existing.resolve() == resolved for existing in roots):
+            continue
+        roots.append(candidate)
+    return roots
+
+
 def capture_image_key(image_path: Path, *, repo_root: Path = REPO_ROOT) -> str:
     resolved_root = repo_root.resolve()
     resolved_path = image_path.resolve()
@@ -181,8 +191,13 @@ def capture_image_key(image_path: Path, *, repo_root: Path = REPO_ROOT) -> str:
     encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
     return encoded.rstrip("=")
 
-
-def resolve_capture_image_key(image_key: str, *, repo_root: Path = REPO_ROOT) -> Path | None:
+def resolve_capture_image_key(
+    image_key: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+    data_dir: Path = DATA_DIR,
+    grows_dir: Path = GROWS_DIR,
+) -> Path | None:
     try:
         padded = image_key + "=" * (-len(image_key) % 4)
         raw = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
@@ -193,9 +208,9 @@ def resolve_capture_image_key(image_key: str, *, repo_root: Path = REPO_ROOT) ->
     decoded = Path(raw)
     candidate = decoded if decoded.is_absolute() else repo_root / decoded
     try:
-        resolved_root = repo_root.resolve()
         resolved = candidate.resolve()
-        resolved.relative_to(resolved_root)
+        if not any(resolved.is_relative_to(root.resolve()) for root in candidate_storage_roots(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir)):
+            return None
     except ValueError:
         return None
     if resolved.suffix.lower() not in {".jpg", ".jpeg"}:
@@ -221,18 +236,29 @@ def grow_display_names(grows_dir: Path = GROWS_DIR) -> dict[str, str]:
     return names
 
 
-def path_from_metadata(metadata: dict[str, Any], key: str, repo_root: Path) -> Path | None:
+def candidate_grows_dirs(*, repo_root: Path, data_dir: Path, grows_dir: Path) -> list[Path]:
+    dirs: list[Path] = []
+    for candidate in [grows_dir, data_dir.resolve().parent / "grow" / "grows"]:
+        resolved = candidate.resolve()
+        if any(existing.resolve() == resolved for existing in dirs):
+            continue
+        dirs.append(candidate)
+    return dirs
+
+
+def path_from_metadata(metadata: dict[str, Any], key: str, root_base: Path) -> Path | None:
     value = metadata.get(key)
     if not isinstance(value, str) or not value:
         return None
     path = Path(value)
-    return path if path.is_absolute() else repo_root / path
+    return path if path.is_absolute() else root_base / path
 
 
 def normalized_capture_from_sidecar(
     sidecar_path: Path,
     *,
     repo_root: Path,
+    root_base: Path,
     source: str,
     grow_names: dict[str, str],
 ) -> dict[str, Any] | None:
@@ -242,7 +268,7 @@ def normalized_capture_from_sidecar(
         return None
     if not isinstance(metadata, dict):
         return None
-    image_path = path_from_metadata(metadata, "image_path", repo_root) or sidecar_path.with_suffix(".jpg")
+    image_path = path_from_metadata(metadata, "image_path", root_base) or sidecar_path.with_suffix(".jpg")
     if not image_path.exists() or not image_path.is_file():
         return None
     grow_id = metadata.get("grow_id") if isinstance(metadata.get("grow_id"), str) else None
@@ -277,16 +303,27 @@ def collect_camera_captures(
 ) -> list[dict[str, Any]]:
     if source not in {"all", "camera_roll", "grow"}:
         source = "all"
-    grow_names = grow_display_names(grows_dir)
-    sidecars: list[tuple[str, Path]] = []
+    grow_names: dict[str, str] = {}
+    grows_dirs = candidate_grows_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir)
+    for candidate in grows_dirs:
+        grow_names.update(grow_display_names(candidate))
+    sidecars: list[tuple[str, Path, Path]] = []
+    shared_root = data_dir.resolve().parent
     if source in {"all", "camera_roll"} and grow_id is None:
-        sidecars.extend(("camera_roll", path) for path in (data_dir / "camera" / "captures").glob("*/*.json"))
+        sidecars.extend(("camera_roll", path, shared_root) for path in (data_dir / "camera" / "captures").glob("*/*.json"))
     if source in {"all", "grow"}:
-        sidecars.extend(("grow", path) for path in grows_dir.glob("*/captures/*/*.json"))
+        for candidate in grows_dirs:
+            sidecars.extend(("grow", path, candidate.resolve().parents[1]) for path in candidate.glob("*/captures/*/*.json"))
 
     captures: list[dict[str, Any]] = []
-    for item_source, sidecar in sidecars:
-        item = normalized_capture_from_sidecar(sidecar, repo_root=repo_root, source=item_source, grow_names=grow_names)
+    for item_source, sidecar, root_base in sidecars:
+        item = normalized_capture_from_sidecar(
+            sidecar,
+            repo_root=repo_root,
+            root_base=root_base,
+            source=item_source,
+            grow_names=grow_names,
+        )
         if item is None:
             continue
         if grow_id is not None and item.get("grow_id") != grow_id:
