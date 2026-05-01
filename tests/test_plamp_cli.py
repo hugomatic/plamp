@@ -363,3 +363,11 @@ class PlampCliPictureTests(unittest.TestCase):
             self.assertEqual(out_path.read_bytes(), b"jpeg-bytes")
 
         download_bytes.assert_called_once_with("http://127.0.0.1:8000", "/api/camera/images/grow:latest")
+
+
+class PlampCliDocsTests(unittest.TestCase):
+    def test_cli_readme_mentions_json_first_and_stdout_binary_rules(self):
+        readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
+        self.assertIn("JSON-first", readme)
+        self.assertIn("--stdout", readme)
+        self.assertIn("ssh pi.local plamp pics get", readme)

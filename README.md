@@ -96,6 +96,19 @@ Open:
 http://<raspberry-pi-ip>/
 ```
 
+## CLI
+
+Plamp includes a JSON-first CLI:
+
+```bash
+plamp config get
+plamp timers list
+plamp pics list
+```
+
+See [`plamp_cli/README.md`](./plamp_cli/README.md) for remote usage, JSON input
+rules, and picture download examples.
+
 For development, stop the boot service before running Uvicorn manually:
 
 ```bash
