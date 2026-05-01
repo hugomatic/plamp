@@ -262,7 +262,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Device control", html)
         self.assertIn("<th>Label</th>", html)
         self.assertIn("Peripherals", html)
-        self.assertIn("<th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th>", html)
+        self.assertIn("<th>Port</th><th>USB Device</th><th>Serial</th><th>Assigned</th><th>USB ID</th>", html)
         self.assertNotIn("<th>Role</th>", html)
         self.assertIn("Pump lights", html)
         self.assertIn("Main pump", html)
