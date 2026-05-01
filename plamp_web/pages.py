@@ -77,6 +77,18 @@ def scheduler_controllers(controllers: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def peripheral_assignments(controllers: dict[str, Any]) -> dict[str, list[str]]:
+    assignments: dict[str, list[str]] = {}
+    for controller_id, controller in controllers.items():
+        if not isinstance(controller, dict):
+            continue
+        serial = str(controller.get("pico_serial") or "")
+        if not serial:
+            continue
+        assignments.setdefault(serial, []).append(controller_id)
+    return assignments
+
+
 def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
     options = [option_tag("", "Unassigned", selected)]
     seen = set()
@@ -300,6 +312,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
+    peripheral_assignment_map = peripheral_assignments(controllers)
 
     controller_rows = []
     for controller_id in controllers:
@@ -402,10 +415,11 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         f"<td>{html.escape(str(item.get('port') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('usb_device') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('serial') or '-'))}</td>"
+        f"<td>{html.escape(', '.join(peripheral_assignment_map.get(str(item.get('serial') or ''), [])) or 'Unassigned')}</td>"
         f"<td>{html.escape(str(item.get('vendor_id') or '-'))}:{html.escape(str(item.get('product_id') or '-'))}</td>"
         "</tr>"
         for item in status_picos
-    ) or '<tr><td colspan="4">No peripherals found.</td></tr>'
+    ) or '<tr><td colspan="5">No peripherals found.</td></tr>'
 
     def camera_status_name(item: dict[str, Any]) -> str:
         connector = item.get("connector")
@@ -504,7 +518,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <h2>System status</h2>
     <p class="muted">Detected hardware and host status.</p>
     <h3>Peripherals</h3>
-    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
+    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>Assigned</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
     <h3>Raspberry Pi cameras</h3>
     <table><thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
     <h3>Network</h3>

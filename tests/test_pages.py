@@ -271,6 +271,35 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('href="/api/test"', html)
         self.assertNotIn('href="/config"', html)
 
+    def test_settings_page_shows_peripheral_assignment_status(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "alpha": {"pico_serial": "abc"},
+                        "beta": {"pico_serial": "abc"},
+                    },
+                    "devices": {},
+                    "cameras": {},
+                },
+                "detected": {
+                    "picos": [],
+                    "cameras": [],
+                },
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [
+                    {"serial": "abc", "port": "/dev/ttyACM0", "usb_device": "USB Serial", "vendor_id": "1234", "product_id": "abcd"},
+                    {"serial": "def", "port": "/dev/ttyACM1", "usb_device": "USB Serial", "vendor_id": "1234", "product_id": "abcd"},
+                ],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn("<th>Assigned</th>", html)
+        self.assertIn("<td>alpha, beta</td>", html)
+        self.assertIn("<td>Unassigned</td>", html)
+
     def test_settings_page_preserves_config_order_for_setup_rows(self):
         html = render_settings_page(
             {
