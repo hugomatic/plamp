@@ -430,9 +430,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("collectDevices()", html)
         self.assertIn("collectCameras()", html)
         self.assertIn("function controllerRenames()", html)
+        self.assertIn("collectDevicesWithControllerRenames()", html)
         self.assertIn("collectConfigWithControllerRenames()", html)
         self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
-        self.assertIn('"/api/config/devices"', html)
+        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
+        self.assertNotIn('saveSection("devices-status", "/api/config/devices", collectDevices())', html)
         self.assertIn('"/api/config/cameras"', html)
         self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
         self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
@@ -656,6 +658,31 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
         self.assertNotIn('saveSection("controllers-status", "/api/config/controllers", collectControllers())', html)
+
+    def test_settings_page_grouped_device_save_uses_combined_config_payload(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
+                    },
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                    },
+                    "cameras": {},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
+        self.assertNotIn('saveSection("devices-status", "/api/config/devices", collectDevices())', html)
+        self.assertIn("function collectDevicesWithControllerRenames()", html)
+        self.assertIn("function collectConfigWithControllerRenames()", html)
 
     def test_settings_page_preserves_hidden_controller_fields_when_empty_state_reuses_hidden_id(self):
         html = render_settings_page(

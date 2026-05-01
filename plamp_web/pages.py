@@ -692,7 +692,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       }}
     }}
     document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
-    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config/devices", collectDevices())));
+    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())));
     document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
     document.getElementById("hostname-confirm").addEventListener("click", async () => {{
       const hostname = document.getElementById("hostname-input").value.trim();
