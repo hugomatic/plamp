@@ -7,6 +7,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+HTTP_TIMEOUT_SECONDS = 10
+
 
 class ApiError(RuntimeError):
     def __init__(self, status: int, detail: str):
@@ -17,6 +19,35 @@ class ApiError(RuntimeError):
 
 class NetworkError(RuntimeError):
     pass
+
+
+def _clean_error_detail(raw_body: bytes, fallback: str) -> str:
+    raw_text = raw_body.decode("utf-8", errors="replace").strip()
+    if not raw_text:
+        return fallback
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return raw_text
+
+    if isinstance(payload, dict) and "detail" in payload:
+        detail = payload["detail"]
+        if isinstance(detail, str):
+            return detail
+        if isinstance(detail, list):
+            messages: list[str] = []
+            for item in detail:
+                if isinstance(item, dict):
+                    message = item.get("msg")
+                    if isinstance(message, str):
+                        messages.append(message)
+                        continue
+                messages.append(str(item))
+            return "; ".join(messages) if messages else str(detail)
+        return str(detail)
+
+    return raw_text
 
 
 def build_base_url(host: str | None, port: int | None, base_url: str | None) -> str:
@@ -48,10 +79,10 @@ def request_json(
 
     request = Request(f"{base_url}{path}{query_string}", data=data, method=method, headers=headers)
     try:
-        with urlopen(request) as response:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8").strip() or exc.reason
+        detail = _clean_error_detail(exc.read(), str(exc.reason))
         raise ApiError(exc.code, detail) from exc
     except URLError as exc:
         raise NetworkError(str(exc.reason)) from exc
