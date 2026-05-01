@@ -12,12 +12,15 @@ class InputError(RuntimeError):
 
 def load_json_input(value: str, stdin: TextIO | None = None) -> Any:
     source = stdin or sys.stdin
-    if value == "-":
-        raw = source.read()
-    elif value.startswith("@"):
-        raw = Path(value[1:]).read_text(encoding="utf-8")
-    else:
-        raise InputError("expected @file.json or - for stdin")
+    try:
+        if value == "-":
+            raw = source.read()
+        elif value.startswith("@"):
+            raw = Path(value[1:]).read_text(encoding="utf-8")
+        else:
+            raise InputError("expected @file.json or - for stdin")
+    except OSError as exc:
+        raise InputError(f"unable to read JSON input from {value[1:]}: {exc}") from exc
 
     try:
         return json.loads(raw)
@@ -44,7 +47,7 @@ def render_table(rows: list[dict[str, Any]]) -> str:
     widths = {column: len(column) for column in columns}
     for row in rows:
         for column in columns:
-            value = "" if row.get(column) is None else str(row.get(column))
+            value = _table_cell_text(row.get(column))
             if len(value) > widths[column]:
                 widths[column] = len(value)
 
@@ -52,9 +55,15 @@ def render_table(rows: list[dict[str, Any]]) -> str:
     separator = "+".join("-" * widths[column] for column in columns)
     body = [
         " | ".join(
-            ("" if row.get(column) is None else str(row.get(column))).ljust(widths[column])
+            _table_cell_text(row.get(column)).ljust(widths[column])
             for column in columns
         )
         for row in rows
     ]
     return "\n".join([header, separator, *body]) + "\n"
+
+
+def _table_cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
