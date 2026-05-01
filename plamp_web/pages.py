@@ -333,16 +333,15 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
     scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
 
-    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any], *, new_row: bool = False) -> str:
+    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any]) -> str:
         return (
-            '<tr class="controller-row{new_row_class}" data-controller-key="{controller_id}">'
+            '<tr class="controller-row" data-controller-key="{controller_id}">'
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
             '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
             '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
-                new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(controller.get("label") or ""), quote=True),
                 pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
@@ -351,9 +350,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             )
         )
 
-    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
+    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str) -> str:
         return (
-            '<tr class="device-row{new_row_class}" data-device-id="{device_id}">'
+            '<tr class="device-row" data-device-id="{device_id}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
             '<td><input class="device-controller" value="{controller_id}" type="hidden"></td>'
@@ -361,7 +360,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
-                new_row_class=" new-row" if new_row else "",
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
                 controller_id=html.escape(controller_id, quote=True),
@@ -374,7 +372,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     scheduler_blocks = []
     for controller_id, controller, controller_devices in scheduler_groups:
         device_rows = [render_scheduler_device_row(device_id, device, controller_id) for device_id, device in controller_devices]
-        device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
         scheduler_blocks.append(
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
             '<h3>Pico schedulers</h3>'
@@ -388,19 +385,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
                 device_rows="".join(device_rows),
             )
         )
-
-    scheduler_blocks.append(
-        '<div class="pico-scheduler-new">'
-        '<h3>Add Pico scheduler</h3>'
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
-        '<tbody>{controller_row}</tbody></table>'
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
-        '<tbody>{device_row}</tbody></table>'
-        '</div>'.format(
-            controller_row=render_scheduler_controller_row("", {}, new_row=True),
-            device_row=render_scheduler_device_row("", {}, "", new_row=True),
-        )
-    )
 
     detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
     camera_detected_keys, unmatched_detected_keys = camera_detected_matches(configured_cameras, detected_cameras)

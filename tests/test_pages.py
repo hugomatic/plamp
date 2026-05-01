@@ -422,13 +422,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('try {', html)
         self.assertIn('catch (error)', html)
 
-    def test_settings_page_includes_blank_rows_for_new_controller_device_and_camera(self):
+    def test_settings_page_keeps_camera_blank_row(self):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
-        self.assertIn('class="controller-row new-row" data-controller-key=""', html)
-        self.assertIn('placeholder="pump_lights"', html)
-        self.assertIn('class="device-row new-row" data-device-id=""', html)
-        self.assertIn('placeholder="pump"', html)
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
 
     def test_settings_page_edits_controller_type_and_report_interval(self):
@@ -508,6 +504,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<th>Output type</th>", html)
         self.assertNotIn("<h3>Devices</h3>", html)
+        self.assertNotIn('class="device-row new-row"', html)
+        self.assertNotIn('class="pico-scheduler-new"', html)
 
     def test_settings_page_renders_only_devices_for_each_scheduler_controller(self):
         html = render_settings_page(
