@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from plamp_cli.io import InputError, format_json_output, load_json_input, render_table
+from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
 
 class PlampCliIoTests(unittest.TestCase):
@@ -67,3 +67,20 @@ class PlampCliIoTests(unittest.TestCase):
         self.assertNotIn("line one\nline two", output)
         self.assertIn("state", output)
         self.assertIn("idle", output)
+
+    def test_write_binary_output_writes_stdout_buffer(self):
+        buffer = io.BytesIO()
+
+        write_binary_output(b"jpeg-bytes", None, buffer)
+
+        self.assertEqual(buffer.getvalue(), b"jpeg-bytes")
+
+    def test_write_binary_output_writes_output_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "capture.jpg"
+            buffer = io.BytesIO()
+
+            write_binary_output(b"jpeg-bytes", str(path), buffer)
+
+            self.assertEqual(path.read_bytes(), b"jpeg-bytes")
+            self.assertEqual(buffer.getvalue(), b"")

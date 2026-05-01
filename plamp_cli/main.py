@@ -5,8 +5,8 @@ from collections.abc import Sequence
 import sys
 from typing import TextIO
 
-from plamp_cli.http import ApiError, NetworkError, build_base_url, request_json
-from plamp_cli.io import InputError, format_json_output, load_json_input, render_table
+from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
+from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
 _CONFIG_SECTIONS = ("controllers", "devices", "cameras")
 
@@ -65,6 +65,26 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("payload")
     schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
 
+    pics = subparsers.add_parser("pics")
+    pic_subparsers = pics.add_subparsers(dest="pics_action", required=True)
+
+    pic_list = pic_subparsers.add_parser("list")
+    pic_list.add_argument("--source", default="all")
+    pic_list.add_argument("--grow-id")
+    pic_list.add_argument("--limit", type=int, default=24)
+    pic_list.add_argument("--offset", type=int, default=0)
+    pic_list.set_defaults(pics_action="list")
+
+    pic_take = pic_subparsers.add_parser("take")
+    pic_take.add_argument("--camera-id")
+    pic_take.set_defaults(pics_action="take")
+
+    pic_get = pic_subparsers.add_parser("get")
+    pic_get.add_argument("image_key")
+    pic_get.add_argument("--out")
+    pic_get.add_argument("--stdout", action="store_true")
+    pic_get.set_defaults(pics_action="get")
+
     return parser
 
 
@@ -104,6 +124,25 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
         )
 
     raise ValueError(f"unsupported timers action: {args.timer_action}")
+
+
+def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
+    if args.pics_action == "list":
+        query = {"source": args.source, "limit": args.limit, "offset": args.offset}
+        if args.grow_id:
+            query["grow_id"] = args.grow_id
+        return request_json("GET", base_url, "/api/camera/captures", query=query)
+
+    if args.pics_action == "take":
+        query = {"camera_id": args.camera_id} if args.camera_id else None
+        return request_json("POST", base_url, "/api/camera/captures", query=query)
+
+    if args.pics_action == "get":
+        if not args.stdout and not args.out:
+            raise ValueError("pics get requires --stdout or --out")
+        return download_bytes(base_url, f"/api/camera/images/{args.image_key}")
+
+    raise ValueError(f"unsupported pics action: {args.pics_action}")
 
 
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:
@@ -162,6 +201,13 @@ def main(
         elif args.area == "timers":
             result = _handle_timers(args, base_url)
             if result is not None:
+                stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "pics":
+            result = _handle_pics(args, base_url)
+            if args.pics_action == "get":
+                stdout_buffer = stdout.buffer if hasattr(stdout, "buffer") else stdout
+                write_binary_output(result, args.out, stdout_buffer)
+            elif result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
         else:
             raise ValueError(f"unsupported area: {args.area}")

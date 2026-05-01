@@ -86,3 +86,15 @@ def request_json(
         raise ApiError(exc.code, detail) from exc
     except URLError as exc:
         raise NetworkError(str(exc.reason)) from exc
+
+
+def download_bytes(base_url: str, path: str) -> bytes:
+    request = Request(f"{base_url}{path}", method="GET")
+    try:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            return response.read()
+    except HTTPError as exc:
+        detail = _clean_error_detail(exc.read(), str(exc.reason))
+        raise ApiError(exc.code, detail) from exc
+    except URLError as exc:
+        raise NetworkError(str(exc.reason)) from exc

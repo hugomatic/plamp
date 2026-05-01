@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from unittest.mock import patch
 
-from plamp_cli.http import ApiError, NetworkError, build_base_url, request_json
+from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
 
 
 class PlampCliHttpTests(unittest.TestCase):
@@ -105,3 +105,16 @@ class PlampCliHttpTests(unittest.TestCase):
             request_json("GET", "http://127.0.0.1:8000", "/api/config")
 
         self.assertIn("timed out", str(ctx.exception))
+
+    @patch("plamp_cli.http.urlopen")
+    def test_download_bytes_returns_raw_body(self, urlopen):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"binary-image-data"
+        urlopen.return_value = response
+
+        result = download_bytes("http://127.0.0.1:8000", "/api/camera/images/grow:latest")
+
+        self.assertEqual(result, b"binary-image-data")
+        urlopen.assert_called_once()
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:8000/api/camera/images/grow:latest")

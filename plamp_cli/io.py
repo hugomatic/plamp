@@ -67,3 +67,10 @@ def _table_cell_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
+
+def write_binary_output(data: bytes, out_path: str | None, stdout_buffer: Any) -> None:
+    if out_path:
+        Path(out_path).write_bytes(data)
+        return
+    stdout_buffer.write(data)

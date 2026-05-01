@@ -2,7 +2,7 @@ import unittest
 import subprocess
 import tempfile
 from contextlib import redirect_stderr
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -294,3 +294,57 @@ class PlampCliTimerTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("the following arguments are required", stderr.getvalue())
+
+
+class PlampCliPictureTests(unittest.TestCase):
+    @patch("plamp_cli.main.request_json")
+    def test_pics_list_uses_camera_captures_endpoint(self, request_json):
+        request_json.return_value = {"captures": [], "limit": 24, "offset": 0, "has_more": False, "total": 0}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["pics", "list", "--source", "grow", "--limit", "5"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with(
+            "GET",
+            "http://127.0.0.1:8000",
+            "/api/camera/captures",
+            query={"source": "grow", "limit": 5, "offset": 0},
+        )
+
+    @patch("plamp_cli.main.request_json")
+    def test_pics_take_posts_camera_capture_request(self, request_json):
+        request_json.return_value = {"capture_id": "cap-123", "success": True}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["pics", "take", "--camera-id", "front"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with(
+            "POST",
+            "http://127.0.0.1:8000",
+            "/api/camera/captures",
+            query={"camera_id": "front"},
+        )
+
+    @patch("plamp_cli.main.download_bytes")
+    def test_pics_get_stdout_streams_binary(self, download_bytes):
+        download_bytes.return_value = b"jpeg-bytes"
+
+        class BinaryStdout:
+            def __init__(self):
+                self.buffer = BytesIO()
+
+        stdout = BinaryStdout()
+        stderr = StringIO()
+
+        code = main(["pics", "get", "grow:latest", "--stdout"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(stdout.buffer.getvalue(), b"jpeg-bytes")
+        download_bytes.assert_called_once_with("http://127.0.0.1:8000", "/api/camera/images/grow:latest")
