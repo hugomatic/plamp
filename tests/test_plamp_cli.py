@@ -348,3 +348,18 @@ class PlampCliPictureTests(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
         self.assertEqual(stdout.buffer.getvalue(), b"jpeg-bytes")
         download_bytes.assert_called_once_with("http://127.0.0.1:8000", "/api/camera/images/grow:latest")
+
+    @patch("plamp_cli.main.download_bytes")
+    def test_pics_get_out_writes_binary_file(self, download_bytes):
+        download_bytes.return_value = b"jpeg-bytes"
+        stderr = StringIO()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "latest.jpg"
+            code = main(["pics", "get", "grow:latest", "--out", str(out_path)], stderr=stderr)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertEqual(out_path.read_bytes(), b"jpeg-bytes")
+
+        download_bytes.assert_called_once_with("http://127.0.0.1:8000", "/api/camera/images/grow:latest")
