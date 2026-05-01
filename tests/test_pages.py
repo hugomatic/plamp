@@ -552,6 +552,83 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('value="rpicam_cam0"', html)
         self.assertIn("Detected: Camera Module 3 Wide wide", html)
 
+    def test_settings_page_preserves_hidden_scheduler_controllers_in_combined_save_script(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
+                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
+                    },
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                    },
+                    "cameras": {},
+                },
+                "detected": {
+                    "picos": [
+                        {"serial": "abc", "port": "/dev/ttyACM0"},
+                        {"serial": "def", "port": "/dev/ttyACM1"},
+                    ],
+                    "cameras": [],
+                },
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{}");', html)
+        self.assertIn("const result = structuredClone(hiddenControllers);", html)
+        self.assertIn('id="hidden-scheduler-controllers" type="application/json"', html)
+        self.assertIn('"unused"', html)
+
+    def test_settings_page_combined_save_posts_config_to_api_config(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
+        self.assertNotIn('saveSection("controllers-status", "/api/config/controllers", collectControllers())', html)
+
+    def test_settings_page_renders_create_path_when_no_scheduler_groups_exist(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
+                    },
+                    "devices": {},
+                    "cameras": {},
+                },
+                "detected": {
+                    "picos": [
+                        {"serial": "def", "port": "/dev/ttyACM1"},
+                    ],
+                    "cameras": [],
+                },
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('class="pico-scheduler-block pico-scheduler-new"', html)
+        self.assertIn('class="controller-row new-row" data-controller-key=""', html)
+        self.assertIn('class="device-row new-row" data-device-id=""', html)
+        self.assertIn("<h3>Pico schedulers</h3>", html)
+        self.assertIn("<h3>Cameras</h3>", html)
+        self.assertNotIn("<h3>Controllers</h3>", html)
+
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
         html = render_settings_page(
             {

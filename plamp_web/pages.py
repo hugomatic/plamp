@@ -126,6 +126,18 @@ def scheduler_devices_by_controller(controllers: dict[str, Any], devices: dict[s
     return groups
 
 
+def hidden_scheduler_controllers(
+    controllers: dict[str, Any],
+    scheduler_groups: list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]],
+) -> dict[str, Any]:
+    visible_controller_ids = {controller_id for controller_id, _, _ in scheduler_groups}
+    return {
+        controller_id: controller
+        for controller_id, controller in controllers.items()
+        if isinstance(controller, dict) and controller_id not in visible_controller_ids and str(controller.get("type") or "pico_scheduler") == "pico_scheduler"
+    }
+
+
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
     devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
@@ -332,16 +344,18 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     scheduler_controller_options = scheduler_controllers(controllers)
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
     scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
+    hidden_controllers = hidden_scheduler_controllers(scheduler_controller_options, scheduler_groups)
 
-    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any]) -> str:
+    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any], *, new_row: bool = False) -> str:
         return (
-            '<tr class="controller-row" data-controller-key="{controller_id}">'
+            '<tr class="controller-row{new_row_class}" data-controller-key="{controller_id}">'
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
             '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
             '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(controller.get("label") or ""), quote=True),
                 pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
@@ -384,6 +398,18 @@ def render_settings_page(summary: dict[str, Any]) -> str:
                 controller_id=html.escape(controller_id, quote=True),
                 controller_row=render_scheduler_controller_row(controller_id, controller),
                 device_rows="".join(device_rows),
+            )
+        )
+    if not scheduler_blocks:
+        scheduler_blocks.append(
+            '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+            '<tbody>{controller_row}</tbody></table>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
+            '<tbody>{device_rows}</tbody></table>'
+            '</div>'.format(
+                controller_row=render_scheduler_controller_row("", {}, new_row=True),
+                device_rows=render_scheduler_device_row("", {}, "", new_row=True),
             )
         )
 
@@ -542,6 +568,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <span id="hostname-status" class="status">Ready.</span>
   </section>
 
+  <script id="hidden-scheduler-controllers" type="application/json">{html.escape(json.dumps(hidden_controllers), quote=False)}</script>
   <script>
     function cleanObject(value) {{
       const result = {{}};
@@ -551,7 +578,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       return result;
     }}
     function collectControllers() {{
-      const result = {{}};
+      const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
+      const result = structuredClone(hiddenControllers);
       for (const row of document.querySelectorAll(".controller-row")) {{
         const key = row.querySelector(".controller-id").value.trim();
         if (!key) continue;
@@ -574,7 +602,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
         if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
+        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value || blockController, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}
