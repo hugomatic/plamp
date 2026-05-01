@@ -77,6 +77,18 @@ def scheduler_controllers(controllers: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def peripheral_assignments(controllers: dict[str, Any]) -> dict[str, list[str]]:
+    assignments: dict[str, list[str]] = {}
+    for controller_id, controller in controllers.items():
+        if not isinstance(controller, dict):
+            continue
+        serial = str(controller.get("pico_serial") or "")
+        if not serial:
+            continue
+        assignments.setdefault(serial, []).append(controller_id)
+    return assignments
+
+
 def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
     options = [option_tag("", "Unassigned", selected)]
     seen = set()
@@ -94,6 +106,40 @@ def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
 
 def pin_type_options(selected: str | None) -> str:
     return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
+
+
+def scheduler_devices_by_controller(controllers: dict[str, Any], devices: dict[str, Any]) -> list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]]:
+    grouped_devices: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for device_id, device in devices.items():
+        if not isinstance(device, dict):
+            continue
+        controller_id = str(device.get("controller") or "")
+        grouped_devices.setdefault(controller_id, []).append((device_id, device))
+
+    groups: list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]] = []
+    for controller_id, controller in controllers.items():
+        if not isinstance(controller, dict):
+            continue
+        controller_devices = grouped_devices.get(controller_id, [])
+        if controller_devices:
+            groups.append((controller_id, controller, controller_devices))
+    return groups
+
+
+def hidden_scheduler_controllers(
+    controllers: dict[str, Any],
+    scheduler_groups: list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]],
+) -> dict[str, Any]:
+    visible_controller_ids = {controller_id for controller_id, _, _ in scheduler_groups}
+    return {
+        controller_id: controller
+        for controller_id, controller in controllers.items()
+        if isinstance(controller, dict) and controller_id not in visible_controller_ids and str(controller.get("type") or "pico_scheduler") == "pico_scheduler"
+    }
+
+
+def json_script_text(value: Any) -> str:
+    return json.dumps(value).replace("</", "<\\/")
 
 
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
@@ -293,80 +339,84 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     host = summary.get("host") if isinstance(summary.get("host"), dict) else {"hostname": "", "network": []}
     host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
-    status_picos = summary.get("picos") if isinstance(summary.get("picos"), list) else setup_picos
+    status_picos = summary.get("picos") if isinstance(summary.get("picos"), list) and summary.get("picos") else setup_picos
     networks = host.get("network") if isinstance(host.get("network"), list) else []
     storage = summary.get("storage") if isinstance(summary.get("storage"), dict) else {}
     cameras = summary.get("cameras") if isinstance(summary.get("cameras"), dict) else {}
     rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
+    peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
+    scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
+    hidden_controllers = hidden_scheduler_controllers(scheduler_controller_options, scheduler_groups)
 
-    controller_rows = []
-    for controller_id in controllers:
-        controller = controllers.get(controller_id, {})
-        if not isinstance(controller, dict):
-            continue
-        controller_rows.append(
-            '<tr class="controller-row" data-controller-key="{controller_id}">'
+    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any], *, new_row: bool = False) -> str:
+        return (
+            '<tr class="controller-row{new_row_class}" data-controller-key="{controller_id}">'
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
-            '<td><select class="controller-type">{type_options}</select></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
             '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
+            '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(controller.get("label") or ""), quote=True),
-                type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
                 pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
                 report_every=html.escape(str(controller.get("report_every") or 10), quote=True),
+                type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
             )
         )
-    controller_rows.append(
-        '<tr class="controller-row new-row" data-controller-key="">'
-        '<td><input class="controller-id" placeholder="pump_lights" value=""></td>'
-        '<td><input class="controller-label" placeholder="Pump and lights" value=""></td>'
-        '<td><select class="controller-type">{type_options}</select></td>'
-        '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
-        '<td><input class="controller-report-every" type="number" min="1" value="10"></td>'
-        '</tr>'.format(type_options=controller_type_options("pico_scheduler"), pico_options_html=pico_options(setup_picos, ""))
-    )
 
-    device_rows = []
-    for device_id in devices:
-        device = devices.get(device_id, {})
-        if not isinstance(device, dict):
-            continue
-        device_rows.append(
-            '<tr class="device-row" data-device-id="{device_id}">'
+    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
+        return (
+            '<tr class="device-row{new_row_class}" data-device-id="{device_id}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
-            '<td><select class="device-controller">{controller_options_html}</select></td>'
+            '<td><input class="device-controller" value="{controller_id}" type="hidden"></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
             '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
-                controller_options_html=controller_options(scheduler_controller_options, str(device.get("controller") or "")),
+                controller_id=html.escape(controller_id, quote=True),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("type") or "gpio")),
                 editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
             )
         )
-    device_rows.append(
-        '<tr class="device-row new-row" data-device-id="">'
-        '<td><input class="device-id" placeholder="pump" value=""></td>'
-        '<td><input class="device-label" placeholder="Water pump" value=""></td>'
-        '<td><select class="device-controller">{controller_options_html}</select></td>'
-        '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
-        '<td><select class="device-type">{type_options}</select></td>'
-        '<td><select class="device-editor">{editor_options}</select></td>'
-        '</tr>'.format(
-            controller_options_html=controller_options(scheduler_controller_options, ""),
-            type_options=pin_type_options("gpio"),
-            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+
+    create_scheduler_block = (
+        '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+        '<tbody>{controller_row}</tbody></table>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
+        '<tbody>{device_rows}</tbody></table>'
+        '</div>'.format(
+            controller_row=render_scheduler_controller_row("", {}, new_row=True),
+            device_rows=render_scheduler_device_row("", {}, "", new_row=True),
         )
     )
+
+    scheduler_blocks = []
+    for controller_id, controller, controller_devices in scheduler_groups:
+        device_rows = [render_scheduler_device_row(device_id, device, controller_id) for device_id, device in controller_devices]
+        device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
+        scheduler_blocks.append(
+            '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+            '<tbody>{controller_row}</tbody></table>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
+            '<tbody>{device_rows}</tbody></table>'
+            '</div>'.format(
+                controller_id=html.escape(controller_id, quote=True),
+                controller_row=render_scheduler_controller_row(controller_id, controller),
+                device_rows="".join(device_rows),
+            )
+        )
+    scheduler_blocks.append(create_scheduler_block)
 
     detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
     camera_detected_keys, unmatched_detected_keys = camera_detected_matches(configured_cameras, detected_cameras)
@@ -402,10 +452,11 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         f"<td>{html.escape(str(item.get('port') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('usb_device') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('serial') or '-'))}</td>"
+        f"<td>{html.escape(', '.join(peripheral_assignment_map.get(str(item.get('serial') or ''), [])) or 'Unassigned')}</td>"
         f"<td>{html.escape(str(item.get('vendor_id') or '-'))}:{html.escape(str(item.get('product_id') or '-'))}</td>"
         "</tr>"
         for item in status_picos
-    ) or '<tr><td colspan="4">No peripherals found.</td></tr>'
+    ) or '<tr><td colspan="5">No peripherals found.</td></tr>'
 
     def camera_status_name(item: dict[str, Any]) -> str:
         connector = item.get("connector")
@@ -489,11 +540,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <section aria-label="Plamp config">
     <h2>Plamp config</h2>
     <p class="muted">Configure controllers, Pico scheduler devices, and cameras.</p>
-    <h3>Controllers</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead><tbody>{''.join(controller_rows)}</tbody></table>
+    <h3>Pico schedulers</h3>
+    {''.join(scheduler_blocks)}
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
-    <h3>Pico scheduler devices</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Controller</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead><tbody>{''.join(device_rows)}</tbody></table>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
     <table><thead><tr><th>ID</th><th>Label</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
@@ -504,7 +553,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <h2>System status</h2>
     <p class="muted">Detected hardware and host status.</p>
     <h3>Peripherals</h3>
-    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
+    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>Assigned</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
     <h3>Raspberry Pi cameras</h3>
     <table><thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
     <h3>Network</h3>
@@ -524,6 +573,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <span id="hostname-status" class="status">Ready.</span>
   </section>
 
+  <script id="hidden-scheduler-controllers" type="application/json">{json_script_text(hidden_controllers)}</script>
   <script>
     function cleanObject(value) {{
       const result = {{}};
@@ -532,18 +582,50 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       }}
       return result;
     }}
+    function hydrateControllerRowFromHidden(row) {{
+      const key = row.querySelector(".controller-id").value.trim();
+      const hiddenController = hiddenControllers[key];
+      if (!key || !hiddenController || row.dataset.controllerKey) return;
+      const labelInput = row.querySelector(".controller-label");
+      labelInput.value = hiddenController.label || "";
+      labelInput.defaultValue = hiddenController.label || "";
+      const picoSerialSelect = row.querySelector(".controller-pico-serial");
+      picoSerialSelect.value = hiddenController.pico_serial || "";
+      picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";
+      const reportEveryInput = row.querySelector(".controller-report-every");
+      reportEveryInput.value = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");
+      reportEveryInput.defaultValue = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");
+    }}
+    const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
+    for (const row of document.querySelectorAll(".controller-row.new-row")) {{
+      row.querySelector(".controller-pico-serial").dataset.defaultValue = row.querySelector(".controller-pico-serial").value;
+      row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));
+    }}
     function collectControllers() {{
-      const result = {{}};
+      const result = structuredClone(hiddenControllers);
       for (const row of document.querySelectorAll(".controller-row")) {{
         const key = row.querySelector(".controller-id").value.trim();
         if (!key) continue;
-        const picoSerial = row.querySelector(".controller-pico-serial").value;
+        const picoSerialSelect = row.querySelector(".controller-pico-serial");
+        const picoSerial = picoSerialSelect.value;
+        const picoSerialDefault = picoSerialSelect.dataset.defaultValue || "";
+        const labelInput = row.querySelector(".controller-label");
+        const label = labelInput.value.trim();
         const type = row.querySelector(".controller-type").value;
-        const reportEvery = row.querySelector(".controller-report-every").value;
-        const payload = {{pico_serial: picoSerial, label: row.querySelector(".controller-label").value.trim(), type}};
+        const reportEveryInput = row.querySelector(".controller-report-every");
+        const reportEvery = reportEveryInput.value;
+        const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {{}};
+        const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
+        const payload = isHiddenReuse ? existingController : {{type}};
+        payload.type = type;
+        if (!isHiddenReuse || label !== labelInput.defaultValue) payload.label = label;
+        if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.pico_serial = picoSerial;
         if (type === "pico_scheduler") {{
-          if (reportEvery === "") throw new Error(`Report interval required for controller ${{key}}.`);
-          Object.assign(payload, {{report_every: Number(reportEvery)}});
+          if (reportEvery === "") {{
+            if (!isHiddenReuse) throw new Error(`Report interval required for controller ${{key}}.`);
+          }} else {{
+            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.report_every = Number(reportEvery);
+          }}
         }}
         result[key] = cleanObject(payload);
       }}
@@ -556,7 +638,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
         if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
+        result[key] = cleanObject({{controller: blockController || row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}
@@ -609,7 +692,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       }}
     }}
     document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
-    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config/devices", collectDevices())));
+    document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())));
     document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
     document.getElementById("hostname-confirm").addEventListener("click", async () => {{
       const hostname = document.getElementById("hostname-input").value.trim();
