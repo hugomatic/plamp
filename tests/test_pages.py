@@ -1,9 +1,20 @@
+import json
+import re
 import unittest
 
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
+    def hidden_scheduler_controllers_payload(self, html: str) -> dict:
+        match = re.search(
+            r'<script id="hidden-scheduler-controllers" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        return json.loads(match.group(1))
+
     def test_timer_dashboard_page_links_to_settings(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
@@ -558,7 +569,12 @@ class PageRenderTests(unittest.TestCase):
                 "config": {
                     "controllers": {
                         "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
+                        "unused": {
+                            "type": "pico_scheduler",
+                            "pico_serial": "def",
+                            "report_every": 20,
+                            "label": "Unused & <grow> > flower",
+                        },
                     },
                     "devices": {
                         "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
@@ -579,10 +595,23 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
+        hidden_payload = self.hidden_scheduler_controllers_payload(html)
+
+        self.assertEqual(
+            hidden_payload["unused"],
+            {
+                "type": "pico_scheduler",
+                "pico_serial": "def",
+                "report_every": 20,
+                "label": "Unused & <grow> > flower",
+            },
+        )
+        self.assertIn('"Unused & <grow> > flower"', html)
+        self.assertNotIn("&amp;", hidden_payload["unused"]["label"])
+        self.assertNotIn("&lt;", hidden_payload["unused"]["label"])
+        self.assertNotIn("&gt;", hidden_payload["unused"]["label"])
         self.assertIn('const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{}");', html)
         self.assertIn("const result = structuredClone(hiddenControllers);", html)
-        self.assertIn('id="hidden-scheduler-controllers" type="application/json"', html)
-        self.assertIn('"unused"', html)
 
     def test_settings_page_combined_save_posts_config_to_api_config(self):
         html = render_settings_page(
@@ -622,12 +651,22 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn('class="pico-scheduler-block pico-scheduler-new"', html)
-        self.assertIn('class="controller-row new-row" data-controller-key=""', html)
-        self.assertIn('class="device-row new-row" data-device-id=""', html)
+        match = re.search(
+            r'(<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">.*?</div>)\s*<button id="save-controllers"',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        empty_block = match.group(1)
+
+        self.assertIn('class="controller-row new-row" data-controller-key=""', empty_block)
+        self.assertIn('class="device-row new-row" data-device-id=""', empty_block)
+        self.assertIn('class="device-controller" value="" type="hidden"', empty_block)
         self.assertIn("<h3>Pico schedulers</h3>", html)
         self.assertIn("<h3>Cameras</h3>", html)
         self.assertNotIn("<h3>Controllers</h3>", html)
+        self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
+        self.assertIn('controller: row.querySelector(".device-controller").value || blockController', html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
         html = render_settings_page(

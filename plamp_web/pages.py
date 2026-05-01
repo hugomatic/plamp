@@ -138,6 +138,10 @@ def hidden_scheduler_controllers(
     }
 
 
+def json_script_text(value: Any) -> str:
+    return json.dumps(value).replace("</", "<\\/")
+
+
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
     devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
@@ -568,7 +572,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <span id="hostname-status" class="status">Ready.</span>
   </section>
 
-  <script id="hidden-scheduler-controllers" type="application/json">{html.escape(json.dumps(hidden_controllers), quote=False)}</script>
+  <script id="hidden-scheduler-controllers" type="application/json">{json_script_text(hidden_controllers)}</script>
   <script>
     function cleanObject(value) {{
       const result = {{}};
