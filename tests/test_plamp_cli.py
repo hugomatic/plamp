@@ -197,3 +197,30 @@ class PlampCliConfigTests(unittest.TestCase):
             '{"config": {"cameras": {}, "controllers": {"main": {"type": "pico_scheduler"}}, "devices": {"pump": {"controller": "main", "pin": 3}}}, "detected": {"cameras": [], "picos": [{"serial": "ABC"}]}}\n',
         )
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+
+
+class PlampCliTimerTests(unittest.TestCase):
+    @patch("plamp_cli.main.request_json")
+    def test_timers_list_calls_timer_config(self, request_json):
+        request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
+
+        code = main(["timers", "list"])
+
+        self.assertEqual(code, 0)
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
+
+    @patch("plamp_cli.main.request_json")
+    @patch("plamp_cli.main.load_json_input")
+    def test_timers_set_puts_role_state(self, load_json_input, request_json):
+        load_json_input.return_value = {"report_every": 10, "events": []}
+        request_json.return_value = {"role": "pump_lights", "success": True}
+
+        code = main(["timers", "set", "pump_lights", "@state.json"])
+
+        self.assertEqual(code, 0)
+        request_json.assert_called_once_with(
+            "PUT",
+            "http://127.0.0.1:8000",
+            "/api/timers/pump_lights",
+            {"report_every": 10, "events": []},
+        )

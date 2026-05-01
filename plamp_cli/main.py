@@ -41,6 +41,30 @@ def build_parser() -> argparse.ArgumentParser:
         section_set.add_argument("payload")
         section_set.set_defaults(action="set", section=section_name)
 
+    timers = subparsers.add_parser("timers")
+    timer_subparsers = timers.add_subparsers(dest="timer_action", required=True)
+
+    timer_list = timer_subparsers.add_parser("list")
+    timer_list.set_defaults(timer_action="list")
+
+    timer_get = timer_subparsers.add_parser("get")
+    timer_get.add_argument("role")
+    timer_get.set_defaults(timer_action="get")
+
+    timer_set = timer_subparsers.add_parser("set")
+    timer_set.add_argument("role")
+    timer_set.add_argument("payload")
+    timer_set.set_defaults(timer_action="set")
+
+    timer_channels = timer_subparsers.add_parser("channels")
+    channel_subparsers = timer_channels.add_subparsers(dest="channel_action", required=True)
+
+    schedule = channel_subparsers.add_parser("set-schedule")
+    schedule.add_argument("role")
+    schedule.add_argument("channel_id")
+    schedule.add_argument("payload")
+    schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
+
     return parser
 
 
@@ -57,6 +81,29 @@ def _handle_config(args: argparse.Namespace, base_url: str) -> object:
         return request_json("PUT", base_url, path, payload)
 
     raise ValueError(f"unsupported config action: {args.action}")
+
+
+def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
+    if args.timer_action == "list":
+        return request_json("GET", base_url, "/api/timer-config")
+
+    if args.timer_action == "get":
+        return request_json("GET", base_url, f"/api/timers/{args.role}")
+
+    if args.timer_action == "set":
+        payload = load_json_input(args.payload)
+        return request_json("PUT", base_url, f"/api/timers/{args.role}", payload)
+
+    if args.timer_action == "channels" and args.channel_action == "set-schedule":
+        payload = load_json_input(args.payload)
+        return request_json(
+            "POST",
+            base_url,
+            f"/api/timers/{args.role}/channels/{args.channel_id}/schedule",
+            payload,
+        )
+
+    raise ValueError(f"unsupported timers action: {args.timer_action}")
 
 
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:
@@ -112,6 +159,10 @@ def main(
             result = _handle_config(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "timers":
+            result = _handle_timers(args, base_url)
+            if result is not None:
+                stdout.write(format_json_output(result, pretty=args.pretty))
         else:
             raise ValueError(f"unsupported area: {args.area}")
     except InputError as exc:
