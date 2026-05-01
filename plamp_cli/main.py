@@ -162,7 +162,7 @@ def main(
         elif args.area == "timers":
             result = _handle_timers(args, base_url)
             if result is not None:
-                stdout.write(format_json_output(result, pretty=args.pretty))
+                stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
         else:
             raise ValueError(f"unsupported area: {args.area}")
     except InputError as exc:

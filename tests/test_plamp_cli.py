@@ -1,6 +1,7 @@
 import unittest
 import subprocess
 import tempfile
+from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
@@ -203,10 +204,14 @@ class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
     def test_timers_list_calls_timer_config(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
+        stdout = StringIO()
+        stderr = StringIO()
 
-        code = main(["timers", "list"])
+        code = main(["timers", "list"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"channels": {}, "roles": ["pump_lights"], "time_format": "12h"}\n')
+        self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 
     @patch("plamp_cli.main.request_json")
@@ -214,13 +219,78 @@ class PlampCliTimerTests(unittest.TestCase):
     def test_timers_set_puts_role_state(self, load_json_input, request_json):
         load_json_input.return_value = {"report_every": 10, "events": []}
         request_json.return_value = {"role": "pump_lights", "success": True}
+        stdout = StringIO()
+        stderr = StringIO()
 
-        code = main(["timers", "set", "pump_lights", "@state.json"])
+        code = main(["timers", "set", "pump_lights", "@state.json"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"role": "pump_lights", "success": true}\n')
+        self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with(
             "PUT",
             "http://127.0.0.1:8000",
             "/api/timers/pump_lights",
             {"report_every": 10, "events": []},
         )
+
+    @patch("plamp_cli.main.request_json")
+    def test_timers_get_returns_role_state(self, request_json):
+        request_json.return_value = {"enabled": True, "mode": "auto"}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["timers", "get", "pump_lights"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"enabled": true, "mode": "auto"}\n')
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_lights")
+
+    @patch("plamp_cli.main.request_json")
+    @patch("plamp_cli.main.load_json_input")
+    def test_timers_channels_set_schedule_returns_channel_state(self, load_json_input, request_json):
+        load_json_input.return_value = {"minutes": [0, 15, 30, 45]}
+        request_json.return_value = {"channel_id": "main", "success": True}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(
+            ["timers", "channels", "set-schedule", "pump_lights", "main", "@schedule.json"],
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"channel_id": "main", "success": true}\n')
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with(
+            "POST",
+            "http://127.0.0.1:8000",
+            "/api/timers/pump_lights/channels/main/schedule",
+            {"minutes": [0, 15, 30, 45]},
+        )
+
+    @patch("plamp_cli.main.request_json")
+    def test_timers_get_renders_table_output(self, request_json):
+        request_json.return_value = {"mode": "auto"}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["--table", "timers", "get", "pump_lights"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "key  | value\n----+-----\nmode | auto \n")
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_lights")
+
+    def test_bare_timers_returns_nonzero(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            code = main(["timers"], stdout=stdout, stderr=stderr)
+
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("the following arguments are required", stderr.getvalue())
