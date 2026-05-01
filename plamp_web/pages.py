@@ -108,6 +108,24 @@ def pin_type_options(selected: str | None) -> str:
     return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
 
 
+def scheduler_devices_by_controller(controllers: dict[str, Any], devices: dict[str, Any]) -> list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]]:
+    grouped_devices: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for device_id, device in devices.items():
+        if not isinstance(device, dict):
+            continue
+        controller_id = str(device.get("controller") or "")
+        grouped_devices.setdefault(controller_id, []).append((device_id, device))
+
+    groups: list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]] = []
+    for controller_id, controller in controllers.items():
+        if not isinstance(controller, dict):
+            continue
+        controller_devices = grouped_devices.get(controller_id, [])
+        if controller_devices:
+            groups.append((controller_id, controller, controller_devices))
+    return groups
+
+
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
     devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
@@ -313,71 +331,74 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
+    scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
 
-    controller_rows = []
-    for controller_id in controllers:
-        controller = controllers.get(controller_id, {})
-        if not isinstance(controller, dict):
-            continue
-        controller_rows.append(
-            '<tr class="controller-row" data-controller-key="{controller_id}">'
+    def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any], *, new_row: bool = False) -> str:
+        return (
+            '<tr class="controller-row{new_row_class}" data-controller-key="{controller_id}">'
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
-            '<td><select class="controller-type">{type_options}</select></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
             '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
+            '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(controller.get("label") or ""), quote=True),
-                type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
                 pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
                 report_every=html.escape(str(controller.get("report_every") or 10), quote=True),
+                type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
             )
         )
-    controller_rows.append(
-        '<tr class="controller-row new-row" data-controller-key="">'
-        '<td><input class="controller-id" placeholder="pump_lights" value=""></td>'
-        '<td><input class="controller-label" placeholder="Pump and lights" value=""></td>'
-        '<td><select class="controller-type">{type_options}</select></td>'
-        '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
-        '<td><input class="controller-report-every" type="number" min="1" value="10"></td>'
-        '</tr>'.format(type_options=controller_type_options("pico_scheduler"), pico_options_html=pico_options(setup_picos, ""))
-    )
 
-    device_rows = []
-    for device_id in devices:
-        device = devices.get(device_id, {})
-        if not isinstance(device, dict):
-            continue
-        device_rows.append(
-            '<tr class="device-row" data-device-id="{device_id}">'
+    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
+        return (
+            '<tr class="device-row{new_row_class}" data-device-id="{device_id}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
-            '<td><select class="device-controller">{controller_options_html}</select></td>'
+            '<td><input class="device-controller" value="{controller_id}" type="hidden"></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
             '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
-                controller_options_html=controller_options(scheduler_controller_options, str(device.get("controller") or "")),
+                controller_id=html.escape(controller_id, quote=True),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("type") or "gpio")),
                 editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
             )
         )
-    device_rows.append(
-        '<tr class="device-row new-row" data-device-id="">'
-        '<td><input class="device-id" placeholder="pump" value=""></td>'
-        '<td><input class="device-label" placeholder="Water pump" value=""></td>'
-        '<td><select class="device-controller">{controller_options_html}</select></td>'
-        '<td><input class="device-pin" type="number" min="0" max="29" value=""></td>'
-        '<td><select class="device-type">{type_options}</select></td>'
-        '<td><select class="device-editor">{editor_options}</select></td>'
-        '</tr>'.format(
-            controller_options_html=controller_options(scheduler_controller_options, ""),
-            type_options=pin_type_options("gpio"),
-            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+
+    scheduler_blocks = []
+    for controller_id, controller, controller_devices in scheduler_groups:
+        device_rows = [render_scheduler_device_row(device_id, device, controller_id) for device_id, device in controller_devices]
+        device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
+        scheduler_blocks.append(
+            '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
+            '<h3>Pico schedulers</h3>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+            '<tbody>{controller_row}</tbody></table>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
+            '<tbody>{device_rows}</tbody></table>'
+            '</div>'.format(
+                controller_id=html.escape(controller_id, quote=True),
+                controller_row=render_scheduler_controller_row(controller_id, controller),
+                device_rows="".join(device_rows),
+            )
+        )
+
+    scheduler_blocks.append(
+        '<div class="pico-scheduler-new">'
+        '<h3>Add Pico scheduler</h3>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+        '<tbody>{controller_row}</tbody></table>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
+        '<tbody>{device_row}</tbody></table>'
+        '</div>'.format(
+            controller_row=render_scheduler_controller_row("", {}, new_row=True),
+            device_row=render_scheduler_device_row("", {}, "", new_row=True),
         )
     )
 
@@ -503,11 +524,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <section aria-label="Plamp config">
     <h2>Plamp config</h2>
     <p class="muted">Configure controllers, Pico scheduler devices, and cameras.</p>
-    <h3>Controllers</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead><tbody>{''.join(controller_rows)}</tbody></table>
+    {''.join(scheduler_blocks)}
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
-    <h3>Pico scheduler devices</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Controller</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead><tbody>{''.join(device_rows)}</tbody></table>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
     <table><thead><tr><th>ID</th><th>Label</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>

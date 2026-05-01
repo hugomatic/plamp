@@ -351,7 +351,7 @@ class PageRenderTests(unittest.TestCase):
                     "controllers": {"second": {"pico_serial": "2"}, "first": {"pico_serial": "1"}},
                     "devices": {
                         "lights": {"controller": "second", "pin": 3, "editor": "clock_window"},
-                        "pump": {"controller": "second", "pin": 2, "editor": "cycle"},
+                        "pump": {"controller": "first", "pin": 2, "editor": "cycle"},
                     },
                     "cameras": {},
                 },
@@ -443,7 +443,7 @@ class PageRenderTests(unittest.TestCase):
                             "label": "Pump lights",
                         }
                     },
-                    "devices": {},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"}},
                     "cameras": {},
                 },
                 "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
@@ -454,22 +454,42 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("<th>Type</th>", html)
         self.assertIn("<th>Report every seconds</th>", html)
-        self.assertIn('class="controller-type"', html)
         self.assertIn('class="controller-report-every"', html)
         self.assertIn('value="15"', html)
         self.assertIn("report_every: Number(reportEvery)", html)
 
-    def test_settings_page_labels_scheduler_devices_and_uses_output_type(self):
+    def test_settings_page_groups_scheduler_settings_by_controller(self):
         html = render_settings_page(
             {
                 "config": {
-                    "controllers": {"pump_lights": {"type": "pico_scheduler", "report_every": 10}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"}},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "pico_serial": "abc",
+                            "report_every": 10,
+                            "label": "Pump lights",
+                        },
+                        "unused": {
+                            "type": "pico_scheduler",
+                            "pico_serial": "def",
+                            "report_every": 20,
+                            "label": "Unused",
+                        },
+                    },
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                        "lights": {"controller": "pump_lights", "pin": 4, "type": "pwm", "editor": "clock_window", "label": "Lights"},
+                    },
                     "cameras": {},
                 },
-                "detected": {"picos": [], "cameras": []},
+                "detected": {
+                    "picos": [
+                        {"serial": "abc", "port": "/dev/ttyACM0"},
+                        {"serial": "def", "port": "/dev/ttyACM1"},
+                    ],
+                    "cameras": [],
+                },
                 "host": {"hostname": "plamp", "network": []},
                 "picos": [],
                 "software": {},
@@ -477,9 +497,59 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("<h3>Pico scheduler devices</h3>", html)
+        self.assertIn("<h3>Pico schedulers</h3>", html)
+        self.assertNotIn("<h3>Controllers</h3>", html)
+        self.assertEqual(html.count('class="pico-scheduler-block"'), 1)
+        self.assertIn('class="pico-scheduler-block" data-controller-key="pump_lights"', html)
+        self.assertNotIn('data-controller-key="unused"', html)
+        self.assertIn("<th>Assigned peripheral</th>", html)
+        self.assertIn("Pump lights", html)
+        self.assertIn('value="10"', html)
+        self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<th>Output type</th>", html)
         self.assertNotIn("<h3>Devices</h3>", html)
+
+    def test_settings_page_renders_only_devices_for_each_scheduler_controller(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "alpha": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Alpha"},
+                        "beta": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Beta"},
+                    },
+                    "devices": {
+                        "pump": {"controller": "alpha", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                        "fan": {"controller": "beta", "pin": 4, "type": "pwm", "editor": "clock_window", "label": "Fan"},
+                    },
+                    "cameras": {"rpicam_cam0": {"label": "Tent cam"}},
+                },
+                "detected": {
+                    "picos": [
+                        {"serial": "abc", "port": "/dev/ttyACM0"},
+                        {"serial": "def", "port": "/dev/ttyACM1"},
+                    ],
+                    "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}],
+                },
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        alpha_block_start = html.index('class="pico-scheduler-block" data-controller-key="alpha"')
+        beta_block_start = html.index('class="pico-scheduler-block" data-controller-key="beta"')
+        cameras_start = html.index("<h3>Cameras</h3>")
+
+        alpha_block = html[alpha_block_start:beta_block_start]
+        beta_block = html[beta_block_start:cameras_start]
+
+        self.assertIn('data-device-id="pump"', alpha_block)
+        self.assertNotIn('data-device-id="fan"', alpha_block)
+        self.assertIn('data-device-id="fan"', beta_block)
+        self.assertNotIn('data-device-id="pump"', beta_block)
+        self.assertIn('value="rpicam_cam0"', html)
+        self.assertIn("Detected: Camera Module 3 Wide wide", html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
         html = render_settings_page(
