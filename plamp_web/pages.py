@@ -350,9 +350,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             )
         )
 
-    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str) -> str:
+    def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
         return (
-            '<tr class="device-row" data-device-id="{device_id}">'
+            '<tr class="device-row{new_row_class}" data-device-id="{device_id}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
             '<td><input class="device-controller" value="{controller_id}" type="hidden"></td>'
@@ -360,6 +360,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
             '</tr>'.format(
+                new_row_class=" new-row" if new_row else "",
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
                 controller_id=html.escape(controller_id, quote=True),
@@ -372,9 +373,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     scheduler_blocks = []
     for controller_id, controller, controller_devices in scheduler_groups:
         device_rows = [render_scheduler_device_row(device_id, device, controller_id) for device_id, device in controller_devices]
+        device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
         scheduler_blocks.append(
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
-            '<h3>Pico schedulers</h3>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -508,6 +509,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   <section aria-label="Plamp config">
     <h2>Plamp config</h2>
     <p class="muted">Configure controllers, Pico scheduler devices, and cameras.</p>
+    <h3>Pico schedulers</h3>
     {''.join(scheduler_blocks)}
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>

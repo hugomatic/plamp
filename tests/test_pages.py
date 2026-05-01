@@ -494,6 +494,7 @@ class PageRenderTests(unittest.TestCase):
         )
 
         self.assertIn("<h3>Pico schedulers</h3>", html)
+        self.assertEqual(html.count("<h3>Pico schedulers</h3>"), 1)
         self.assertNotIn("<h3>Controllers</h3>", html)
         self.assertEqual(html.count('class="pico-scheduler-block"'), 1)
         self.assertIn('class="pico-scheduler-block" data-controller-key="pump_lights"', html)
@@ -504,7 +505,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<th>Output type</th>", html)
         self.assertNotIn("<h3>Devices</h3>", html)
-        self.assertNotIn('class="device-row new-row"', html)
+        self.assertIn('class="device-row new-row"', html)
         self.assertNotIn('class="pico-scheduler-new"', html)
 
     def test_settings_page_renders_only_devices_for_each_scheduler_controller(self):
@@ -544,8 +545,10 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('data-device-id="pump"', alpha_block)
         self.assertNotIn('data-device-id="fan"', alpha_block)
+        self.assertIn('class="device-row new-row" data-device-id=""', alpha_block)
         self.assertIn('data-device-id="fan"', beta_block)
         self.assertNotIn('data-device-id="pump"', beta_block)
+        self.assertIn('class="device-row new-row" data-device-id=""', beta_block)
         self.assertIn('value="rpicam_cam0"', html)
         self.assertIn("Detected: Camera Module 3 Wide wide", html)
 
