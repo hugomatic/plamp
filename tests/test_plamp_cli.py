@@ -1,9 +1,12 @@
 import unittest
 import subprocess
 import tempfile
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from plamp_cli.http import ApiError, NetworkError
+from plamp_cli.io import InputError
 from plamp_cli.main import build_parser, main
 
 
@@ -59,11 +62,18 @@ class PlampCliConfigTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
     def test_config_get_calls_api_config(self, request_json):
         request_json.return_value = {"config": {"controllers": {}}, "detected": {"picos": [], "cameras": []}}
+        stdout = StringIO()
+        stderr = StringIO()
 
-        code = main(["config", "get"])
+        code = main(["config", "get"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+        self.assertEqual(
+            stdout.getvalue(),
+            '{"config": {"controllers": {}}, "detected": {"cameras": [], "picos": []}}\n',
+        )
+        self.assertEqual(stderr.getvalue(), "")
 
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
@@ -71,7 +81,7 @@ class PlampCliConfigTests(unittest.TestCase):
         load_json_input.return_value = {"pump": {"controller": "timer", "pin": 3, "editor": "cycle"}}
         request_json.return_value = {"config": {"devices": {}}, "detected": {"picos": [], "cameras": []}}
 
-        code = main(["config", "devices", "set", "@devices.json"])
+        code = main(["config", "devices", "set", "@devices.json"], stdout=StringIO(), stderr=StringIO())
 
         self.assertEqual(code, 0)
         request_json.assert_called_once_with(
@@ -80,3 +90,70 @@ class PlampCliConfigTests(unittest.TestCase):
             "/api/config/devices",
             {"pump": {"controller": "timer", "pin": 3, "editor": "cycle"}},
         )
+
+    @patch("plamp_cli.main.request_json")
+    def test_config_devices_get_returns_section_payload(self, request_json):
+        request_json.return_value = {
+            "config": {
+                "controllers": {"main": {}},
+                "devices": {"pump": {"controller": "timer"}},
+                "cameras": {},
+            },
+            "detected": {"picos": [], "cameras": []},
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["config", "devices", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"pump": {"controller": "timer"}}\n')
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+
+    @patch("plamp_cli.main.request_json")
+    @patch("plamp_cli.main.load_json_input", side_effect=InputError("invalid JSON input: Expecting value"))
+    def test_config_set_input_error_returns_exit_code_five(self, load_json_input, request_json):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["config", "set", "@config.json"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 5)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid JSON input: Expecting value", stderr.getvalue())
+        request_json.assert_not_called()
+
+    @patch("plamp_cli.main.request_json", side_effect=ApiError(422, "bad payload"))
+    def test_config_get_api_error_returns_exit_code_three(self, request_json):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["config", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("API 422: bad payload", stderr.getvalue())
+
+    @patch("plamp_cli.main.request_json", side_effect=NetworkError("connection refused"))
+    def test_config_get_network_error_returns_exit_code_four(self, request_json):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["config", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 4)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("connection refused", stderr.getvalue())
+
+    @patch("plamp_cli.main.request_json")
+    def test_config_get_rejects_table_flag(self, request_json):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["--table", "config", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("--table is not supported for config commands", stderr.getvalue())
+        request_json.assert_not_called()

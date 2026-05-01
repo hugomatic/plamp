@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 import sys
+from typing import TextIO
 
-from plamp_cli.http import build_base_url, request_json
-from plamp_cli.io import format_json_output, load_json_input
+from plamp_cli.http import ApiError, NetworkError, build_base_url, request_json
+from plamp_cli.io import InputError, format_json_output, load_json_input
 
 _CONFIG_SECTIONS = ("controllers", "devices", "cameras")
 
@@ -58,21 +59,43 @@ def _handle_config(args: argparse.Namespace, base_url: str) -> object:
     raise ValueError(f"unsupported config action: {args.action}")
 
 
-def main(argv: Sequence[str]) -> int:
+def main(
+    argv: Sequence[str],
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    stdout = stdout or sys.stdout
+    stderr = stderr or sys.stderr
     parser = build_parser()
     try:
         args = parser.parse_args(list(argv))
     except SystemExit as exc:
         return int(exc.code)
 
-    base_url = build_base_url(args.host, args.port, args.base_url)
+    try:
+        if args.area == "config" and args.table:
+            raise ValueError("--table is not supported for config commands")
 
-    if args.area == "config":
-        result = _handle_config(args, base_url)
-        if result is not None:
-            sys.stdout.write(format_json_output(result, pretty=args.pretty))
-    else:
-        raise ValueError(f"unsupported area: {args.area}")
+        base_url = build_base_url(args.host, args.port, args.base_url)
+
+        if args.area == "config":
+            result = _handle_config(args, base_url)
+            if result is not None:
+                stdout.write(format_json_output(result, pretty=args.pretty))
+        else:
+            raise ValueError(f"unsupported area: {args.area}")
+    except InputError as exc:
+        stderr.write(f"{exc}\n")
+        return 5
+    except ApiError as exc:
+        stderr.write(f"{exc}\n")
+        return 3
+    except NetworkError as exc:
+        stderr.write(f"{exc}\n")
+        return 4
+    except ValueError as exc:
+        stderr.write(f"{exc}\n")
+        return 2
 
     return 0
 
