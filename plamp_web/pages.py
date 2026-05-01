@@ -588,12 +588,22 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const key = row.querySelector(".controller-id").value.trim();
         if (!key) continue;
         const picoSerial = row.querySelector(".controller-pico-serial").value;
+        const label = row.querySelector(".controller-label").value.trim();
         const type = row.querySelector(".controller-type").value;
-        const reportEvery = row.querySelector(".controller-report-every").value;
-        const payload = {{pico_serial: picoSerial, label: row.querySelector(".controller-label").value.trim(), type}};
+        const reportEveryInput = row.querySelector(".controller-report-every");
+        const reportEvery = reportEveryInput.value;
+        const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {{}};
+        const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
+        const payload = isHiddenReuse ? existingController : {{type}};
+        payload.type = type;
+        if (label || !isHiddenReuse) payload.label = label;
+        if (picoSerial || !isHiddenReuse) payload.pico_serial = picoSerial;
         if (type === "pico_scheduler") {{
-          if (reportEvery === "") throw new Error(`Report interval required for controller ${{key}}.`);
-          Object.assign(payload, {{report_every: Number(reportEvery)}});
+          if (reportEvery === "") {{
+            if (!isHiddenReuse) throw new Error(`Report interval required for controller ${{key}}.`);
+          }} else {{
+            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.report_every = Number(reportEvery);
+          }}
         }}
         result[key] = cleanObject(payload);
       }}
@@ -607,7 +617,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const pinValue = row.querySelector(".device-pin").value;
         if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
         const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
-        result[key] = cleanObject({{controller: row.querySelector(".device-controller").value || blockController, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        result[key] = cleanObject({{controller: blockController || row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
       }}
       return result;
     }}
