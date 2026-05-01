@@ -19,7 +19,7 @@ def load_json_input(value: str, stdin: TextIO | None = None) -> Any:
             raw = Path(value[1:]).read_text(encoding="utf-8")
         else:
             raise InputError("expected @file.json or - for stdin")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         raise InputError(f"unable to read JSON input from {value[1:]}: {exc}") from exc
 
     try:

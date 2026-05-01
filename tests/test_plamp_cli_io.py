@@ -24,6 +24,14 @@ class PlampCliIoTests(unittest.TestCase):
             with self.assertRaises(InputError):
                 load_json_input(f"@{tmp}", stdin=io.StringIO(""))
 
+    def test_load_json_input_invalid_utf8_file_raises_input_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "payload.json"
+            path.write_bytes(b'{"ok": \xff}')
+
+            with self.assertRaises(InputError):
+                load_json_input(f"@{path}", stdin=io.StringIO(""))
+
     def test_load_json_input_reads_stdin_marker(self):
         self.assertEqual(load_json_input("-", stdin=io.StringIO('{"ok": true}')), {"ok": True})
 
