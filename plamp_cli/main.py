@@ -6,7 +6,7 @@ import sys
 from typing import TextIO
 
 from plamp_cli.http import ApiError, NetworkError, build_base_url, request_json
-from plamp_cli.io import InputError, format_json_output, load_json_input
+from plamp_cli.io import InputError, format_json_output, load_json_input, render_table
 
 _CONFIG_SECTIONS = ("controllers", "devices", "cameras")
 
@@ -59,6 +59,33 @@ def _handle_config(args: argparse.Namespace, base_url: str) -> object:
     raise ValueError(f"unsupported config action: {args.action}")
 
 
+def _format_config_output(value: object, table: bool, pretty: bool) -> str:
+    if not table:
+        return format_json_output(value, pretty=pretty)
+
+    if isinstance(value, list):
+        if all(isinstance(item, dict) for item in value):
+            return render_table([dict(item) for item in value])
+        return format_json_output(value, pretty=pretty)
+
+    if isinstance(value, dict):
+        if not value:
+            return render_table([])
+
+        if all(isinstance(item, dict) for item in value.values()):
+            rows = []
+            for key, item in value.items():
+                row = {"id": key}
+                row.update(item)
+                rows.append(row)
+            return render_table(rows)
+
+        rows = [{"key": key, "value": value[key]} for key in value]
+        return render_table(rows)
+
+    return format_json_output(value, pretty=pretty)
+
+
 def main(
     argv: Sequence[str],
     stdout: TextIO | None = None,
@@ -73,15 +100,12 @@ def main(
         return int(exc.code)
 
     try:
-        if args.area == "config" and args.table:
-            raise ValueError("--table is not supported for config commands")
-
         base_url = build_base_url(args.host, args.port, args.base_url)
 
         if args.area == "config":
             result = _handle_config(args, base_url)
             if result is not None:
-                stdout.write(format_json_output(result, pretty=args.pretty))
+                stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
         else:
             raise ValueError(f"unsupported area: {args.area}")
     except InputError as exc:

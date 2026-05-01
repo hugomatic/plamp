@@ -147,13 +147,30 @@ class PlampCliConfigTests(unittest.TestCase):
         self.assertIn("connection refused", stderr.getvalue())
 
     @patch("plamp_cli.main.request_json")
-    def test_config_get_rejects_table_flag(self, request_json):
+    def test_config_devices_get_renders_table_output(self, request_json):
+        request_json.return_value = {
+            "config": {
+                "controllers": {},
+                "devices": {
+                    "pump": {"controller": "timer", "pin": 3},
+                    "fan": {"controller": "timer", "pin": 4},
+                },
+                "cameras": {},
+            },
+            "detected": {"picos": [], "cameras": []},
+        }
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["--table", "config", "get"], stdout=stdout, stderr=stderr)
+        code = main(["--table", "config", "devices", "get"], stdout=stdout, stderr=stderr)
 
-        self.assertEqual(code, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("--table is not supported for config commands", stderr.getvalue())
-        request_json.assert_not_called()
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(
+            stdout.getvalue(),
+            "id   | controller | pin\n"
+            "----+----------+---\n"
+            "pump | timer      | 3  \n"
+            "fan  | timer      | 4  \n",
+        )
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
