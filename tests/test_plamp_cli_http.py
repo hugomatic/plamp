@@ -81,6 +81,23 @@ class PlampCliHttpTests(unittest.TestCase):
         self.assertEqual(str(ctx.exception), "API 422: bad payload")
 
     @patch("plamp_cli.http.urlopen")
+    def test_request_json_raises_api_error_with_validation_error_list_detail(self, urlopen):
+        urlopen.side_effect = HTTPError(
+            "http://127.0.0.1:8000/api/config",
+            422,
+            "Unprocessable Entity",
+            hdrs=None,
+            fp=io.BytesIO(json.dumps({"detail": [{"msg": "Field required"}]}).encode("utf-8")),
+        )
+
+        with self.assertRaises(ApiError) as ctx:
+            request_json("GET", "http://127.0.0.1:8000", "/api/config")
+
+        self.assertEqual(ctx.exception.status, 422)
+        self.assertEqual(ctx.exception.detail, "Field required")
+        self.assertEqual(str(ctx.exception), "API 422: Field required")
+
+    @patch("plamp_cli.http.urlopen")
     def test_request_json_wraps_network_error(self, urlopen):
         urlopen.side_effect = URLError(TimeoutError("timed out"))
 
