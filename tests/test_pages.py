@@ -2,7 +2,7 @@ import json
 import re
 import unittest
 
-from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, render_api_test_page, render_settings_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
@@ -14,6 +14,15 @@ class PageRenderTests(unittest.TestCase):
         )
         self.assertIsNotNone(match)
         return json.loads(match.group(1))
+
+    def scheduler_empty_state_block(self, html: str) -> str:
+        match = re.search(
+            r'(<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">.*?</div>)\s*<button id="save-controllers"',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        return match.group(1)
 
     def test_timer_dashboard_page_links_to_settings(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -573,7 +582,7 @@ class PageRenderTests(unittest.TestCase):
                             "type": "pico_scheduler",
                             "pico_serial": "def",
                             "report_every": 20,
-                            "label": "Unused & <grow> > flower",
+                            "label": "Unused & <grow> > flower </script> bloom",
                         },
                     },
                     "devices": {
@@ -603,15 +612,31 @@ class PageRenderTests(unittest.TestCase):
                 "type": "pico_scheduler",
                 "pico_serial": "def",
                 "report_every": 20,
-                "label": "Unused & <grow> > flower",
+                "label": "Unused & <grow> > flower </script> bloom",
             },
         )
-        self.assertIn('"Unused & <grow> > flower"', html)
+        self.assertIn(r'"Unused & <grow> > flower <\/script> bloom"', html)
+        self.assertNotIn('"Unused & <grow> > flower </script> bloom"', html)
         self.assertNotIn("&amp;", hidden_payload["unused"]["label"])
         self.assertNotIn("&lt;", hidden_payload["unused"]["label"])
         self.assertNotIn("&gt;", hidden_payload["unused"]["label"])
         self.assertIn('const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{}");', html)
         self.assertIn("const result = structuredClone(hiddenControllers);", html)
+
+    def test_json_script_text_preserves_payload_and_escapes_script_end_tag(self):
+        payload = {
+            "unused": {
+                "label": "Unused </script> & <grow> > flower",
+                "type": "pico_scheduler",
+                "report_every": 20,
+            }
+        }
+
+        rendered = json_script_text(payload)
+
+        self.assertEqual(json.loads(rendered), payload)
+        self.assertIn(r"<\/script>", rendered)
+        self.assertNotIn("</script>", rendered)
 
     def test_settings_page_combined_save_posts_config_to_api_config(self):
         html = render_settings_page(
@@ -651,17 +676,14 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        match = re.search(
-            r'(<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">.*?</div>)\s*<button id="save-controllers"',
-            html,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        empty_block = match.group(1)
+        empty_block = self.scheduler_empty_state_block(html)
 
         self.assertIn('class="controller-row new-row" data-controller-key=""', empty_block)
         self.assertIn('class="device-row new-row" data-device-id=""', empty_block)
         self.assertIn('class="device-controller" value="" type="hidden"', empty_block)
+        self.assertEqual(empty_block.count('class="controller-row'), 1)
+        self.assertEqual(empty_block.count('class="device-row'), 1)
+        self.assertIn('class="controller-id" placeholder="pump_lights" value=""', empty_block)
         self.assertIn("<h3>Pico schedulers</h3>", html)
         self.assertIn("<h3>Cameras</h3>", html)
         self.assertNotIn("<h3>Controllers</h3>", html)
