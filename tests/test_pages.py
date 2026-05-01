@@ -276,7 +276,7 @@ class PageRenderTests(unittest.TestCase):
             {
                 "config": {
                     "controllers": {
-                        "alpha": {"pico_serial": "abc"},
+                        "alpha": {"type": "manual", "pico_serial": "abc"},
                         "beta": {"pico_serial": "abc"},
                     },
                     "devices": {},
@@ -297,8 +297,52 @@ class PageRenderTests(unittest.TestCase):
         )
 
         self.assertIn("<th>Assigned</th>", html)
-        self.assertIn("<td>alpha, beta</td>", html)
+        self.assertIn("<td>beta</td>", html)
+        self.assertNotIn("<td>alpha, beta</td>", html)
         self.assertIn("<td>Unassigned</td>", html)
+
+    def test_settings_page_uses_detected_picos_when_status_picos_are_missing_or_empty(self):
+        detected_picos = [
+            {"serial": "abc", "port": "/dev/ttyACM0", "usb_device": "USB Serial", "vendor_id": "1234", "product_id": "abcd"},
+        ]
+
+        missing_status_html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": detected_picos, "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "software": {},
+                "storage": {},
+            }
+        )
+        empty_status_html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": detected_picos, "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        for html in [missing_status_html, empty_status_html]:
+            self.assertIn("/dev/ttyACM0", html)
+            self.assertIn("<td>Unassigned</td>", html)
+
+    def test_settings_page_uses_five_column_empty_peripherals_row(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn('<tr><td colspan="5">No peripherals found.</td></tr>', html)
 
     def test_settings_page_preserves_config_order_for_setup_rows(self):
         html = render_settings_page(

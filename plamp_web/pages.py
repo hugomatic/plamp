@@ -305,14 +305,14 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     host = summary.get("host") if isinstance(summary.get("host"), dict) else {"hostname": "", "network": []}
     host_time = summary.get("host_time") if isinstance(summary.get("host_time"), dict) else {}
-    status_picos = summary.get("picos") if isinstance(summary.get("picos"), list) else setup_picos
+    status_picos = summary.get("picos") if isinstance(summary.get("picos"), list) and summary.get("picos") else setup_picos
     networks = host.get("network") if isinstance(host.get("network"), list) else []
     storage = summary.get("storage") if isinstance(summary.get("storage"), dict) else {}
     cameras = summary.get("cameras") if isinstance(summary.get("cameras"), dict) else {}
     rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
-    peripheral_assignment_map = peripheral_assignments(controllers)
+    peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
 
     controller_rows = []
     for controller_id in controllers:
