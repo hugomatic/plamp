@@ -529,6 +529,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Pump lights", html)
         self.assertIn('value="10"', html)
         self.assertIn("/dev/ttyACM0", html)
+        self.assertIn("<h4>Devices</h4>", html)
         self.assertIn("<th>Output type</th>", html)
         self.assertNotIn("<h3>Devices</h3>", html)
         self.assertIn('class="device-row new-row"', html)
@@ -730,7 +731,7 @@ class PageRenderTests(unittest.TestCase):
         )
 
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('controller: blockController || row.querySelector(".device-controller").value', html)
+        self.assertIn('controller: blockController || row.dataset.deviceController || ""', html)
         self.assertNotIn('controller: row.querySelector(".device-controller").value || blockController', html)
 
     def test_settings_page_renders_create_block_even_when_scheduler_exists(self):
@@ -761,6 +762,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('class="pico-scheduler-block pico-scheduler-new" data-controller-key=""', blocks[1])
         self.assertIn('class="controller-row new-row" data-controller-key=""', blocks[1])
         self.assertIn('class="device-row new-row" data-device-id=""', blocks[1])
+        self.assertIn("<h4>Devices</h4>", blocks[1])
 
     def test_settings_page_renders_create_path_when_no_scheduler_groups_exist(self):
         html = render_settings_page(
@@ -789,15 +791,17 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('class="controller-row new-row" data-controller-key=""', empty_block)
         self.assertIn('class="device-row new-row" data-device-id=""', empty_block)
-        self.assertIn('class="device-controller" value="" type="hidden"', empty_block)
+        self.assertIn('data-device-controller=""', empty_block)
+        self.assertNotIn('class="device-controller" value="" type="hidden"', empty_block)
         self.assertEqual(empty_block.count('class="controller-row'), 1)
         self.assertEqual(empty_block.count('class="device-row'), 1)
         self.assertIn('class="controller-id" placeholder="pump_lights" value=""', empty_block)
         self.assertIn("<h3>Pico schedulers</h3>", html)
+        self.assertIn("<h4>Devices</h4>", empty_block)
         self.assertIn("<h3>Cameras</h3>", html)
         self.assertNotIn("<h3>Controllers</h3>", html)
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('controller: blockController || row.querySelector(".device-controller").value', html)
+        self.assertIn('controller: blockController || row.dataset.deviceController || ""', html)
 
     def test_settings_page_hydrates_create_block_from_hidden_controller_data(self):
         html = render_settings_page(
