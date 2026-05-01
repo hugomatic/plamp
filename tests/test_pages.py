@@ -24,6 +24,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIsNotNone(match)
         return match.group(1)
 
+    def scheduler_blocks(self, html: str) -> list[str]:
+        return re.findall(r'<div class="pico-scheduler-block[^"]*" data-controller-key=".*?">.*?</div>', html, re.DOTALL)
+
     def test_timer_dashboard_page_links_to_settings(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
@@ -432,7 +435,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('"/api/config/devices"', html)
         self.assertIn('"/api/config/cameras"', html)
         self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
-        self.assertIn('const label = row.querySelector(".controller-label").value.trim();', html)
+        self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
+        self.assertIn('const label = labelInput.value.trim();', html)
         self.assertIn('label: row.querySelector(".camera-label").value.trim()', html)
         self.assertIn('detected_key: row.dataset.cameraDetectedKey || ""', html)
         self.assertIn('const pinValue = row.querySelector(".device-pin").value', html)
@@ -674,8 +678,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {};', html)
         self.assertIn('const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;', html)
         self.assertIn('const payload = isHiddenReuse ? existingController : {type};', html)
-        self.assertIn('if (label || !isHiddenReuse) payload.label = label;', html)
-        self.assertIn('if (picoSerial || !isHiddenReuse) payload.pico_serial = picoSerial;', html)
+        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.label = label;', html)
+        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.pico_serial = picoSerial;', html)
         self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.report_every = Number(reportEvery);', html)
 
     def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
@@ -701,6 +705,35 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
         self.assertIn('controller: blockController || row.querySelector(".device-controller").value', html)
         self.assertNotIn('controller: row.querySelector(".device-controller").value || blockController', html)
+
+    def test_settings_page_renders_create_block_even_when_scheduler_exists(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
+                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
+                    },
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                    },
+                    "cameras": {},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}, {"serial": "def", "port": "/dev/ttyACM1"}], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        blocks = self.scheduler_blocks(html)
+
+        self.assertEqual(len(blocks), 2)
+        self.assertIn('class="pico-scheduler-block" data-controller-key="pump_lights"', blocks[0])
+        self.assertIn('class="pico-scheduler-block pico-scheduler-new" data-controller-key=""', blocks[1])
+        self.assertIn('class="controller-row new-row" data-controller-key=""', blocks[1])
+        self.assertIn('class="device-row new-row" data-device-id=""', blocks[1])
 
     def test_settings_page_renders_create_path_when_no_scheduler_groups_exist(self):
         html = render_settings_page(
@@ -738,6 +771,36 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("<h3>Controllers</h3>", html)
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
         self.assertIn('controller: blockController || row.querySelector(".device-controller").value', html)
+
+    def test_settings_page_hydrates_create_block_from_hidden_controller_data(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
+                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
+                    },
+                    "devices": {
+                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
+                    },
+                    "cameras": {},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}, {"serial": "def", "port": "/dev/ttyACM1"}], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('function hydrateControllerRowFromHidden(row) {', html)
+        self.assertIn('const hiddenController = hiddenControllers[key];', html)
+        self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
+        self.assertIn('labelInput.defaultValue = hiddenController.label || "";', html)
+        self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
+        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";', html)
+        self.assertIn('reportEveryInput.defaultValue = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");', html)
+        self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
         html = render_settings_page(
