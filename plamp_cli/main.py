@@ -72,13 +72,19 @@ def _format_config_output(value: object, table: bool, pretty: bool) -> str:
         if not value:
             return render_table([])
 
-        if all(isinstance(item, dict) for item in value.values()):
+        if all(isinstance(item, dict) for item in value.values()) and all(
+            all(not isinstance(nested, (dict, list)) for nested in item.values())
+            for item in value.values()
+        ):
             rows = []
             for key, item in value.items():
                 row = {"id": key}
                 row.update(item)
                 rows.append(row)
             return render_table(rows)
+
+        if any(isinstance(item, (dict, list)) for item in value.values()):
+            return format_json_output(value, pretty=pretty)
 
         rows = [{"key": key, "value": value[key]} for key in value]
         return render_table(rows)

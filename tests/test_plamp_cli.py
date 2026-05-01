@@ -174,3 +174,26 @@ class PlampCliConfigTests(unittest.TestCase):
             "fan  | timer      | 4  \n",
         )
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+
+    @patch("plamp_cli.main.request_json")
+    def test_config_get_table_falls_back_to_json_for_root_envelope(self, request_json):
+        request_json.return_value = {
+            "config": {
+                "controllers": {"main": {"type": "pico_scheduler"}},
+                "devices": {"pump": {"controller": "main", "pin": 3}},
+                "cameras": {},
+            },
+            "detected": {"picos": [{"serial": "ABC"}], "cameras": []},
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["--table", "config", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(
+            stdout.getvalue(),
+            '{"config": {"cameras": {}, "controllers": {"main": {"type": "pico_scheduler"}}, "devices": {"pump": {"controller": "main", "pin": 3}}}, "detected": {"cameras": [], "picos": [{"serial": "ABC"}]}}\n',
+        )
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
