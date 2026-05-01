@@ -370,10 +370,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
         return (
-            '<tr class="device-row{new_row_class}" data-device-id="{device_id}">'
+            '<tr class="device-row{new_row_class}" data-device-id="{device_id}" data-device-controller="{controller_id}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
-            '<td><input class="device-controller" value="{controller_id}" type="hidden"></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
             '<td><select class="device-type">{type_options}</select></td>'
             '<td><select class="device-editor">{editor_options}</select></td>'
@@ -392,6 +391,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
         '<tbody>{controller_row}</tbody></table>'
+        '<h4>Devices</h4>'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
         '<tbody>{device_rows}</tbody></table>'
         '</div>'.format(
@@ -408,6 +408,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
+            '<h4>Devices</h4>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
             '<tbody>{device_rows}</tbody></table>'
             '</div>'.format(
@@ -633,15 +634,15 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     }}
     function collectDevices() {{
       const result = {{}};
-      for (const row of document.querySelectorAll(".device-row")) {{
-        const key = row.querySelector(".device-id").value.trim();
-        if (!key) continue;
-        const pinValue = row.querySelector(".device-pin").value;
-        if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
-        const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
-        result[key] = cleanObject({{controller: blockController || row.querySelector(".device-controller").value, pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
-      }}
-      return result;
+        for (const row of document.querySelectorAll(".device-row")) {{
+            const key = row.querySelector(".device-id").value.trim();
+            if (!key) continue;
+            const pinValue = row.querySelector(".device-pin").value;
+            if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
+            const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
+            result[key] = cleanObject({{controller: blockController || row.dataset.deviceController || "", pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+        }}
+        return result;
     }}
     function collectCameras() {{
       const result = {{}};
