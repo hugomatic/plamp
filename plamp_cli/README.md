@@ -69,14 +69,110 @@ uv run python -m plamp_cli pics list --source grow --limit 10
 
 ## Smoke Test
 
+1. Read config:
+
 ```bash
-uv run python -m plamp_cli config get
-uv run python -m plamp_cli timers list
-uv run python -m plamp_cli timers get pump_lights
-uv run python -m plamp_cli pics list --limit 3
-uv run python -m plamp_cli pics take
-# then use a real image_key from the list output:
+uv run python -m plamp_cli --pretty config get
+```
+
+Expected shape:
+
+```json
+{
+  "config": {
+    "controllers": { "...": {} },
+    "devices": { "...": {} },
+    "cameras": { "...": {} }
+  },
+  "detected": {
+    "picos": [],
+    "cameras": []
+  }
+}
+```
+
+2. List timer roles and channels:
+
+```bash
+uv run python -m plamp_cli --pretty timers list
+```
+
+Expected shape:
+
+```json
+{
+  "roles": ["pump_lights"],
+  "channels": {
+    "pump_lights": []
+  },
+  "time_format": "12h"
+}
+```
+
+3. Read one timer state:
+
+```bash
+uv run python -m plamp_cli --pretty timers get pump_lights
+```
+
+Expected shape:
+
+```json
+{
+  "report_every": 10,
+  "events": []
+}
+```
+
+4. List a few pictures and copy one `image_key`:
+
+```bash
+uv run python -m plamp_cli --pretty pics list --limit 3
+```
+
+Expected shape:
+
+```json
+{
+  "captures": [
+    {
+      "image_key": "...",
+      "image_url": "/api/camera/images/..."
+    }
+  ],
+  "limit": 3,
+  "offset": 0,
+  "has_more": false,
+  "total": 0
+}
+```
+
+5. Trigger one capture:
+
+```bash
+uv run python -m plamp_cli --pretty pics take
+```
+
+Expected shape:
+
+```json
+{
+  "capture_id": "...",
+  "image_url": "/api/camera/captures/.../image"
+}
+```
+
+6. Download one real image using the `image_key` from step 4:
+
+```bash
 uv run python -m plamp_cli pics get <image_key> --out /tmp/latest.jpg
+ls -lh /tmp/latest.jpg
+```
+
+Expected result:
+
+```text
+/tmp/latest.jpg exists and is non-empty
 ```
 
 ## Defaults
