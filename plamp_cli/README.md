@@ -4,68 +4,80 @@
 
 ## Install
 
-From the repo root:
+Use the repo root, not `plamp_cli/`:
 
 ```bash
-uv run python -m pip install --no-deps --editable .
+cd /home/hugo/.openclaw/workspace/code/plamp
 ```
 
-That installs the `plamp` command from the current checkout.
-
-If you do not want to install it yet, you can still run it as a module:
+Recommended for testing and agent use:
 
 ```bash
 uv run python -m plamp_cli --help
+```
+
+Optional shell install if you want a normal `plamp` command in `PATH`:
+
+```bash
+python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp
+```
+
+After a `--user` install:
+
+```bash
+~/.local/bin/plamp --help
 ```
 
 ## Run
 
-Supported ways to run it:
+Recommended:
 
 ```bash
-plamp --help
-uv run plamp --help
 uv run python -m plamp_cli --help
 ```
 
-Default target:
+Also supported:
+
+```bash
+~/.local/bin/plamp --help
+```
+
+Default API target:
 
 ```text
 http://127.0.0.1:8000
 ```
 
+## Help
+
+Use:
+
+```bash
+uv run python -m plamp_cli --help
+uv run python -m plamp_cli config --help
+uv run python -m plamp_cli timers --help
+uv run python -m plamp_cli pics --help
+```
+
 ## Quick Start
 
 ```bash
-plamp --help
-plamp config get
-plamp timers list
-plamp pics list --source grow --limit 10
+uv run python -m plamp_cli config get
+uv run python -m plamp_cli timers list
+uv run python -m plamp_cli pics list --source grow --limit 10
 ```
 
 ## Smoke Test
 
 ```bash
-plamp config get
-plamp timers list
-plamp timers get pump_lights
-plamp pics list --limit 3
-plamp pics take
-plamp pics get grow:latest --out /tmp/latest.jpg
+uv run python -m plamp_cli config get
+uv run python -m plamp_cli timers list
+uv run python -m plamp_cli timers get pump_lights
+uv run python -m plamp_cli pics list --limit 3
+uv run python -m plamp_cli pics take
+# then use a real image_key from the list output:
+uv run python -m plamp_cli pics get <image_key> --out /tmp/latest.jpg
 ```
-
-## Help
-
-Start with:
-
-```bash
-plamp --help
-plamp config --help
-plamp timers --help
-plamp pics --help
-```
-
-That shows the available command groups, flags, and subcommands.
 
 ## Defaults
 
@@ -81,25 +93,24 @@ That shows the available command groups, flags, and subcommands.
 Commands:
 
 ```bash
-plamp config get
-plamp config set @config.json
-plamp config controllers get
-plamp config controllers set @controllers.json
-plamp config devices get
-plamp config devices set @devices.json
-plamp config cameras get
-plamp config cameras set @cameras.json
+uv run python -m plamp_cli config get
+uv run python -m plamp_cli config set @config.json
+uv run python -m plamp_cli config controllers get
+uv run python -m plamp_cli config controllers set @controllers.json
+uv run python -m plamp_cli config devices get
+uv run python -m plamp_cli config devices set @devices.json
+uv run python -m plamp_cli config cameras get
+uv run python -m plamp_cli config cameras set @cameras.json
 ```
 
-Useful examples:
+Examples:
 
 ```bash
-plamp config get
-plamp config controllers get
-plamp --pretty config devices get
-plamp --table config devices get
-plamp config set @config.json
-plamp config cameras set @cameras.json
+uv run python -m plamp_cli config get
+uv run python -m plamp_cli config controllers get
+uv run python -m plamp_cli --pretty config devices get
+uv run python -m plamp_cli --table config devices get
+uv run python -m plamp_cli config set @config.json
 ```
 
 ### Timers
@@ -107,20 +118,19 @@ plamp config cameras set @cameras.json
 Commands:
 
 ```bash
-plamp timers list
-plamp timers get pump_lights
-plamp timers set pump_lights @state.json
-plamp timers channels set-schedule pump_lights lights @schedule.json
+uv run python -m plamp_cli timers list
+uv run python -m plamp_cli timers get pump_lights
+uv run python -m plamp_cli timers set pump_lights @state.json
+uv run python -m plamp_cli timers channels set-schedule pump_lights lights @schedule.json
 ```
 
-Useful examples:
+Examples:
 
 ```bash
-plamp timers list
-plamp timers get pump_lights
-plamp --table timers get pump_lights
-plamp timers set pump_lights @state.json
-cat schedule.json | plamp timers channels set-schedule pump_lights lights -
+uv run python -m plamp_cli timers list
+uv run python -m plamp_cli timers get pump_lights
+uv run python -m plamp_cli --table timers get pump_lights
+cat schedule.json | uv run python -m plamp_cli timers channels set-schedule pump_lights lights -
 ```
 
 ### Pictures
@@ -128,21 +138,22 @@ cat schedule.json | plamp timers channels set-schedule pump_lights lights -
 Commands:
 
 ```bash
-plamp pics list
-plamp pics take
-plamp pics take --camera-id rpicam_cam0
-plamp pics get grow:latest --out latest.jpg
-plamp pics get grow:latest --stdout > latest.jpg
+uv run python -m plamp_cli pics list
+uv run python -m plamp_cli pics take
+uv run python -m plamp_cli pics take --camera-id rpicam_cam0
+uv run python -m plamp_cli pics get <image_key> --out latest.jpg
+uv run python -m plamp_cli pics get <image_key> --stdout > latest.jpg
 ```
 
-Useful examples:
+Examples:
 
 ```bash
-plamp pics list --source grow --limit 10
-plamp pics list --source camera_roll --offset 10 --limit 10
-plamp pics take --camera-id rpicam_cam0
-plamp pics get grow:latest --out latest.jpg
-ssh localhost plamp pics get grow:latest --stdout > latest.jpg
+uv run python -m plamp_cli pics list --source grow --limit 10
+uv run python -m plamp_cli pics list --source camera_roll --offset 10 --limit 10
+uv run python -m plamp_cli pics take --camera-id rpicam_cam0
+# get a real image_key from `pics list`, then:
+uv run python -m plamp_cli pics get <image_key> --out latest.jpg
+ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
 ```
 
 ## Output Modes
@@ -158,6 +169,7 @@ ssh localhost plamp pics get grow:latest --stdout > latest.jpg
 - `pics get` writes binary only when `--stdout` or `--out` is used.
 - `pics get --stdout` writes image bytes only, with no JSON wrapper.
 - `pics get --out <path>` writes the file and produces no stdout payload.
+- `pics get` expects a real `image_key` returned by `pics list`.
 - Nested response shapes fall back to JSON even when `--table` is requested.
 - Exit codes:
   - `0` success
@@ -169,37 +181,24 @@ ssh localhost plamp pics get grow:latest --stdout > latest.jpg
 ## Remote Use
 
 ```bash
-plamp --host 127.0.0.1 timers get pump_lights
-plamp --host 192.168.68.56 pics list
-ssh localhost plamp config get
-ssh localhost plamp pics get grow:latest --stdout > latest.jpg
+uv run python -m plamp_cli --host 127.0.0.1 timers get pump_lights
+uv run python -m plamp_cli --host 192.168.68.56 pics list
+ssh localhost /home/hugo/.local/bin/plamp config get
+ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
 ```
 
-You can also set a default remote host in the shell:
+You can also set a default host:
 
 ```bash
 export PLAMP_HOST=127.0.0.1
-plamp timers list
+uv run python -m plamp_cli timers list
 ```
 
 ## JSON Input
 
 ```bash
-plamp config set @config.json
-cat state.json | plamp timers set pump_lights -
-```
-
-## Testing Checklist
-
-For a quick manual check on a Pi:
-
-```bash
-plamp config get
-plamp timers list
-plamp timers get pump_lights
-plamp pics list --limit 3
-plamp pics take
-plamp pics get grow:latest --out /tmp/latest.jpg
+uv run python -m plamp_cli config set @config.json
+cat state.json | uv run python -m plamp_cli timers set pump_lights -
 ```
 
 ## Pictures
