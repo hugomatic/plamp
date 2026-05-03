@@ -216,7 +216,7 @@ class PlampCliConfigTests(unittest.TestCase):
 
 class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
-    def test_controllers_list_groups_pico_scheduler_names(self, request_json):
+    def test_controllers_list_groups_pico_scheduler_ids(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
         stdout = StringIO()
         stderr = StringIO()
@@ -224,12 +224,12 @@ class PlampCliTimerTests(unittest.TestCase):
         code = main(["controllers", "list"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"controllers": {"pico_scheduler": {"names": ["pump_lights"]}}}\n')
+        self.assertEqual(stdout.getvalue(), '{"controllers": {"pico_scheduler": {"ids": ["pump_lights"]}}}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 
     @patch("plamp_cli.main.request_json")
-    def test_pico_scheduler_list_returns_names_only(self, request_json):
+    def test_pico_scheduler_list_returns_ids_only(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
         stdout = StringIO()
         stderr = StringIO()
@@ -237,12 +237,12 @@ class PlampCliTimerTests(unittest.TestCase):
         code = main(["pico-scheduler", "list"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"names": ["pump_lights"]}\n')
+        self.assertEqual(stdout.getvalue(), '{"ids": ["pump_lights"]}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 
     @patch("plamp_cli.main.request_json")
-    def test_timers_list_alias_returns_names_only(self, request_json):
+    def test_timers_list_alias_returns_ids_only(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
         stdout = StringIO()
         stderr = StringIO()
@@ -250,7 +250,7 @@ class PlampCliTimerTests(unittest.TestCase):
         code = main(["timers", "list"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"names": ["pump_lights"]}\n')
+        self.assertEqual(stdout.getvalue(), '{"ids": ["pump_lights"]}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 

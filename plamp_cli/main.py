@@ -141,7 +141,7 @@ def _handle_controllers(args: argparse.Namespace, base_url: str) -> object:
     if args.controllers_action == "list":
         response = request_json("GET", base_url, "/api/timer-config")
         names = response.get("roles", [])
-        return {"controllers": {"pico_scheduler": {"names": names}}}
+        return {"controllers": {"pico_scheduler": {"ids": names}}}
 
     raise ValueError(f"unsupported controllers action: {args.controllers_action}")
 
@@ -150,7 +150,7 @@ def _normalize_pico_scheduler_list(response: object) -> object:
     if not isinstance(response, dict):
         return response
     names = response.get("roles", [])
-    return {"names": names}
+    return {"ids": names}
 
 
 def _normalize_pico_scheduler_response(response: object) -> object:

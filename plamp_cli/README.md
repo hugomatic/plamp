@@ -105,7 +105,7 @@ Expected shape:
 {
   "controllers": {
     "pico_scheduler": {
-      "names": ["pump_lights"]
+      "ids": ["pump_lights"]
     }
   }
 }
@@ -121,7 +121,7 @@ Expected shape:
 
 ```json
 {
-  "names": ["pump_lights"]
+  "ids": ["pump_lights"]
 }
 ```
 
