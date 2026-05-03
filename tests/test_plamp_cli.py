@@ -366,8 +366,12 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliDocsTests(unittest.TestCase):
-    def test_cli_readme_mentions_json_first_and_stdout_binary_rules(self):
+    def test_cli_readme_mentions_command_overview_and_help(self):
         readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
         self.assertIn("JSON-first", readme)
+        self.assertIn("plamp --help", readme)
+        self.assertIn("plamp config get", readme)
+        self.assertIn("plamp timers list", readme)
+        self.assertIn("plamp pics get grow:latest --out latest.jpg", readme)
         self.assertIn("--stdout", readme)
         self.assertIn("ssh pi.local plamp pics get", readme)
