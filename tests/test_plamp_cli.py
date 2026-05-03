@@ -58,6 +58,20 @@ class PlampCliBootstrapTests(unittest.TestCase):
             )
             self.assertTrue((Path(tmpdir) / "plamp_cli" / "__init__.py").exists())
 
+    def test_main_py_runs_as_direct_script(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            ["/usr/bin/python3", "plamp_cli/main.py", "--help"],
+            cwd=repo_root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
+        self.assertIn("{config,timers,pics}", result.stdout)
+
 
 class PlampCliConfigTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
@@ -369,9 +383,11 @@ class PlampCliDocsTests(unittest.TestCase):
     def test_cli_readme_mentions_command_overview_and_help(self):
         readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
         self.assertIn("JSON-first", readme)
+        self.assertIn("uv run python -m pip install --no-deps --editable .", readme)
+        self.assertIn("uv run python -m plamp_cli --help", readme)
         self.assertIn("plamp --help", readme)
         self.assertIn("plamp config get", readme)
         self.assertIn("plamp timers list", readme)
         self.assertIn("plamp pics get grow:latest --out latest.jpg", readme)
         self.assertIn("--stdout", readme)
-        self.assertIn("ssh pi.local plamp pics get", readme)
+        self.assertIn("ssh localhost plamp pics get", readme)

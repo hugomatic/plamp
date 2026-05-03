@@ -2,6 +2,38 @@
 
 `plamp` is a JSON-first command-line client for `plamp-web`.
 
+## Install
+
+From the repo root:
+
+```bash
+uv run python -m pip install --no-deps --editable .
+```
+
+That installs the `plamp` command from the current checkout.
+
+If you do not want to install it yet, you can still run it as a module:
+
+```bash
+uv run python -m plamp_cli --help
+```
+
+## Run
+
+Supported ways to run it:
+
+```bash
+plamp --help
+uv run plamp --help
+uv run python -m plamp_cli --help
+```
+
+Default target:
+
+```text
+http://127.0.0.1:8000
+```
+
 ## Quick Start
 
 ```bash
@@ -110,7 +142,7 @@ plamp pics list --source grow --limit 10
 plamp pics list --source camera_roll --offset 10 --limit 10
 plamp pics take --camera-id rpicam_cam0
 plamp pics get grow:latest --out latest.jpg
-ssh pi.local plamp pics get grow:latest --stdout > latest.jpg
+ssh localhost plamp pics get grow:latest --stdout > latest.jpg
 ```
 
 ## Output Modes
@@ -137,10 +169,17 @@ ssh pi.local plamp pics get grow:latest --stdout > latest.jpg
 ## Remote Use
 
 ```bash
-plamp --host pi.local timers get pump_lights
+plamp --host 127.0.0.1 timers get pump_lights
 plamp --host 192.168.68.56 pics list
-ssh pi.local plamp config get
-ssh pi.local plamp pics get grow:latest --stdout > latest.jpg
+ssh localhost plamp config get
+ssh localhost plamp pics get grow:latest --stdout > latest.jpg
+```
+
+You can also set a default remote host in the shell:
+
+```bash
+export PLAMP_HOST=127.0.0.1
+plamp timers list
 ```
 
 ## JSON Input
