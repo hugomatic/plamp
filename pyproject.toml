@@ -8,3 +8,9 @@ dependencies = [
   "pyserial",
   "uvicorn[standard]",
 ]
+
+[project.scripts]
+plamp = "plamp_cli.main:run"
+
+[tool.setuptools.packages.find]
+include = ["plamp_cli*", "plamp_web*"]
