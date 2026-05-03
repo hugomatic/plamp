@@ -102,7 +102,8 @@ Plamp includes a JSON-first CLI:
 
 ```bash
 plamp config get
-plamp timers list
+plamp controllers list
+plamp pico-scheduler list
 plamp pics list
 ```
 
