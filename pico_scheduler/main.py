@@ -6,7 +6,7 @@ STATE_FILE = "state.json"
 LOOP_SLEEP_MS = 20
 PWM_FREQ = 1000
 
-events = []
+devices = []
 report_every = 0
 last_report_ms = 0
 accum_ms = 0
@@ -19,7 +19,7 @@ def error(message):
 
 def report():
     out = []
-    for ev in events:
+    for ev in devices:
         item = {
             "type": ev["type"],
             "pin": ev["pin"],
@@ -32,15 +32,15 @@ def report():
         if "id" in ev:
             item["id"] = ev["id"]
         out.append(item)
-    print(json.dumps({"kind": "report", "content": {"events": out}}))
+    print(json.dumps({"kind": "report", "content": {"devices": out}}))
 
 
 def startup():
-    print(json.dumps({"kind": "startup", "content": {"ok": True, "event_count": len(events), "report_every": report_every}}))
+    print(json.dumps({"kind": "startup", "content": {"ok": True, "device_count": len(devices), "report_every": report_every}}))
 
 
 def load_state():
-    global events, report_every
+    global devices, report_every
 
     try:
         with open(STATE_FILE, "r") as f:
@@ -52,11 +52,11 @@ def load_state():
         return error("top-level JSON must be an object")
     if "report_every" not in raw:
         return error("missing top-level field: report_every")
-    if "events" not in raw:
-        return error("missing top-level field: events")
+    if "devices" not in raw:
+        return error("missing top-level field: devices")
 
     report_every_value = raw["report_every"]
-    raw_events = raw["events"]
+    raw_devices = raw["devices"]
 
     try:
         report_every_value = int(report_every_value)
@@ -65,62 +65,62 @@ def load_state():
 
     if report_every_value <= 0:
         return error("report_every must be > 0")
-    if not isinstance(raw_events, list):
-        return error("events must be a list")
+    if not isinstance(raw_devices, list):
+        return error("devices must be a list")
 
-    new_events = []
+    new_devices = []
 
-    for i, src in enumerate(raw_events):
+    for i, src in enumerate(raw_devices):
         if not isinstance(src, dict):
-            return error("event %d must be an object" % i)
+            return error("device %d must be an object" % i)
 
         required = ["type", "pin", "current_t", "reschedule", "pattern"]
         for name in required:
             if name not in src:
-                return error("event %d missing field: %s" % (i, name))
+                return error("device %d missing field: %s" % (i, name))
 
         event_type = src["type"]
         if event_type != "gpio" and event_type != "pwm":
-            return error("event %d type must be gpio or pwm" % i)
+            return error("device %d type must be gpio or pwm" % i)
 
         try:
             pin = int(src["pin"])
             current_t = int(src["current_t"])
             reschedule = 1 if int(src["reschedule"]) else 0
         except:
-            return error("event %d pin/current_t/reschedule must be integers" % i)
+            return error("device %d pin/current_t/reschedule must be integers" % i)
 
         if pin < 0 or pin > 29:
-            return error("event %d pin must be in range 0..29" % i)
+            return error("device %d pin must be in range 0..29" % i)
         if current_t < 0:
-            return error("event %d current_t must be >= 0" % i)
+            return error("device %d current_t must be >= 0" % i)
 
         pattern_src = src["pattern"]
         if not isinstance(pattern_src, list) or not pattern_src:
-            return error("event %d pattern must be a non-empty list" % i)
+            return error("device %d pattern must be a non-empty list" % i)
 
         pattern = []
         total_t = 0
         for j, step in enumerate(pattern_src):
             if not isinstance(step, dict):
-                return error("event %d pattern step %d must be an object" % (i, j))
+                return error("device %d pattern step %d must be an object" % (i, j))
             if "val" not in step:
-                return error("event %d pattern step %d missing field: val" % (i, j))
+                return error("device %d pattern step %d missing field: val" % (i, j))
             if "dur" not in step:
-                return error("event %d pattern step %d missing field: dur" % (i, j))
+                return error("device %d pattern step %d missing field: dur" % (i, j))
 
             try:
                 val = int(step["val"])
                 dur = int(step["dur"])
             except:
-                return error("event %d pattern step %d val/dur must be integers" % (i, j))
+                return error("device %d pattern step %d val/dur must be integers" % (i, j))
 
             if dur <= 0:
-                return error("event %d pattern step %d dur must be > 0" % (i, j))
+                return error("device %d pattern step %d dur must be > 0" % (i, j))
 
             if event_type == "gpio":
                 if val != 0 and val != 1:
-                    return error("event %d pattern step %d gpio val must be 0 or 1" % (i, j))
+                    return error("device %d pattern step %d gpio val must be 0 or 1" % (i, j))
             else:
                 if val < 0:
                     val = 0
@@ -152,9 +152,9 @@ def load_state():
         if "id" in src:
             ev["id"] = src["id"]
 
-        new_events.append(ev)
+        new_devices.append(ev)
 
-    events = new_events
+    devices = new_devices
     report_every = report_every_value
     return True
 
@@ -163,7 +163,7 @@ def tick(dt):
     if dt <= 0:
         return
 
-    for ev in events:
+    for ev in devices:
         ev["elapsed_t"] += dt
         if not ev["reschedule"] and ev["elapsed_t"] > ev["total_t"]:
             ev["elapsed_t"] = ev["total_t"]
@@ -172,7 +172,7 @@ def tick(dt):
 def apply():
     changed = False
 
-    for ev in events:
+    for ev in devices:
         t = ev["elapsed_t"] % ev["total_t"] if ev["reschedule"] else ev["elapsed_t"]
         elapsed = 0
         value = ev["pattern"][-1]["val"]

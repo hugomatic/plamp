@@ -65,7 +65,7 @@ sudo systemctl start plamp-web
 
 Pages:
 
-- `/` - timers and camera
+- `/` - main Pico scheduler page and camera
 - `/settings` - system status and Plamp config
 - `/api/test` - manual API requests
 
@@ -100,7 +100,7 @@ Controller config includes the scheduler firmware type and reporting interval:
 }
 ```
 
-## Timer State
+## Pico Scheduler State
 
 Each controller has a saved state file:
 
@@ -108,12 +108,12 @@ Each controller has a saved state file:
 data/timers/<controller-id>.json
 ```
 
-Timer events use `pin`:
+Pico scheduler devices use `pin`:
 
 ```json
 {
   "report_every": 10,
-  "events": [
+  "devices": [
     {
       "id": "pump",
       "type": "gpio",
@@ -129,8 +129,8 @@ Timer events use `pin`:
 }
 ```
 
-`report_every` is configured on the controller in `data/config.json`. Timer
-state files keep schedule events; any older `report_every` value in
+`report_every` is configured on the controller in `data/config.json`. Pico
+scheduler state files keep device state; any older `report_every` value in
 `data/timers/<controller>.json` is legacy and is not the source of truth for
 Pico scheduler reporting cadence.
 

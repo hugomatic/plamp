@@ -196,6 +196,38 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))", html)
         self.assertIn("const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || \"gpio\"};", html)
 
+    def test_timer_dashboard_page_reads_devices_from_runtime_messages(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("message?.report?.content?.devices", html)
+        self.assertIn("message?.last_report?.content?.devices", html)
+        self.assertIn("message?.content?.devices", html)
+        self.assertIn("message?.devices", html)
+        self.assertNotIn("message?.report?.content?.events", html)
+        self.assertNotIn("message?.last_report?.content?.events", html)
+        self.assertNotIn("message?.content?.events", html)
+        self.assertNotIn("message?.events", html)
+
+    def test_api_test_page_reads_devices_from_timer_stream_payloads(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn("message?.report?.content?.devices", html)
+        self.assertIn("message?.last_report?.content?.devices", html)
+        self.assertIn("message?.content?.devices", html)
+        self.assertIn("message?.devices", html)
+        self.assertNotIn("message?.report?.content?.events", html)
+        self.assertNotIn("message?.last_report?.content?.events", html)
+        self.assertNotIn("message?.content?.events", html)
+        self.assertNotIn("message?.events", html)
+
+    def test_api_test_page_generates_timer_payloads_with_devices(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn("report_every: 10,\n        devices: [{", html)
+        self.assertIn("report_every: 10,\n        devices: [", html)
+        self.assertNotIn("report_every: 10,\n        events: [{", html)
+        self.assertNotIn("report_every: 10,\n        events: [", html)
+
 
     def test_settings_page_includes_storage_summary(self):
         html = render_settings_page({
@@ -912,7 +944,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Captures a new image and returns capture metadata.", html)
         self.assertIn("Lists captures newest first. Options: limit and offset.", html)
         self.assertIn("Reads the current timer state for one role.", html)
-        self.assertIn("Streams timer events with server-sent events.", html)
+        self.assertIn("Streams timer device updates with server-sent events.", html)
+        self.assertIn("Stream device updates will appear here.", html)
         self.assertIn("Writes timer state JSON and sends it to the Pico.", html)
         self.assertIn('<p class="helper-title">Helper: Generate 5s pin test</p>', html)
         self.assertIn('<p class="helper-title">Helper: Generate pump/lights</p>', html)

@@ -70,7 +70,8 @@ class PlampCliBootstrapTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, msg=f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-        self.assertIn("{config,timers,pics}", result.stdout)
+        self.assertIn("{config,controllers,pico-scheduler,pics}", result.stdout)
+        self.assertNotIn("timers", result.stdout)
 
 
 class PlampCliConfigTests(unittest.TestCase):
@@ -216,67 +217,94 @@ class PlampCliConfigTests(unittest.TestCase):
 
 class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
-    def test_timers_list_calls_timer_config(self, request_json):
+    def test_controllers_list_groups_pico_scheduler_ids(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["timers", "list"], stdout=stdout, stderr=stderr)
+        code = main(["controllers", "list"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"channels": {}, "roles": ["pump_lights"], "time_format": "12h"}\n')
+        self.assertEqual(stdout.getvalue(), '{"controllers": {"pico_scheduler": {"ids": ["pump_lights"]}}}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 
     @patch("plamp_cli.main.request_json")
+    def test_pico_scheduler_list_returns_ids_only(self, request_json):
+        request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["pico-scheduler", "list"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"ids": ["pump_lights"]}\n')
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
+
+    @patch("plamp_cli.main.request_json")
+    def test_timers_list_alias_is_not_available(self, request_json):
+        request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            code = main(["timers", "list"], stdout=stdout, stderr=stderr)
+
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid choice", stderr.getvalue())
+        request_json.assert_not_called()
+
+    @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
-    def test_timers_set_puts_role_state(self, load_json_input, request_json):
-        load_json_input.return_value = {"report_every": 10, "events": []}
+    def test_pico_scheduler_set_puts_controller_state(self, load_json_input, request_json):
+        load_json_input.return_value = {"devices": [{"id": "pump", "enabled": True}], "report_every": 10}
         request_json.return_value = {"role": "pump_lights", "success": True}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["timers", "set", "pump_lights", "@state.json"], stdout=stdout, stderr=stderr)
+        code = main(["pico-scheduler", "set", "pump_lights", "@state.json"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"role": "pump_lights", "success": true}\n')
+        self.assertEqual(stdout.getvalue(), '{"controller": "pump_lights", "success": true}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with(
             "PUT",
             "http://127.0.0.1:8000",
             "/api/timers/pump_lights",
-            {"report_every": 10, "events": []},
+            {"devices": [{"id": "pump", "enabled": True}], "report_every": 10},
         )
 
     @patch("plamp_cli.main.request_json")
-    def test_timers_get_returns_role_state(self, request_json):
-        request_json.return_value = {"enabled": True, "mode": "auto"}
+    def test_pico_scheduler_get_returns_devices_state(self, request_json):
+        request_json.return_value = {"devices": [{"id": "pump", "enabled": True}], "report_every": 10}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["timers", "get", "pump_lights"], stdout=stdout, stderr=stderr)
+        code = main(["pico-scheduler", "get", "pump_lights"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"enabled": true, "mode": "auto"}\n')
+        self.assertEqual(stdout.getvalue(), '{"devices": [{"enabled": true, "id": "pump"}], "report_every": 10}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_lights")
 
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
-    def test_timers_channels_set_schedule_returns_channel_state(self, load_json_input, request_json):
+    def test_pico_scheduler_channels_set_schedule_returns_channel_state(self, load_json_input, request_json):
         load_json_input.return_value = {"minutes": [0, 15, 30, 45]}
-        request_json.return_value = {"channel_id": "main", "success": True}
+        request_json.return_value = {"channel": "main", "role": "pump_lights", "success": True}
         stdout = StringIO()
         stderr = StringIO()
 
         code = main(
-            ["timers", "channels", "set-schedule", "pump_lights", "main", "@schedule.json"],
+            ["pico-scheduler", "channels", "set-schedule", "pump_lights", "main", "@schedule.json"],
             stdout=stdout,
             stderr=stderr,
         )
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"channel_id": "main", "success": true}\n')
+        self.assertEqual(stdout.getvalue(), '{"channel": "main", "controller": "pump_lights", "success": true}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with(
             "POST",
@@ -286,12 +314,12 @@ class PlampCliTimerTests(unittest.TestCase):
         )
 
     @patch("plamp_cli.main.request_json")
-    def test_timers_get_renders_table_output(self, request_json):
+    def test_pico_scheduler_get_renders_table_output(self, request_json):
         request_json.return_value = {"mode": "auto"}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["--table", "timers", "get", "pump_lights"], stdout=stdout, stderr=stderr)
+        code = main(["--table", "pico-scheduler", "get", "pump_lights"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
         self.assertEqual(stdout.getvalue(), "key  | value\n----+-----\nmode | auto \n")
@@ -307,7 +335,7 @@ class PlampCliTimerTests(unittest.TestCase):
 
         self.assertNotEqual(code, 0)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("the following arguments are required", stderr.getvalue())
+        self.assertIn("invalid choice", stderr.getvalue())
 
 
 class PlampCliPictureTests(unittest.TestCase):
@@ -380,13 +408,32 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliDocsTests(unittest.TestCase):
-    def test_cli_readme_mentions_command_overview_and_help(self):
-        readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
-        self.assertIn("JSON-first", readme)
-        self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", readme)
-        self.assertIn("uv run python -m plamp_cli --help", readme)
-        self.assertIn("uv run python -m plamp_cli config get", readme)
-        self.assertIn("uv run python -m plamp_cli timers list", readme)
-        self.assertIn("uv run python -m plamp_cli pics get <image_key> --out latest.jpg", readme)
-        self.assertIn("--stdout", readme)
-        self.assertIn("ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg", readme)
+    def test_readmes_match_pico_scheduler_cli_shape(self):
+        cli_readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
+        root_readme = Path("README.md").read_text(encoding="utf-8")
+        web_readme = Path("plamp_web/README.md").read_text(encoding="utf-8")
+
+        self.assertIn("JSON-first", cli_readme)
+        self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", cli_readme)
+        self.assertIn("uv run python -m plamp_cli --help", cli_readme)
+        self.assertIn("uv run python -m plamp_cli config get", cli_readme)
+        self.assertIn("uv run python -m plamp_cli controllers list", cli_readme)
+        self.assertIn("uv run python -m plamp_cli pico-scheduler list", cli_readme)
+        self.assertIn("uv run python -m plamp_cli pics get <image_key> --out latest.jpg", cli_readme)
+        self.assertIn("--stdout", cli_readme)
+        self.assertIn("ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg", cli_readme)
+        self.assertNotIn("uv run python -m plamp_cli timers", cli_readme)
+
+        self.assertIn("plamp config get", root_readme)
+        self.assertIn("plamp controllers list", root_readme)
+        self.assertIn("plamp pico-scheduler list", root_readme)
+        self.assertNotIn("plamp timers", root_readme)
+        self.assertNotIn("data/timers/<controller>.json", root_readme)
+        self.assertNotIn("schedule events", root_readme)
+
+        self.assertIn("- `/` - main Pico scheduler page", web_readme)
+        self.assertIn("## Pico Scheduler State", web_readme)
+        self.assertIn("state files keep device state", web_readme)
+        self.assertNotIn("timers and camera", web_readme)
+        self.assertNotIn("## Timer State", web_readme)
+        self.assertNotIn("schedule devices", web_readme)

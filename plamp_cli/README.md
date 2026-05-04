@@ -55,7 +55,8 @@ Use:
 ```bash
 uv run python -m plamp_cli --help
 uv run python -m plamp_cli config --help
-uv run python -m plamp_cli timers --help
+uv run python -m plamp_cli controllers --help
+uv run python -m plamp_cli pico-scheduler --help
 uv run python -m plamp_cli pics --help
 ```
 
@@ -63,7 +64,8 @@ uv run python -m plamp_cli pics --help
 
 ```bash
 uv run python -m plamp_cli config get
-uv run python -m plamp_cli timers list
+uv run python -m plamp_cli controllers list
+uv run python -m plamp_cli pico-scheduler list
 uv run python -m plamp_cli pics list --source grow --limit 10
 ```
 
@@ -91,28 +93,42 @@ Expected shape:
 }
 ```
 
-2. List timer roles and channels:
+2. List controller families:
 
 ```bash
-uv run python -m plamp_cli --pretty timers list
+uv run python -m plamp_cli --pretty controllers list
 ```
 
 Expected shape:
 
 ```json
 {
-  "roles": ["pump_lights"],
-  "channels": {
-    "pump_lights": []
-  },
-  "time_format": "12h"
+  "controllers": {
+    "pico_scheduler": {
+      "ids": ["pump_lights"]
+    }
+  }
 }
 ```
 
-3. Read one timer state:
+3. List Pico scheduler controllers:
 
 ```bash
-uv run python -m plamp_cli --pretty timers get pump_lights
+uv run python -m plamp_cli --pretty pico-scheduler list
+```
+
+Expected shape:
+
+```json
+{
+  "ids": ["pump_lights"]
+}
+```
+
+4. Read one Pico scheduler state:
+
+```bash
+uv run python -m plamp_cli --pretty pico-scheduler get pump_lights
 ```
 
 Expected shape:
@@ -120,11 +136,11 @@ Expected shape:
 ```json
 {
   "report_every": 10,
-  "events": []
+  "devices": []
 }
 ```
 
-4. List a few pictures and copy one `image_key`:
+5. List a few pictures and copy one `image_key`:
 
 ```bash
 uv run python -m plamp_cli --pretty pics list --limit 3
@@ -147,7 +163,7 @@ Expected shape:
 }
 ```
 
-5. Trigger one capture:
+6. Trigger one capture:
 
 ```bash
 uv run python -m plamp_cli --pretty pics take
@@ -162,7 +178,7 @@ Expected shape:
 }
 ```
 
-6. Download one real image using the `image_key` from step 4:
+7. Download one real image using the `image_key` from step 5:
 
 ```bash
 uv run python -m plamp_cli pics get <image_key> --out /tmp/latest.jpg
@@ -209,24 +225,39 @@ uv run python -m plamp_cli --table config devices get
 uv run python -m plamp_cli config set @config.json
 ```
 
-### Timers
+### Controllers
 
 Commands:
 
 ```bash
-uv run python -m plamp_cli timers list
-uv run python -m plamp_cli timers get pump_lights
-uv run python -m plamp_cli timers set pump_lights @state.json
-uv run python -m plamp_cli timers channels set-schedule pump_lights lights @schedule.json
+uv run python -m plamp_cli controllers list
 ```
 
 Examples:
 
 ```bash
-uv run python -m plamp_cli timers list
-uv run python -m plamp_cli timers get pump_lights
-uv run python -m plamp_cli --table timers get pump_lights
-cat schedule.json | uv run python -m plamp_cli timers channels set-schedule pump_lights lights -
+uv run python -m plamp_cli controllers list
+uv run python -m plamp_cli --pretty controllers list
+```
+
+### Pico Scheduler
+
+Commands:
+
+```bash
+uv run python -m plamp_cli pico-scheduler list
+uv run python -m plamp_cli pico-scheduler get pump_lights
+uv run python -m plamp_cli pico-scheduler set pump_lights @state.json
+uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights @schedule.json
+```
+
+Examples:
+
+```bash
+uv run python -m plamp_cli pico-scheduler list
+uv run python -m plamp_cli pico-scheduler get pump_lights
+uv run python -m plamp_cli --table pico-scheduler get pump_lights
+cat schedule.json | uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights -
 ```
 
 ### Pictures
@@ -277,7 +308,7 @@ ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest
 ## Remote Use
 
 ```bash
-uv run python -m plamp_cli --host 127.0.0.1 timers get pump_lights
+uv run python -m plamp_cli --host 127.0.0.1 pico-scheduler get pump_lights
 uv run python -m plamp_cli --host 192.168.68.56 pics list
 ssh localhost /home/hugo/.local/bin/plamp config get
 ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
@@ -287,14 +318,14 @@ You can also set a default host:
 
 ```bash
 export PLAMP_HOST=127.0.0.1
-uv run python -m plamp_cli timers list
+uv run python -m plamp_cli pico-scheduler list
 ```
 
 ## JSON Input
 
 ```bash
 uv run python -m plamp_cli config set @config.json
-cat state.json | uv run python -m plamp_cli timers set pump_lights -
+cat state.json | uv run python -m plamp_cli pico-scheduler set pump_lights -
 ```
 
 ## Pictures

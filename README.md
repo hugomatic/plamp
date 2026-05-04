@@ -102,7 +102,8 @@ Plamp includes a JSON-first CLI:
 
 ```bash
 plamp config get
-plamp timers list
+plamp controllers list
+plamp pico-scheduler list
 plamp pics list
 ```
 
@@ -124,7 +125,7 @@ sudo systemctl start plamp-web
 
 Useful pages:
 
-- `/` - main timer page
+- `/` - main Pico scheduler page
 - `/settings` - system status and Plamp config
 - `/api/test` - API test page
 
@@ -157,10 +158,9 @@ Controller config includes the scheduler firmware type and reporting interval:
 }
 ```
 
-`report_every` is configured on the controller in `data/config.json`. Timer
-state files keep schedule events; any older `report_every` value in
-`data/timers/<controller>.json` is legacy and is not the source of truth for
-Pico scheduler reporting cadence.
+`report_every` is configured on the controller in `data/config.json`. Pico
+scheduler state files keep device state; any older `report_every` value in
+legacy Pico scheduler state is not the source of truth for reporting cadence.
 
 `data/` is local runtime data and is ignored by git.
 

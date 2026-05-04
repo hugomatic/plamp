@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
 import sys
 from typing import TextIO
+
+if __package__ in {None, ""}:
+    repo_root = str(Path(__file__).resolve().parents[1])
+    if sys.path:
+        sys.path[0] = repo_root
+    else:
+        sys.path.insert(0, repo_root)
 
 from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
 from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
@@ -41,26 +49,32 @@ def build_parser() -> argparse.ArgumentParser:
         section_set.add_argument("payload")
         section_set.set_defaults(action="set", section=section_name)
 
-    timers = subparsers.add_parser("timers")
-    timer_subparsers = timers.add_subparsers(dest="timer_action", required=True)
+    controllers = subparsers.add_parser("controllers")
+    controller_subparsers = controllers.add_subparsers(dest="controllers_action", required=True)
+    controllers_list = controller_subparsers.add_parser("list")
+    controllers_list.set_defaults(controllers_action="list")
 
-    timer_list = timer_subparsers.add_parser("list")
+    pico_scheduler = subparsers.add_parser("pico-scheduler")
+    pico_scheduler.set_defaults(area="pico-scheduler")
+    pico_scheduler_subparsers = pico_scheduler.add_subparsers(dest="timer_action", required=True)
+
+    timer_list = pico_scheduler_subparsers.add_parser("list")
     timer_list.set_defaults(timer_action="list")
 
-    timer_get = timer_subparsers.add_parser("get")
-    timer_get.add_argument("role")
+    timer_get = pico_scheduler_subparsers.add_parser("get")
+    timer_get.add_argument("controller")
     timer_get.set_defaults(timer_action="get")
 
-    timer_set = timer_subparsers.add_parser("set")
-    timer_set.add_argument("role")
+    timer_set = pico_scheduler_subparsers.add_parser("set")
+    timer_set.add_argument("controller")
     timer_set.add_argument("payload")
     timer_set.set_defaults(timer_action="set")
 
-    timer_channels = timer_subparsers.add_parser("channels")
+    timer_channels = pico_scheduler_subparsers.add_parser("channels")
     channel_subparsers = timer_channels.add_subparsers(dest="channel_action", required=True)
 
     schedule = channel_subparsers.add_parser("set-schedule")
-    schedule.add_argument("role")
+    schedule.add_argument("controller")
     schedule.add_argument("channel_id")
     schedule.add_argument("payload")
     schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
@@ -103,25 +117,53 @@ def _handle_config(args: argparse.Namespace, base_url: str) -> object:
     raise ValueError(f"unsupported config action: {args.action}")
 
 
+def _handle_controllers(args: argparse.Namespace, base_url: str) -> object:
+    if args.controllers_action == "list":
+        response = request_json("GET", base_url, "/api/timer-config")
+        names = response.get("roles", [])
+        return {"controllers": {"pico_scheduler": {"ids": names}}}
+
+    raise ValueError(f"unsupported controllers action: {args.controllers_action}")
+
+
+def _normalize_pico_scheduler_list(response: object) -> object:
+    if not isinstance(response, dict):
+        return response
+    names = response.get("roles", [])
+    return {"ids": names}
+
+
+def _normalize_pico_scheduler_response(response: object) -> object:
+    if not isinstance(response, dict):
+        return response
+
+    normalized = dict(response)
+    if "role" in normalized:
+        normalized["controller"] = normalized.pop("role")
+    return normalized
+
+
 def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
     if args.timer_action == "list":
-        return request_json("GET", base_url, "/api/timer-config")
+        return _normalize_pico_scheduler_list(request_json("GET", base_url, "/api/timer-config"))
 
     if args.timer_action == "get":
-        return request_json("GET", base_url, f"/api/timers/{args.role}")
+        return request_json("GET", base_url, f"/api/timers/{args.controller}")
 
     if args.timer_action == "set":
         payload = load_json_input(args.payload)
-        return request_json("PUT", base_url, f"/api/timers/{args.role}", payload)
+        response = request_json("PUT", base_url, f"/api/timers/{args.controller}", payload)
+        return _normalize_pico_scheduler_response(response)
 
     if args.timer_action == "channels" and args.channel_action == "set-schedule":
         payload = load_json_input(args.payload)
-        return request_json(
+        response = request_json(
             "POST",
             base_url,
-            f"/api/timers/{args.role}/channels/{args.channel_id}/schedule",
+            f"/api/timers/{args.controller}/channels/{args.channel_id}/schedule",
             payload,
         )
+        return _normalize_pico_scheduler_response(response)
 
     raise ValueError(f"unsupported timers action: {args.timer_action}")
 
@@ -198,7 +240,11 @@ def main(
             result = _handle_config(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
-        elif args.area == "timers":
+        elif args.area == "controllers":
+            result = _handle_controllers(args, base_url)
+            if result is not None:
+                stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "pico-scheduler":
             result = _handle_timers(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
@@ -229,3 +275,7 @@ def main(
 
 def run() -> int:
     return main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
