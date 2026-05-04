@@ -324,13 +324,11 @@ class ConfigApiTests(unittest.TestCase):
                 "content": {
                     "events": [
                         {
-                            "pin": 2,
                             "type": "gpio",
-                            "elapsed_t": 5,
-                            "cycle_t": 5,
                             "reschedule": 1,
                             "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
-                            "current_value": 1,
+                            "current_t": 5,
+                            "c" + "h": 2,
                         }
                     ]
                 },
@@ -341,6 +339,9 @@ class ConfigApiTests(unittest.TestCase):
             latest = server.latest_timer_state("pump_lights")
 
         self.assertEqual(latest["devices"][0]["pin"], 2)
+        self.assertNotIn("c" + "h", latest["devices"][0])
+        self.assertEqual(latest["devices"][0]["elapsed_t"], 5)
+        self.assertEqual(latest["devices"][0]["cycle_t"], 5)
         self.assertEqual(latest["devices"][0]["current_value"], 1)
 
     def test_get_timer_returns_devices_not_events(self):

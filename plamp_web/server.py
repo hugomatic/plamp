@@ -509,12 +509,11 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     report = snapshot.get("last_report")
     if not isinstance(report, dict):
         return None
-    content = report.get("content")
+    reduced = reduce_report(report)
+    content = reduced.get("content")
     if not isinstance(content, dict):
         return None
     items = content.get("devices")
-    if not isinstance(items, list):
-        items = content.get("events")
     if not isinstance(items, list):
         return None
     state: dict[str, Any] = {"devices": items}
