@@ -19,6 +19,34 @@ from plamp_cli.io import InputError, format_json_output, load_json_input, render
 _CONFIG_SECTIONS = ("controllers", "devices", "cameras")
 
 
+def _usage_hint(argv: Sequence[str]) -> str | None:
+    args = list(argv)
+    if not args:
+        return None
+
+    if args[:2] == ["pico-scheduler", "get"]:
+        return "Example: plamp pico-scheduler get pump_n_lights\n"
+
+    if args and args[0] == "pico-scheduler":
+        return (
+            "Example: plamp pico-scheduler get pump_n_lights\n"
+            "Try: plamp pico-scheduler list\n"
+        )
+
+    return None
+
+
+def _format_api_error(exc: ApiError) -> str:
+    if exc.status == 404 and exc.detail.startswith("unknown timer role:"):
+        controller = exc.detail.split(":", 1)[1].strip()
+        return (
+            f"API 404: unknown pico-scheduler controller: {controller}\n"
+            "Try: plamp pico-scheduler list\n"
+            "Example: plamp pico-scheduler get pump_n_lights\n"
+        )
+    return f"{exc}\n"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="plamp")
     parser.add_argument("--host")
@@ -231,6 +259,10 @@ def main(
     try:
         args = parser.parse_args(list(argv))
     except SystemExit as exc:
+        if exc.code and stderr is not None:
+            hint = _usage_hint(argv)
+            if hint:
+                stderr.write(hint)
         return int(exc.code)
 
     try:
@@ -261,7 +293,7 @@ def main(
         stderr.write(f"{exc}\n")
         return 5
     except ApiError as exc:
-        stderr.write(f"{exc}\n")
+        stderr.write(_format_api_error(exc))
         return 3
     except NetworkError as exc:
         stderr.write(f"{exc}\n")

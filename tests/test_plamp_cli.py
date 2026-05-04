@@ -27,6 +27,31 @@ class PlampCliBootstrapTests(unittest.TestCase):
         self.assertNotEqual(main([]), 0)
         self.assertNotEqual(main(["config"]), 0)
 
+    def test_pico_scheduler_get_missing_controller_prints_example(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            code = main(["pico-scheduler", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("the following arguments are required: controller", stderr.getvalue())
+        self.assertIn("Example: plamp pico-scheduler get pump_n_lights", stderr.getvalue())
+
+    def test_pico_scheduler_wrong_argument_order_prints_example_and_try(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            code = main(["pico-scheduler", "pump_n_lights", "get"], stdout=stdout, stderr=stderr)
+
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid choice", stderr.getvalue())
+        self.assertIn("Example: plamp pico-scheduler get pump_n_lights", stderr.getvalue())
+        self.assertIn("Try: plamp pico-scheduler list", stderr.getvalue())
+
     def test_package_installs_with_console_script(self):
         repo_root = Path(__file__).resolve().parents[1]
         python = Path("/usr/bin/python3")
@@ -288,6 +313,20 @@ class PlampCliTimerTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), '{"devices": [{"enabled": true, "id": "pump"}], "report_every": 10}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_lights")
+
+    @patch("plamp_cli.main.request_json", side_effect=ApiError(404, "unknown timer role: pump_n_ligths"))
+    def test_pico_scheduler_get_unknown_controller_prints_hint(self, request_json):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["pico-scheduler", "get", "pump_n_ligths"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("API 404: unknown pico-scheduler controller: pump_n_ligths", stderr.getvalue())
+        self.assertIn("Try: plamp pico-scheduler list", stderr.getvalue())
+        self.assertIn("Example: plamp pico-scheduler get pump_n_lights", stderr.getvalue())
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_n_ligths")
 
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
