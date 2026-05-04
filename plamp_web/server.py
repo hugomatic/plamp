@@ -467,9 +467,8 @@ def reduce_report(report: Any) -> dict[str, Any]:
         }
         reduced_items.append(item)
     reduced["content"] = dict(content)
-    reduced["content"][items_key] = reduced_items
-    if items_key == "devices":
-        reduced["content"].pop("events", None)
+    reduced["content"]["devices"] = reduced_items
+    reduced["content"].pop("events", None)
     reduced["pins"] = pins
     return reduced
 
@@ -498,9 +497,8 @@ def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
             if value is not None:
                 item["current_value"] = value
         enriched_items.append(item)
-    enriched[items_key] = enriched_items
-    if items_key == "devices":
-        enriched.pop("events", None)
+    enriched["devices"] = enriched_items
+    enriched.pop("events", None)
     return enriched
 
 
