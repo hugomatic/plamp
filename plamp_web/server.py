@@ -429,8 +429,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
     content = reduced.get("content")
     if not isinstance(content, dict):
         return reduced
-    items_key = timer_state_items_key(content)
-    items = timer_state_items(content)
+    items = content.get("devices")
+    items_key = "devices" if isinstance(items, list) else None
+    if items_key is None:
+        items_key = timer_state_items_key(content)
+        items = timer_state_items(content)
     if items_key is None or items is None:
         return reduced
     reduced_items = []
@@ -476,8 +479,11 @@ def reduce_report(report: Any) -> dict[str, Any]:
 
 
 def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
-    items_key = timer_state_items_key(state)
-    items = timer_state_items(state)
+    items = state.get("devices")
+    items_key = "devices" if isinstance(items, list) else None
+    if items_key is None:
+        items_key = timer_state_items_key(state)
+        items = timer_state_items(state)
     if items_key is None or items is None:
         return state
     enriched = dict(state)
@@ -514,11 +520,12 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     content = report.get("content")
     if not isinstance(content, dict):
         return None
-    items_key = timer_state_items_key(content)
-    items = timer_state_items(content)
-    if items_key is None or items is None:
+    items = content.get("devices")
+    if not isinstance(items, list):
+        items = content.get("events")
+    if not isinstance(items, list):
         return None
-    state: dict[str, Any] = {items_key: items}
+    state: dict[str, Any] = {"devices": items}
     if "report_every" in content:
         state["report_every"] = content["report_every"]
     else:
@@ -1184,9 +1191,15 @@ def state_for_role(role: str) -> dict[str, Any]:
 
 
 def live_events_for_role(role: str) -> list[dict[str, Any]]:
+    return live_devices_for_role(role)
+
+
+def live_devices_for_role(role: str) -> list[dict[str, Any]]:
     latest = latest_timer_state(role)
-    items = timer_state_items(latest)
-    return items if isinstance(items, list) else []
+    if not isinstance(latest, dict):
+        return []
+    devices = latest.get("devices")
+    return devices if isinstance(devices, list) else []
 
 
 def configured_timer_roles() -> list[str]:
@@ -1511,7 +1524,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
             channels,
             channel_id,
             schedule,
-            live_events=live_events_for_role(role),
+            live_events=live_devices_for_role(role),
             now=datetime.now().time(),
         )
     except ValueError as exc:

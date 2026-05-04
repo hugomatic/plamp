@@ -290,6 +290,94 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
 
+    def test_latest_timer_state_reads_devices_from_last_report(self):
+        monitor = DummyMonitor("abc")
+        monitor.snapshot = lambda: {
+            "last_report": {
+                "kind": "report",
+                "content": {
+                    "devices": [
+                        {
+                            "pin": 2,
+                            "type": "gpio",
+                            "elapsed_t": 5,
+                            "cycle_t": 5,
+                            "reschedule": 1,
+                            "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                            "current_value": 1,
+                        }
+                    ]
+                },
+            }
+        }
+
+        with patch.object(server, "get_or_start_monitor", return_value=monitor):
+            latest = server.latest_timer_state("pump_lights")
+
+        self.assertEqual(latest["devices"][0]["pin"], 2)
+
+    def test_get_timer_returns_devices_not_events(self):
+        with patch.object(server, "state_for_role", return_value={"report_every": 10, "devices": []}):
+            payload = server.get_timer("pump_lights", stream=False)
+
+        self.assertEqual(payload, {"report_every": 10, "devices": []})
+
+    def test_post_timer_channel_schedule_uses_live_devices_helper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            (timers_dir / "pump_lights.json").write_text(
+                json.dumps(
+                    {
+                        "report_every": 1,
+                        "devices": [
+                            {
+                                "id": "pump",
+                                "type": "gpio",
+                                "pin": 2,
+                                "current_t": 0,
+                                "reschedule": 1,
+                                "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            live_state = {
+                "report_every": 1,
+                "devices": [
+                    {
+                        "id": "pump",
+                        "type": "gpio",
+                        "pin": 2,
+                        "current_t": 5,
+                        "reschedule": 1,
+                        "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                    }
+                ],
+            }
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "latest_timer_state", return_value=live_state),
+                patch.object(server, "live_events_for_role", side_effect=AssertionError("old helper should not be used")),
+                patch.object(server, "live_devices_for_role", return_value=live_state["devices"], create=True) as live_devices_for_role,
+                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+            ):
+                server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
+
+        live_devices_for_role.assert_called_once_with("pump_lights")
+
     def test_get_timer_config_reflects_config_device_changes_immediately(self):
         state = {
             "report_every": 1,
