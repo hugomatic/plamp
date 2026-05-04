@@ -115,14 +115,14 @@ def cycle_t_from_device(device: dict[str, Any] | None) -> int | None:
     return max(0, value)
 
 
-def _copy_event_base(event: dict[str, Any]) -> dict[str, Any]:
-    updated = dict(event)
+def _copy_device_base(device: dict[str, Any]) -> dict[str, Any]:
+    updated = dict(device)
     updated["reschedule"] = 1
     return updated
 
 
 def apply_cycle_schedule(
-    event: dict[str, Any],
+    device: dict[str, Any],
     *,
     on_seconds: int,
     off_seconds: int,
@@ -134,7 +134,7 @@ def apply_cycle_schedule(
         raise ValueError("off_seconds must be > 0")
     if start_at_seconds < 0:
         raise ValueError("start_at_seconds must be >= 0")
-    updated = _copy_event_base(event)
+    updated = _copy_device_base(device)
     updated["pattern"] = [{"val": 1, "dur": on_seconds}, {"val": 0, "dur": off_seconds}]
     updated["current_t"] = start_at_seconds % (on_seconds + off_seconds)
     return updated
@@ -156,25 +156,25 @@ def seconds_for_time(value: time) -> int:
     return value.hour * 3600 + value.minute * 60 + value.second
 
 
-def apply_clock_window_schedule(event: dict[str, Any], *, on_time: str, off_time: str, now: time | None = None) -> dict[str, Any]:
+def apply_clock_window_schedule(device: dict[str, Any], *, on_time: str, off_time: str, now: time | None = None) -> dict[str, Any]:
     on_seconds = parse_clock_time(on_time)
     off_seconds = parse_clock_time(off_time)
     if on_seconds == off_seconds:
         raise ValueError("ON and OFF times must be different")
     on_duration = (off_seconds - on_seconds) % CLOCK_DAY_SECONDS
     off_duration = CLOCK_DAY_SECONDS - on_duration
-    updated = _copy_event_base(event)
+    updated = _copy_device_base(device)
     updated["pattern"] = [{"val": 1, "dur": on_duration}, {"val": 0, "dur": off_duration}]
     now_seconds = seconds_for_time(now or datetime.now().time())
     updated["current_t"] = (now_seconds - on_seconds) % CLOCK_DAY_SECONDS
     return updated
 
 
-def _event_key(event: dict[str, Any], index: int) -> str:
-    event_id = event.get("id")
-    if isinstance(event_id, str) and event_id:
-        return event_id
-    pin = event.get("pin")
+def _device_key(device: dict[str, Any], index: int) -> str:
+    device_id = device.get("id")
+    if isinstance(device_id, str) and device_id:
+        return device_id
+    pin = device.get("pin")
     return f"pin-{pin if pin is not None else index}"
 
 
@@ -182,7 +182,7 @@ def _live_device_by_id(live_devices: list[dict[str, Any]] | None) -> dict[str, d
     result: dict[str, dict[str, Any]] = {}
     for index, device in enumerate(live_devices or []):
         if isinstance(device, dict):
-            result[_event_key(device, index)] = device
+            result[_device_key(device, index)] = device
     return result
 
 
@@ -233,7 +233,7 @@ def patch_channel_schedule(
         if not isinstance(device, dict):
             updated_devices.append(device)
             continue
-        device_id = _event_key(device, index)
+        device_id = _device_key(device, index)
         live_device = live_by_id.get(device_id)
         if live_device is None:
             live_device = live_by_pin.get(device.get("pin"))
@@ -245,7 +245,7 @@ def patch_channel_schedule(
                 updated_device["pin"] = channel.get("pin")
                 updated_device["type"] = channel.get("type")
             elif updated_device.get("pin") != channel.get("pin") or updated_device.get("type") != channel.get("type"):
-                raise ValueError(f"channel {channel_id} does not match scheduler event pin/type")
+                raise ValueError(f"channel {channel_id} does not match scheduler device pin/type")
             mode = schedule.get("mode")
             if mode == "cycle":
                 updated_devices.append(
