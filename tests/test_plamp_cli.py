@@ -70,7 +70,8 @@ class PlampCliBootstrapTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, msg=f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-        self.assertIn("{config,controllers,pico-scheduler,timers,pics}", result.stdout)
+        self.assertIn("{config,controllers,pico-scheduler,pics}", result.stdout)
+        self.assertNotIn("timers", result.stdout)
 
 
 class PlampCliConfigTests(unittest.TestCase):
@@ -242,17 +243,18 @@ class PlampCliTimerTests(unittest.TestCase):
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
 
     @patch("plamp_cli.main.request_json")
-    def test_timers_list_alias_returns_ids_only(self, request_json):
+    def test_timers_list_alias_is_not_available(self, request_json):
         request_json.return_value = {"roles": ["pump_lights"], "channels": {}, "time_format": "12h"}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["timers", "list"], stdout=stdout, stderr=stderr)
+        with redirect_stderr(stderr):
+            code = main(["timers", "list"], stdout=stdout, stderr=stderr)
 
-        self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"ids": ["pump_lights"]}\n')
-        self.assertEqual(stderr.getvalue(), "")
-        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timer-config")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid choice", stderr.getvalue())
+        request_json.assert_not_called()
 
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
@@ -275,15 +277,15 @@ class PlampCliTimerTests(unittest.TestCase):
         )
 
     @patch("plamp_cli.main.request_json")
-    def test_pico_scheduler_get_returns_controller_state(self, request_json):
-        request_json.return_value = {"enabled": True, "mode": "auto"}
+    def test_pico_scheduler_get_returns_devices_state(self, request_json):
+        request_json.return_value = {"devices": [{"id": "pump", "enabled": True}], "report_every": 10}
         stdout = StringIO()
         stderr = StringIO()
 
         code = main(["pico-scheduler", "get", "pump_lights"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"enabled": true, "mode": "auto"}\n')
+        self.assertEqual(stdout.getvalue(), '{"devices": [{"enabled": true, "id": "pump"}], "report_every": 10}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/timers/pump_lights")
 
@@ -333,7 +335,7 @@ class PlampCliTimerTests(unittest.TestCase):
 
         self.assertNotEqual(code, 0)
         self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("the following arguments are required", stderr.getvalue())
+        self.assertIn("invalid choice", stderr.getvalue())
 
 
 class PlampCliPictureTests(unittest.TestCase):

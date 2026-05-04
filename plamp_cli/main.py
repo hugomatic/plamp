@@ -58,46 +58,26 @@ def build_parser() -> argparse.ArgumentParser:
     pico_scheduler.set_defaults(area="pico-scheduler")
     pico_scheduler_subparsers = pico_scheduler.add_subparsers(dest="timer_action", required=True)
 
-    timers = subparsers.add_parser("timers")
-    timers.set_defaults(area="timers")
-    timer_subparsers = timers.add_subparsers(dest="timer_action", required=True)
-
     timer_list = pico_scheduler_subparsers.add_parser("list")
     timer_list.set_defaults(timer_action="list")
-    timers_list = timer_subparsers.add_parser("list")
-    timers_list.set_defaults(timer_action="list")
 
     timer_get = pico_scheduler_subparsers.add_parser("get")
     timer_get.add_argument("controller")
     timer_get.set_defaults(timer_action="get")
-    timers_get = timer_subparsers.add_parser("get")
-    timers_get.add_argument("controller")
-    timers_get.set_defaults(timer_action="get")
 
     timer_set = pico_scheduler_subparsers.add_parser("set")
     timer_set.add_argument("controller")
     timer_set.add_argument("payload")
     timer_set.set_defaults(timer_action="set")
-    timers_set = timer_subparsers.add_parser("set")
-    timers_set.add_argument("controller")
-    timers_set.add_argument("payload")
-    timers_set.set_defaults(timer_action="set")
 
     timer_channels = pico_scheduler_subparsers.add_parser("channels")
     channel_subparsers = timer_channels.add_subparsers(dest="channel_action", required=True)
-    timers_channels = timer_subparsers.add_parser("channels")
-    timers_channel_subparsers = timers_channels.add_subparsers(dest="channel_action", required=True)
 
     schedule = channel_subparsers.add_parser("set-schedule")
     schedule.add_argument("controller")
     schedule.add_argument("channel_id")
     schedule.add_argument("payload")
     schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
-    timers_schedule = timers_channel_subparsers.add_parser("set-schedule")
-    timers_schedule.add_argument("controller")
-    timers_schedule.add_argument("channel_id")
-    timers_schedule.add_argument("payload")
-    timers_schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
 
     pics = subparsers.add_parser("pics")
     pic_subparsers = pics.add_subparsers(dest="pics_action", required=True)
@@ -264,7 +244,7 @@ def main(
             result = _handle_controllers(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
-        elif args.area in {"timers", "pico-scheduler"}:
+        elif args.area == "pico-scheduler":
             result = _handle_timers(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))

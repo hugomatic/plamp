@@ -260,12 +260,6 @@ uv run python -m plamp_cli --table pico-scheduler get pump_lights
 cat schedule.json | uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights -
 ```
 
-Compatibility alias:
-
-```bash
-uv run python -m plamp_cli timers list
-```
-
 ### Pictures
 
 Commands:
