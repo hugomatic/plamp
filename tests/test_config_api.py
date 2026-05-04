@@ -409,7 +409,7 @@ class ConfigApiTests(unittest.TestCase):
     def test_get_timer_config_reflects_config_device_changes_immediately(self):
         state = {
             "report_every": 1,
-            "events": [
+            "devices": [
                 {"id": "runtime-lamp", "type": "gpio", "pin": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
                 {"id": "runtime-fan", "type": "pwm", "pin": 3, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
             ],

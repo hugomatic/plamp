@@ -347,10 +347,10 @@ def empty_timer_state() -> dict[str, Any]:
 
 def load_timer_state_for_schedule_edit(path: Path) -> dict[str, Any]:
     try:
-        return timer_state_as_events(validate_timer_state(load_json_file(path)))
+        return validate_timer_state(load_json_file(path))
     except HTTPException as exc:
         if exc.status_code in {404, 422, 500}:
-            return timer_state_as_events(empty_timer_state())
+            return empty_timer_state()
         raise
 
 
@@ -1213,7 +1213,7 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
         except HTTPException:
             state = None
         try:
-            result[role] = channel_metadata_for_role(role, config, timer_state_as_events(state))
+            result[role] = channel_metadata_for_role(role, config, state)
         except ValueError:
             result[role] = []
     return result
@@ -1507,7 +1507,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     path = timer_state_path(role)
     saved_state = load_timer_state_for_schedule_edit(path)
     live_state = latest_timer_state(role)
-    channel_state = timer_state_as_events(live_state if isinstance(live_state, dict) else saved_state)
+    channel_state = live_state if isinstance(live_state, dict) else saved_state
     channels = channel_metadata_for_role(role, config, channel_state)
     try:
         updated = patch_channel_schedule(

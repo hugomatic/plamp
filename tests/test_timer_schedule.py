@@ -21,7 +21,7 @@ class TimerScheduleTests(unittest.TestCase):
             },
         }
         state = {
-            "events": [
+            "devices": [
                 {"id": "runtime-lamp", "type": "pwm", "pin": 2},
                 {"id": "runtime-fan", "type": "gpio", "pin": 3},
                 {"id": "stray", "type": "gpio", "pin": 9},
@@ -43,7 +43,7 @@ class TimerScheduleTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            channel_metadata_for_role("sprouter", config, {"events": []}),
+            channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
                 {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
             ],
@@ -54,7 +54,7 @@ class TimerScheduleTests(unittest.TestCase):
             "controllers": {"sprouter": {"pico_serial": "abc123"}},
             "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
         }
-        state = {"events": [{"id": "lamp-live", "type": "gpio", "pin": 2}, {"type": "gpio", "pin": 3}]}
+        state = {"devices": [{"id": "lamp-live", "type": "gpio", "pin": 2}, {"type": "gpio", "pin": 3}]}
 
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
@@ -103,7 +103,7 @@ class TimerScheduleTests(unittest.TestCase):
     def test_patch_channel_schedule_replaces_only_target_event(self):
         state = {
             "report_every": 1,
-            "events": [
+            "devices": [
                 {"id": "fan", "type": "gpio", "pin": 3, "current_t": 4, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
                 {"id": "lamp", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}]},
             ],
@@ -123,15 +123,15 @@ class TimerScheduleTests(unittest.TestCase):
             now=time(12, 0, 0),
         )
 
-        self.assertEqual(updated["events"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
-        self.assertEqual(updated["events"][0]["current_t"], 25)
-        self.assertEqual(updated["events"][1]["pattern"], [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}])
-        self.assertEqual(updated["events"][1]["current_t"], 7200)
+        self.assertEqual(updated["devices"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["devices"][0]["current_t"], 25)
+        self.assertEqual(updated["devices"][1]["pattern"], [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}])
+        self.assertEqual(updated["devices"][1]["current_t"], 7200)
 
     def test_patch_channel_schedule_matches_target_by_pin_and_rewrites_event_id(self):
         state = {
             "report_every": 1,
-            "events": [
+            "devices": [
                 {"id": "runtime-lamp", "type": "gpio", "pin": 2, "current_t": 5, "reschedule": 1, "pattern": [{"val": 1, "dur": 15}, {"val": 0, "dur": 45}]},
                 {"id": "fan", "type": "gpio", "pin": 3, "current_t": 9, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 90}]},
             ],
@@ -151,25 +151,25 @@ class TimerScheduleTests(unittest.TestCase):
             now=time(12, 0, 0),
         )
 
-        self.assertEqual(updated["events"][0]["id"], "lamp")
-        self.assertEqual(updated["events"][0]["pin"], 2)
-        self.assertEqual(updated["events"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
-        self.assertEqual(updated["events"][0]["current_t"], 12)
-        self.assertEqual(updated["events"][1]["id"], "fan")
-        self.assertEqual(updated["events"][1]["current_t"], 44)
+        self.assertEqual(updated["devices"][0]["id"], "lamp")
+        self.assertEqual(updated["devices"][0]["pin"], 2)
+        self.assertEqual(updated["devices"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["devices"][0]["current_t"], 12)
+        self.assertEqual(updated["devices"][1]["id"], "fan")
+        self.assertEqual(updated["devices"][1]["current_t"], 44)
 
     def test_patch_channel_schedule_migrates_id_matched_pin_change(self):
-        state = {"report_every": 1, "events": [{"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        state = {"report_every": 1, "devices": [{"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         updated = patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 0})
 
-        self.assertEqual(updated["events"][0]["pin"], 3)
-        self.assertEqual(updated["events"][0]["type"], "gpio")
-        self.assertEqual(updated["events"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["devices"][0]["pin"], 3)
+        self.assertEqual(updated["devices"][0]["type"], "gpio")
+        self.assertEqual(updated["devices"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
 
     def test_patch_channel_schedule_rejects_pin_match_with_wrong_type(self):
-        state = {"report_every": 1, "events": [{"id": "other", "type": "pwm", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        state = {"report_every": 1, "devices": [{"id": "other", "type": "pwm", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):
@@ -178,7 +178,7 @@ class TimerScheduleTests(unittest.TestCase):
     def test_patch_channel_schedule_creates_missing_configured_event(self):
         state = {
             "report_every": 1,
-            "events": [
+            "devices": [
                 {"id": "test_pin", "type": "gpio", "pin": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
             ],
         }
@@ -192,11 +192,11 @@ class TimerScheduleTests(unittest.TestCase):
             now=time(12, 0, 0),
         )
 
-        self.assertEqual(updated["events"][0]["id"], "test_pin")
-        self.assertEqual(updated["events"][1]["id"], "pump")
-        self.assertEqual(updated["events"][1]["pin"], 2)
-        self.assertEqual(updated["events"][1]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
-        self.assertEqual(updated["events"][1]["current_t"], 7)
+        self.assertEqual(updated["devices"][0]["id"], "test_pin")
+        self.assertEqual(updated["devices"][1]["id"], "pump")
+        self.assertEqual(updated["devices"][1]["pin"], 2)
+        self.assertEqual(updated["devices"][1]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
+        self.assertEqual(updated["devices"][1]["current_t"], 7)
 
 
 if __name__ == "__main__":
