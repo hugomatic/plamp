@@ -1515,7 +1515,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
             channels,
             channel_id,
             schedule,
-            live_events=live_devices_for_role(role),
+            live_devices=live_devices_for_role(role),
             now=datetime.now().time(),
         )
     except ValueError as exc:

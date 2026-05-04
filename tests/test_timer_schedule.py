@@ -112,14 +112,14 @@ class TimerScheduleTests(unittest.TestCase):
             {"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
             {"id": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
         ]
-        live_events = [{"id": "fan", "cycle_t": 25}, {"id": "lamp", "cycle_t": 7200}]
+        live_devices = [{"id": "fan", "cycle_t": 25}, {"id": "lamp", "cycle_t": 7200}]
 
         updated = patch_channel_schedule(
             state,
             channels,
             "fan",
             {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 25},
-            live_events=live_events,
+            live_devices=live_devices,
             now=time(12, 0, 0),
         )
 
@@ -140,14 +140,14 @@ class TimerScheduleTests(unittest.TestCase):
             {"id": "lamp", "pin": 2, "type": "gpio", "default_editor": "cycle"},
             {"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
         ]
-        live_events = [{"id": "runtime-lamp", "cycle_t": 12}, {"id": "fan", "cycle_t": 44}]
+        live_devices = [{"id": "runtime-lamp", "cycle_t": 12}, {"id": "fan", "cycle_t": 44}]
 
         updated = patch_channel_schedule(
             state,
             channels,
             "lamp",
             {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 12},
-            live_events=live_events,
+            live_devices=live_devices,
             now=time(12, 0, 0),
         )
 

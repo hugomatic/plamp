@@ -322,7 +322,7 @@ class ConfigApiTests(unittest.TestCase):
             "last_report": {
                 "kind": "report",
                 "content": {
-                    "events": [
+                    "devices": [
                         {
                             "type": "gpio",
                             "reschedule": 1,

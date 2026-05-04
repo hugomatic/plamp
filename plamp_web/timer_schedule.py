@@ -215,7 +215,7 @@ def patch_channel_schedule(
     channel_id: str,
     schedule: dict[str, Any],
     *,
-    live_events: list[dict[str, Any]] | None = None,
+    live_devices: list[dict[str, Any]] | None = None,
     now: time | None = None,
 ) -> dict[str, Any]:
     devices = state.get("devices")
@@ -225,8 +225,8 @@ def patch_channel_schedule(
     channel = channels_by_id.get(channel_id)
     if channel is None:
         raise ValueError(f"unknown channel: {channel_id}")
-    live_by_id = _live_device_by_id(live_events)
-    live_by_pin = _devices_by_pin(live_events)
+    live_by_id = _live_device_by_id(live_devices)
+    live_by_pin = _devices_by_pin(live_devices)
     updated_devices = []
     found = False
     for index, device in enumerate(devices):
