@@ -160,8 +160,7 @@ Controller config includes the scheduler firmware type and reporting interval:
 
 `report_every` is configured on the controller in `data/config.json`. Pico
 scheduler state files keep schedule events; any older `report_every` value in
-`data/timers/<controller>.json` is legacy and is not the source of truth for
-Pico scheduler reporting cadence.
+legacy Pico scheduler state is not the source of truth for reporting cadence.
 
 `data/` is local runtime data and is ignored by git.
 
