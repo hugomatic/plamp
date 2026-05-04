@@ -1585,14 +1585,14 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <fieldset>
     <legend>GET /api/timers/{{role}}?stream=true</legend>
-    <p>Streams timer events with server-sent events.</p>
+    <p>Streams timer device updates with server-sent events.</p>
     <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
     <button class="copy-curl" type="button" data-copy-target="stream-curl-command">Copy curl</button>
     <button id="start-stream" type="button">Start stream</button>
     <button id="stop-stream" type="button">Stop stream</button>
     <div><span id="stream-status">Not streaming.</span></div>
     <div id="timer-status-board" class="status-board">Start the stream to see timer status.</div>
-    <pre id="stream-result">Stream events will appear here.</pre>
+    <pre id="stream-result">Stream device updates will appear here.</pre>
   </fieldset>
 
   <fieldset>

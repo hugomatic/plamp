@@ -944,7 +944,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Captures a new image and returns capture metadata.", html)
         self.assertIn("Lists captures newest first. Options: limit and offset.", html)
         self.assertIn("Reads the current timer state for one role.", html)
-        self.assertIn("Streams timer events with server-sent events.", html)
+        self.assertIn("Streams timer device updates with server-sent events.", html)
         self.assertIn("Writes timer state JSON and sends it to the Pico.", html)
         self.assertIn('<p class="helper-title">Helper: Generate 5s pin test</p>', html)
         self.assertIn('<p class="helper-title">Helper: Generate pump/lights</p>', html)
