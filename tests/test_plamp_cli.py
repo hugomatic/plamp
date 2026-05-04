@@ -259,7 +259,7 @@ class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input")
     def test_pico_scheduler_set_puts_controller_state(self, load_json_input, request_json):
-        load_json_input.return_value = {"report_every": 10, "events": []}
+        load_json_input.return_value = {"devices": [{"id": "pump", "enabled": True}], "report_every": 10}
         request_json.return_value = {"role": "pump_lights", "success": True}
         stdout = StringIO()
         stderr = StringIO()
@@ -273,7 +273,7 @@ class PlampCliTimerTests(unittest.TestCase):
             "PUT",
             "http://127.0.0.1:8000",
             "/api/timers/pump_lights",
-            {"report_every": 10, "events": []},
+            {"devices": [{"id": "pump", "enabled": True}], "report_every": 10},
         )
 
     @patch("plamp_cli.main.request_json")
@@ -408,14 +408,24 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliDocsTests(unittest.TestCase):
-    def test_cli_readme_mentions_command_overview_and_help(self):
-        readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
-        self.assertIn("JSON-first", readme)
-        self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", readme)
-        self.assertIn("uv run python -m plamp_cli --help", readme)
-        self.assertIn("uv run python -m plamp_cli config get", readme)
-        self.assertIn("uv run python -m plamp_cli controllers list", readme)
-        self.assertIn("uv run python -m plamp_cli pico-scheduler list", readme)
-        self.assertIn("uv run python -m plamp_cli pics get <image_key> --out latest.jpg", readme)
-        self.assertIn("--stdout", readme)
-        self.assertIn("ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg", readme)
+    def test_readmes_match_pico_scheduler_cli_shape(self):
+        cli_readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
+        root_readme = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("JSON-first", cli_readme)
+        self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", cli_readme)
+        self.assertIn("uv run python -m plamp_cli --help", cli_readme)
+        self.assertIn("uv run python -m plamp_cli config get", cli_readme)
+        self.assertIn("uv run python -m plamp_cli controllers list", cli_readme)
+        self.assertIn("uv run python -m plamp_cli pico-scheduler list", cli_readme)
+        self.assertIn("uv run python -m plamp_cli pics get <image_key> --out latest.jpg", cli_readme)
+        self.assertIn("--stdout", cli_readme)
+        self.assertIn("ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg", cli_readme)
+        self.assertNotIn("uv run python -m plamp_cli timers", cli_readme)
+
+        self.assertIn("plamp config get", root_readme)
+        self.assertIn("plamp controllers list", root_readme)
+        self.assertIn("plamp pico-scheduler list", root_readme)
+        self.assertNotIn("plamp timers", root_readme)
+        self.assertNotIn("data/timers/<controller>.json", root_readme)
+        self.assertNotIn("schedule events", root_readme)
