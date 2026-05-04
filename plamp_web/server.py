@@ -431,6 +431,8 @@ def reduce_report(report: Any) -> dict[str, Any]:
         return reduced
     items = content.get("devices")
     if not isinstance(items, list):
+        items = content.get("events")
+    if not isinstance(items, list):
         return reduced
     reduced_items = []
     pins: dict[str, dict[str, Any]] = {}
@@ -511,6 +513,8 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     if not isinstance(content, dict):
         return None
     items = content.get("devices")
+    if not isinstance(items, list):
+        items = content.get("events")
     if not isinstance(items, list):
         return None
     state: dict[str, Any] = {"devices": items}

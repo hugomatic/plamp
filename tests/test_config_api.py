@@ -201,7 +201,7 @@ class ConfigApiTests(unittest.TestCase):
         report = {
             "kind": "report",
             "content": {
-                "devices": [
+                "events": [
                     {
                         "id": "pump",
                         "type": "gpio",
@@ -316,7 +316,7 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(latest["devices"][0]["pin"], 2)
 
-    def test_latest_timer_state_ignores_events_only_last_report(self):
+    def test_latest_timer_state_normalizes_events_from_last_report(self):
         monitor = DummyMonitor("abc")
         monitor.snapshot = lambda: {
             "last_report": {
@@ -340,7 +340,8 @@ class ConfigApiTests(unittest.TestCase):
         with patch.object(server, "get_or_start_monitor", return_value=monitor):
             latest = server.latest_timer_state("pump_lights")
 
-        self.assertIsNone(latest)
+        self.assertEqual(latest["devices"][0]["pin"], 2)
+        self.assertEqual(latest["devices"][0]["current_value"], 1)
 
     def test_get_timer_returns_devices_not_events(self):
         with patch.object(server, "state_for_role", return_value={"report_every": 10, "devices": []}):
