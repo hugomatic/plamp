@@ -136,7 +136,7 @@ Expected shape:
 ```json
 {
   "report_every": 10,
-  "events": []
+  "devices": []
 }
 ```
 

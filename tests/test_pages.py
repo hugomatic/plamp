@@ -196,6 +196,23 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))", html)
         self.assertIn("const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || \"gpio\"};", html)
 
+    def test_timer_dashboard_page_reads_devices_from_runtime_messages(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("message?.report?.content?.devices", html)
+        self.assertIn("message?.last_report?.content?.devices", html)
+        self.assertIn("message?.content?.devices", html)
+        self.assertIn("message?.devices", html)
+        self.assertLess(html.index("message?.report?.content?.devices"), html.index("message?.report?.content?.events"))
+
+    def test_api_test_page_generates_timer_payloads_with_devices(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn("report_every: 10,\n        devices: [{", html)
+        self.assertIn("report_every: 10,\n        devices: [", html)
+        self.assertNotIn("report_every: 10,\n        events: [{", html)
+        self.assertNotIn("report_every: 10,\n        events: [", html)
+
 
     def test_settings_page_includes_storage_summary(self):
         html = render_settings_page({

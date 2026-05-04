@@ -222,6 +222,32 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
         self.assertNotIn(old_pin_key, reduced["pins"]["pump"])
 
+    def test_reduce_report_normalizes_devices_payload(self):
+        old_pin_key = "c" + "h"
+        report = {
+            "kind": "report",
+            "content": {
+                "devices": [
+                    {
+                        "id": "pump",
+                        "type": "gpio",
+                        old_pin_key: 2,
+                        "current_t": 0,
+                        "reschedule": 1,
+                        "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                    }
+                ]
+            },
+        }
+
+        reduced = server.reduce_report(report)
+
+        device = reduced["content"]["devices"][0]
+        self.assertEqual(device["pin"], 2)
+        self.assertNotIn(old_pin_key, device)
+        self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
+        self.assertNotIn("events", reduced["content"])
+
     def test_validate_timer_state_accepts_devices_field(self):
         state = {
             "report_every": 10,

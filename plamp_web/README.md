@@ -108,12 +108,12 @@ Each controller has a saved state file:
 data/timers/<controller-id>.json
 ```
 
-Timer events use `pin`:
+Timer devices use `pin`:
 
 ```json
 {
   "report_every": 10,
-  "events": [
+  "devices": [
     {
       "id": "pump",
       "type": "gpio",
@@ -130,7 +130,7 @@ Timer events use `pin`:
 ```
 
 `report_every` is configured on the controller in `data/config.json`. Timer
-state files keep schedule events; any older `report_every` value in
+state files keep schedule devices; any older `report_every` value in
 `data/timers/<controller>.json` is legacy and is not the source of truth for
 Pico scheduler reporting cadence.
 

@@ -947,14 +947,18 @@ def render_timer_dashboard_page(
       return null;
     }
 
-    function timerEventsFromMessage(message) {
+    function timerDevicesFromMessage(message) {
       const candidates = [
+        message?.report?.content?.devices,
+        message?.last_report?.content?.devices,
+        message?.content?.devices,
+        message?.devices,
         message?.report?.content?.events,
         message?.last_report?.content?.events,
         message?.content?.events,
         message?.events,
       ];
-      return candidates.find((events) => Array.isArray(events)) || [];
+      return candidates.find((devices) => Array.isArray(devices)) || [];
     }
 
     function channelForEvent(role, event, index) {
@@ -1162,7 +1166,7 @@ def render_timer_dashboard_page(
       let editorPlaced = false;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
-        const events = timerEventsFromMessage(message);
+        const events = timerDevicesFromMessage(message);
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
         for (const event of events) {
@@ -1846,18 +1850,22 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return null;
     }}
 
-    function timerEventsFromMessage(message) {{
+    function timerDevicesFromMessage(message) {{
       const candidates = [
+        message?.report?.content?.devices,
+        message?.last_report?.content?.devices,
+        message?.content?.devices,
+        message?.devices,
         message?.report?.content?.events,
         message?.last_report?.content?.events,
         message?.content?.events,
         message?.events,
       ];
-      return candidates.find((events) => Array.isArray(events)) || [];
+      return candidates.find((devices) => Array.isArray(devices)) || [];
     }}
 
     function renderTimerStatus(message) {{
-      const events = timerEventsFromMessage(message);
+      const events = timerDevicesFromMessage(message);
       const board = document.getElementById("timer-status-board");
       if (!events.length) return;
       board.replaceChildren();
@@ -2038,7 +2046,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("generate-quick").addEventListener("click", () => {{
       setPayload({{
         report_every: 10,
-        events: [{{
+        devices: [{{
           id: "test_pin",
           type: "gpio",
           pin: Number(document.getElementById("test-pin").value),
@@ -2058,7 +2066,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       if (lightsOffDur === 0) lightsOffDur = 1;
       setPayload({{
         report_every: 10,
-        events: [
+        devices: [
           {{
             id: "pump",
             type: "gpio",
