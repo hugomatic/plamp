@@ -201,7 +201,7 @@ class ConfigApiTests(unittest.TestCase):
         report = {
             "kind": "report",
             "content": {
-                "events": [
+                "devices": [
                     {
                         "id": "pump",
                         "type": "gpio",
@@ -216,9 +216,9 @@ class ConfigApiTests(unittest.TestCase):
 
         reduced = server.reduce_report(report)
 
-        event = reduced["content"]["events"][0]
-        self.assertEqual(event["pin"], 2)
-        self.assertNotIn(old_pin_key, event)
+        device = reduced["content"]["devices"][0]
+        self.assertEqual(device["pin"], 2)
+        self.assertNotIn(old_pin_key, device)
         self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
         self.assertNotIn(old_pin_key, reduced["pins"]["pump"])
 
