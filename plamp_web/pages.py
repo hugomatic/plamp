@@ -953,10 +953,6 @@ def render_timer_dashboard_page(
         message?.last_report?.content?.devices,
         message?.content?.devices,
         message?.devices,
-        message?.report?.content?.events,
-        message?.last_report?.content?.events,
-        message?.content?.events,
-        message?.events,
       ];
       return candidates.find((devices) => Array.isArray(devices)) || [];
     }
@@ -1166,16 +1162,16 @@ def render_timer_dashboard_page(
       let editorPlaced = false;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
-        const events = timerDevicesFromMessage(message);
+        const devices = timerDevicesFromMessage(message);
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
-        for (const event of events) {
-          const pin = Number(event?.pin);
-          if (Number.isFinite(pin)) liveByPin.set(pin, event);
+        for (const device of devices) {
+          const pin = Number(device?.pin);
+          if (Number.isFinite(pin)) liveByPin.set(pin, device);
         }
         const items = channels.length
           ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
-          : events.map((event, index) => ({channel: channelForEvent(role, event, index), event, index}));
+          : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
         for (const item of items) {
           const channel = item.channel;
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
@@ -1856,22 +1852,18 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         message?.last_report?.content?.devices,
         message?.content?.devices,
         message?.devices,
-        message?.report?.content?.events,
-        message?.last_report?.content?.events,
-        message?.content?.events,
-        message?.events,
       ];
       return candidates.find((devices) => Array.isArray(devices)) || [];
     }}
 
     function renderTimerStatus(message) {{
-      const events = timerDevicesFromMessage(message);
+      const devices = timerDevicesFromMessage(message);
       const board = document.getElementById("timer-status-board");
-      if (!events.length) return;
+      if (!devices.length) return;
       board.replaceChildren();
-      for (const [index, event] of events.entries()) {{
-        const step = currentTimerStep(event);
-        const value = Number(step?.step?.val ?? event.current_value ?? 0);
+      for (const [index, device] of devices.entries()) {{
+        const step = currentTimerStep(device);
+        const value = Number(step?.step?.val ?? device.current_value ?? 0);
         const isOn = value > 0;
         const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
 
@@ -1882,7 +1874,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         top.className = "timer-top";
         const name = document.createElement("span");
         name.className = "timer-name";
-        name.textContent = event.id || "pin " + (event.pin ?? index);
+        name.textContent = device.id || "pin " + (device.pin ?? index);
         const badge = document.createElement("span");
         badge.className = "timer-value " + (isOn ? "on" : "off");
         badge.textContent = isOn ? "ON" : "OFF";
@@ -1890,7 +1882,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
         const meta = document.createElement("div");
         meta.className = "timer-meta";
-        meta.textContent = "pin " + (event.pin ?? "?") + " | " + (event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+        meta.textContent = "pin " + (device.pin ?? "?") + " | " + (device.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
         const bar = document.createElement("div");
         bar.className = "timer-bar";

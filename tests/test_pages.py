@@ -203,7 +203,22 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("message?.last_report?.content?.devices", html)
         self.assertIn("message?.content?.devices", html)
         self.assertIn("message?.devices", html)
-        self.assertLess(html.index("message?.report?.content?.devices"), html.index("message?.report?.content?.events"))
+        self.assertNotIn("message?.report?.content?.events", html)
+        self.assertNotIn("message?.last_report?.content?.events", html)
+        self.assertNotIn("message?.content?.events", html)
+        self.assertNotIn("message?.events", html)
+
+    def test_api_test_page_reads_devices_from_timer_stream_payloads(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn("message?.report?.content?.devices", html)
+        self.assertIn("message?.last_report?.content?.devices", html)
+        self.assertIn("message?.content?.devices", html)
+        self.assertIn("message?.devices", html)
+        self.assertNotIn("message?.report?.content?.events", html)
+        self.assertNotIn("message?.last_report?.content?.events", html)
+        self.assertNotIn("message?.content?.events", html)
+        self.assertNotIn("message?.events", html)
 
     def test_api_test_page_generates_timer_payloads_with_devices(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
