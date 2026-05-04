@@ -193,6 +193,9 @@ Recommended command surface:
 - `plamp firmware flash --firmware pico_scheduler --controller pump_n_lights @state.json --port /dev/ttyACM0`
 - `plamp firmware generate --firmware pico_doser @hello.json --out main.py`
 - `plamp firmware flash --firmware pico_doser @hello.json --port /dev/ttyACM0`
+- `plamp firmware pull --port /dev/ttyACM0`
+- `plamp firmware pull --port /dev/ttyACM0 --out main.py`
+- `plamp firmware show --port /dev/ttyACM0`
 
 Rules:
 
@@ -200,6 +203,12 @@ Rules:
 - they do not require `plamp-web`
 - they explicitly bypass the normal server-backed control flow
 - they should require JSON input rather than inventing hidden defaults
+- `firmware pull` writes firmware source to stdout by default so shell redirection works:
+  - `plamp firmware pull --port /dev/ttyACM0 > main.py`
+- `firmware pull --out ...` is an optional convenience/safety path
+- `firmware show` is a convenience alias for terminal display
+- firmware source output must go only to stdout
+- diagnostics and progress messages must go only to stderr
 
 ### Server-backed CLI commands
 
