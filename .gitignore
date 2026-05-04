@@ -1,6 +1,8 @@
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+build/
+*.egg-info/
 
 # Local Python virtual environments
 .venv/
