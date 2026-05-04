@@ -1,6 +1,6 @@
 {
   "report_every": 10,
-  "events": [
+  "devices": [
     {
       "type": "gpio",
       "pin": 25,

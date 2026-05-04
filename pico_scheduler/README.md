@@ -16,7 +16,7 @@ Example:
 ```json
 {
   "report_every": 10,
-  "events": [
+  "devices": [
     {
       "id": "test_pin",
       "type": "gpio",

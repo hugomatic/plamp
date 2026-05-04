@@ -221,67 +221,102 @@ def require_int(value: Any, message: str) -> int:
         raise HTTPException(status_code=422, detail=message)
 
 
+def timer_state_items_key(state: Any) -> str | None:
+    if not isinstance(state, dict):
+        return None
+    if isinstance(state.get("devices"), list):
+        return "devices"
+    if isinstance(state.get("events"), list):
+        return "events"
+    return None
+
+
+def timer_state_items(state: Any) -> list[dict[str, Any]] | None:
+    key = timer_state_items_key(state)
+    if key is None or not isinstance(state, dict):
+        return None
+    items = state.get(key)
+    return items if isinstance(items, list) else None
+
+
+def timer_state_as_events(state: Any) -> dict[str, Any]:
+    if not isinstance(state, dict):
+        return {}
+    items = timer_state_items(state)
+    if items is None:
+        return dict(state)
+    converted = dict(state)
+    converted["events"] = [dict(item) if isinstance(item, dict) else item for item in items]
+    converted.pop("devices", None)
+    return converted
+
+
 def validate_timer_state(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise HTTPException(status_code=422, detail="top-level JSON must be an object")
     if "report_every" not in raw:
         raise HTTPException(status_code=422, detail="missing top-level field: report_every")
-    if "events" not in raw:
-        raise HTTPException(status_code=422, detail="missing top-level field: events")
 
     report_every = require_int(raw["report_every"], "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
 
-    raw_events = raw["events"]
-    if not isinstance(raw_events, list):
-        raise HTTPException(status_code=422, detail="events must be a list")
+    if "devices" in raw:
+        raw_items = raw["devices"]
+        if not isinstance(raw_items, list):
+            raise HTTPException(status_code=422, detail="devices must be a list")
+    elif "events" in raw:
+        raw_items = raw["events"]
+        if not isinstance(raw_items, list):
+            raise HTTPException(status_code=422, detail="events must be a list")
+    else:
+        raise HTTPException(status_code=422, detail="missing top-level field: devices")
 
-    events = []
-    for i, src in enumerate(raw_events):
+    devices = []
+    for i, src in enumerate(raw_items):
         if not isinstance(src, dict):
-            raise HTTPException(status_code=422, detail=f"event {i} must be an object")
+            raise HTTPException(status_code=422, detail=f"device {i} must be an object")
         for name in ["type", "pin", "current_t", "reschedule", "pattern"]:
             if name not in src:
-                raise HTTPException(status_code=422, detail=f"event {i} missing field: {name}")
+                raise HTTPException(status_code=422, detail=f"device {i} missing field: {name}")
 
         event_type = src["type"]
         if event_type not in {"gpio", "pwm"}:
-            raise HTTPException(status_code=422, detail=f"event {i} type must be gpio or pwm")
-        pin = require_int(src["pin"], f"event {i} pin must be an integer")
-        current_t = require_int(src["current_t"], f"event {i} current_t must be an integer")
-        reschedule = 1 if require_int(src["reschedule"], f"event {i} reschedule must be an integer") else 0
+            raise HTTPException(status_code=422, detail=f"device {i} type must be gpio or pwm")
+        pin = require_int(src["pin"], f"device {i} pin must be an integer")
+        current_t = require_int(src["current_t"], f"device {i} current_t must be an integer")
+        reschedule = 1 if require_int(src["reschedule"], f"device {i} reschedule must be an integer") else 0
         if pin < 0 or pin > 29:
-            raise HTTPException(status_code=422, detail=f"event {i} pin must be in range 0..29")
+            raise HTTPException(status_code=422, detail=f"device {i} pin must be in range 0..29")
         if current_t < 0:
-            raise HTTPException(status_code=422, detail=f"event {i} current_t must be >= 0")
+            raise HTTPException(status_code=422, detail=f"device {i} current_t must be >= 0")
 
         pattern_src = src["pattern"]
         if not isinstance(pattern_src, list) or not pattern_src:
-            raise HTTPException(status_code=422, detail=f"event {i} pattern must be a non-empty list")
+            raise HTTPException(status_code=422, detail=f"device {i} pattern must be a non-empty list")
 
         pattern = []
         total_t = 0
         for j, step in enumerate(pattern_src):
             if not isinstance(step, dict):
-                raise HTTPException(status_code=422, detail=f"event {i} pattern step {j} must be an object")
+                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} must be an object")
             if "val" not in step or "dur" not in step:
-                raise HTTPException(status_code=422, detail=f"event {i} pattern step {j} missing val or dur")
-            val = require_int(step["val"], f"event {i} pattern step {j} val must be an integer")
-            dur = require_int(step["dur"], f"event {i} pattern step {j} dur must be an integer")
+                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} missing val or dur")
+            val = require_int(step["val"], f"device {i} pattern step {j} val must be an integer")
+            dur = require_int(step["dur"], f"device {i} pattern step {j} dur must be an integer")
             if dur <= 0:
-                raise HTTPException(status_code=422, detail=f"event {i} pattern step {j} dur must be > 0")
+                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} dur must be > 0")
             if event_type == "gpio" and val not in {0, 1}:
-                raise HTTPException(status_code=422, detail=f"event {i} pattern step {j} gpio val must be 0 or 1")
+                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} gpio val must be 0 or 1")
             if event_type == "pwm" and (val < 0 or val > 65535):
-                raise HTTPException(status_code=422, detail=f"event {i} pattern step {j} pwm val must be in range 0..65535")
+                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} pwm val must be in range 0..65535")
             pattern.append({"val": val, "dur": dur})
             total_t += dur
 
         if not reschedule and current_t > total_t:
             current_t = total_t
 
-        event = {
+        device = {
             "type": event_type,
             "pin": pin,
             "current_t": current_t,
@@ -290,11 +325,11 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
         }
         if "id" in src:
             if not isinstance(src["id"], str) or not src["id"]:
-                raise HTTPException(status_code=422, detail=f"event {i} id must be a non-empty string")
-            event["id"] = src["id"]
-        events.append(event)
+                raise HTTPException(status_code=422, detail=f"device {i} id must be a non-empty string")
+            device["id"] = src["id"]
+        devices.append(device)
 
-    return {"report_every": report_every, "events": events}
+    return {"report_every": report_every, "devices": devices}
 
 
 def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
@@ -303,19 +338,19 @@ def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
     report_every = require_int(role_config.get("report_every", 10), "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
-    return {"report_every": report_every, "events": state["events"]}
+    return {"report_every": report_every, "devices": state["devices"]}
 
 
 def empty_timer_state() -> dict[str, Any]:
-    return {"report_every": 1, "events": []}
+    return {"report_every": 1, "devices": []}
 
 
 def load_timer_state_for_schedule_edit(path: Path) -> dict[str, Any]:
     try:
-        return validate_timer_state(load_json_file(path))
+        return timer_state_as_events(validate_timer_state(load_json_file(path)))
     except HTTPException as exc:
         if exc.status_code in {404, 422, 500}:
-            return empty_timer_state()
+            return timer_state_as_events(empty_timer_state())
         raise
 
 
@@ -394,14 +429,15 @@ def reduce_report(report: Any) -> dict[str, Any]:
     content = reduced.get("content")
     if not isinstance(content, dict):
         return reduced
-    events = content.get("events")
-    if not isinstance(events, list):
+    items_key = timer_state_items_key(content)
+    items = timer_state_items(content)
+    if items_key is None or items is None:
         return reduced
-    reduced_events = []
+    reduced_items = []
     pins: dict[str, dict[str, Any]] = {}
-    for index, event in enumerate(events):
+    for index, event in enumerate(items):
         if not isinstance(event, dict):
-            reduced_events.append(event)
+            reduced_items.append(event)
             continue
         item = dict(event)
         old_pin_key = "c" + "h"
@@ -430,22 +466,25 @@ def reduce_report(report: Any) -> dict[str, Any]:
             "cycle_t": item.get("cycle_t"),
             "current_value": item.get("current_value"),
         }
-        reduced_events.append(item)
+        reduced_items.append(item)
     reduced["content"] = dict(content)
-    reduced["content"]["events"] = reduced_events
+    reduced["content"][items_key] = reduced_items
+    if items_key == "devices":
+        reduced["content"].pop("events", None)
     reduced["pins"] = pins
     return reduced
 
 
 def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
-    events = state.get("events")
-    if not isinstance(events, list):
+    items_key = timer_state_items_key(state)
+    items = timer_state_items(state)
+    if items_key is None or items is None:
         return state
     enriched = dict(state)
-    enriched_events = []
-    for event in events:
+    enriched_items = []
+    for event in items:
         if not isinstance(event, dict):
-            enriched_events.append(event)
+            enriched_items.append(event)
             continue
         item = dict(event)
         if "elapsed_t" not in item:
@@ -460,8 +499,10 @@ def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
             value = current_value_for_event(item)
             if value is not None:
                 item["current_value"] = value
-        enriched_events.append(item)
-    enriched["events"] = enriched_events
+        enriched_items.append(item)
+    enriched[items_key] = enriched_items
+    if items_key == "devices":
+        enriched.pop("events", None)
     return enriched
 
 
@@ -473,10 +514,11 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     content = report.get("content")
     if not isinstance(content, dict):
         return None
-    events = content.get("events")
-    if not isinstance(events, list):
+    items_key = timer_state_items_key(content)
+    items = timer_state_items(content)
+    if items_key is None or items is None:
         return None
-    state: dict[str, Any] = {"events": events}
+    state: dict[str, Any] = {items_key: items}
     if "report_every" in content:
         state["report_every"] = content["report_every"]
     else:
@@ -1143,8 +1185,8 @@ def state_for_role(role: str) -> dict[str, Any]:
 
 def live_events_for_role(role: str) -> list[dict[str, Any]]:
     latest = latest_timer_state(role)
-    events = latest.get("events") if isinstance(latest, dict) else None
-    return events if isinstance(events, list) else []
+    items = timer_state_items(latest)
+    return items if isinstance(items, list) else []
 
 
 def configured_timer_roles() -> list[str]:
@@ -1167,7 +1209,7 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
         except HTTPException:
             state = None
         try:
-            result[role] = channel_metadata_for_role(role, config, state)
+            result[role] = channel_metadata_for_role(role, config, timer_state_as_events(state))
         except ValueError:
             result[role] = []
     return result
@@ -1461,7 +1503,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     path = timer_state_path(role)
     saved_state = load_timer_state_for_schedule_edit(path)
     live_state = latest_timer_state(role)
-    channel_state = live_state if isinstance(live_state, dict) else saved_state
+    channel_state = timer_state_as_events(live_state if isinstance(live_state, dict) else saved_state)
     channels = channel_metadata_for_role(role, config, channel_state)
     try:
         updated = patch_channel_schedule(

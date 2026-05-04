@@ -222,6 +222,48 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
         self.assertNotIn(old_pin_key, reduced["pins"]["pump"])
 
+    def test_validate_timer_state_accepts_devices_field(self):
+        state = {
+            "report_every": 10,
+            "devices": [
+                {
+                    "id": "test_pin",
+                    "type": "gpio",
+                    "pin": 25,
+                    "current_t": 3,
+                    "reschedule": 1,
+                    "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                }
+            ],
+        }
+
+        validated = server.validate_timer_state(state)
+
+        self.assertEqual(validated["report_every"], 10)
+        self.assertIn("devices", validated)
+        self.assertEqual(validated["devices"][0]["id"], "test_pin")
+        self.assertNotIn("events", validated)
+
+    def test_timer_state_for_pico_uses_devices(self):
+        state = {
+            "report_every": 10,
+            "devices": [
+                {
+                    "id": "test_pin",
+                    "type": "gpio",
+                    "pin": 25,
+                    "current_t": 3,
+                    "reschedule": 1,
+                    "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                }
+            ],
+        }
+
+        with patch.object(server, "timer_role", return_value={"report_every": 7}):
+            timer_state = server.timer_state_for_pico("timer", state)
+
+        self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
+
     def test_get_timer_config_reflects_config_device_changes_immediately(self):
         state = {
             "report_every": 1,
@@ -389,7 +431,7 @@ class ConfigApiTests(unittest.TestCase):
                 json.dumps(
                     {
                         "report_every": 1,
-                        "events": [
+                        "devices": [
                             {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
                         ],
                     }
@@ -398,7 +440,7 @@ class ConfigApiTests(unittest.TestCase):
             )
             stale_live = {
                 "report_every": 1,
-                "events": [
+                "devices": [
                     {"id": "test_pin", "type": "gpio", "pin": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
                 ],
             }
@@ -412,9 +454,9 @@ class ConfigApiTests(unittest.TestCase):
 
             saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
 
-        self.assertEqual([event["id"] for event in saved["events"]], ["pump", "lights"])
-        self.assertEqual(saved["events"][0]["pin"], 2)
-        self.assertEqual(saved["events"][1]["pin"], 3)
+        self.assertEqual([device["id"] for device in saved["devices"]], ["pump", "lights"])
+        self.assertEqual(saved["devices"][0]["pin"], 2)
+        self.assertEqual(saved["devices"][1]["pin"], 3)
 
     def test_post_timer_channel_schedule_reports_saved_when_pico_is_offline(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,7 +471,7 @@ class ConfigApiTests(unittest.TestCase):
             )
             timers_dir = root / "data" / "timers"
             timers_dir.mkdir(parents=True)
-            (timers_dir / "pump_lights.json").write_text(json.dumps({"report_every": 1, "events": []}), encoding="utf-8")
+            (timers_dir / "pump_lights.json").write_text(json.dumps({"report_every": 1, "devices": []}), encoding="utf-8")
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "TIMERS_DIR", timers_dir),
@@ -443,7 +485,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertTrue(response["success"])
         self.assertIn("saved", response["message"])
         self.assertIn("not connected", response["message"])
-        self.assertEqual(saved["events"][0]["id"], "pump")
+        self.assertEqual(saved["devices"][0]["id"], "pump")
 
     def test_post_timer_channel_schedule_creates_state_when_timer_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -469,8 +511,8 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertTrue(response["success"])
         self.assertEqual(saved["report_every"], 1)
-        self.assertEqual(saved["events"][0]["id"], "pump")
-        self.assertEqual(saved["events"][0]["pin"], 2)
+        self.assertEqual(saved["devices"][0]["id"], "pump")
+        self.assertEqual(saved["devices"][0]["pin"], 2)
 
     def test_post_timer_channel_schedule_replaces_invalid_timer_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -498,8 +540,8 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertTrue(response["success"])
         self.assertEqual(saved["report_every"], 1)
-        self.assertEqual(saved["events"][0]["id"], "pump")
-        self.assertEqual(saved["events"][0]["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
+        self.assertEqual(saved["devices"][0]["id"], "pump")
+        self.assertEqual(saved["devices"][0]["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
 
     def test_pico_monitor_apply_copies_files_without_mpremote_soft_reset(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
@@ -540,7 +582,7 @@ class ConfigApiTests(unittest.TestCase):
                 json.dumps(
                     {
                         "report_every": 1,
-                        "events": [
+                        "devices": [
                             {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
                         ],
                     }
@@ -562,4 +604,4 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(applied_payloads[0]["report_every"], 42)
-        self.assertEqual(applied_payloads[0]["events"][0]["id"], "pump")
+        self.assertEqual(applied_payloads[0]["devices"][0]["id"], "pump")
