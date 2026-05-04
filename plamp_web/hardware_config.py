@@ -9,10 +9,11 @@ import re
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _EDITORS = {"cycle", "clock_window"}
 _PIN_TYPES = {"gpio", "pwm"}
-_CONTROLLER_TYPES = {"pico_scheduler"}
+_CONTROLLER_TYPES = {"pico_scheduler", "pico_doser"}
 _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
 _DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "devices", "cameras")
+_RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler", "pico_doser"}
 
 
 def empty_config() -> dict:
@@ -52,6 +53,8 @@ def validate_controllers(value):
     for controller_id, controller_value in value.items():
         if not _is_valid_id(controller_id):
             raise ValueError(f"invalid controller id: {controller_id!r}")
+        if controller_id in _RESERVED_CONTROLLER_IDS:
+            raise ValueError(f"controller id is reserved: {controller_id!r}")
         controller_value = _as_mapping(controller_value, f"controller {controller_id}")
         extra_keys = set(controller_value) - {"pico_serial", "label", "type", "report_every"}
         if extra_keys:

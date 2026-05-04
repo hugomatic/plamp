@@ -1135,7 +1135,7 @@ def render_timer_dashboard_page(
         body.off_time = form.elements.offTime.value;
       }
       try {
-        const response = await fetch(`/api/timers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(timerEditorPanel.dataset.channelId)}/schedule`, {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(timerEditorPanel.dataset.channelId)}/schedule`, {
           method: "POST",
           headers: {"content-type": "application/json"},
           body: JSON.stringify(body),
@@ -1390,7 +1390,7 @@ def render_timer_dashboard_page(
       }
       timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
       for (const role of timerRoles) {
-        const source = new EventSource(`/api/timers/${encodeURIComponent(role)}?stream=true`);
+        const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);
         timerEventSources.set(role, source);
         for (const eventName of ["snapshot", "status", "report"]) {
           source.addEventListener(eventName, (event) => {
@@ -1448,10 +1448,10 @@ def render_timer_dashboard_page(
 
 def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
-    default_get_curl = f"curl http://localhost:8000/api/timers/{default_role}"
-    default_stream_curl = f"curl -N 'http://localhost:8000/api/timers/{default_role}?stream=true'"
+    default_get_curl = f"curl http://localhost:8000/api/controllers/{default_role}"
+    default_stream_curl = f"curl -N 'http://localhost:8000/api/controllers/{default_role}?stream=true'"
     default_put_curl = "\n".join([
-        f"curl -X PUT 'http://localhost:8000/api/timers/{default_role}' " + chr(92),
+        f"curl -X PUT 'http://localhost:8000/api/controllers/{default_role}' " + chr(92),
         "  -H 'content-type: application/json' " + chr(92),
         "  --data-binary @- <<'JSON'",
         default_payload,
@@ -1572,7 +1572,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <h2>Timers</h2>
 
   <fieldset>
-    <legend>GET /api/timers/{{role}}</legend>
+    <legend>GET /api/controllers/{{role}}</legend>
     <p>Reads the current timer state for one role.</p>
     <label>Role
       <input id="get-role" list="timer-roles" value="{html.escape(default_role)}">
@@ -1586,7 +1586,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <fieldset>
-    <legend>GET /api/timers/{{role}}?stream=true</legend>
+    <legend>GET /api/controllers/{{role}}?stream=true</legend>
     <p>Streams timer device updates with server-sent events.</p>
     <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
     <button class="copy-curl" type="button" data-copy-target="stream-curl-command">Copy curl</button>
@@ -1598,7 +1598,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <fieldset>
-    <legend>PUT /api/timers/{{role}}</legend>
+    <legend>PUT /api/controllers/{{role}}</legend>
     <p>Writes timer state JSON and sends it to the Pico.</p>
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
@@ -1687,15 +1687,15 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
 
     function getCurlCommand() {{
-      return "curl " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}`);
+      return "curl " + doubleQuote(`${{window.location.origin}}/api/controllers/${{encodeURIComponent(getRole())}}`);
     }}
 
     function streamCurlCommand() {{
-      return "curl -N " + doubleQuote(`${{window.location.origin}}/api/timers/${{encodeURIComponent(getRole())}}?stream=true`);
+      return "curl -N " + doubleQuote(`${{window.location.origin}}/api/controllers/${{encodeURIComponent(getRole())}}?stream=true`);
     }}
 
     function putCurlCommand() {{
-      const url = `${{window.location.origin}}/api/timers/${{encodeURIComponent(putRole())}}`;
+      const url = `${{window.location.origin}}/api/controllers/${{encodeURIComponent(putRole())}}`;
       const slash = String.fromCharCode(92);
       const newline = String.fromCharCode(10);
       return [
@@ -1792,13 +1792,13 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const getResult = document.getElementById("get-result");
       getStatus.textContent = "";
       getResult.textContent = "";
-      if (!window.confirm(`GET /api/timers/${{getRole()}}?`)) {{
+      if (!window.confirm(`GET /api/controllers/${{getRole()}}?`)) {{
         getStatus.textContent = "Cancelled.";
         return;
       }}
       getStatus.textContent = "Loading...";
       try {{
-        const response = await fetch(`/api/timers/${{encodeURIComponent(getRole())}}`);
+        const response = await fetch(`/api/controllers/${{encodeURIComponent(getRole())}}`);
         const text = await response.text();
         let display = text;
         if (response.ok) {{
@@ -1929,8 +1929,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const streamStatus = document.getElementById("stream-status");
       const streamResult = document.getElementById("stream-result");
       streamResult.textContent = "";
-      streamStatus.textContent = `Connecting to /api/timers/${{role}}?stream=true...`;
-      timerEventSource = new EventSource(`/api/timers/${{encodeURIComponent(role)}}?stream=true`);
+      streamStatus.textContent = `Connecting to /api/controllers/${{role}}?stream=true...`;
+      timerEventSource = new EventSource(`/api/controllers/${{encodeURIComponent(role)}}?stream=true`);
       timerEventSource.onopen = () => {{
         streamStatus.textContent = `Streaming ${{role}}.`;
       }};
@@ -1947,7 +1947,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const putResult = document.getElementById("put-result");
       putStatus.textContent = "";
       putResult.textContent = "";
-      const url = `/api/timers/${{encodeURIComponent(putRole())}}`;
+      const url = `/api/controllers/${{encodeURIComponent(putRole())}}`;
       if (!window.confirm(`PUT ${{url}}?`)) {{
         putStatus.textContent = "Cancelled.";
         return;

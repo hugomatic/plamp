@@ -58,6 +58,93 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
 
+    def test_get_controllers_returns_flat_discovery_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {
+                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc"},
+                        "hello_doser": {"type": "pico_doser"},
+                    },
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            with patch.object(server, "CONFIG_FILE", config_file):
+                payload = server.get_controllers()
+
+        self.assertEqual(
+            payload,
+            {
+                "controllers": {
+                    "pump_lights": {"firmware": "pico_scheduler"},
+                    "hello_doser": {"firmware": "pico_doser"},
+                }
+            },
+        )
+
+    def test_get_controller_returns_full_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timer_path = root / "data" / "timers" / "pump_lights.json"
+            timer_path.parent.mkdir(parents=True)
+            timer_path.write_text(
+                json.dumps(
+                    {
+                        "report_every": 10,
+                        "devices": [{"type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", root / "data" / "timers"),
+                patch.object(server, "latest_timer_state", return_value=None),
+            ):
+                payload = server.get_controller("pump_lights")
+
+        self.assertEqual(payload["controller"], "pump_lights")
+        self.assertEqual(payload["firmware"], "pico_scheduler")
+        self.assertIn("devices", payload)
+
+    def test_put_controller_for_non_scheduler_persists_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"hello_doser": {"type": "pico_doser"}},
+                    "devices": {},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+            ):
+                payload = server.put_controller(
+                    "hello_doser",
+                    {"controller": "hello_doser", "firmware": "pico_doser", "report_every": 5, "message": "hello"},
+                )
+
+            saved = json.loads((timers_dir / "hello_doser.json").read_text(encoding="utf-8"))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["firmware"], "pico_doser")
+        self.assertEqual(saved, {"report_every": 5, "message": "hello"})
+
     def test_settings_summary_includes_config_and_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
