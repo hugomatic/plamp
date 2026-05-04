@@ -248,6 +248,38 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(reduced["pins"]["pump"]["pin"], 2)
         self.assertNotIn("events", reduced["content"])
 
+    def test_reduce_report_normalizes_kind_to_type(self):
+        report = {
+            "kind": "report",
+            "content": {
+                "devices": [
+                    {
+                        "type": "gpio",
+                        "pin": 2,
+                        "elapsed_t": 5,
+                        "reschedule": 1,
+                        "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                    }
+                ]
+            },
+        }
+
+        reduced = server.reduce_report(report)
+
+        self.assertEqual(reduced["type"], "report")
+        self.assertNotIn("kind", reduced)
+
+    def test_monitor_handles_type_report_payload(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        monitor.handle_line(
+            b'{"type":"report","content":{"devices":[{"type":"gpio","pin":15,"elapsed_t":1,"cycle_t":1,"reschedule":1,"pattern":[{"val":1,"dur":5}],"current_value":1}]}}'
+        )
+
+        snapshot = monitor.snapshot()
+
+        self.assertEqual(snapshot["last_report"]["type"], "report")
+        self.assertEqual(snapshot["last_report"]["content"]["devices"][0]["pin"], 15)
+
     def test_validate_timer_state_accepts_devices_field(self):
         state = {
             "report_every": 10,
@@ -687,7 +719,7 @@ class ConfigApiTests(unittest.TestCase):
 
     def test_pico_monitor_apply_copies_files_without_mpremote_soft_reset(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
-        command = server.ApplyCommand(path=Path("/tmp/state.json"))
+        command = server.ApplyCommand(path=Path("/tmp/main.py"))
         calls = []
 
         def fake_run_command(args, timeout=2.0):
@@ -704,8 +736,9 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(calls[0], ["interrupt", "/dev/ttyACM0"])
         self.assertIn("resume", calls[1])
-        self.assertIn("resume", calls[2])
-        self.assertNotIn("resume", calls[3])
+        self.assertTrue(any(":main.py" in part for part in calls[1]))
+        self.assertFalse(any(":state.json" in part for call in calls for part in call))
+        self.assertNotIn("resume", calls[2])
 
     def test_apply_timer_state_generates_report_every_from_controller_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -735,7 +768,7 @@ class ConfigApiTests(unittest.TestCase):
 
             class FakeMonitor:
                 def apply(self, path):
-                    applied_payloads.append(json.loads(Path(path).read_text(encoding="utf-8")))
+                    applied_payloads.append(Path(path).read_text(encoding="utf-8"))
                     return {"ok": True}
 
             with (
@@ -745,5 +778,45 @@ class ConfigApiTests(unittest.TestCase):
                 response = server.apply_timer_state("pump_lights", timer_path)
 
         self.assertEqual(response, {"ok": True})
-        self.assertEqual(applied_payloads[0]["report_every"], 42)
-        self.assertEqual(applied_payloads[0]["devices"][0]["id"], "pump")
+        self.assertIn("REPORT_EVERY = 42", applied_payloads[0])
+        self.assertIn('"id": "pump"', applied_payloads[0])
+
+    def test_apply_timer_state_writes_generated_main_py_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 42}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "cameras": {},
+                },
+            )
+            timer_path = root / "data" / "timers" / "pump_lights.json"
+            timer_path.parent.mkdir(parents=True)
+            timer_path.write_text(
+                json.dumps(
+                    {
+                        "report_every": 1,
+                        "devices": [
+                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            generated_files = []
+
+            class FakeMonitor:
+                def apply(self, path):
+                    generated_files.append(Path(path))
+                    return {"ok": True}
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=FakeMonitor()),
+            ):
+                response = server.apply_timer_state("pump_lights", timer_path)
+
+        self.assertEqual(response, {"ok": True})
+        self.assertEqual(generated_files[0].suffix, ".py")

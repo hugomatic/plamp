@@ -21,6 +21,7 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
 from plamp_web.hardware_config import apply_config_section, config_view, empty_config, scheduler_controller_ids
@@ -31,8 +32,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
-PICO_MAIN_FILE = REPO_ROOT / "pico_scheduler" / "main.py"
-STATE_FILE = REPO_ROOT / "pico_scheduler" / "state.json"
+PICO_GENERATOR_FILE = REPO_ROOT / "pico_scheduler" / "generator.py"
+PICO_TEMPLATES_DIR = REPO_ROOT / "pico_scheduler" / "templates"
 LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
@@ -426,6 +427,9 @@ def reduce_report(report: Any) -> dict[str, Any]:
     if not isinstance(report, dict):
         return {"kind": "unknown", "raw": report}
     reduced = dict(report)
+    if "type" not in reduced and isinstance(reduced.get("kind"), str):
+        reduced["type"] = reduced["kind"]
+    reduced.pop("kind", None)
     content = reduced.get("content")
     if not isinstance(content, dict):
         return reduced
@@ -679,8 +683,6 @@ class PicoMonitor:
                 self.summary["pins"] = reduced["pins"]
             snapshot = dict(self.summary)
         self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": reduced})
-        if isinstance(report, dict) and report.get("type") == "startup":
-            self.publish("snapshot", snapshot)
 
     def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
         command = ApplyCommand(path=path)
@@ -715,23 +717,13 @@ class PicoMonitor:
 
         interrupt_pico_program(port)
 
-        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "resume", "cp", str(PICO_MAIN_FILE), ":main.py"], timeout=30)
+        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "resume", "cp", str(command.path), ":main.py"], timeout=30)
         if firmware_rc != 0:
             command.error_status = 502
             command.error_detail = {"step": "firmware", "returncode": firmware_rc, "stdout": firmware_out, "stderr": firmware_err}
             command.done.set()
             LOGGER.error("pico monitor %s mpremote firmware copy failed: %s", self.role, command.error_detail)
             self.publish("error", {"role": self.role, "step": "firmware", "detail": command.error_detail})
-            self.update_status("error", connected=False, port=port, error=command.error_detail)
-            return None
-
-        copy_rc, copy_out, copy_err = run_command([mpremote, "connect", port, "resume", "cp", str(command.path), ":state.json"], timeout=30)
-        if copy_rc != 0:
-            command.error_status = 502
-            command.error_detail = {"step": "state", "returncode": copy_rc, "stdout": copy_out, "stderr": copy_err}
-            command.done.set()
-            LOGGER.error("pico monitor %s mpremote state copy failed: %s", self.role, command.error_detail)
-            self.publish("error", {"role": self.role, "step": "state", "detail": command.error_detail})
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
@@ -847,12 +839,24 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
     return {role: monitor.snapshot() for role, monitor in active.items()}
 
 
+def rendered_pico_main(role: str, raw_state: Any) -> str:
+    state = timer_state_for_pico(role, raw_state)
+    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    git_version = git_output(["git", "rev-parse", "--short", "HEAD"], repo_root=REPO_ROOT) or "unknown"
+    return generate_main_py(
+        controller_id=role,
+        state=state,
+        git_version=git_version,
+        generated_at=generated_at,
+        options=GeneratorOptions(),
+    )
+
+
 def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    generated = timer_state_for_pico(role, load_json_file(path))
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as temp:
+    generated = rendered_pico_main(role, load_json_file(path))
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".py", delete=False) as temp:
         temp_path = Path(temp.name)
-        json.dump(generated, temp, indent=2)
-        temp.write("\n")
+        temp.write(generated)
     try:
         return get_or_start_monitor(role).apply(temp_path)
     finally:
@@ -1313,9 +1317,11 @@ def settings_summary() -> dict[str, Any]:
         "cameras": {"rpicam": hardware_inventory.detect_rpicam_cameras()},
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
-        "state": {
-            "path": str(STATE_FILE),
-            "exists": STATE_FILE.exists(),
+        "firmware": {
+            "generator_path": str(PICO_GENERATOR_FILE),
+            "generator_exists": PICO_GENERATOR_FILE.exists(),
+            "templates_path": str(PICO_TEMPLATES_DIR),
+            "templates_exist": PICO_TEMPLATES_DIR.exists(),
         },
         "log": {
             "path": str(LOG_FILE),

@@ -1,0 +1,103 @@
+{provenance_block}
+
+import time
+import ujson as json
+{machine_import}
+
+LOOP_SLEEP_MS = {loop_sleep_ms}
+REPORT_EVERY = {report_every}
+{pwm_helper}
+{device_assignments}
+
+def error(message):
+    print(json.dumps({{"type": "error", "content": message}}))
+    return False
+
+
+def report():
+    out = []
+    for device in devices:
+        item = {{
+            "type": device["type"],
+            "pin": device["pin"],
+            "elapsed_t": device["elapsed_t"],
+            "cycle_t": device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"],
+            "reschedule": device["reschedule"],
+            "pattern": device["pattern"],
+        }}
+        item["current_value"] = device["last_value"]
+        if "id" in device:
+            item["id"] = device["id"]
+        out.append(item)
+    print(json.dumps({{"type": "report", "content": {{"devices": out}}}}))
+
+
+def tick(dt):
+    if dt <= 0:
+        return
+
+    for device in devices:
+        device["elapsed_t"] += dt
+        if not device["reschedule"] and device["elapsed_t"] > device["total_t"]:
+            device["elapsed_t"] = device["total_t"]
+
+
+def apply():
+    changed = False
+
+    for device in devices:
+        cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
+        elapsed = 0
+        value = device["pattern"][-1]["val"]
+
+        for step in device["pattern"]:
+            elapsed += step["dur"]
+            if cycle_t < elapsed:
+                value = step["val"]
+                break
+
+        if device["type"] == "gpio":
+            device["output"].value(value)
+        else:
+            device["output"].duty_u16(value)
+
+        if device["last_value"] != value:
+            device["last_value"] = value
+            changed = True
+
+    return changed
+
+
+def main():
+    apply()
+    report()
+
+    last_report_ms = time.ticks_ms()
+    last_tick_ms = last_report_ms
+    accum_ms = 0
+
+    while True:
+        now_ms = time.ticks_ms()
+        delta_ms = time.ticks_diff(now_ms, last_tick_ms)
+        last_tick_ms = now_ms
+
+        changed = False
+        time_to_report = time.ticks_diff(now_ms, last_report_ms) >= REPORT_EVERY * 1000
+
+        if delta_ms > 0:
+            accum_ms += delta_ms
+            dt = accum_ms // 1000
+            if dt:
+                accum_ms -= dt * 1000
+                tick(dt)
+                changed = apply()
+
+        if changed or time_to_report:
+            last_report_ms = now_ms
+            report()
+
+        time.sleep_ms(LOOP_SLEEP_MS)
+
+
+if __name__ == "__main__":
+    main()

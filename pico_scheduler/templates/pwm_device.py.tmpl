@@ -1,0 +1,18 @@
+# PWM device example:
+# {{
+#   "type": "pwm",
+#   "pin": 16,
+#   "current_t": 0,
+#   "reschedule": 1,
+#   "pattern": [{{"val": 1000, "dur": 10}}]
+# }}
+{name} = {{
+    {id_line}"type": "pwm",
+    "pin": {pin},
+    "elapsed_t": {elapsed_t},
+    "reschedule": {reschedule},
+    "pattern": {pattern},
+    "total_t": {total_t},
+    "last_value": None,
+    "output": _pwm_output({pin}),
+}}

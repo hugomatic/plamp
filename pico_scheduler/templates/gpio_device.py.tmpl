@@ -1,0 +1,18 @@
+# GPIO device example:
+# {{
+#   "type": "gpio",
+#   "pin": 15,
+#   "current_t": 0,
+#   "reschedule": 1,
+#   "pattern": [{{"val": 1, "dur": 10}}, {{"val": 0, "dur": 20}}]
+# }}
+{name} = {{
+    {id_line}"type": "gpio",
+    "pin": {pin},
+    "elapsed_t": {elapsed_t},
+    "reschedule": {reschedule},
+    "pattern": {pattern},
+    "total_t": {total_t},
+    "last_value": None,
+    "output": Pin({pin}, Pin.OUT),
+}}
