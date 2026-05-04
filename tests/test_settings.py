@@ -70,6 +70,22 @@ class SettingsSummaryTests(unittest.TestCase):
 
         self.assertEqual(data["software"]["git_short_commit"], "d5883da")
 
+    def test_settings_summary_includes_firmware_generator_details(self):
+        with (
+            patch.object(server, "host_time_summary", return_value={}),
+            patch.object(server, "host_ips", return_value=[]),
+            patch.object(server, "default_route", return_value=None),
+            patch.object(server, "network_summary", return_value=[]),
+            patch.object(server, "enumerate_picos", return_value=[]),
+            patch.object(server, "monitor_summaries", return_value={}),
+            patch.object(server, "storage_summary", return_value={}),
+            patch.object(server, "software_summary", return_value={"name": "plamp", "git_short_commit": "d5883da"}),
+        ):
+            data = server.settings_summary()
+
+        self.assertEqual(data["firmware"]["generator_path"], str(server.PICO_GENERATOR_FILE))
+        self.assertEqual(data["firmware"]["templates_path"], str(server.PICO_TEMPLATES_DIR))
+
 
 if __name__ == "__main__":
     unittest.main()

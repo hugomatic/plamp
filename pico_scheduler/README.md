@@ -1,24 +1,27 @@
 # pico_scheduler
 
-MicroPython firmware for one Raspberry Pi Pico.
+Generated MicroPython firmware for one Raspberry Pi Pico.
 
-## Files
+## What Lives Here
 
-- `main.py` - Pico runtime
-- `state.json.example` - example state copied to the Pico as `state.json`
+- `generator.py`
+  Host-side firmware generator for `pico_scheduler` controllers.
+- `templates/`
+  Readable firmware templates and device fragments used by the generator.
+- `state.json.example`
+  Example host-side scheduler JSON input shape.
 
-## State JSON
+## Source Of Truth
 
-The Pico reads `state.json` at boot.
+The Raspberry Pi remains the source of truth.
 
-Example:
+The scheduler JSON shape is still:
 
 ```json
 {
   "report_every": 10,
   "devices": [
     {
-      "id": "test_pin",
       "type": "gpio",
       "pin": 25,
       "current_t": 0,
@@ -32,14 +35,46 @@ Example:
 }
 ```
 
-Fields:
+That JSON is generator input on the host. It is not copied to the Pico.
 
-- `id` - name used by the host
-- `type` - `gpio` or `pwm`
-- `pin` - Pico GPIO pin, `0..29`
-- `current_t` - starting second in the pattern
-- `reschedule` - `1` repeats, `0` runs once
-- `pattern` - timed output steps
+## Generated Firmware
+
+`plamp-web` generates one controller-specific `main.py` and copies only that file to the Pico.
+
+The generated `main.py` starts with a top-level triple-quoted provenance block containing:
+
+- generator source path
+- generation timestamp
+- git version
+- controller id
+- generator input JSON, including options
+
+The generator emits only the code needed by the configured device types. For example:
+
+- no PWM import or helper code when the controller has only GPIO devices
+- no GPIO output setup when the controller has only PWM devices
+
+## Wire Format
+
+Generated firmware emits minimal JSON messages over USB serial:
+
+- `type: "report"` for full current state snapshots
+- `type: "error"` for explicit failures
+
+Every `report` contains the full current `devices` state.
+
+## Deploy
+
+Normal deploy happens through `plamp-web` when controller state is applied.
+
+At a high level:
+
+1. host-side scheduler JSON is validated
+2. `generator.py` renders controller-specific `main.py`
+3. `mpremote` copies that generated file to `:main.py`
+4. the Pico is reset
+
+There is no `state.json` copy step in this design.
 
 ## Install Tool
 
@@ -52,24 +87,5 @@ If needed:
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
-
-## Deploy
-
-From this directory:
-
-```bash
-cp state.json.example state.json
-python3 -m json.tool state.json >/dev/null
-mpremote cp main.py :main.py
-mpremote cp state.json :state.json
-mpremote reset
-```
-
-## Runtime
-
-- Reads `state.json` once at boot.
-- Drives configured pins.
-- Reports JSON over USB serial.
-- Does not write to flash during normal operation.
 
 See also: [`../plamp_web/README.md`](../plamp_web/README.md).
