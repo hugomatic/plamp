@@ -1285,12 +1285,14 @@ def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
 def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     commit = git_output(["git", "rev-parse", "HEAD"], repo_root=repo_root)
     branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)
+    commit_timestamp = git_output(["git", "show", "-s", "--format=%cI", "HEAD"], repo_root=repo_root)
     status = git_output(["git", "status", "--short"], repo_root=repo_root)
     return {
         "name": "plamp",
         "git_commit": commit,
         "git_short_commit": commit[:7] if commit else None,
         "git_branch": branch,
+        "git_commit_timestamp": commit_timestamp,
         "git_dirty": None if status is None else bool(status),
     }
 

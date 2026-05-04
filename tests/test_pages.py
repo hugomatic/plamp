@@ -260,6 +260,7 @@ class PageRenderTests(unittest.TestCase):
                 "git_commit": "d5883da4abcdef",
                 "git_short_commit": "d5883da",
                 "git_branch": "main",
+                "git_commit_timestamp": "2026-05-04T10:41:12-10:00",
                 "git_dirty": True,
             },
             "storage": {
@@ -274,6 +275,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("d5883da", html)
         self.assertIn("Git branch", html)
         self.assertIn("main", html)
+        self.assertIn("Git commit time", html)
+        self.assertIn("2026-05-04T10:41:12-10:00", html)
         self.assertIn("Git dirty", html)
         self.assertIn("yes", html)
 
