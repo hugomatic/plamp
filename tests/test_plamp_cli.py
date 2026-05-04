@@ -411,6 +411,7 @@ class PlampCliDocsTests(unittest.TestCase):
     def test_readmes_match_pico_scheduler_cli_shape(self):
         cli_readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
         root_readme = Path("README.md").read_text(encoding="utf-8")
+        web_readme = Path("plamp_web/README.md").read_text(encoding="utf-8")
 
         self.assertIn("JSON-first", cli_readme)
         self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", cli_readme)
@@ -429,3 +430,10 @@ class PlampCliDocsTests(unittest.TestCase):
         self.assertNotIn("plamp timers", root_readme)
         self.assertNotIn("data/timers/<controller>.json", root_readme)
         self.assertNotIn("schedule events", root_readme)
+
+        self.assertIn("- `/` - main Pico scheduler page", web_readme)
+        self.assertIn("## Pico Scheduler State", web_readme)
+        self.assertIn("state files keep device state", web_readme)
+        self.assertNotIn("timers and camera", web_readme)
+        self.assertNotIn("## Timer State", web_readme)
+        self.assertNotIn("schedule devices", web_readme)
