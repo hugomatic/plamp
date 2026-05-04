@@ -430,11 +430,7 @@ def reduce_report(report: Any) -> dict[str, Any]:
     if not isinstance(content, dict):
         return reduced
     items = content.get("devices")
-    items_key = "devices" if isinstance(items, list) else None
-    if items_key is None:
-        items_key = timer_state_items_key(content)
-        items = timer_state_items(content)
-    if items_key is None or items is None:
+    if not isinstance(items, list):
         return reduced
     reduced_items = []
     pins: dict[str, dict[str, Any]] = {}
@@ -480,11 +476,7 @@ def reduce_report(report: Any) -> dict[str, Any]:
 
 def state_with_current_values(state: dict[str, Any]) -> dict[str, Any]:
     items = state.get("devices")
-    items_key = "devices" if isinstance(items, list) else None
-    if items_key is None:
-        items_key = timer_state_items_key(state)
-        items = timer_state_items(state)
-    if items_key is None or items is None:
+    if not isinstance(items, list):
         return state
     enriched = dict(state)
     enriched_items = []
@@ -521,8 +513,6 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     if not isinstance(content, dict):
         return None
     items = content.get("devices")
-    if not isinstance(items, list):
-        items = content.get("events")
     if not isinstance(items, list):
         return None
     state: dict[str, Any] = {"devices": items}

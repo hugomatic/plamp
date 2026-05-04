@@ -316,6 +316,32 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(latest["devices"][0]["pin"], 2)
 
+    def test_latest_timer_state_ignores_events_only_last_report(self):
+        monitor = DummyMonitor("abc")
+        monitor.snapshot = lambda: {
+            "last_report": {
+                "kind": "report",
+                "content": {
+                    "events": [
+                        {
+                            "pin": 2,
+                            "type": "gpio",
+                            "elapsed_t": 5,
+                            "cycle_t": 5,
+                            "reschedule": 1,
+                            "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+                            "current_value": 1,
+                        }
+                    ]
+                },
+            }
+        }
+
+        with patch.object(server, "get_or_start_monitor", return_value=monitor):
+            latest = server.latest_timer_state("pump_lights")
+
+        self.assertIsNone(latest)
+
     def test_get_timer_returns_devices_not_events(self):
         with patch.object(server, "state_for_role", return_value={"report_every": 10, "devices": []}):
             payload = server.get_timer("pump_lights", stream=False)
