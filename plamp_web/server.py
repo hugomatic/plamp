@@ -169,6 +169,21 @@ def timer_roles() -> dict[str, dict[str, Any]]:
     return {role: controllers[role] for role in controllers if role in scheduler_ids}
 
 
+def controllers_index() -> dict[str, dict[str, Any]]:
+    config = load_config()
+    controllers = config.get("controllers", {})
+    if not isinstance(controllers, dict):
+        raise HTTPException(status_code=500, detail="config controllers must be an object")
+    normalized: dict[str, dict[str, Any]] = {}
+    for controller_id, controller_data in controllers.items():
+        if not isinstance(controller_id, str) or not ROLE_RE.match(controller_id):
+            raise HTTPException(status_code=500, detail=f"invalid controller id: {controller_id}")
+        if not isinstance(controller_data, dict):
+            raise HTTPException(status_code=500, detail=f"controller {controller_id} must be an object")
+        normalized[controller_id] = controller_data
+    return normalized
+
+
 def configured_monitor_serials() -> dict[str, str]:
     result: dict[str, str] = {}
     for role, item in timer_roles().items():
@@ -202,6 +217,13 @@ def timer_role(role: str) -> dict[str, Any]:
     return item
 
 
+def controller_item(controller: str) -> dict[str, Any]:
+    item = controllers_index().get(controller)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"unknown controller: {controller}")
+    return item
+
+
 def pico_serial_for_role(role: str) -> str:
     serial = timer_role(role).get("pico_serial")
     if not isinstance(serial, str) or not serial:
@@ -213,6 +235,12 @@ def timer_state_path(role: str) -> Path:
     timer_role(role)
     ensure_data_dir()
     return TIMERS_DIR / f"{role}.json"
+
+
+def controller_state_path(controller: str) -> Path:
+    controller_item(controller)
+    ensure_data_dir()
+    return TIMERS_DIR / f"{controller}.json"
 
 
 def require_int(value: Any, message: str) -> int:
@@ -1442,9 +1470,103 @@ def put_config_cameras(cameras: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return put_config_section("cameras", cameras)
 
 
+def controller_firmware(controller: str) -> str:
+    return str(controller_item(controller).get("type", "pico_scheduler"))
+
+
+def controller_discovery_payload() -> dict[str, Any]:
+    return {
+        "controllers": {
+            controller_id: {"firmware": str(controller_data.get("type", "pico_scheduler"))}
+            for controller_id, controller_data in controllers_index().items()
+        }
+    }
+
+
+def controller_state_payload(controller: str) -> dict[str, Any]:
+    firmware = controller_firmware(controller)
+    if firmware == "pico_scheduler":
+        state = state_for_role(controller)
+    else:
+        path = controller_state_path(controller)
+        try:
+            state = load_json_file(path)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                state = {}
+            else:
+                raise
+    if not isinstance(state, dict):
+        state = {}
+    payload = dict(state)
+    payload["controller"] = controller
+    payload["firmware"] = firmware
+    return payload
+
+
+@app.get("/api/controllers")
+def get_controllers() -> dict[str, Any]:
+    return controller_discovery_payload()
+
+
+@app.get("/api/controllers/{controller}", response_model=None)
+def get_controller(controller: str, stream: bool = False) -> Any:
+    if stream:
+        if controller_firmware(controller) != "pico_scheduler":
+            raise HTTPException(status_code=422, detail="stream is only supported for pico_scheduler controllers")
+        return stream_timer_events(controller)
+    return controller_state_payload(controller)
+
+
+@app.put("/api/controllers/{controller}")
+def put_controller(controller: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    firmware = controller_firmware(controller)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="top-level JSON must be an object")
+    payload_controller = payload.get("controller")
+    if payload_controller not in (None, controller):
+        raise HTTPException(status_code=422, detail="controller payload mismatch")
+    payload_firmware = payload.get("firmware")
+    if payload_firmware not in (None, firmware):
+        raise HTTPException(status_code=422, detail="firmware payload mismatch")
+
+    content = dict(payload)
+    content.pop("controller", None)
+    content.pop("firmware", None)
+
+    if firmware == "pico_scheduler":
+        path = timer_state_path(controller)
+        validated = validate_timer_state(content)
+        with lock_for(role_locks, controller):
+            atomic_write_json(path, validated)
+            sent = apply_timer_state(controller, path)
+        response = {
+            "controller": controller,
+            "firmware": firmware,
+            "success": True,
+            "message": "state saved and sent to Pico",
+            "pico": sent,
+        }
+        response.update(validated)
+        return response
+
+    path = controller_state_path(controller)
+    with lock_for(role_locks, controller):
+        atomic_write_json(path, content)
+    response = {"controller": controller, "firmware": firmware, "success": True}
+    response.update(content)
+    return response
+
+
 @app.get("/api/timer-config")
 def get_timer_config() -> dict[str, Any]:
-    return {"roles": configured_timer_roles(), "channels": configured_timer_channels(), "time_format": configured_time_format()}
+    payload = controller_discovery_payload()
+    roles = [
+        controller_id
+        for controller_id, item in payload.get("controllers", {}).items()
+        if isinstance(item, dict) and item.get("firmware") == "pico_scheduler"
+    ]
+    return {"roles": roles, "channels": configured_timer_channels(), "time_format": configured_time_format()}
 
 
 @app.get("/api/host-time")
@@ -1548,8 +1670,17 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     }
 
 
+@app.post("/api/controllers/{controller}/channels/{channel_id}/schedule")
+def post_controller_channel_schedule(controller: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="channel schedule is only supported for pico_scheduler controllers")
+    response = post_timer_channel_schedule(controller, channel_id, schedule)
+    response["controller"] = response.pop("role")
+    return response
+
+
 @app.get("/api/timers/{role}", response_model=None)
-def get_timer(role: str, stream: bool = Query(False)) -> Any:
+def get_timer(role: str, stream: bool = False) -> Any:
     if stream:
         return stream_timer_events(role)
     return state_for_role(role)

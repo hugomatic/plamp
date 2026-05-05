@@ -939,9 +939,9 @@ class PageRenderTests(unittest.TestCase):
         for title in [
             "POST /api/camera/captures",
             "GET /api/camera/captures",
-            "GET /api/timers/{role}",
-            "GET /api/timers/{role}?stream=true",
-            "PUT /api/timers/{role}",
+            "GET /api/controllers/{role}",
+            "GET /api/controllers/{role}?stream=true",
+            "PUT /api/controllers/{role}",
         ]:
             self.assertIn(f"<legend>{title}</legend>", html)
         self.assertIn("Captures a new image and returns capture metadata.", html)

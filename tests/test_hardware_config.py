@@ -62,6 +62,16 @@ class HardwareConfigTests(unittest.TestCase):
             {"ctrl_a": {"type": "pico_scheduler", "report_every": 30}},
         )
 
+    def test_validate_controllers_accepts_pico_doser_type(self):
+        self.assertEqual(
+            validate_controllers({"doser_a": {"type": "pico_doser"}}),
+            {"doser_a": {"type": "pico_doser"}},
+        )
+
+    def test_validate_controllers_rejects_reserved_controller_ids(self):
+        with self.assertRaisesRegex(ValueError, "reserved"):
+            validate_controllers({"pico_scheduler": {}})
+
     def test_validate_controllers_rejects_invalid_type_and_report_every(self):
         with self.assertRaisesRegex(ValueError, "controller ctrl_a type"):
             validate_controllers({"ctrl_a": {"type": "ph_doser"}})

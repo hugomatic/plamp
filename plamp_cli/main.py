@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
+import subprocess
 import sys
 from typing import TextIO
 
@@ -37,7 +38,9 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
 
 
 def _format_api_error(exc: ApiError) -> str:
-    if exc.status == 404 and exc.detail.startswith("unknown timer role:"):
+    if exc.status == 404 and (
+        exc.detail.startswith("unknown timer role:") or exc.detail.startswith("unknown controller:")
+    ):
         controller = exc.detail.split(":", 1)[1].strip()
         return (
             f"API 404: unknown pico-scheduler controller: {controller}\n"
@@ -81,6 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
     controller_subparsers = controllers.add_subparsers(dest="controllers_action", required=True)
     controllers_list = controller_subparsers.add_parser("list")
     controllers_list.set_defaults(controllers_action="list")
+    controllers_get = controller_subparsers.add_parser("get")
+    controllers_get.add_argument("controller")
+    controllers_get.set_defaults(controllers_action="get")
+    controllers_set = controller_subparsers.add_parser("set")
+    controllers_set.add_argument("controller")
+    controllers_set.add_argument("payload")
+    controllers_set.set_defaults(controllers_action="set")
 
     pico_scheduler = subparsers.add_parser("pico-scheduler")
     pico_scheduler.set_defaults(area="pico-scheduler")
@@ -127,6 +137,34 @@ def build_parser() -> argparse.ArgumentParser:
     pic_get.add_argument("--stdout", action="store_true")
     pic_get.set_defaults(pics_action="get")
 
+    firmware = subparsers.add_parser("firmware")
+    firmware_subparsers = firmware.add_subparsers(dest="firmware_action", required=True)
+    firmware_families = firmware_subparsers.add_parser("families")
+    firmware_families.set_defaults(firmware_action="families")
+
+    firmware_generate = firmware_subparsers.add_parser("generate")
+    firmware_generate.add_argument("--firmware", required=True)
+    firmware_generate.add_argument("--controller")
+    firmware_generate.add_argument("payload")
+    firmware_generate.add_argument("--out")
+    firmware_generate.set_defaults(firmware_action="generate")
+
+    firmware_flash = firmware_subparsers.add_parser("flash")
+    firmware_flash.add_argument("--firmware", required=True)
+    firmware_flash.add_argument("--controller")
+    firmware_flash.add_argument("payload")
+    firmware_flash.add_argument("--port", required=True)
+    firmware_flash.set_defaults(firmware_action="flash")
+
+    firmware_pull = firmware_subparsers.add_parser("pull")
+    firmware_pull.add_argument("--port", required=True)
+    firmware_pull.add_argument("--out")
+    firmware_pull.set_defaults(firmware_action="pull")
+
+    firmware_show = firmware_subparsers.add_parser("show")
+    firmware_show.add_argument("--port", required=True)
+    firmware_show.set_defaults(firmware_action="show")
+
     return parser
 
 
@@ -147,9 +185,12 @@ def _handle_config(args: argparse.Namespace, base_url: str) -> object:
 
 def _handle_controllers(args: argparse.Namespace, base_url: str) -> object:
     if args.controllers_action == "list":
-        response = request_json("GET", base_url, "/api/timer-config")
-        names = response.get("roles", [])
-        return {"controllers": {"pico_scheduler": {"ids": names}}}
+        return request_json("GET", base_url, "/api/controllers")
+    if args.controllers_action == "get":
+        return request_json("GET", base_url, f"/api/controllers/{args.controller}")
+    if args.controllers_action == "set":
+        payload = load_json_input(args.payload)
+        return request_json("PUT", base_url, f"/api/controllers/{args.controller}", payload)
 
     raise ValueError(f"unsupported controllers action: {args.controllers_action}")
 
@@ -157,7 +198,14 @@ def _handle_controllers(args: argparse.Namespace, base_url: str) -> object:
 def _normalize_pico_scheduler_list(response: object) -> object:
     if not isinstance(response, dict):
         return response
-    names = response.get("roles", [])
+    controllers = response.get("controllers")
+    names: list[str] = []
+    if isinstance(controllers, dict):
+        names = [
+            str(controller_id)
+            for controller_id, item in controllers.items()
+            if isinstance(item, dict) and item.get("firmware") == "pico_scheduler"
+        ]
     return {"ids": names}
 
 
@@ -173,14 +221,14 @@ def _normalize_pico_scheduler_response(response: object) -> object:
 
 def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
     if args.timer_action == "list":
-        return _normalize_pico_scheduler_list(request_json("GET", base_url, "/api/timer-config"))
+        return _normalize_pico_scheduler_list(request_json("GET", base_url, "/api/controllers"))
 
     if args.timer_action == "get":
-        return request_json("GET", base_url, f"/api/timers/{args.controller}")
+        return request_json("GET", base_url, f"/api/controllers/{args.controller}")
 
     if args.timer_action == "set":
         payload = load_json_input(args.payload)
-        response = request_json("PUT", base_url, f"/api/timers/{args.controller}", payload)
+        response = request_json("PUT", base_url, f"/api/controllers/{args.controller}", payload)
         return _normalize_pico_scheduler_response(response)
 
     if args.timer_action == "channels" and args.channel_action == "set-schedule":
@@ -194,6 +242,86 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
         return _normalize_pico_scheduler_response(response)
 
     raise ValueError(f"unsupported timers action: {args.timer_action}")
+
+
+def _run_command(args: list[str]) -> tuple[int, str, str]:
+    proc = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def _generate_firmware_source(firmware: str, payload: object, controller: str | None) -> str:
+    if firmware == "pico_scheduler":
+        from pico_scheduler.generator import GeneratorOptions, generate_main_py
+
+        if not controller:
+            raise ValueError("--controller is required for pico_scheduler")
+        if not isinstance(payload, dict):
+            raise ValueError("pico_scheduler payload must be a JSON object")
+        return generate_main_py(
+            controller_id=controller,
+            state=payload,
+            git_version="local-cli",
+            generated_at="local-cli",
+            options=GeneratorOptions(),
+        )
+    if firmware == "pico_doser":
+        from pico_doser.generator import generate_main_py as generate_doser_main_py
+
+        if not isinstance(payload, dict):
+            raise ValueError("pico_doser payload must be a JSON object")
+        return generate_doser_main_py(payload)
+    raise ValueError(f"unsupported firmware family: {firmware}")
+
+
+def _handle_firmware(args: argparse.Namespace, stderr: TextIO) -> object | bytes | None:
+    if args.firmware_action == "families":
+        return {"families": ["pico_scheduler", "pico_doser"]}
+
+    if args.firmware_action == "generate":
+        payload = load_json_input(args.payload)
+        source = _generate_firmware_source(args.firmware, payload, args.controller)
+        if args.out:
+            Path(args.out).write_text(source, encoding="utf-8")
+            return {"success": True, "out": args.out, "bytes": len(source.encode("utf-8"))}
+        return source.encode("utf-8")
+
+    if args.firmware_action == "flash":
+        payload = load_json_input(args.payload)
+        source = _generate_firmware_source(args.firmware, payload, args.controller)
+        with subprocess.Popen(["mktemp"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
+            out, err = proc.communicate()
+        if proc.returncode != 0:
+            raise ValueError(err.strip() or "failed to allocate temporary file")
+        temp_path = Path(out.strip())
+        try:
+            temp_path.write_text(source, encoding="utf-8")
+            rc, stdout, cmd_stderr = _run_command(
+                ["mpremote", "connect", args.port, "resume", "cp", str(temp_path), ":main.py"]
+            )
+            if rc != 0:
+                raise ValueError(cmd_stderr.strip() or stdout.strip() or "mpremote copy failed")
+            rc, stdout, cmd_stderr = _run_command(["mpremote", "connect", args.port, "reset"])
+            if rc != 0:
+                raise ValueError(cmd_stderr.strip() or stdout.strip() or "mpremote reset failed")
+            return {"success": True, "port": args.port}
+        finally:
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+    if args.firmware_action in {"pull", "show"}:
+        rc, stdout, cmd_stderr = _run_command(["mpremote", "connect", args.port, "resume", "cat", "main.py"])
+        if rc != 0:
+            raise ValueError(cmd_stderr.strip() or stdout.strip() or "unable to read firmware from Pico")
+        if args.firmware_action == "show":
+            return stdout.encode("utf-8")
+        if args.out:
+            Path(args.out).write_text(stdout, encoding="utf-8")
+            return {"success": True, "out": args.out, "bytes": len(stdout.encode("utf-8"))}
+        return stdout.encode("utf-8")
+
+    raise ValueError(f"unsupported firmware action: {args.firmware_action}")
 
 
 def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
@@ -285,6 +413,13 @@ def main(
             if args.pics_action == "get":
                 stdout_buffer = stdout.buffer if hasattr(stdout, "buffer") else stdout
                 write_binary_output(result, args.out, stdout_buffer)
+            elif result is not None:
+                stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "firmware":
+            result = _handle_firmware(args, stderr)
+            if args.firmware_action in {"generate", "pull", "show"} and isinstance(result, bytes):
+                stdout_buffer = stdout.buffer if hasattr(stdout, "buffer") else stdout
+                write_binary_output(result, None, stdout_buffer)
             elif result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
         else:
