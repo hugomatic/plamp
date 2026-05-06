@@ -5,17 +5,19 @@ Last updated: 2026-05-05
 This is the canonical product and engineering spec for Plamp.
 It exists to preserve direction, prevent regressions, and keep growth coherent.
 
+![Reliable Agriculture For Everybody](./images/agri-factory.png)
+
 ## 1) Vision: Reliable Agriculture For Everybody
 
 ### Current System
 
 Plamp is local-first hydroponics automation that is understandable and modifiable by humans and agents.
 
-### Evolution
+### Reliability Ladder
 
-1. Seed phase: reliable pump/light scheduling and direct Pico control.
-2. Integration phase: one operational admin surface with stronger visibility.
-3. Platform phase: controller contracts + firmware families for future growth.
+1. With only power, we keep the lights on and the pumps running.
+2. With a computer, we take pictures, monitor state, and correct drift in pumps/lights; next steps include dosing food and controlling pH.
+3. With the Internet, we use agents to maximize plant health (for example, detect drift/anomalies early from image and runtime trends), estimate yield over time, and maintain actionable todos (`prune`, `spray`, `harvest`).
 
 References:
 
@@ -27,13 +29,6 @@ References:
 - Do not introduce opaque black-box automation.
 - Do not make cloud connectivity required for core operation.
 - Do not split the conceptual model between GUI and CLI.
-
-Image placeholder:
-
-- Title: `Reliable Agriculture For Everybody`
-- URL: `./images/agri-factory.png`
-- Embed:
-![Reliable Agriculture For Everybody](./images/agri-factory.png)
 
 ## 2) System Shape and Stack
 
@@ -104,11 +99,6 @@ References:
 - Do not split scheduler editing back into disconnected sections.
 - Do not hide peripheral assignment state.
 
-Image placeholder:
-
-- Title: `Learnable And Modifiable System`
-- URL: `./images/agri-ui.png`
-- Embed:
 ![Learnable And Modifiable System](./images/agri-ui.png)
 
 ## 4) Canonical Data Model
