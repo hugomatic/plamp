@@ -2,7 +2,7 @@
 
 Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
 
-![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
+![Plamp running with basil tray, touchscreen UI, and camera](./docs/images/plamp-live-setup.jpg)
 
 ## Install
 
@@ -193,6 +193,10 @@ More detail:
 - [`plamp_web/README.md`](./plamp_web/README.md)
 
 ## Repo Map
+
+The printed camera stand and holder live in [`things/plamp_stand/`](./things/plamp_stand/):
+
+![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
 
 - [`docs/spec-current.md`](./docs/spec-current.md) - current architecture and contracts spec
 - [`plamp_web/`](./plamp_web/) - web server and pages
