@@ -41,8 +41,8 @@ Mood: practical optimism, empowerment through learning, non-corporate.
 Style: realistic photography aesthetic, high detail, no diagrams/arrows.
 ```
 
-- URL: `[IMAGE_URL_HERE]`
-- Embed: `![Reliable Agriculture For Everybody]([IMAGE_URL_HERE])`
+- URL: `https://chatgpt.com/backend-api/estuary/content?id=file_00000000e7e071f5aaea9c4931db2709&ts=493897&p=fs&cid=1&sig=a018c9721434869c50dcb640e1a1e68d6a60ebdcc4d8045c4f3b6de018bfb87c&v=0`
+- Embed: `![Reliable Agriculture For Everybody](https://chatgpt.com/backend-api/estuary/content?id=file_00000000e7e071f5aaea9c4931db2709&ts=493897&p=fs&cid=1&sig=a018c9721434869c50dcb640e1a1e68d6a60ebdcc4d8045c4f3b6de018bfb87c&v=0)`
 
 ## 2) System Shape and Stack
 
