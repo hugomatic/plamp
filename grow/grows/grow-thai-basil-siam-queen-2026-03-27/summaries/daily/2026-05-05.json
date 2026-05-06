@@ -1,0 +1,51 @@
+{
+  "date": "2026-05-05",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "daily",
+  "since_previous_daily_log": "2026-04-27",
+  "produced_at": "2026-05-06T10:38:00Z",
+  "artifact_timing": "produced overnight local time from the latest completed daylight window and recent runtime evidence",
+  "nature": {
+    "summary": "The Thai basil tray shows clear week-scale growth versus the prior daily review anchor, with better canopy fill and more leaf area, but it remains moderately uneven and mildly stretchy rather than compact.",
+    "status": "acceptable",
+    "notable_events": [
+      "No obvious pest chewing, webbing, mildew, or lesion pattern is visible in the latest matched daytime images.",
+      "Mild droopy posture is visible in the latest daytime frame, so the crop still looks acceptable rather than fully vigorous."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-06/cap-50002f.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-06/cap-39082d.jpg"
+    ]
+  },
+  "plamp": {
+    "summary": "Picture cadence is intact, overnight off-state evidence still looks correct, but the daytime light-on window remains under-bright/ambiguous and the controller had another real reconnect fault on 2026-05-05.",
+    "runtime_events": [
+      "Recent overnight checkpoint captures remain in the expected dark range around 1.68 to 1.78 brightness.",
+      "Recent 15:00 to 16:38 HST captures remain around 79.9 to 80.2 brightness instead of the older clear-on range around 109 to 112.",
+      "The controller logged another instability event on 2026-05-05 19:57 HST: applying -> reconnecting -> disconnected -> connected."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-05/cap-a5d904.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-06/cap-50002f.jpg"
+    ]
+  },
+  "gardener": {
+    "next_actions": [
+      {
+        "priority": "high",
+        "task": "Verify whether the grow light is visibly on at full output during the daytime window.",
+        "why": "The image signal still does not look like a robust daytime on-state."
+      },
+      {
+        "priority": "high",
+        "task": "Inspect the Pico/controller path.",
+        "why": "Fresh reconnect churn happened again and could still miss pump or light cycles."
+      },
+      {
+        "priority": "medium",
+        "task": "Keep watching whether the tray compacts up or stays leggy and droopy.",
+        "why": "Strongest-site selection still looks more plausible than waiting for full uniformity."
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "week": "2026-W19",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "weekly",
+  "updated_at": "2026-05-06T10:38:00Z",
+  "source_daily_logs": [
+    "summaries/daily/2026-04-27-review-v4.json",
+    "summaries/daily/2026-05-05.json"
+  ],
+  "nature": {
+    "trend": "Week over week, the Thai basil made real biomass progress and the canopy is fuller than the prior review anchor, but the tray remains moderately uneven with mild stretch and softer leaf posture.",
+    "progress": [
+      "Most sites are larger and the tray shows more canopy fill than the prior daily review anchor.",
+      "No obvious pest or foliar disease pattern stood out in the representative images for the week."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-04-27/cap-59c34f.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-02/cap-1120bf.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-06/cap-50002f.jpg"
+    ]
+  },
+  "plamp": {
+    "reliability": "Camera coverage was good this week, but control reliability regressed meaningfully.",
+    "events": [
+      "Captures continued across the week and overnight off-state checks stayed plausible.",
+      "The daytime light signal stayed persistently under-bright/ambiguous across repeated after-1:00 PM HST checks, clustering around about 80 instead of the older clear-on range around 109 to 112.",
+      "2026-05-04 included apply/reconnect/disconnect churn plus invalid JSON bursts.",
+      "2026-05-05 had another apply/reconnect/disconnect cycle."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-05/cap-a5d904.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-06/cap-39082d.jpg"
+    ]
+  },
+  "gardener": {
+    "completed": [
+      "Repeated overnight and daytime checkpoint evidence was gathered through the week."
+    ],
+    "next_actions": [
+      "Physically verify the grow light during a daytime on window.",
+      "Inspect the controller/Pico path for reconnect churn and invalid JSON issues.",
+      "Continue planning for strongest-site selection rather than assuming the whole tray will even out."
+    ]
+  },
+  "next_week": {
+    "risks": [
+      "Controller instability could cause missed pump or light cycles even when spot checks look okay.",
+      "If the light is truly underperforming in daytime, the crop may stay leggy and slower to bulk up, reducing flavor and eventual yield."
+    ],
+    "mitigations": [
+      "Confirm actual daytime light output in person.",
+      "Repair or recalibrate the control path before trusting the schedule again."
+    ]
+  }
+}
