@@ -1,0 +1,11 @@
+{
+  "last_seen_alive": "2026-05-05T22:35:55-10:00",
+  "repo_root": "/home/hugo/.openclaw/workspace/code/plamp",
+  "latest_grow": "/home/hugo/.openclaw/workspace/code/plamp/grow/grows/grow-thai-basil-siam-queen-2026-03-27",
+  "latest_daily_summary": "/home/hugo/.openclaw/workspace/code/plamp/grow/grows/grow-thai-basil-siam-queen-2026-03-27/summaries/daily/2026-04-27-review-v4.json",
+  "latest_weekly_summary": "/home/hugo/.openclaw/workspace/code/plamp/grow/grows/grow-thai-basil-siam-queen-2026-03-27/summaries/weekly/2026-W14.json",
+  "daily_due": "yes",
+  "weekly_due": "yes",
+  "daily_elapsed_seconds": 739226,
+  "weekly_elapsed_seconds": 2812007
+}
