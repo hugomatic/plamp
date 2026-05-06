@@ -125,8 +125,8 @@ Convey transparency and learning over black-box automation.
 Daytime, clean workshop feel, human-centered, no diagram style.
 ```
 
-- URL: `[IMAGE_URL_HERE]`
-- Embed: `![Learnable And Modifiable System]([IMAGE_URL_HERE])`
+- URL: `./images/learnable-and-modifiable-system.png`
+- Embed: `![Learnable And Modifiable System](./images/learnable-and-modifiable-system.png)`
 
 ## 4) Canonical Data Model
 
