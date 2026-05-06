@@ -18,12 +18,48 @@ from plamp_cli.http import ApiError, NetworkError, build_base_url, download_byte
 from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
 _CONFIG_SECTIONS = ("controllers", "devices", "cameras")
+_AREAS = ("config", "controllers", "pico-scheduler", "pics", "firmware")
 
 
 def _usage_hint(argv: Sequence[str]) -> str | None:
     args = list(argv)
     if not args:
         return None
+
+    if args == ["controllers"]:
+        return (
+            "Command error: missing controllers action.\n"
+            "Choices: list, get, set\n"
+            "Example: plamp controllers list\n"
+        )
+
+    if args == ["config"]:
+        return (
+            "Command error: missing config action.\n"
+            "Choices: get, set, controllers, devices, cameras\n"
+            "Example: plamp config get\n"
+        )
+
+    if args == ["pics"]:
+        return (
+            "Command error: missing pics action.\n"
+            "Choices: list, take, get\n"
+            "Example: plamp pics list\n"
+        )
+
+    if args == ["firmware"]:
+        return (
+            "Command error: missing firmware action.\n"
+            "Choices: families, generate, flash, pull, show\n"
+            "Example: plamp firmware families\n"
+        )
+
+    if args == ["pico-scheduler"]:
+        return (
+            "Command error: missing pico-scheduler action.\n"
+            "Choices: list, get, set, channels\n"
+            "Example: plamp pico-scheduler list\n"
+        )
 
     if args[:2] == ["pico-scheduler", "get"]:
         return "Example: plamp pico-scheduler get pump_n_lights\n"
@@ -35,6 +71,18 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
         )
 
     return None
+
+
+def _missing_area_hint() -> str:
+    return (
+        "Command error: missing top-level command section.\n"
+        f"Choices: {', '.join(_AREAS)}\n"
+        "Run: plamp --help\n"
+    )
+
+
+def _argv_mentions_area(argv: Sequence[str]) -> bool:
+    return any(token in _AREAS for token in argv)
 
 
 def _format_api_error(exc: ApiError) -> str:
@@ -384,10 +432,15 @@ def main(
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     parser = build_parser()
+    if not argv:
+        parser.print_help(stdout)
+        return 0
     try:
         args = parser.parse_args(list(argv))
     except SystemExit as exc:
         if exc.code and stderr is not None:
+            if not _argv_mentions_area(argv):
+                stderr.write(_missing_area_hint())
             hint = _usage_hint(argv)
             if hint:
                 stderr.write(hint)

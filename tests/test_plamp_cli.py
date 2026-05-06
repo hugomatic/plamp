@@ -23,9 +23,25 @@ class PlampCliBootstrapTests(unittest.TestCase):
         code = main(["--help"])
         self.assertEqual(code, 0)
 
-    def test_main_returns_nonzero_for_missing_required_subcommand(self):
-        self.assertNotEqual(main([]), 0)
+    def test_main_without_args_prints_help_and_returns_zero(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        code = main([], stdout=stdout, stderr=stderr)
+        self.assertEqual(code, 0)
+        self.assertIn("usage: plamp", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_returns_nonzero_for_missing_required_nested_subcommand(self):
         self.assertNotEqual(main(["config"]), 0)
+
+    def test_main_missing_area_with_flags_prints_choices_hint(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            code = main(["--pretty"], stdout=stdout, stderr=stderr)
+        self.assertNotEqual(code, 0)
+        self.assertIn("missing top-level command section", stderr.getvalue())
+        self.assertIn("Choices: config, controllers, pico-scheduler, pics, firmware", stderr.getvalue())
 
     def test_pico_scheduler_get_missing_controller_prints_example(self):
         stdout = StringIO()
