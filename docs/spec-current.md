@@ -31,18 +31,8 @@ References:
 Image placeholder:
 
 - Title: `Reliable Agriculture For Everybody`
-- Prompt:
-
-```text
-Create an inspiring documentary-style image about open hydroponics technology for everyone.
-Scene: diverse people learning around a compact indoor grow setup powered by open hardware.
-Include visible Raspberry Pi and Pico components, healthy basil, handwritten notes, and daytime light.
-Mood: practical optimism, empowerment through learning, non-corporate.
-Style: realistic photography aesthetic, high detail, no diagrams/arrows.
-```
-
-- URL: `./images/reliable-agriculture-for-everybody.png`
-- Embed: `![Reliable Agriculture For Everybody](./images/reliable-agriculture-for-everybody.png)`
+- URL: `./images/agri-factory.png`
+- Embed: `![Reliable Agriculture For Everybody](./images/agri-factory.png)`
 
 ## 2) System Shape and Stack
 
@@ -116,17 +106,8 @@ References:
 Image placeholder:
 
 - Title: `Learnable And Modifiable System`
-- Prompt:
-
-```text
-Create an inspiring realistic image of a maker-friendly hydroponics workstation.
-Include a laptop with a clear dashboard view, visible code editing, labeled components/wires, and a person actively tuning the setup.
-Convey transparency and learning over black-box automation.
-Daytime, clean workshop feel, human-centered, no diagram style.
-```
-
-- URL: `./images/learnable-and-modifiable-system.png`
-- Embed: `![Learnable And Modifiable System](./images/learnable-and-modifiable-system.png)`
+- URL: `./images/agri-ui.png`
+- Embed: `![Learnable And Modifiable System](./images/agri-ui.png)`
 
 ## 4) Canonical Data Model
 
@@ -259,48 +240,6 @@ Guard:
 
 - avoid designing CLI flows that compete with live web-held serial sessions by default
 - if direct serial access is required, it must be an explicit operational mode, not implicit behavior
-
-## 7) Human and Agent Playbooks
-
-### Current System
-
-Humans:
-
-- morning check
-- safe schedule edits
-- stale capture diagnosis
-
-Agents:
-
-- read contract sections first
-- patch minimally
-- verify targeted then full tests for contract changes
-
-### Evolution
-
-1. Operational incidents highlighted need for fast diagnosis paths.
-2. Agent usage required concise, deterministic command surfaces.
-3. Regressions drove explicit anti-regression process.
-
-### Pattern Guard
-
-- Do not skip verification for contract-affecting changes.
-- Do not merge behavior changes without spec updates.
-
-Image placeholder:
-
-- Title: `Reliable Daily Operation`
-- Prompt:
-
-```text
-Create a realistic daytime image showing calm daily operation of a small indoor hydroponic system.
-A person performs a quick morning check while plants are healthy and setup is tidy.
-Include subtle reliability cues: timestamped notes/checklist, consistent indicators, repeatable routine.
-Practical, grounded, human-centered mood; no diagram style.
-```
-
-- URL: `[IMAGE_URL_HERE]`
-- Embed: `![Reliable Daily Operation]([IMAGE_URL_HERE])`
 
 ## Maintenance Rules
 
