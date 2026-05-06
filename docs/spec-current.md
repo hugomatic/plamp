@@ -5,16 +5,6 @@ Last updated: 2026-05-05
 This is the canonical product and engineering spec for Plamp.
 It exists to preserve direction, prevent regressions, and keep growth coherent.
 
-## Canonical Quality Gate
-
-This spec is canonical only when:
-
-- current behavior is accurate for GUI, CLI, API, and firmware flows
-- each core section has: `Current System`, `Evolution`, `Pattern Guard`
-- references are clickable and traceable to prior specs
-- behavior-critical claims are test-backed
-- behavior changes and spec changes land in the same PR
-
 ## 1) Vision: Reliable Agriculture For Everybody
 
 ### Current System
