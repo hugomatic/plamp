@@ -32,7 +32,8 @@ Image placeholder:
 
 - Title: `Reliable Agriculture For Everybody`
 - URL: `./images/agri-factory.png`
-- Embed: `![Reliable Agriculture For Everybody](./images/agri-factory.png)`
+- Embed:
+![Reliable Agriculture For Everybody](./images/agri-factory.png)
 
 ## 2) System Shape and Stack
 
@@ -107,7 +108,8 @@ Image placeholder:
 
 - Title: `Learnable And Modifiable System`
 - URL: `./images/agri-ui.png`
-- Embed: `![Learnable And Modifiable System](./images/agri-ui.png)`
+- Embed:
+![Learnable And Modifiable System](./images/agri-ui.png)
 
 ## 4) Canonical Data Model
 
