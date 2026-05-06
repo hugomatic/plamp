@@ -232,6 +232,14 @@ Spec drift policy:
 
 Use these placeholders to generate diagrams/images. Replace `[IMAGE_URL_HERE]` with a hosted URL after selection.
 
+Global style constraints for all figures:
+
+- avoid plain arrow-only SVG look
+- show context blocks with hierarchy, boundaries, and callouts
+- include short realistic labels from this project (`/settings`, `Assigned peripheral`, `report_every`, `pico_scheduler`)
+- prefer a "technical product doc" aesthetic over generic flowchart defaults
+- light background, high contrast text, presentation-ready in GitHub markdown
+
 ### Figure A: System Architecture Overview
 
 - Title: `Plamp System Architecture`
@@ -245,17 +253,22 @@ Use these placeholders to generate diagrams/images. Replace `[IMAGE_URL_HERE]` w
 - Prompt:
 
 ```text
-Create a clear technical architecture diagram for a Raspberry Pi project named "Plamp".
-Include these components and arrows:
-1) Human/Agent client -> plamp_cli (command line, JSON-first)
-2) Browser -> plamp_web (FastAPI + HTML pages)
-3) plamp_cli -> plamp_web REST API
-4) plamp_web -> data/config.json and data/timers/*.json
-5) plamp_web -> Raspberry Pi camera capture pipeline
-6) plamp_web / plamp_cli -> Pico via mpremote over USB serial
-7) pico_scheduler firmware running on Pico
-8) pico_doser firmware family placeholder
-Style: minimal, engineering-focused, readable typography, no dark theme, neutral colors.
+Create a polished architecture board for the Raspberry Pi hydroponics project "Plamp" that looks like a real product-engineering document, not a generic flowchart.
+
+Layout:
+- Left column: operators (Human in browser, Agent in terminal)
+- Center: Raspberry Pi host boundary containing plamp_web, plamp_cli, config/state files, camera capture service
+- Right: USB-connected Pico controllers boundary (pico_scheduler active, pico_doser placeholder)
+- Bottom strip: operational outputs (dashboard state, captures timeline, firmware artifacts)
+
+Required labels from the real project:
+- "/settings", "/api/test", "controllers", "devices", "cameras", "report_every", "Assigned peripheral", "mpremote"
+
+Visual requirements:
+- use grouped containers, legend, and numbered data/control paths
+- use iconography for browser/terminal/pi/pico/camera/storage
+- avoid single-line arrows floating on white space
+- keep light theme and high readability
 ```
 
 - URL: `[IMAGE_URL_HERE]`
@@ -274,13 +287,27 @@ Style: minimal, engineering-focused, readable typography, no dark theme, neutral
 - Prompt:
 
 ```text
-Create a GUI information architecture diagram for Plamp.
-Show three main pages:
-1) "/" main dashboard (runtime state, schedule editor, camera controls)
-2) "/settings" configuration and system status
-3) "/api/test" API examples and payload testing
-Add directional links and short labels for each page purpose.
-Use a clear, light, technical style with high readability.
+Create a UX information architecture map for Plamp that communicates operator workflow at a glance.
+
+Primary pages:
+1) "/" dashboard: runtime state, per-device schedule editing, camera snapshot/review
+2) "/settings": Plamp setup + system status + device control
+3) "/api/test": route playground and payload examples
+
+In "/settings", explicitly depict:
+- read-only "System status / Peripherals" with assignment visibility
+- editable "Pico schedulers" grouped by controller
+- per-controller fields: ID, label, assigned peripheral, report every seconds
+
+Show realistic user journeys:
+- "morning check" path
+- "change pump cycle" path
+- "diagnose offline peripheral" path
+
+Style requirements:
+- use page cards with key widgets, not just boxes and arrows
+- include small annotation notes for design intent
+- clean light technical style, presentation-ready
 ```
 
 - URL: `[IMAGE_URL_HERE]`
@@ -299,18 +326,33 @@ Use a clear, light, technical style with high readability.
 - Prompt:
 
 ```text
-Create a technical mapping diagram showing CLI commands on the left and REST endpoints on the right.
-Left side groups:
-- plamp controllers list/get/set
-- plamp pico-scheduler list/get/set
-- plamp firmware families/generate/flash/pull/show
-Right side endpoints:
+Create a command-to-contract matrix diagram for Plamp that looks like API documentation art, not a basic flowchart.
+
+Left panel (CLI intents):
+- discover controllers
+- inspect controller state
+- replace controller payload
+- set pico-scheduler channel schedule
+- firmware local operations (families/generate/flash/pull/show)
+
+Middle panel (exact commands examples):
+- plamp controllers list
+- plamp controllers get pump_lights
+- plamp controllers set pump_lights @payload.json
+- plamp pico-scheduler channels set-schedule pump_lights pump @schedule.json
+- plamp firmware flash --firmware pico_scheduler --controller pump_lights @payload.json --port /dev/ttyACM0
+
+Right panel (REST contracts):
 - GET /api/controllers
 - GET /api/controllers/{controller}
 - PUT /api/controllers/{controller}
 - POST /api/controllers/{controller}/channels/{channel_id}/schedule
-Add arrows between each CLI command and endpoint(s) it uses.
-Use concise labels, white background, high legibility.
+
+Requirements:
+- include error-handling callouts (unknown controller, missing top-level section)
+- highlight legacy timer route as "transition/legacy"
+- use table-like lanes and connectors with visual hierarchy
+- light theme, high legibility
 ```
 
 - URL: `[IMAGE_URL_HERE]`
@@ -329,14 +371,25 @@ Use concise labels, white background, high legibility.
 - Prompt:
 
 ```text
-Create a flowchart for Plamp firmware workflow:
-Input JSON payload -> plamp firmware generate -> generated main.py
-Then branch:
-A) inspect/show path (plamp firmware show/pull)
-B) flash path (plamp firmware flash --port ...)
-Include firmware families: pico_scheduler and pico_doser (placeholder).
-Include a note that generated firmware embeds provenance metadata and input JSON comments.
-Style: simple engineering flowchart, light background, readable labels.
+Create an engineering workflow diagram for "JSON -> firmware -> Pico" in Plamp, optimized for power users and agents.
+
+Show two explicit lanes:
+- Server-backed lane (controller payload from API)
+- Local power-user lane (payload from file/stdin)
+
+Core stages:
+1) validate JSON contract
+2) select firmware family (pico_scheduler or pico_doser placeholder)
+3) generate main.py with embedded provenance comment block
+4) optional inspect path (show/pull)
+5) flash via mpremote to selected port
+6) verify by reading back firmware and checking report output cadence
+
+Requirements:
+- include concrete labels: "generator path", "input JSON comment", "report_every", "type: report"
+- depict decision nodes and verification checkpoints
+- avoid generic swimlane template look; use custom component styling and concise annotations
+- light background, print-friendly
 ```
 
 - URL: `[IMAGE_URL_HERE]`
