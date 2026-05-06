@@ -110,6 +110,10 @@ plamp pics list
 See [`plamp_cli/README.md`](./plamp_cli/README.md) for remote usage, JSON input
 rules, and picture download examples.
 
+Current architecture/contracts spec:
+
+- [`docs/spec-current.md`](./docs/spec-current.md)
+
 For development, stop the boot service before running Uvicorn manually:
 
 ```bash
