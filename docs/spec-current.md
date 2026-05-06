@@ -4,6 +4,17 @@ Last updated: 2026-05-05
 
 This is the canonical spec for how Plamp works now, why it was built this way, and where it can grow next.
 
+## Canonical Quality Gate
+
+This spec is considered canonical only when all checks below are true:
+
+- reflects current behavior in GUI, CLI, API, and firmware generation paths
+- uses normative language (`must`, `should`) for contract-critical behavior
+- links major decisions to historical design docs in `Traceability`
+- is backed by automated tests for contract-level behavior
+- is updated in the same PR as behavior changes (no deferred doc sync)
+- is readable by humans in under 15 minutes and actionable for agents in under 5 minutes
+
 ## Seed -> Now -> Next
 
 ### Seed
