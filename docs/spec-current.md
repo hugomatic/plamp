@@ -2,102 +2,86 @@
 
 Last updated: 2026-05-05
 
-This document is the canonical current-state spec for Plamp. It is intentionally practical: product behavior first, then interfaces, then implementation notes. Historical design docs still live in `docs/superpowers/specs` and `docs/superpowers/plans`.
+This is the canonical spec for how Plamp works now, why it was built this way, and where it can grow next.
 
-## 1) Product Overview
+## Seed -> Now -> Next
 
-Plamp is a Raspberry Pi hydroponic control system with:
+### Seed
 
-- a local web GUI for daily operation and configuration
-- a JSON-first CLI for automation and agent workflows
-- Pico firmware generation/programming flows for controller behavior
-- integrated camera capture and timeline review
+Plamp started as a practical hydroponics controller: reliable pump/light timing, local control on a Raspberry Pi, and direct Pico programming without cloud dependencies.
 
-Primary user goals:
+### Now
 
-- keep pumps/lights schedules reliable
-- inspect and change schedules quickly from web or CLI
-- monitor current controller state
-- capture and review grow images
-- evolve firmware families without rewriting the whole app
+Plamp is a local-first system with three equal control surfaces:
 
-## 2) Design Approach
+- GUI (`/`, `/settings`, `/api/test`) for daily operation and setup
+- CLI (`plamp`) for scripted/agentic workflows
+- firmware generators for controller families (`pico_scheduler`, `pico_doser` placeholder)
 
-Plamp follows these design rules:
+Core rule: GUI and CLI must manipulate the same model, not competing models.
 
-- Single source of truth: host config in `data/config.json`.
-- Contract-first: API and CLI payloads are explicit and test-backed.
-- Human + agent parity: everything in GUI should be scriptable via CLI/API.
-- Progressive complexity: basic usage should be simple; advanced workflows stay available.
-- Firmware-family extensibility: new families (for example `pico_doser`) should integrate without breaking existing scheduler workflows.
+### Next
 
-Non-goals:
+Plamp is positioned to support multiple firmware families, direct firmware experimentation, and richer device domains (for example dosing) without rewriting the control plane.
 
-- not a cloud-first architecture
-- not a highly normalized enterprise schema
-- not dependent on external managed services for core operation
+## Design Principles
 
-## 3) System Architecture
+- Single source of truth: host config lives in `data/config.json`.
+- Contracts before convenience: explicit payloads, explicit validation, test-backed behavior.
+- Human + agent parity: anything important in UI must be operable through CLI/API.
+- Local robustness over cloud abstraction.
+- Incremental extensibility: new firmware families are additive.
+
+## System Overview
 
 Main components:
 
-- `plamp_web` (FastAPI + server-rendered pages)
-- `plamp_cli` (argparse, JSON input/output, agent-friendly)
-- firmware generators (`pico_scheduler`, `pico_doser`)
-- runtime data (`data/config.json`, `data/timers/*.json`, captured image metadata/files)
+- `plamp_web` (FastAPI app + server-rendered pages)
+- `plamp_cli` (argparse, JSON-first I/O)
+- `pico_scheduler` generator/runtime family
+- `pico_doser` placeholder family
+- runtime data under `data/` (config, controller states, captures)
 
-Data/control flow:
+Operational toolchain (brief):
 
-1. Human uses browser or CLI.
-2. Web/CLI read and mutate host config/state through shared contracts.
-3. For Pico-backed controllers, state updates can trigger firmware/state sync to device.
-4. Periodic reports and camera captures feed monitoring and dashboards.
+- `uv` for environment/command execution
+- `FastAPI` + `uvicorn` for web runtime
+- `pyserial` and `mpremote` for Pico communication/programming
+- `MicroPython` on Pico targets
 
-## 4) GUI Specification
+## GUI Behavior (Normative)
 
-### Main page (`/`)
+### `/` Main Dashboard
 
-Purpose:
+Must:
 
-- show active scheduler/device state at a glance
-- allow schedule edits for configured scheduler devices
-- expose capture controls and latest image context
+- show current scheduler/device state
+- allow per-device schedule editing for configured scheduler controllers
+- show capture controls and latest image context
 
-Behavior:
+Should:
 
-- reads runtime status and configured devices
-- updates view periodically
-- preserves editor context during refresh where possible
-- schedule edits apply to the targeted controller/channel only
+- preserve editing context across refresh cycles
 
-### Settings page (`/settings`)
+### `/settings`
 
-Purpose:
+Must:
 
-- configure controllers, devices, cameras, hostname, and software/runtime context
+- be the canonical admin/config page
+- keep `System status / Peripherals` read-only
+- show assignment visibility in status
+- provide editable scheduler/controller assignment in `Pico schedulers`
+- persist the combined config shape (`controllers`, `devices`, `cameras`)
 
-Behavior:
+### `/api/test`
 
-- “System status / Peripherals” is read-only for assignment status visibility
-- “Pico schedulers” is the editable area for assignment and scheduler-specific config
-- supports grouped scheduler sections per controller
-- persists combined config in current top-level shape (`controllers`, `devices`, `cameras`)
+Must:
 
-### API test page (`/api/test`)
+- expose live route examples and payload patterns for current contracts
 
-Purpose:
+## Canonical Data Model
 
-- make API contracts discoverable and testable from the browser
-- provide copyable examples for debugging/integration
-
-Behavior:
-
-- displays route examples aligned with current contracts
-- includes timer/controller stream and payload examples
-
-## 5) Configuration and Data Model
-
-Canonical host config shape:
+Host config shape:
 
 ```json
 {
@@ -119,44 +103,40 @@ Canonical host config shape:
 }
 ```
 
-Controller rules:
+Invariants:
 
-- each controller has an ID key and a firmware family (`type`)
-- reserved IDs are blocked (routing/system keywords)
-- controller IDs are unique
+- controller IDs are globally unique
+- reserved IDs are forbidden
+- each device references exactly one controller
+- pin collisions are invalid within a controller
+- scheduler-specific device semantics (`editor`, `pin`, type rules) are validated
 
-Device rules:
+Why `devices` is top-level:
 
-- each device maps to one controller
-- pin uniqueness is enforced per controller
-- editor/type semantics are validated
+- keeps IDs stable and global
+- simplifies global listing/validation and rename handling
+- keeps GUI grouping a presentation choice, not a storage constraint
 
-## 6) API Contract (Current)
+## API Contract (Current Truth)
 
-Core controller routes:
+Primary controller routes:
 
 - `GET /api/controllers`
 - `GET /api/controllers/{controller}`
 - `PUT /api/controllers/{controller}`
-
-Scheduler channel mutation route:
-
 - `POST /api/controllers/{controller}/channels/{channel_id}/schedule`
 
-Legacy compatibility:
+Contract expectations:
 
-- legacy timer routes may still exist for transition, but new development targets controller routes.
+- discovery route is lightweight and firmware-aware
+- controller route returns full controller payload
+- put route replaces full controller payload
+- scheduler stream behavior is controller-type constrained
+- error details should be actionable (which controller/field failed and why)
 
-Streaming:
+Detailed interactive examples live in `/api/test`.
 
-- stream mode is supported for scheduler controllers only.
-
-Error principles:
-
-- 4xx for validation and unknown resource errors
-- details should be actionable (controller name, expected choices)
-
-## 7) CLI Contract (Current)
+## CLI Contract (Current Truth)
 
 Top-level command sections:
 
@@ -166,247 +146,165 @@ Top-level command sections:
 - `pics`
 - `firmware`
 
-Usability expectations:
+Behavior expectations:
 
 - `plamp` with no args prints help
-- missing top-level section errors list available sections
-- missing nested actions should provide choices and examples
+- missing top-level section returns a choices hint
+- nested missing/invalid actions should return examples
+- JSON input works via inline JSON, `@file`, or stdin marker where applicable
 
-Core examples:
+## Firmware Families and Programming
 
-```bash
-uv run plamp --pretty controllers list
-uv run plamp --pretty pico-scheduler get pump_lights
-uv run plamp --pretty config get
-uv run plamp --pretty firmware families
-```
+Families:
 
-## 8) Firmware Generation and Programming
+- `pico_scheduler` (active scheduling firmware family)
+- `pico_doser` (placeholder for upcoming dosing workflows)
 
-Current families:
+Generator expectations:
 
-- `pico_scheduler`: active scheduling firmware family
-- `pico_doser`: placeholder family for future dosing workflows
+- generated `main.py` is inspectable and deterministic from payload
+- generated source includes provenance metadata and input JSON comments
+- optional family-specific code appears only when required by payload
 
-Generator principles:
+Power-user/agent workflow:
 
-- generated firmware should be simple and inspectable
-- generated source embeds provenance metadata and input JSON comments
-- family-specific code should be emitted only when needed by input
-
-Programming flow:
-
-1. prepare JSON payload
+1. prepare payload JSON
 2. `plamp firmware generate ...`
-3. optional `plamp firmware show/pull`
+3. optional `plamp firmware show`/`pull`
 4. `plamp firmware flash --port ...`
+5. verify on-device behavior/report cadence
 
-## 9) Operations and Runtime
+## Human Operator Playbook
 
-Deployment shape:
+Morning check:
 
-- systemd service runs web app
-- optional nginx proxy on port 80
-- local-first operation expected
+- open `/`
+- verify recent captures and device state
+- if stale state/captures, check `/settings` system status and peripheral assignment
+
+Change schedule safely:
+
+- edit target device schedule in `/`
+- verify controller/device mapping in `/settings`
+- confirm runtime behavior update
+
+Diagnose “no new images”:
+
+- inspect `/` capture list timestamps
+- inspect settings/software/runtime status
+- run CLI image list/get for cross-check
+
+## Agent Playbook (Token-Efficient)
+
+Read order:
+
+1. this file sections: `Canonical Data Model`, `API Contract`, `CLI Contract`
+2. `plamp_cli/README.md` for command details
+3. tests that define the targeted behavior
+
+Safe change sequence:
+
+1. read current payload/state
+2. produce minimal patch
+3. run targeted tests
+4. run full suite when contract-level changes are involved
+5. report exact command outputs for verification
+
+## Operations
+
+Expected runtime shape:
+
+- `plamp-web` systemd service for steady operation
+- optional nginx fronting for port 80
 
 Operational checks:
 
-- service status via `systemctl status plamp-web`
-- software identity visible in settings (branch, commit, timestamp)
-- runtime data stays outside git-tracked source files
+- `systemctl status plamp-web`
+- settings software section (branch/commit/timestamp)
+- confirm working tree cleanliness before deploy-sensitive actions
 
-## 10) Testing and Change Control
+## Traceability (Where Decisions Came From)
 
-Required for behavior-changing work:
+- settings unification and admin-page intent:
+  - `docs/superpowers/specs/2026-04-15-settings-unification-design.md`
+- grouped pico scheduler UX and assignment model:
+  - `docs/superpowers/specs/2026-04-30-pico-schedulers-settings-design.md`
+- controller/family API + CLI evolution direction:
+  - `docs/superpowers/specs/2026-05-04-firmware-family-api-and-cli-design.md`
+- firmware generation constraints:
+  - `docs/superpowers/specs/2026-05-04-pico-scheduler-firmware-generator-design.md`
 
-1. update this current spec
-2. update/add automated tests
-3. run test suite
-4. ship via branch + PR
+## Image Placeholders (Generation Blocks)
 
-Spec drift policy:
+Global style constraints:
 
-- if code and spec diverge, update one immediately in the same change set.
+- avoid generic arrow-only SVG output
+- use hierarchy, boundaries, callouts, and realistic labels
+- keep light theme, high readability, GitHub-friendly aspect ratios
 
-## 11) Image Placeholders (Generation Blocks)
-
-Use these placeholders to generate diagrams/images. Replace `[IMAGE_URL_HERE]` with a hosted URL after selection.
-
-Global style constraints for all figures:
-
-- avoid plain arrow-only SVG look
-- show context blocks with hierarchy, boundaries, and callouts
-- include short realistic labels from this project (`/settings`, `Assigned peripheral`, `report_every`, `pico_scheduler`)
-- prefer a "technical product doc" aesthetic over generic flowchart defaults
-- light background, high contrast text, presentation-ready in GitHub markdown
-
-### Figure A: System Architecture Overview
+### Figure A: System Architecture Board
 
 - Title: `Plamp System Architecture`
-- Target section: `System Architecture`
-- Suggested output: `16:9 diagram, clean labels, light background`
 - Checklist:
   - Status: `[todo|generated|inserted]`
   - Owner: `[name]`
   - Generated on: `[YYYY-MM-DD]`
-  - Source prompt version: `v1`
 - Prompt:
 
 ```text
-Create a polished architecture board for the Raspberry Pi hydroponics project "Plamp" that looks like a real product-engineering document, not a generic flowchart.
-
-Layout:
-- Left column: operators (Human in browser, Agent in terminal)
-- Center: Raspberry Pi host boundary containing plamp_web, plamp_cli, config/state files, camera capture service
-- Right: USB-connected Pico controllers boundary (pico_scheduler active, pico_doser placeholder)
-- Bottom strip: operational outputs (dashboard state, captures timeline, firmware artifacts)
-
-Required labels from the real project:
-- "/settings", "/api/test", "controllers", "devices", "cameras", "report_every", "Assigned peripheral", "mpremote"
-
-Visual requirements:
-- use grouped containers, legend, and numbered data/control paths
-- use iconography for browser/terminal/pi/pico/camera/storage
-- avoid single-line arrows floating on white space
-- keep light theme and high readability
+Create a polished architecture board for "Plamp" (Raspberry Pi hydroponics control).
+Use a structured layout: operators (browser + terminal agents), Raspberry Pi host boundary (plamp_web, plamp_cli, config/state, camera pipeline), Pico boundary (pico_scheduler active, pico_doser placeholder), and outputs (dashboard state, captures, firmware artifacts).
+Include real labels: /settings, /api/test, controllers, devices, cameras, report_every, Assigned peripheral, mpremote.
+Avoid simple arrow-only diagram style. Use grouped containers, numbering, and short callouts.
 ```
 
 - URL: `[IMAGE_URL_HERE]`
 - Embed: `![Plamp System Architecture]([IMAGE_URL_HERE])`
 
-### Figure B: GUI Information Architecture
+### Figure B: GUI Workflow Map
 
 - Title: `Plamp GUI Structure`
-- Target section: `GUI Specification`
-- Suggested output: `screen-map style diagram`
 - Checklist:
   - Status: `[todo|generated|inserted]`
   - Owner: `[name]`
   - Generated on: `[YYYY-MM-DD]`
-  - Source prompt version: `v1`
 - Prompt:
 
 ```text
-Create a UX information architecture map for Plamp that communicates operator workflow at a glance.
-
-Primary pages:
-1) "/" dashboard: runtime state, per-device schedule editing, camera snapshot/review
-2) "/settings": Plamp setup + system status + device control
-3) "/api/test": route playground and payload examples
-
-In "/settings", explicitly depict:
-- read-only "System status / Peripherals" with assignment visibility
-- editable "Pico schedulers" grouped by controller
-- per-controller fields: ID, label, assigned peripheral, report every seconds
-
-Show realistic user journeys:
-- "morning check" path
-- "change pump cycle" path
-- "diagnose offline peripheral" path
-
-Style requirements:
-- use page cards with key widgets, not just boxes and arrows
-- include small annotation notes for design intent
-- clean light technical style, presentation-ready
+Create a GUI workflow map for Plamp showing "/", "/settings", and "/api/test".
+In /settings depict: read-only System status/Peripherals, editable Pico schedulers grouped by controller, assignment + report_every fields.
+Add three operator journeys: morning check, change pump cycle, diagnose offline peripheral.
+Use card-based layout and concise annotation notes; avoid generic flowchart look.
 ```
 
 - URL: `[IMAGE_URL_HERE]`
 - Embed: `![Plamp GUI Structure]([IMAGE_URL_HERE])`
 
-### Figure C: Controller API and CLI Mapping
+### Figure C: CLI/API Contract Matrix
 
 - Title: `Controller API and CLI Mapping`
-- Target section: `API Contract` and `CLI Contract`
-- Suggested output: `table-style flow diagram`
 - Checklist:
   - Status: `[todo|generated|inserted]`
   - Owner: `[name]`
   - Generated on: `[YYYY-MM-DD]`
-  - Source prompt version: `v1`
 - Prompt:
 
 ```text
-Create a command-to-contract matrix diagram for Plamp that looks like API documentation art, not a basic flowchart.
-
-Left panel (CLI intents):
-- discover controllers
-- inspect controller state
-- replace controller payload
-- set pico-scheduler channel schedule
-- firmware local operations (families/generate/flash/pull/show)
-
-Middle panel (exact commands examples):
-- plamp controllers list
-- plamp controllers get pump_lights
-- plamp controllers set pump_lights @payload.json
-- plamp pico-scheduler channels set-schedule pump_lights pump @schedule.json
-- plamp firmware flash --firmware pico_scheduler --controller pump_lights @payload.json --port /dev/ttyACM0
-
-Right panel (REST contracts):
-- GET /api/controllers
-- GET /api/controllers/{controller}
-- PUT /api/controllers/{controller}
-- POST /api/controllers/{controller}/channels/{channel_id}/schedule
-
-Requirements:
-- include error-handling callouts (unknown controller, missing top-level section)
-- highlight legacy timer route as "transition/legacy"
-- use table-like lanes and connectors with visual hierarchy
-- light theme, high legibility
+Create a command-to-contract matrix for Plamp.
+Left: operator intents and representative plamp commands.
+Right: REST routes (/api/controllers, /api/controllers/{controller}, PUT controller, channel schedule route).
+Highlight actionable error examples (unknown controller, missing command section).
+Use lane/table visual structure with strong hierarchy, not a plain arrow chart.
 ```
 
 - URL: `[IMAGE_URL_HERE]`
 - Embed: `![Controller API and CLI Mapping]([IMAGE_URL_HERE])`
 
-### Figure D: Firmware Generation and Flash Flow
-
-- Title: `Firmware Generation and Flash Flow`
-- Target section: `Firmware Generation and Programming`
-- Suggested output: `step flowchart`
-- Checklist:
-  - Status: `[todo|generated|inserted]`
-  - Owner: `[name]`
-  - Generated on: `[YYYY-MM-DD]`
-  - Source prompt version: `v1`
-- Prompt:
-
-```text
-Create an engineering workflow diagram for "JSON -> firmware -> Pico" in Plamp, optimized for power users and agents.
-
-Show two explicit lanes:
-- Server-backed lane (controller payload from API)
-- Local power-user lane (payload from file/stdin)
-
-Core stages:
-1) validate JSON contract
-2) select firmware family (pico_scheduler or pico_doser placeholder)
-3) generate main.py with embedded provenance comment block
-4) optional inspect path (show/pull)
-5) flash via mpremote to selected port
-6) verify by reading back firmware and checking report output cadence
-
-Requirements:
-- include concrete labels: "generator path", "input JSON comment", "report_every", "type: report"
-- depict decision nodes and verification checkpoints
-- avoid generic swimlane template look; use custom component styling and concise annotations
-- light background, print-friendly
-```
-
-- URL: `[IMAGE_URL_HERE]`
-- Embed: `![Firmware Generation and Flash Flow]([IMAGE_URL_HERE])`
-
-## 12) Spec Maintenance Procedure
+## Maintenance Rules
 
 When behavior changes:
 
 1. update this file
 2. update tests
-3. update user docs (`README`, CLI docs) if interface changed
+3. update user docs if CLI/UI contract changed
 4. ship in one PR
-
-When adding a new firmware family:
-
-1. add controller type validation and constraints
-2. add generator entry points and CLI workflows
-3. define API/CLI contract changes in this spec
-4. document programming and observability expectations
