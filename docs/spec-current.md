@@ -243,9 +243,11 @@ Workflow:
 
 ### Evolution
 
-1. Scheduler firmware first.
-2. Generator made firmware reproducible from payload.
-3. Family abstraction opened path for doser and future controllers.
+1. Initial model: firmware read config on-device, so config had to be copied to Pico storage.
+2. Transitional model: host flashed/reset Pico and copied both `main.py` and config payload files.
+3. GUI era: web server became the operational control point and managed firmware/state writes.
+4. Current model: host generates dedicated firmware from JSON and flashes it, with behavior embedded in generated `main.py`.
+5. Expected future: generation and programming flow may evolve again as new firmware families mature.
 
 References:
 
@@ -256,6 +258,17 @@ References:
 
 - Do not lock future families into scheduler-only assumptions.
 - Do not generate firmware that is hard to inspect/diff.
+- Do not bypass service ownership of serial link in normal operation.
+
+### Serial Link Ownership
+
+In normal operation, `plamp_web` keeps the serial relationship with Pico active for runtime monitoring/control.
+That means CLI operations that need device state/programming should go through the web API path unless explicitly doing local power-user maintenance.
+
+Guard:
+
+- avoid designing CLI flows that compete with live web-held serial sessions by default
+- if direct serial access is required, it must be an explicit operational mode, not implicit behavior
 
 ## 7) Human and Agent Playbooks
 
