@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT_DIR="${REPO_ROOT}/agent"
 STATE_FILE="${AGENT_DIR}/check_alive_state.json"
-LAST_SEEN_TXT="${AGENT_DIR}/check_alive_last_seen.txt"
+LAST_SEEN_TXT="${AGENT_DIR}/last_seen_alive.txt"
 GROWS_DIR="${REPO_ROOT}/grow/grows"
 DAILY_CHECK_MD="${AGENT_DIR}/check_daily.md"
 WEEKLY_CHECK_MD="${AGENT_DIR}/check_weekly.md"
@@ -80,6 +80,11 @@ EOF
 
 echo "last_seen_alive updated: ${now_iso}"
 echo "state file: ${STATE_FILE}"
+if [[ -n "${latest_grow_dir}" ]]; then
+  echo "latest_grow_dir: ${latest_grow_dir}"
+else
+  echo "latest_grow_dir: not found"
+fi
 
 if [[ "${daily_due}" == "yes" ]]; then
   echo "DAILY_CHECK_DUE: yes"
