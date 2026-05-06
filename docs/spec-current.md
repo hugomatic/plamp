@@ -233,6 +233,21 @@ Guard:
 - avoid designing CLI flows that compete with live web-held serial sessions by default
 - if direct serial access is required, it must be an explicit operational mode, not implicit behavior
 
+## 7) Not There Yet (Explicit)
+
+The following goals are directional, not fully implemented end-to-end yet:
+
+- autonomous closed-loop drift correction from image/time-series analysis
+- full dosing-food control workflow in production firmware/UI
+- full pH control workflow in production firmware/UI
+- robust yield estimation over time from standardized measurements
+- integrated task orchestration for `prune`, `spray`, `harvest` beyond basic lists/workflows
+
+Current state:
+
+- Plamp has the foundation (runtime monitoring, camera capture, scheduler control, CLI/API contracts, firmware generation path).
+- Advanced optimization and agronomy automation are planned growth areas and should be treated as roadmap work, not shipped capability.
+
 ## Maintenance Rules
 
 When behavior changes:
