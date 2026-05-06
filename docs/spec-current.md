@@ -71,9 +71,9 @@ Toolchain:
 
 ### Evolution
 
-1. Started simple for rapid iteration on Raspberry Pi.
-2. Kept direct hardware tooling explicit for debuggability.
-3. Added generator path so firmware behavior is reproducible from JSON.
+1. Chose a local-first Raspberry Pi deployment so growers can run and recover the system without cloud dependency.
+2. Kept hardware control explicit (`pyserial`, `mpremote`) so failures are diagnosable at the bench, not hidden behind abstractions.
+3. Added JSON-driven firmware generation so controller behavior is reproducible, reviewable, and safe to evolve over time.
 
 References:
 
