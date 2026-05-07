@@ -6,6 +6,42 @@ Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
 
 ## Install
 
+### One-command bootstrap (recommended)
+
+From a fresh Raspberry Pi shell:
+
+```bash
+git clone https://github.com/hugomatic/plamp.git
+cd plamp
+bash deploy/bootstrap/install-plamp.sh
+```
+
+This installs Plamp and starts `plamp-web` on `127.0.0.1:8000`.
+
+Optional flags:
+
+```bash
+# Public web on port 80 via nginx
+bash deploy/bootstrap/install-plamp.sh --public
+
+# Include OS update
+bash deploy/bootstrap/install-plamp.sh --update-os
+
+# Enable hourly capture cron for one grow
+bash deploy/bootstrap/install-plamp.sh --enable-hourly-capture --grow-id <grow-id>
+
+# Enable heartbeat cron, writing to a specific dead-man-switch file
+bash deploy/bootstrap/install-plamp.sh --enable-heartbeat --heartbeat-file /path/to/last_seen_alive.txt
+```
+
+Notes:
+
+- No OpenClaw path is required by default.
+- Heartbeat file path is configurable via `--heartbeat-file` (internally `PLAMP_HEARTBEAT_FILE`).
+- If `--public` is not set, nginx/port 80 is not configured.
+
+### Manual install (advanced)
+
 Install `uv` on the Raspberry Pi:
 
 ```bash
