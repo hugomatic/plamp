@@ -24,6 +24,7 @@ grow/grows/*/events.jsonl
 grow/grows/*/summaries/
 grow/grows/*/predictions/
 grow/grows/*/amendments/
+grow/grows/*/evidence/
 grow/cron-capture.log
 # Local git worktrees
 .worktrees/
