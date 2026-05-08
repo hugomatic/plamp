@@ -529,6 +529,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     software = summary.get("software") if isinstance(summary.get("software"), dict) else {}
     repo_root_path = str(software.get("path") or ".")
+    repo_root_path_json = json_script_text(repo_root_path)
     git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
     git_branch = software.get("git_branch") or "unknown"
     git_commit_timestamp = software.get("git_commit_timestamp") or "unknown"
@@ -641,6 +642,17 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       reportEveryInput.defaultValue = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");
     }}
     const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
+    const repoRootPath = {repo_root_path_json};
+    function normalizeCaptureDirPath(value) {{
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (!raw.startsWith("/")) return raw.replace(/^\\.\\//, "");
+      const root = String(repoRootPath || "").replace(/\\/$/, "");
+      if (!root) return raw;
+      if (raw === root) return "";
+      if (raw.startsWith(root + "/")) return raw.slice(root.length + 1);
+      throw new Error(`Capture dir must be inside repo root ${{root}} or be relative.`);
+    }}
     for (const row of document.querySelectorAll(".controller-row.new-row")) {{
       row.querySelector(".controller-pico-serial").dataset.defaultValue = row.querySelector(".controller-pico-serial").value;
       row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));
@@ -697,7 +709,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         result[key] = cleanObject({{
           label: row.querySelector(".camera-label").value.trim(),
           detected_key: row.querySelector(".camera-detected-key").value,
-          capture_dir: row.querySelector(".camera-capture-dir").value.trim(),
+          capture_dir: normalizeCaptureDirPath(row.querySelector(".camera-capture-dir").value),
           capture_every_seconds: everySecondsRaw === "" ? null : Number(everySecondsRaw),
           autofocus_mode: row.querySelector(".camera-autofocus-mode").value,
           autofocus_delay_ms: autofocusDelayRaw === "" ? null : Number(autofocusDelayRaw),

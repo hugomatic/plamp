@@ -1317,6 +1317,7 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     status = git_output(["git", "status", "--short"], repo_root=repo_root)
     return {
         "name": "plamp",
+        "path": str(repo_root.resolve()),
         "git_commit": commit,
         "git_short_commit": commit[:7] if commit else None,
         "git_branch": branch,
