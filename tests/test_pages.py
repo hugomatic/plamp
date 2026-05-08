@@ -991,12 +991,16 @@ class PageRenderTests(unittest.TestCase):
                 "software": {
                     "path": "/repo/plamp",
                     "user_name": "hugo",
-                    "os_name": "Linux",
+                    "user_is_sudoer": True,
+                    "user_has_serial_access": True,
+                    "user_has_video_access": True,
+                    "os_name": "Debian GNU/Linux",
                     "os_arch": "aarch64",
-                    "os_version": "6.18.18-v8-16k+",
+                    "os_version": "12 (bookworm)",
                     "git_short_commit": "abc123",
                     "git_branch": "main",
                     "git_dirty": False,
+                    "git_dirty_files": [],
                     "git_commit_timestamp": "2026-05-08T09:00:00+00:00",
                     "mpremote_path": "/home/hugo/.local/bin/mpremote",
                     "mpremote_version": "mpremote 1.28.0",
@@ -1017,13 +1021,49 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<code>/repo/plamp</code>", html)
         self.assertIn("<td>Plamp data</td>", html)
         self.assertIn("<code>/repo/plamp/data</code>", html)
-        self.assertIn("<td>OS name, arch, version</td>", html)
-        self.assertIn("Linux aarch64 version 6.18.18-v8-16k+", html)
+        self.assertIn("<td>Operating system</td>", html)
+        self.assertIn("Debian GNU/Linux 12 (bookworm); arch aarch64", html)
         self.assertIn("<td>User name</td>", html)
-        self.assertIn("<code>hugo</code>", html)
+        self.assertIn("<code>hugo; sudoer yes; serial yes; video yes</code>", html)
         self.assertIn("/home/hugo/.local/bin/mpremote version 1.28.0", html)
         self.assertIn("version 3.5", html)
         self.assertIn("Git commit time", html)
+        self.assertIn("<td>Git dirty</td><td><code>no</code></td>", html)
+
+    def test_settings_page_shows_short_git_dirty_reason(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {
+                    "path": "/repo/plamp",
+                    "user_name": "hugo",
+                    "user_is_sudoer": True,
+                    "user_has_serial_access": True,
+                    "user_has_video_access": True,
+                    "os_name": "Debian GNU/Linux",
+                    "os_arch": "aarch64",
+                    "os_version": "12 (bookworm)",
+                    "git_short_commit": "abc123",
+                    "git_branch": "main",
+                    "git_dirty": True,
+                    "git_dirty_files": ["plamp_web/server.py", "tests/test_pages.py", "deploy/bootstrap/install-plamp.sh"],
+                    "git_commit_timestamp": "2026-05-08T09:00:00+00:00",
+                    "mpremote_path": "/home/hugo/.local/bin/mpremote",
+                    "mpremote_version": "mpremote 1.28.0",
+                },
+                "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
+                "storage": {"path": "/repo/plamp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+                "tools": {"pyserial": "3.5"},
+            }
+        )
+
+        self.assertIn(
+            "<td>Git dirty</td><td><code>yes: plamp_web/server.py, tests/test_pages.py, ...</code></td>",
+            html,
+        )
 
     def test_api_test_page_has_copyable_curl_commands_and_camera_paging_inputs(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")

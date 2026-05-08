@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -213,6 +214,102 @@ class ConfigApiTests(unittest.TestCase):
         apply_hostname.assert_called_once_with("plamp-kiosk")
         self.assertEqual(data["hostname"], "plamp-kiosk")
         self.assertEqual(data["message"], "hostname updated")
+
+    def test_update_hostname_hosts_file_rewrites_loopback_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hosts_file = Path(tmp) / "hosts"
+            hosts_file.write_text("127.0.0.1\tlocalhost\n127.0.1.1\traspberrypi\n", encoding="utf-8")
+
+            server.update_hostname_hosts_file(hosts_file, "tower")
+
+            self.assertEqual(
+                hosts_file.read_text(encoding="utf-8"),
+                "127.0.0.1\tlocalhost\n127.0.1.1\ttower\n",
+            )
+
+    def test_apply_hostname_updates_hosts_restarts_avahi_and_reports_local_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hosts_file = Path(tmp) / "hosts"
+            hosts_file.write_text("127.0.0.1\tlocalhost\n127.0.1.1\traspberrypi\n", encoding="utf-8")
+
+            with (
+                patch.object(server, "HOSTS_FILE", hosts_file),
+                patch.object(
+                    server.subprocess,
+                    "run",
+                    side_effect=[
+                        subprocess.CompletedProcess(["hostnamectl", "set-hostname", "tower"], 0, "", ""),
+                        subprocess.CompletedProcess(["systemctl", "restart", "avahi-daemon"], 0, "", ""),
+                        subprocess.CompletedProcess(["avahi-resolve-host-name", "-4", "tower.local"], 0, "192.168.68.56 tower.local\n", ""),
+                    ],
+                ) as run,
+            ):
+                data = server.apply_hostname("tower")
+                updated_hosts = hosts_file.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            [
+                ["hostnamectl", "set-hostname", "tower"],
+                ["systemctl", "restart", "avahi-daemon"],
+                ["avahi-resolve-host-name", "-4", "tower.local"],
+            ],
+        )
+        self.assertIn("127.0.1.1\ttower\n", updated_hosts)
+        self.assertEqual(
+            data,
+            {
+                "hostname": "tower",
+                "message": "hostname updated; /etc/hosts updated; mDNS ready at tower.local",
+            },
+        )
+
+    def test_apply_hostname_reports_missing_mdns_verification_tool(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hosts_file = Path(tmp) / "hosts"
+            hosts_file.write_text("127.0.0.1\tlocalhost\n", encoding="utf-8")
+
+            with (
+                patch.object(server, "HOSTS_FILE", hosts_file),
+                patch.object(server.shutil, "which", return_value=None),
+                patch.object(
+                    server.subprocess,
+                    "run",
+                    side_effect=[
+                        subprocess.CompletedProcess(["hostnamectl", "set-hostname", "tower"], 0, "", ""),
+                        subprocess.CompletedProcess(["systemctl", "restart", "avahi-daemon"], 0, "", ""),
+                    ],
+                ),
+            ):
+                with self.assertRaises(HTTPException) as cm:
+                    server.apply_hostname("tower")
+
+        self.assertEqual(cm.exception.status_code, 500)
+        self.assertIn("avahi-utils", cm.exception.detail)
+
+    def test_apply_hostname_timeout_points_to_mdns_multicast_route(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hosts_file = Path(tmp) / "hosts"
+            hosts_file.write_text("127.0.0.1\tlocalhost\n", encoding="utf-8")
+
+            with (
+                patch.object(server, "HOSTS_FILE", hosts_file),
+                patch.object(server.shutil, "which", return_value="/usr/bin/avahi-resolve-host-name"),
+                patch.object(
+                    server.subprocess,
+                    "run",
+                    side_effect=[
+                        subprocess.CompletedProcess(["hostnamectl", "set-hostname", "tower"], 0, "", ""),
+                        subprocess.CompletedProcess(["systemctl", "restart", "avahi-daemon"], 0, "", ""),
+                        subprocess.TimeoutExpired(["avahi-resolve-host-name", "-4", "tower.local"], 15),
+                    ],
+                ),
+            ):
+                with self.assertRaises(HTTPException) as cm:
+                    server.apply_hostname("tower")
+
+        self.assertEqual(cm.exception.status_code, 504)
+        self.assertIn("224.0.0.251", cm.exception.detail)
 
     def test_put_config_updates_controller_rename_and_dependent_devices_atomically(self):
         with tempfile.TemporaryDirectory() as tmp:

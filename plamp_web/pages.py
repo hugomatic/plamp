@@ -567,12 +567,29 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         f"{git_commit_timestamp} ({git_commit_relative})" if git_commit_relative else str(git_commit_timestamp)
     )
     git_dirty = software.get("git_dirty")
-    git_dirty_display = "unknown" if git_dirty is None else ("yes" if git_dirty else "no")
+    git_dirty_files = software.get("git_dirty_files") if isinstance(software.get("git_dirty_files"), list) else []
+    if git_dirty is None:
+        git_dirty_display = "unknown"
+    elif not git_dirty:
+        git_dirty_display = "no"
+    else:
+        dirty_preview = ", ".join(str(path) for path in git_dirty_files[:2] if path)
+        if len(git_dirty_files) > 2:
+            dirty_preview = f"{dirty_preview}, ..." if dirty_preview else "..."
+        git_dirty_display = f"yes: {dirty_preview}" if dirty_preview else "yes"
     os_name = str(software.get("os_name") or "unknown")
     os_arch = str(software.get("os_arch") or "unknown")
     os_version = str(software.get("os_version") or "unknown")
-    os_display = f"{os_name} {os_arch} version {os_version}"
+    os_display = f"{os_name} {os_version}; arch {os_arch}"
     user_name = str(software.get("user_name") or "unknown")
+    user_is_sudoer = bool(software.get("user_is_sudoer"))
+    user_has_serial_access = bool(software.get("user_has_serial_access"))
+    user_has_video_access = bool(software.get("user_has_video_access"))
+    user_display = (
+        f"{user_name}; sudoer {'yes' if user_is_sudoer else 'no'}; "
+        f"serial {'yes' if user_has_serial_access else 'no'}; "
+        f"video {'yes' if user_has_video_access else 'no'}"
+    )
     mpremote_path = str(software.get("mpremote_path") or "not found")
     mpremote_version = str(software.get("mpremote_version") or "").strip()
     mpremote_version_suffix = mpremote_version.removeprefix("mpremote ").strip()
@@ -582,8 +599,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     software_rows = (
         "<tr><td>Plamp root</td>" f"<td><code>{html.escape(str(paths.get('repo_root') or repo_root_path))}</code></td></tr>"
         "<tr><td>Plamp data</td>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
-        "<tr><td>OS name, arch, version</td>" f"<td><code>{html.escape(os_display)}</code></td></tr>"
-        "<tr><td>User name</td>" f"<td><code>{html.escape(user_name)}</code></td></tr>"
+        "<tr><td>Operating system</td>" f"<td><code>{html.escape(os_display)}</code></td></tr>"
+        "<tr><td>User name</td>" f"<td><code>{html.escape(user_display)}</code></td></tr>"
         "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
         "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
         "<tr><td>Git commit time</td>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"

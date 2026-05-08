@@ -6,7 +6,7 @@ install_script="${script_dir}/deploy/bootstrap/install-plamp.sh"
 
 usage() {
   cat <<'USAGE'
-Usage: ./plampstart.bash [restart|reinstall|remote-install] [args...]
+Usage: ./plampctl [restart|reinstall|remote-install|set-hostname] [args...]
 
 Without an action, prompts interactively.
 
@@ -15,22 +15,55 @@ Actions:
   reinstall [options...]   Run deploy/bootstrap/install-plamp.sh with --plamp-dir set to this repo root
   remote-install HOST REMOTE_DIR [options...]
                            Copy deploy/bootstrap/install-plamp.sh to HOST and run it there with --plamp-dir REMOTE_DIR
+  set-hostname NAME        Set the local hostname, update /etc/hosts, restart avahi-daemon, and verify NAME.local
 
 Examples:
-  ./plampstart.bash
-  ./plampstart.bash restart
-  ./plampstart.bash reinstall --public
-  ./plampstart.bash reinstall --update-os --enable-heartbeat
-  ./plampstart.bash remote-install hugo@sprout ~/plamp --public
+  ./plampctl
+  ./plampctl restart
+  ./plampctl reinstall --public
+  ./plampctl reinstall --update-os --enable-heartbeat
+  ./plampctl remote-install hugo@sprout ~/plamp --public
+  ./plampctl set-hostname tower
 
 Help:
-  ./plampstart.bash -h
+  ./plampctl -h
 USAGE
 }
 
 restart_plamp() {
   sudo systemctl restart plamp-web
   sudo systemctl status plamp-web --no-pager
+}
+
+set_hostname_plamp() {
+  if [[ $# -ne 1 ]]; then
+    echo "set-hostname requires exactly one hostname." >&2
+    usage >&2
+    exit 2
+  fi
+
+  local hostname="$1"
+  if [[ ! "${hostname}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+    echo "invalid hostname: ${hostname}" >&2
+    exit 2
+  fi
+
+  local hosts_tmp
+  hosts_tmp="$(mktemp)"
+  trap 'rm -f "${hosts_tmp}"' RETURN
+  cp /etc/hosts "${hosts_tmp}"
+  if grep -q '^127\.0\.1\.1[[:space:]]' "${hosts_tmp}"; then
+    sed -i "s/^127\\.0\\.1\\.1[[:space:]].*/127.0.1.1\t${hostname}/" "${hosts_tmp}"
+  else
+    printf '127.0.1.1\t%s\n' "${hostname}" >> "${hosts_tmp}"
+  fi
+
+  echo "Applying hostname: ${hostname}"
+  sudo cp "${hosts_tmp}" /etc/hosts
+  sudo hostnamectl set-hostname "${hostname}"
+  sudo systemctl restart avahi-daemon
+  getent hosts "${hostname}.local"
+  echo "Hostname ready: ${hostname}.local"
 }
 
 reinstall_plamp() {
@@ -73,7 +106,7 @@ remote_install_plamp() {
 
 prompt_action() {
   local reply
-  printf 'Choose action: [r]estart, re[i]nstall, remote-[s]sh install, [c]ancel: '
+  printf 'Choose action: [r]estart, re[i]nstall, remote-[s]sh install, set-[h]ostname, [c]ancel: '
   read -r reply
   case "${reply}" in
     r|R|restart|Restart)
@@ -90,6 +123,12 @@ prompt_action() {
       printf 'Remote plamp dir (example ~/plamp): '
       read -r remote_dir
       remote_install_plamp "${host}" "${remote_dir}"
+      ;;
+    h|H|hostname|Hostname|set-hostname|Set-hostname)
+      local hostname
+      printf 'New hostname (example tower): '
+      read -r hostname
+      set_hostname_plamp "${hostname}"
       ;;
     c|C|cancel|Cancel|"")
       echo "Cancelled."
@@ -125,6 +164,10 @@ case "${1-}" in
   remote-install)
     shift
     remote_install_plamp "$@"
+    ;;
+  set-hostname)
+    shift
+    set_hostname_plamp "$@"
     ;;
   *)
     echo "unknown action: $1" >&2

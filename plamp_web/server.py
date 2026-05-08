@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import getpass
+import grp
 import json
 import logging
 import logging.handlers
@@ -32,6 +33,7 @@ from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_sc
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+HOSTS_FILE = Path("/etc/hosts")
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
@@ -1510,6 +1512,14 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)
     commit_timestamp = git_output(["git", "show", "-s", "--format=%cI", "HEAD"], repo_root=repo_root)
     status = git_output(["git", "status", "--short"], repo_root=repo_root)
+    dirty_files: list[str] = []
+    if status:
+        for line in status.splitlines():
+            path_text = line[3:].strip() if len(line) > 3 else line.strip()
+            if " -> " in path_text:
+                path_text = path_text.split(" -> ", 1)[1].strip()
+            if path_text:
+                dirty_files.append(path_text)
     mpremote_path = shutil.which("mpremote")
     mpremote_version = None
     if mpremote_path:
@@ -1518,18 +1528,33 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
             first_line = next((line.strip() for line in out.splitlines() if line.strip()), "")
             if first_line:
                 mpremote_version = first_line
+    user_name = getpass.getuser()
+    try:
+        user_groups = sorted({grp.getgrgid(group_id).gr_name for group_id in os.getgroups()})
+    except KeyError:
+        user_groups = []
+    user_is_sudoer = "sudo" in user_groups or "wheel" in user_groups
+    user_has_serial_access = "dialout" in user_groups
+    user_has_video_access = "video" in user_groups
+    os_release = platform.freedesktop_os_release()
+    os_name = os_release.get("NAME") or platform.system()
+    os_version = os_release.get("VERSION") or os_release.get("VERSION_ID") or "unknown"
     return {
         "name": "plamp",
         "path": str(repo_root.resolve()),
-        "user_name": getpass.getuser(),
-        "os_name": platform.system(),
+        "user_name": user_name,
+        "user_is_sudoer": user_is_sudoer,
+        "user_has_serial_access": user_has_serial_access,
+        "user_has_video_access": user_has_video_access,
+        "os_name": os_name,
         "os_arch": platform.machine(),
-        "os_version": platform.release(),
+        "os_version": os_version,
         "git_commit": commit,
         "git_short_commit": commit[:7] if commit else None,
         "git_branch": branch,
         "git_commit_timestamp": commit_timestamp,
         "git_dirty": None if status is None else bool(status),
+        "git_dirty_files": dirty_files,
         "mpremote_path": mpremote_path,
         "mpremote_version": mpremote_version,
     }
@@ -1586,25 +1611,73 @@ def validate_hostname(value: object) -> str:
     return hostname
 
 
-def apply_hostname(hostname: str) -> dict[str, Any]:
+def update_hostname_hosts_file(path: Path, hostname: str) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    updated = False
+    rewritten: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("127.0.1.1"):
+            rewritten.append(f"127.0.1.1\t{hostname}")
+            updated = True
+        else:
+            rewritten.append(line)
+    if not updated:
+        rewritten.append(f"127.0.1.1\t{hostname}")
+    path.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+
+
+def run_hostname_command(args: list[str], *, timeout: int, timeout_detail: str, error_prefix: str) -> subprocess.CompletedProcess[str]:
     try:
         completed = subprocess.run(
-            ["hostnamectl", "set-hostname", hostname],
+            args,
             capture_output=True,
             check=False,
             text=True,
-            timeout=15,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise HTTPException(status_code=504, detail="hostname update timed out") from exc
+        raise HTTPException(status_code=504, detail=timeout_detail) from exc
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"hostname update failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"{error_prefix}: {exc}") from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "hostname update failed").strip()
+        detail = (completed.stderr or completed.stdout or error_prefix).strip()
         raise HTTPException(status_code=409, detail=detail)
+    return completed
+
+
+def verify_mdns_hostname(hostname: str) -> None:
+    if not shutil.which("avahi-resolve-host-name"):
+        raise HTTPException(status_code=500, detail="mDNS verification tool missing: install avahi-utils")
+    run_hostname_command(
+        ["avahi-resolve-host-name", "-4", f"{hostname}.local"],
+        timeout=15,
+        timeout_detail=(
+            "mDNS verification timed out; check avahi-daemon, UDP 5353, and that client multicast "
+            "route 224.0.0.251 uses the LAN interface"
+        ),
+        error_prefix="mDNS verification failed",
+    )
+
+
+def apply_hostname(hostname: str) -> dict[str, Any]:
+    run_hostname_command(
+        ["hostnamectl", "set-hostname", hostname],
+        timeout=15,
+        timeout_detail="hostname update timed out",
+        error_prefix="hostname update failed",
+    )
+    update_hostname_hosts_file(HOSTS_FILE, hostname)
+    run_hostname_command(
+        ["systemctl", "restart", "avahi-daemon"],
+        timeout=15,
+        timeout_detail="avahi restart timed out",
+        error_prefix="avahi restart failed",
+    )
+    verify_mdns_hostname(hostname)
     return {
         "hostname": hostname,
-        "message": "hostname updated; reconnect or reboot may be required",
+        "message": f"hostname updated; /etc/hosts updated; mDNS ready at {hostname}.local",
     }
 
 

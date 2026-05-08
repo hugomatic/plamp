@@ -56,7 +56,7 @@ sudo apt-get update
 if [[ "${update_os}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade
 fi
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3-picamera2
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3-picamera2 avahi-daemon avahi-utils libnss-mdns
 if [[ "${public_mode}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
 fi
@@ -102,6 +102,9 @@ fi
 
 echo "==> Installing plamp-web systemd service"
 "${repo_dir}/deploy/systemd/install-plamp-web-service.sh" --repo-root "${repo_dir}" --host 127.0.0.1 --port 8000
+
+echo "==> Enabling mDNS hostname advertising"
+sudo systemctl enable --now avahi-daemon
 
 if [[ "${public_mode}" -eq 1 ]]; then
   echo "==> Configuring nginx public proxy on port 80"
