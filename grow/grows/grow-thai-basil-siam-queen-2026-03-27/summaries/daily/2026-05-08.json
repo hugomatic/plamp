@@ -1,0 +1,53 @@
+{
+  "date": "2026-05-08",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "daily",
+  "since_previous_daily_log": "2026-05-07",
+  "produced_at": "2026-05-08T19:40:00Z",
+  "artifact_timing": "produced from the latest completed daylight window and recent overnight/runtime evidence",
+  "nature": {
+    "summary": "The Thai basil tray remains in a vegetative fill-in phase, with slightly better canopy fill in parts of the tray, persistent uneven vigor, mild stretch, and mixed leaf posture.",
+    "status": "acceptable",
+    "notable_events": [
+      "The latest daytime comparison suggests slight canopy fill improvement over one day rather than a major shift.",
+      "No obvious chewing, spotting, mildew, or other clear pest or disease signal is visible in the latest daytime image."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-07/cap-fb511a.jpg"
+    ]
+  },
+  "plamp": {
+    "summary": "Picture cadence remains intact, the overnight off-state still looks correct, the daytime light signal remains under-bright/ambiguous, and a fresh Pico disconnect occurred on 2026-05-07.",
+    "runtime_events": [
+      "The latest overnight/off evidence at 2026-05-07 04:00 HST measured brightness_mean 1.692, consistent with the expected dark window.",
+      "The latest completed daytime check at 2026-05-07 13:00 HST measured brightness_mean 80.599, still well below the older clear-on range around 109 to 112.",
+      "A fresh controller fault appeared on 2026-05-07 08:02 HST: the Pico path disconnected on /dev/ttyACM0 and then recovered."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-07/cap-edcd3a.jpg",
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-07/cap-fb511a.jpg"
+    ]
+  },
+  "gardener": {
+    "next_actions": [
+      {
+        "priority": "high",
+        "task": "Physically verify whether the grow light is visibly on at full output during the daytime window.",
+        "why": "The latest completed daytime image still reads as a weak on-state rather than a robust one."
+      },
+      {
+        "priority": "high",
+        "task": "Inspect the Pico/controller path.",
+        "why": "The fresh 2026-05-07 morning disconnect means missed pump or light cycles are still plausible."
+      },
+      {
+        "priority": "medium",
+        "task": "Keep planning around strongest-site selection rather than assuming full tray uniformity.",
+        "why": "The tray remains uneven and only slowly improving, so selective success still looks more plausible than full uniformity."
+      }
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-07/cap-fb511a.jpg"
+    ]
+  }
+}
