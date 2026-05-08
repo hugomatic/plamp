@@ -638,8 +638,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       picoSerialSelect.value = hiddenController.pico_serial || "";
       picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";
       const reportEveryInput = row.querySelector(".controller-report-every");
-      reportEveryInput.value = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");
-      reportEveryInput.defaultValue = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");
+      reportEveryInput.value = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");
+      reportEveryInput.defaultValue = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");
     }}
     const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
     const repoRootPath = {repo_root_path_json};

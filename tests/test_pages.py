@@ -870,7 +870,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('labelInput.defaultValue = hiddenController.label || "";', html)
         self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
         self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";', html)
-        self.assertIn('reportEveryInput.defaultValue = String(hiddenController.report_every ?? reportEveryInput.defaultValue || "");', html)
+        self.assertIn('reportEveryInput.defaultValue = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");', html)
         self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
