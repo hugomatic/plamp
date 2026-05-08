@@ -96,7 +96,7 @@ ${uv_bin} sync --project "${repo_dir}"
 mkdir -p "${repo_dir}/data"
 
 echo "==> Installing mpremote tool (required for Pico flashing from web UI)"
-${uv_bin} tool install mpremote
+${uv_bin} tool install --force mpremote
 if ! command -v mpremote >/dev/null 2>&1; then
   export PATH="${HOME}/.local/bin:${PATH}"
 fi
