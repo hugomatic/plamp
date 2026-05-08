@@ -450,8 +450,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         camera = configured_cameras.get(camera_id, {}) if isinstance(configured_cameras.get(camera_id, {}), dict) else {}
         detected_key = camera_detected_keys.get(camera_id, camera_id if camera_id in detected_by_key else "")
         detected_camera = detected_by_key.get(detected_key, {})
-        detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
-        status = "Configured + detected" if detected_key else "Configured only"
         autofocus_mode = str(camera.get("autofocus_mode") or "auto")
         camera_setup_rows.append(
             '<tr class="camera-row" data-camera-key="{camera_id}">'
@@ -462,8 +460,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<td><input class="camera-capture-every-seconds" type="number" min="0" value="{capture_every_seconds}"></td>'
             '<td><select class="camera-autofocus-mode">{autofocus_mode_options}</select></td>'
             '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value="{autofocus_delay_ms}"></td>'
-            '<td class="muted">{status}</td>'
-            '<td class="muted">{detail}</td>'
             '</tr>'.format(
                 camera_id=html.escape(camera_id, quote=True),
                 label=html.escape(str(camera.get("label") or ""), quote=True),
@@ -475,8 +471,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
                     for value in ["auto", "continuous", "manual", "off"]
                 ),
                 autofocus_delay_ms=html.escape(str(camera.get("autofocus_delay_ms") or ""), quote=True),
-                status=html.escape(status),
-                detail=html.escape(detail or "-"),
             )
         )
     camera_setup_rows.append(
@@ -488,8 +482,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<td><input class="camera-capture-every-seconds" type="number" min="0" value="0"></td>'
         '<td><select class="camera-autofocus-mode"><option value="auto" selected>auto</option><option value="continuous">continuous</option><option value="manual">manual</option><option value="off">off</option></select></td>'
         '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value=""></td>'
-        '<td class="muted">New camera config</td>'
-        '<td class="muted">Optional: add another logical camera config.</td>'
         '</tr>'.format(detected_key_options=camera_peripheral_options(detected_cameras, ""))
     )
 
@@ -536,6 +528,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     ) or '<tr><td colspan="3">No network devices found.</td></tr>'
 
     software = summary.get("software") if isinstance(summary.get("software"), dict) else {}
+    repo_root_path = str(software.get("path") or ".")
     git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
     git_branch = software.get("git_branch") or "unknown"
     git_commit_timestamp = software.get("git_commit_timestamp") or "unknown"
@@ -595,7 +588,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds (0 disables schedule)</th><th>Autofocus</th><th>AF delay ms</th><th>Status</th><th>Detected detail</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
+    <p class="muted">Capture dir is relative to repo root: <code>{html.escape(repo_root_path)}</code></p>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds (0 disables schedule)</th><th>Autofocus</th><th>AF delay ms</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   </section>
 

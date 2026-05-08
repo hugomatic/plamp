@@ -146,7 +146,7 @@ Run this intentionally when validating end-to-end hardware behavior.
 
 1. Connect the Pico and confirm host access:
    ```bash
-   cd /home/hugo/.openclaw/workspace/code/plamp/pico_scheduler
+   cd /path/to/plamp/pico_scheduler
    mpremote connect auto fs ls
    ```
 2. Create a simple test schedule in `state.json` from the example.
@@ -160,7 +160,7 @@ Run this intentionally when validating end-to-end hardware behavior.
 4. Point the camera so the Pico LED is visible.
 5. Capture a baseline image with the canonical wrapper:
    ```bash
-   cd /home/hugo/.openclaw/workspace
+   cd /path/to/plamp
    ./scripts/camera-shot.sh /tmp/pico-led-baseline.jpg
    ```
 6. Capture one or more images during expected LED-on and LED-off windows.
@@ -176,7 +176,7 @@ Why this is manual:
 Run this intentionally when changing the model or generation flow:
 
 ```bash
-cd /home/hugo/.openclaw/workspace/code/plamp/things/plamp_stand
+cd /path/to/plamp/things/plamp_stand
 bash ./check_generates_stl_files_from_scad.bash
 ```
 

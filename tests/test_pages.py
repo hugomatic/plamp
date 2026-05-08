@@ -242,7 +242,7 @@ class PageRenderTests(unittest.TestCase):
             "picos": [],
             "tools": {"mpremote": None, "pyserial": "3.5"},
             "storage": {
-                "path": "/home/hugo/.openclaw/workspace/code/plamp",
+                "path": "/path/to/plamp",
                 "free": "42.0 GB",
                 "used": "10.0 GB",
                 "total": "52.0 GB",
@@ -270,7 +270,7 @@ class PageRenderTests(unittest.TestCase):
                 "git_dirty": True,
             },
             "storage": {
-                "path": "/home/hugo/.openclaw/workspace/code/plamp",
+                "path": "/path/to/plamp",
                 "free": "42.0 GB",
                 "used": "10.0 GB",
                 "total": "52.0 GB",
@@ -445,7 +445,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('value="picam0"', html)
         self.assertIn('class="camera-detected-key"', html)
         self.assertIn('<option value="rpicam_cam0" selected>', html)
-        self.assertIn("Camera Module 3 Wide wide", html)
+        self.assertIn("Camera Module 3 Wide | wide", html)
         self.assertEqual(html.count('class="camera-row"'), 1)
 
     def test_settings_page_pairs_existing_renamed_camera_without_saved_detected_key(self):
@@ -492,7 +492,6 @@ class PageRenderTests(unittest.TestCase):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
-        self.assertIn("Optional: add another logical camera config.", html)
 
     def test_settings_page_edits_controller_type_and_report_interval(self):
         html = render_settings_page(
@@ -618,7 +617,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('data-device-id="pump"', beta_block)
         self.assertIn('class="device-row new-row" data-device-id=""', beta_block)
         self.assertIn('value="rpicam_cam0"', html)
-        self.assertIn("Camera Module 3 Wide wide", html)
+        self.assertIn("Camera Module 3 Wide | wide", html)
 
     def test_settings_page_preserves_hidden_scheduler_controllers_in_combined_save_script(self):
         html = render_settings_page(

@@ -56,7 +56,6 @@ class CameraCaptureTests(unittest.TestCase):
                 repo_root=root,
                 data_dir=root / "data",
                 config_file=config_file,
-                grow_config_file=root / "grow" / "missing" / "grow.json",
                 camera_id="rpicam_cam0",
             )
 
@@ -92,7 +91,6 @@ class CameraCaptureTests(unittest.TestCase):
                     repo_root=root,
                     data_dir=root / "data",
                     config_file=config_file,
-                    grow_config_file=root / "grow" / "missing" / "grow.json",
                     camera_id="rpicam_cam9",
                 )
 
@@ -108,7 +106,6 @@ class CameraCaptureTests(unittest.TestCase):
                     repo_root=root,
                     data_dir=root / "data",
                     config_file=config_file,
-                    grow_config_file=root / "grow" / "missing" / "grow.json",
                     camera_id="rpicam_cam0",
                 )
 
@@ -251,7 +248,6 @@ class CameraCaptureTests(unittest.TestCase):
                     repo_root=root,
                     data_dir=root / "data",
                     config_file=config_file,
-                    grow_config_file=root / "grow" / "missing" / "grow.json",
                     camera_id="rpicam_cam0",
                 )
 
@@ -267,7 +263,6 @@ class CameraCaptureTests(unittest.TestCase):
                     repo_root=root,
                     data_dir=root / "data",
                     config_file=config_file,
-                    grow_config_file=root / "grow" / "missing" / "grow.json",
                     camera_id="rpicam_cam0",
                 )
 
@@ -283,7 +278,6 @@ class CameraCaptureTests(unittest.TestCase):
                     repo_root=root,
                     data_dir=root / "data",
                     config_file=config_file,
-                    grow_config_file=root / "grow" / "missing" / "grow.json",
                     camera_id="rpicam_cam0",
                 )
             self.assertEqual(cm.exception.status_code, 502)

@@ -21,7 +21,7 @@ bash ./generate.bash
 If you are changing the model or generation flow, run the manual check from the repo checklist:
 
 ```bash
-cd /home/hugo/.openclaw/workspace/code/plamp/things/plamp_stand
+cd /path/to/plamp/things/plamp_stand
 bash ./check_generates_stl_files_from_scad.bash
 ```
 

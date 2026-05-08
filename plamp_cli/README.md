@@ -7,7 +7,7 @@
 Use the repo root, not `plamp_cli/`:
 
 ```bash
-cd /home/hugo/.openclaw/workspace/code/plamp
+cd /path/to/plamp
 ```
 
 Recommended for testing and agent use:
@@ -19,7 +19,7 @@ uv run python -m plamp_cli --help
 Optional shell install if you want a normal `plamp` command in `PATH`:
 
 ```bash
-python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp
+python3 -m pip install --user --no-deps --editable /path/to/plamp
 ```
 
 After a `--user` install:

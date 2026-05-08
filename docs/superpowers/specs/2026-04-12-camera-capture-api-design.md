@@ -48,8 +48,8 @@ Response shape:
   "image_url": "/api/camera/captures/cap-abc123/image",
   "image_path": "data/camera/captures/2026-04-12/cap-abc123.jpg",
   "sidecar_path": "data/camera/captures/2026-04-12/cap-abc123.json",
-  "camera_script": "/home/hugo/.openclaw/workspace/scripts/camera-shot.sh",
-  "camera_command": ["/home/hugo/.openclaw/workspace/scripts/camera-shot.sh", "/abs/path/to/cap-abc123.jpg"],
+  "camera_script": "/path/to/plamp/scripts/camera-shot.sh",
+  "camera_command": ["/path/to/plamp/scripts/camera-shot.sh", "/abs/path/to/cap-abc123.jpg"],
   "camera_summary": {
     "timestamp": "2026-04-12_12-10-00",
     "image": "/abs/path/to/cap-abc123.jpg",
@@ -102,7 +102,7 @@ If implementation finds there is no clean global config shape yet, it should add
 ```json
 {
   "camera": {
-    "capture_script": "/home/hugo/.openclaw/workspace/scripts/camera-shot.sh"
+    "capture_script": "/path/to/plamp/scripts/camera-shot.sh"
   }
 }
 ```

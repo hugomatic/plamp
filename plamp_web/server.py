@@ -1620,7 +1620,6 @@ def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
             repo_root=camera_capture.REPO_ROOT,
             data_dir=camera_capture.DATA_DIR,
             config_file=camera_capture.CONFIG_FILE,
-            grow_config_file=camera_capture.TRANSITIONAL_GROW_CONFIG_FILE,
             camera_id=camera_id,
             capture_kind="manual",
         )

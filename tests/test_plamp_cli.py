@@ -508,7 +508,7 @@ class PlampCliDocsTests(unittest.TestCase):
         web_readme = Path("plamp_web/README.md").read_text(encoding="utf-8")
 
         self.assertIn("JSON-first", cli_readme)
-        self.assertIn("python3 -m pip install --user --no-deps --editable /home/hugo/.openclaw/workspace/code/plamp", cli_readme)
+        self.assertIn("python3 -m pip install --user --no-deps --editable /path/to/plamp", cli_readme)
         self.assertIn("uv run python -m plamp_cli --help", cli_readme)
         self.assertIn("uv run python -m plamp_cli config get", cli_readme)
         self.assertIn("uv run python -m plamp_cli controllers list", cli_readme)

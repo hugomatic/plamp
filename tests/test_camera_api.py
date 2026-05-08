@@ -43,7 +43,6 @@ class CameraApiTests(unittest.TestCase):
                 patch.object(server.camera_capture, "REPO_ROOT", root),
                 patch.object(server.camera_capture, "DATA_DIR", data_dir),
                 patch.object(server.camera_capture, "CONFIG_FILE", config_file),
-                patch.object(server.camera_capture, "TRANSITIONAL_GROW_CONFIG_FILE", root / "grow.json"),
             ):
                 data = server.post_camera_capture(camera_id="rpicam_cam0")
 
@@ -80,7 +79,6 @@ class CameraApiTests(unittest.TestCase):
                 patch.object(server.camera_capture, "REPO_ROOT", root),
                 patch.object(server.camera_capture, "DATA_DIR", data_dir),
                 patch.object(server.camera_capture, "CONFIG_FILE", config_file),
-                patch.object(server.camera_capture, "TRANSITIONAL_GROW_CONFIG_FILE", root / "grow.json"),
             ):
                 data = server.post_camera_capture(camera_id="rpicam_cam0")
 

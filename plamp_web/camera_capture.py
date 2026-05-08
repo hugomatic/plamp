@@ -17,7 +17,6 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
-TRANSITIONAL_GROW_CONFIG_FILE = REPO_ROOT / "grow" / "grows" / "grow-thai-basil-siam-queen-2026-03-27" / "grow.json"
 GROWS_DIR = REPO_ROOT / "grow" / "grows"
 
 
@@ -46,18 +45,44 @@ def load_json_object(path: Path) -> dict[str, Any]:
     return data
 
 
-def configured_capture_script(config_file: Path = CONFIG_FILE, grow_config_file: Path = TRANSITIONAL_GROW_CONFIG_FILE) -> Path:
+def configured_capture_script(*, repo_root: Path = REPO_ROOT, config_file: Path = CONFIG_FILE) -> Path:
+    default_script = (repo_root / "scripts" / "camera-shot.sh").resolve()
     config = load_json_object(config_file)
     camera = config.get("camera")
     if isinstance(camera, dict) and isinstance(camera.get("capture_script"), str) and camera["capture_script"]:
-        return Path(camera["capture_script"]).expanduser()
+        configured = Path(camera["capture_script"]).expanduser()
+        if configured.is_absolute():
+            configured_resolved = configured
+        else:
+            configured_resolved = (repo_root / configured).resolve()
+        if configured_resolved.exists():
+            return configured_resolved
+        if default_script.exists():
+            return default_script
+        return configured_resolved
 
-    grow = load_json_object(grow_config_file)
-    grow_camera = grow.get("camera")
-    if isinstance(grow_camera, dict) and isinstance(grow_camera.get("capture_script"), str) and grow_camera["capture_script"]:
-        return Path(grow_camera["capture_script"]).expanduser()
+    if default_script.exists():
+        return default_script
 
-    raise CameraCaptureError("no camera capture script configured; set camera.capture_script in data/config.json")
+    raise CameraCaptureError(
+        "no camera capture script configured; set camera.capture_script in data/config.json "
+        "or add scripts/camera-shot.sh"
+    )
+
+
+def configured_camera_settings(
+    *,
+    config_file: Path = CONFIG_FILE,
+    camera_id: str,
+) -> dict[str, Any]:
+    config = load_json_object(config_file)
+    cameras = config.get("cameras")
+    if not isinstance(cameras, dict):
+        return {}
+    item = cameras.get(camera_id)
+    if not isinstance(item, dict):
+        return {}
+    return item
 
 
 def parse_camera_output(stdout: str) -> dict[str, str]:
@@ -178,12 +203,11 @@ def capture_camera_image(
     repo_root: Path = REPO_ROOT,
     data_dir: Path = DATA_DIR,
     config_file: Path = CONFIG_FILE,
-    grow_config_file: Path = TRANSITIONAL_GROW_CONFIG_FILE,
     capture_id: str | None = None,
     camera_id: str | None = None,
     capture_kind: str = "manual",
 ) -> dict[str, Any]:
-    script = configured_capture_script(config_file, grow_config_file)
+    script = configured_capture_script(repo_root=repo_root, config_file=config_file)
     if not script.exists():
         raise CameraCaptureError(f"capture script not found: {script}")
 
@@ -206,6 +230,13 @@ def capture_camera_image(
     command = [str(script), str(image_path)]
     env = os.environ.copy()
     env["PLAMP_CAMERA_ID"] = selected_camera_id
+    camera_settings = configured_camera_settings(config_file=config_file, camera_id=selected_camera_id)
+    autofocus_mode = camera_settings.get("autofocus_mode")
+    autofocus_delay_ms = camera_settings.get("autofocus_delay_ms")
+    if isinstance(autofocus_mode, str) and autofocus_mode:
+        env["PLAMP_AUTOFOCUS_MODE"] = autofocus_mode
+    if isinstance(autofocus_delay_ms, int) and autofocus_delay_ms >= 0:
+        env["PLAMP_AUTOFOCUS_DELAY_MS"] = str(autofocus_delay_ms)
 
     try:
         completed = subprocess.run(command, check=True, capture_output=True, text=True, env=env)
