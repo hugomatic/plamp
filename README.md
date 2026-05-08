@@ -40,6 +40,9 @@ bash deploy/bootstrap/install-plamp.sh --enable-heartbeat --heartbeat-file /path
 Notes:
 
 - No OpenClaw path is required by default.
+- Heartbeat defaults:
+  - heartbeat timestamp file: `data/agent/last_seen_alive.txt`
+  - heartbeat state file: `data/agent/check_alive_state.json`
 - Heartbeat file path is configurable via `--heartbeat-file` (internally `PLAMP_HEARTBEAT_FILE`).
 - If `--public` is not set, nginx/port 80 is not configured.
 

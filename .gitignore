@@ -28,3 +28,7 @@ grow/grows/*/evidence/
 grow/cron-capture.log
 # Local git worktrees
 .worktrees/
+
+# Legacy heartbeat runtime files (now stored in data/agent/)
+agent/check_alive_state.json
+agent/last_seen_alive.txt

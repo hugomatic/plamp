@@ -3,11 +3,14 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENT_DIR="${REPO_ROOT}/agent"
-STATE_FILE="${AGENT_DIR}/check_alive_state.json"
-LAST_SEEN_TXT="${PLAMP_HEARTBEAT_FILE:-${AGENT_DIR}/last_seen_alive.txt}"
+RUNTIME_DIR="${PLAMP_AGENT_RUNTIME_DIR:-${REPO_ROOT}/data/agent}"
+STATE_FILE="${PLAMP_HEARTBEAT_STATE_FILE:-${RUNTIME_DIR}/check_alive_state.json}"
+LAST_SEEN_TXT="${PLAMP_HEARTBEAT_FILE:-${RUNTIME_DIR}/last_seen_alive.txt}"
 GROWS_DIR="${REPO_ROOT}/grow/grows"
 DAILY_CHECK_MD="${AGENT_DIR}/check_daily.md"
 WEEKLY_CHECK_MD="${AGENT_DIR}/check_weekly.md"
+
+mkdir -p "$(dirname "${STATE_FILE}")" "$(dirname "${LAST_SEEN_TXT}")"
 
 now_iso="$(date -Iseconds)"
 printf '%s\n' "${now_iso}" > "${LAST_SEEN_TXT}"
