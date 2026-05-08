@@ -6,7 +6,7 @@ AGENT_DIR="${REPO_ROOT}/agent"
 RUNTIME_DIR="${PLAMP_AGENT_RUNTIME_DIR:-${REPO_ROOT}/data/agent}"
 STATE_FILE="${PLAMP_HEARTBEAT_STATE_FILE:-${RUNTIME_DIR}/check_alive_state.json}"
 LAST_SEEN_TXT="${PLAMP_HEARTBEAT_FILE:-${RUNTIME_DIR}/last_seen_alive.txt}"
-GROWS_DIR="${REPO_ROOT}/grow/grows"
+GROWS_DIR="${PLAMP_GROWS_DIR:-${REPO_ROOT}/data/grow/grows}"
 DAILY_CHECK_MD="${AGENT_DIR}/check_daily.md"
 WEEKLY_CHECK_MD="${AGENT_DIR}/check_weekly.md"
 
