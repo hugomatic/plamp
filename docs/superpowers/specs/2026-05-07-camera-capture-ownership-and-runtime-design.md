@@ -76,9 +76,8 @@ Per-camera settings live under:
 ```json
 {
   "cameras": {
-    "cam0": {
+    "rpicam_cam0": {
       "label": "Top view",
-      "detected_key": "/base/soc/i2c0mux/i2c@1/imx708@1a",
       "capture_dir": "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures",
       "enabled": true,
       "auto_enabled": true,
@@ -97,6 +96,8 @@ Per-camera settings live under:
 - `capture_dir` is required for configured cameras that can capture
 - `capture_dir` is repo-relative only
 - absolute paths are rejected
+- canonical camera IDs should use stable Plamp-visible IDs such as `rpicam_cam0`
+- low-level device-tree or bus-path details belong in `System status`, not in the canonical camera config
 - `enabled=false` disables the camera entirely
 - `auto_enabled=false` disables only periodic capture
 - manual capture still works when `auto_enabled=false`, as long as `enabled=true`
@@ -205,13 +206,14 @@ Settings should show one camera row per configured or detected camera with room 
 
 - `camera_id`
 - label
-- detected binding
 - `capture_dir`
 - `enabled`
 - `auto_enabled`
 - `capture_every_seconds`
 - autofocus mode
 - autofocus delay
+
+`System status` should continue to show the lower-level detected camera details, such as model, lens, and any hardware path or connector identity that is useful for debugging.
 
 The main page camera section should show:
 

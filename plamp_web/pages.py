@@ -428,15 +428,31 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         detected_key = camera_detected_keys.get(camera_id, camera_id if camera_id in detected_by_key else "")
         detected_camera = detected_by_key.get(detected_key, {})
         detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
+        autofocus_mode = str(camera.get("autofocus_mode") or "auto")
         camera_setup_rows.append(
             '<tr class="camera-row" data-camera-key="{camera_id}" data-camera-detected-key="{detected_key}">'
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
             '<td><input class="camera-label" placeholder="Tent camera" value="{label}"></td>'
+            '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value="{capture_dir}"></td>'
+            '<td><input class="camera-enabled" type="checkbox" {enabled_checked}></td>'
+            '<td><input class="camera-auto-enabled" type="checkbox" {auto_enabled_checked}></td>'
+            '<td><input class="camera-capture-every-seconds" type="number" min="1" value="{capture_every_seconds}"></td>'
+            '<td><select class="camera-autofocus-mode">{autofocus_mode_options}</select></td>'
+            '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value="{autofocus_delay_ms}"></td>'
             '<td class="muted">{detail}</td>'
             '</tr>'.format(
                 camera_id=html.escape(camera_id, quote=True),
                 detected_key=html.escape(detected_key, quote=True),
                 label=html.escape(str(camera.get("label") or ""), quote=True),
+                capture_dir=html.escape(str(camera.get("capture_dir") or ""), quote=True),
+                enabled_checked="checked" if bool(camera.get("enabled", True)) else "",
+                auto_enabled_checked="checked" if bool(camera.get("auto_enabled", False)) else "",
+                capture_every_seconds=html.escape(str(camera.get("capture_every_seconds") or ""), quote=True),
+                autofocus_mode_options="".join(
+                    option_tag(value, value, autofocus_mode)
+                    for value in ["auto", "continuous", "manual", "off"]
+                ),
+                autofocus_delay_ms=html.escape(str(camera.get("autofocus_delay_ms") or ""), quote=True),
                 detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
             )
         )
@@ -444,6 +460,12 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
         '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
         '<td><input class="camera-label" placeholder="Tent camera" value=""></td>'
+        '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value=""></td>'
+        '<td><input class="camera-enabled" type="checkbox" checked></td>'
+        '<td><input class="camera-auto-enabled" type="checkbox"></td>'
+        '<td><input class="camera-capture-every-seconds" type="number" min="1" value=""></td>'
+        '<td><select class="camera-autofocus-mode"><option value="auto" selected>auto</option><option value="continuous">continuous</option><option value="manual">manual</option><option value="off">off</option></select></td>'
+        '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value=""></td>'
         '<td class="muted">Add a camera id to save it.</td>'
         '</tr>'
     )
@@ -548,7 +570,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Capture dir</th><th>Enabled</th><th>Auto</th><th>Every seconds</th><th>Autofocus</th><th>AF delay ms</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   </section>
 
@@ -651,7 +673,18 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".camera-row")) {{
         const key = row.querySelector(".camera-id").value.trim();
         if (!key) continue;
-        result[key] = cleanObject({{label: row.querySelector(".camera-label").value.trim(), detected_key: row.dataset.cameraDetectedKey || ""}});
+        const everySecondsRaw = row.querySelector(".camera-capture-every-seconds").value.trim();
+        const autofocusDelayRaw = row.querySelector(".camera-autofocus-delay-ms").value.trim();
+        result[key] = cleanObject({{
+          label: row.querySelector(".camera-label").value.trim(),
+          detected_key: row.dataset.cameraDetectedKey || "",
+          capture_dir: row.querySelector(".camera-capture-dir").value.trim(),
+          enabled: row.querySelector(".camera-enabled").checked,
+          auto_enabled: row.querySelector(".camera-auto-enabled").checked,
+          capture_every_seconds: everySecondsRaw === "" ? null : Number(everySecondsRaw),
+          autofocus_mode: row.querySelector(".camera-autofocus-mode").value,
+          autofocus_delay_ms: autofocusDelayRaw === "" ? null : Number(autofocusDelayRaw),
+        }});
       }}
       return result;
     }}
@@ -718,7 +751,9 @@ def render_timer_dashboard_page(
     channels_by_role: dict[str, list[dict[str, Any]]] | None = None,
     host_seconds_since_midnight: int = 0,
     camera_ids: list[str] | None = None,
+    hostname: str = "",
 ) -> str:
+    page_name = f"{hostname} Plamp" if hostname else "Plamp"
     camera_options = "".join(
         f'<option value="{html.escape(camera_id, quote=True)}">{html.escape(camera_id)}</option>'
         for camera_id in (camera_ids or [])
@@ -730,7 +765,7 @@ def render_timer_dashboard_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plamp</title>
+  <title>__PAGE_NAME__</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     nav { margin-bottom: 1.5rem; }
@@ -774,7 +809,7 @@ def render_timer_dashboard_page(
 </head>
 <body>
   __MAIN_NAV__
-  <h1>Plamp</h1>
+  <h1>__PAGE_NAME__</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>
@@ -791,8 +826,7 @@ def render_timer_dashboard_page(
     </div>
     <label>Show
       <select id="camera-capture-filter">
-        <option value="all">All</option>
-        <option value="camera_roll">Camera roll</option>
+        <option value="all">All cameras</option>
       </select>
     </label>
     <div id="camera-capture-list" class="capture-list">Loading captures...</div>
@@ -1229,13 +1263,13 @@ def render_timer_dashboard_page(
 
     function updateCameraFilters() {
       const selected = cameraCaptureFilter.value;
-      const options = new Map([["all", "All"], ["camera_roll", "Camera roll"]]);
-      if (selected.startsWith("grow:")) {
-        options.set(selected, cameraCaptureFilter.selectedOptions[0]?.textContent || selected.slice(5));
+      const options = new Map([["all", "All cameras"]]);
+      if (selected.startsWith("camera:")) {
+        options.set(selected, cameraCaptureFilter.selectedOptions[0]?.textContent || selected.slice(7));
       }
       for (const capture of cameraCaptures) {
-        if (capture.grow_id) {
-          options.set("grow:" + capture.grow_id, capture.grow_name || capture.grow_id);
+        if (capture.camera_id) {
+          options.set("camera:" + capture.camera_id, capture.camera_id);
         }
       }
       cameraCaptureFilter.replaceChildren();
@@ -1251,11 +1285,8 @@ def render_timer_dashboard_page(
     function cameraCaptureRequestUrl() {
       const params = new URLSearchParams({limit: String(cameraCapturePageSize), offset: String(cameraCaptureOffset)});
       const filter = cameraCaptureFilter.value;
-      if (filter === "camera_roll") {
-        params.set("source", "camera_roll");
-      } else if (filter.startsWith("grow:")) {
-        params.set("source", "grow");
-        params.set("grow_id", filter.slice(5));
+      if (filter.startsWith("camera:")) {
+        params.set("camera_id", filter.slice(7));
       }
       return `/api/camera/captures?${params.toString()}`;
     }
@@ -1288,7 +1319,7 @@ def render_timer_dashboard_page(
     function captureLabel(capture) {
       const parts = [];
       if (capture.timestamp) parts.push(new Date(capture.timestamp).toLocaleString());
-      parts.push(capture.grow_name || (capture.source === "camera_roll" ? "Camera roll" : "Grow capture"));
+      if (capture.capture_kind) parts.push(capture.capture_kind);
       if (capture.camera_id) parts.push("camera " + capture.camera_id);
       if (capture.brightness_mean !== undefined) parts.push("brightness " + capture.brightness_mean);
       return parts.join(" | ");
@@ -1438,7 +1469,7 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__MAIN_NAV__", MAIN_NAV).replace("__TIME_FORMAT__", json.dumps(time_format))
+        template.replace("__MAIN_NAV__", MAIN_NAV).replace("__PAGE_NAME__", html.escape(page_name)).replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
         .replace("__CAMERA_OPTIONS__", camera_options)
@@ -1500,6 +1531,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <fieldset>
     <legend>POST /api/camera/captures</legend>
     <p>Captures a new image and returns capture metadata.</p>
+    <label>Camera ID (optional) <input id="camera-capture-camera-id" placeholder="rpicam_cam0"></label>
     <pre id="camera-capture-curl-command">curl -X POST http://localhost:8000/api/camera/captures</pre>
     <button class="copy-curl" type="button" data-copy-target="camera-capture-curl-command">Copy curl</button>
     <button id="camera-capture" type="button">Run request</button>
@@ -1510,8 +1542,9 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <fieldset>
     <legend>GET /api/camera/captures</legend>
-    <p>Lists captures newest first. Options: limit and offset.</p>
+    <p>Lists captures newest first. Options: camera_id, limit and offset.</p>
     <div class="row">
+      <label>Camera ID <input id="list-captures-camera-id" placeholder="rpicam_cam0"></label>
       <label>Limit <input id="list-captures-limit" type="number" min="0" max="200" step="1" value="10"></label>
       <label>Offset <input id="list-captures-offset" type="number" min="0" step="1" value="0"></label>
     </div>
@@ -1639,6 +1672,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     const payload = document.getElementById("payload");
     const getRoleInput = document.getElementById("get-role");
     const putRoleInput = document.getElementById("put-role");
+    const cameraCaptureCameraIdInput = document.getElementById("camera-capture-camera-id");
+    const listCapturesCameraIdInput = document.getElementById("list-captures-camera-id");
     const listCapturesLimitInput = document.getElementById("list-captures-limit");
     const listCapturesOffsetInput = document.getElementById("list-captures-offset");
     const clockTimeFormat = {json.dumps(time_format)};
@@ -1660,6 +1695,14 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     function listCapturesOffset() {{
       const value = Number(listCapturesOffsetInput.value);
       return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    }}
+
+    function listCapturesCameraId() {{
+      return listCapturesCameraIdInput.value.trim();
+    }}
+
+    function captureCameraId() {{
+      return cameraCaptureCameraIdInput.value.trim();
     }}
 
     function secondsSinceMidnight() {{
@@ -1708,11 +1751,19 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
 
     function cameraCaptureCurlCommand() {{
-      return "curl -X POST " + doubleQuote(`${{window.location.origin}}/api/camera/captures`);
+      const cameraId = captureCameraId();
+      if (!cameraId) {{
+        return "curl -X POST " + doubleQuote(`${{window.location.origin}}/api/camera/captures`);
+      }}
+      const query = new URLSearchParams({{camera_id: cameraId}});
+      return "curl -X POST " + doubleQuote(`${{window.location.origin}}/api/camera/captures?${{query.toString()}}`);
     }}
 
     function listCapturesCurlCommand() {{
-      return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?limit=${{listCapturesLimit()}}&offset=${{listCapturesOffset()}}`);
+      const params = new URLSearchParams({{limit: String(listCapturesLimit()), offset: String(listCapturesOffset())}});
+      const cameraId = listCapturesCameraId();
+      if (cameraId) params.set("camera_id", cameraId);
+      return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?${{params.toString()}}`);
     }}
 
     function updateCurl() {{
@@ -1992,7 +2043,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       status.textContent = "Loading...";
       result.textContent = "";
       try {{
-        const response = await fetch(`/api/camera/captures?limit=${{listCapturesLimit()}}&offset=${{listCapturesOffset()}}`);
+        const params = new URLSearchParams({{limit: String(listCapturesLimit()), offset: String(listCapturesOffset())}});
+        const cameraId = listCapturesCameraId();
+        if (cameraId) params.set("camera_id", cameraId);
+        const response = await fetch(`/api/camera/captures?${{params.toString()}}`);
         const text = await response.text();
         let display = text;
         try {{
@@ -2016,7 +2070,12 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       preview.hidden = true;
       preview.removeAttribute("src");
       try {{
-        const response = await fetch("/api/camera/captures", {{method: "POST"}});
+        const params = new URLSearchParams();
+        const cameraId = captureCameraId();
+        if (cameraId) params.set("camera_id", cameraId);
+        const query = params.toString();
+        const url = query ? `/api/camera/captures?${{query}}` : "/api/camera/captures";
+        const response = await fetch(url, {{method: "POST"}});
         const text = await response.text();
         let display = text;
         let parsed = null;
@@ -2095,6 +2154,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("put-state").addEventListener("click", putState);
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
+    cameraCaptureCameraIdInput.addEventListener("input", updateCurl);
+    listCapturesCameraIdInput.addEventListener("input", updateCurl);
+    listCapturesLimitInput.addEventListener("input", updateCurl);
+    listCapturesOffsetInput.addEventListener("input", updateCurl);
     for (const button of document.querySelectorAll(".copy-curl")) {{
       button.addEventListener("click", copyCurlCommand);
     }}

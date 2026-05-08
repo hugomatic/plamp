@@ -33,6 +33,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<a href="/settings">Settings</a>', html)
         self.assertNotIn('href="/config"', html)
 
+    def test_timer_dashboard_page_uses_hostname_in_title_and_heading(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0, hostname="nurse-plamp")
+
+        self.assertIn("<title>nurse-plamp Plamp</title>", html)
+        self.assertIn("<h1>nurse-plamp Plamp</h1>", html)
+
 
     def test_pages_use_same_nav_with_github_link(self):
         expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
@@ -172,9 +178,9 @@ class PageRenderTests(unittest.TestCase):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("function cameraCaptureRequestUrl()", html)
-        self.assertIn('params.set("source", "camera_roll");', html)
-        self.assertIn('params.set("source", "grow");', html)
-        self.assertIn('params.set("grow_id", filter.slice(5));', html)
+        self.assertIn('params.set("camera_id", filter.slice(7));', html)
+        self.assertIn('const options = new Map([["all", "All cameras"]]);', html)
+        self.assertNotIn("camera_roll", html)
         self.assertIn("fetch(cameraCaptureRequestUrl())", html)
         self.assertNotIn("visibleCameraCaptures", html)
 
@@ -945,7 +951,7 @@ class PageRenderTests(unittest.TestCase):
         ]:
             self.assertIn(f"<legend>{title}</legend>", html)
         self.assertIn("Captures a new image and returns capture metadata.", html)
-        self.assertIn("Lists captures newest first. Options: limit and offset.", html)
+        self.assertIn("Lists captures newest first. Options: camera_id, limit and offset.", html)
         self.assertIn("Reads the current timer state for one role.", html)
         self.assertIn("Streams timer device updates with server-sent events.", html)
         self.assertIn("Stream device updates will appear here.", html)
@@ -973,8 +979,12 @@ class PageRenderTests(unittest.TestCase):
             self.assertIn(f'data-copy-target="{target}"', html)
         self.assertIn('id="list-captures-limit"', html)
         self.assertIn('id="list-captures-offset"', html)
+        self.assertIn('id="list-captures-camera-id"', html)
+        self.assertIn('id="camera-capture-camera-id"', html)
         self.assertIn("listCapturesLimit()", html)
         self.assertIn("listCapturesOffset()", html)
+        self.assertIn("listCapturesCameraId()", html)
+        self.assertIn("captureCameraId()", html)
         self.assertIn("copyCurlCommand", html)
         self.assertIn("navigator.clipboard.writeText", html)
         self.assertIn("/api/camera/captures?limit=10&amp;offset=0", html)

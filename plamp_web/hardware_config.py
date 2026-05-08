@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 import re
 
 
@@ -14,6 +15,7 @@ _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
 _DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "devices", "cameras")
 _RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler", "pico_doser"}
+_AUTOFOCUS_MODES = {"auto", "continuous", "manual", "off"}
 
 
 def empty_config() -> dict:
@@ -45,6 +47,33 @@ def _required_positive_int(value: object, label: str) -> int:
     if value <= 0:
         raise ValueError(f"{label} must be a positive integer")
     return value
+
+
+def _required_bool(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be a boolean")
+    return value
+
+
+def _optional_repo_relative_path(value: object, label: str) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    if "\\" in value:
+        raise ValueError(f"{label} must be repo-relative")
+    path = PurePosixPath(value)
+    if path.is_absolute() or path == PurePosixPath(".") or ".." in path.parts:
+        raise ValueError(f"{label} must be repo-relative")
+    return value
+
+
+def _optional_name_token(value: object, label: str) -> str | None:
+    if value in (None, ""):
+        return None
+    if not _is_valid_id(value):
+        raise ValueError(f"{label} must be a valid id")
+    return str(value)
 
 
 def validate_controllers(value):
@@ -150,7 +179,18 @@ def validate_cameras(value):
         if not _is_valid_id(camera_id):
             raise ValueError(f"invalid camera id: {camera_id!r}")
         camera_value = _as_mapping(camera_value, f"camera {camera_id}")
-        extra_keys = set(camera_value) - {"label", "detected_key"}
+        extra_keys = set(camera_value) - {
+            "label",
+            "detected_key",
+            "capture_dir",
+            "enabled",
+            "auto_enabled",
+            "capture_every_seconds",
+            "manual_prefix",
+            "auto_prefix",
+            "autofocus_mode",
+            "autofocus_delay_ms",
+        }
         if extra_keys:
             raise ValueError(f"camera {camera_id} has unknown keys: {sorted(extra_keys)!r}")
         label = _optional_label(camera_value, f"camera {camera_id}")
@@ -159,11 +199,61 @@ def validate_cameras(value):
             detected_key = None
         elif not _is_valid_id(detected_key):
             raise ValueError(f"camera {camera_id} detected_key must be a valid id")
+        capture_dir = _optional_repo_relative_path(camera_value.get("capture_dir"), f"camera {camera_id} capture_dir")
+        enabled = None
+        if "enabled" in camera_value:
+            enabled = _required_bool(camera_value.get("enabled"), f"camera {camera_id} enabled")
+        auto_enabled = None
+        if "auto_enabled" in camera_value:
+            auto_enabled = _required_bool(camera_value.get("auto_enabled"), f"camera {camera_id} auto_enabled")
+        capture_every_seconds = None
+        if "capture_every_seconds" in camera_value:
+            capture_every_seconds = _required_positive_int(
+                camera_value.get("capture_every_seconds"), f"camera {camera_id} capture_every_seconds"
+            )
+        if auto_enabled:
+            if capture_dir is None:
+                raise ValueError(f"camera {camera_id} capture_dir is required when auto_enabled is true")
+            if capture_every_seconds is None:
+                raise ValueError(f"camera {camera_id} capture_every_seconds is required when auto_enabled is true")
+        if "manual_prefix" in camera_value and camera_value.get("manual_prefix") == "":
+            raise ValueError(f"camera {camera_id} manual_prefix must be a valid id")
+        if "auto_prefix" in camera_value and camera_value.get("auto_prefix") == "":
+            raise ValueError(f"camera {camera_id} auto_prefix must be a valid id")
+        manual_prefix = _optional_name_token(camera_value.get("manual_prefix"), f"camera {camera_id} manual_prefix")
+        auto_prefix = _optional_name_token(camera_value.get("auto_prefix"), f"camera {camera_id} auto_prefix")
+        autofocus_mode = camera_value.get("autofocus_mode")
+        if autofocus_mode not in (None, ""):
+            if not isinstance(autofocus_mode, str) or autofocus_mode not in _AUTOFOCUS_MODES:
+                raise ValueError(f"camera {camera_id} autofocus_mode must be one of {sorted(_AUTOFOCUS_MODES)!r}")
+        else:
+            autofocus_mode = None
+        autofocus_delay_ms = camera_value.get("autofocus_delay_ms")
+        if autofocus_delay_ms in (None, ""):
+            autofocus_delay_ms = None
+        elif not isinstance(autofocus_delay_ms, int) or isinstance(autofocus_delay_ms, bool) or autofocus_delay_ms < 0:
+            raise ValueError(f"camera {camera_id} autofocus_delay_ms must be a non-negative integer")
         cameras[camera_id] = {}
         if label:
             cameras[camera_id]["label"] = label
         if detected_key:
             cameras[camera_id]["detected_key"] = detected_key
+        if capture_dir is not None:
+            cameras[camera_id]["capture_dir"] = capture_dir
+        if enabled is not None:
+            cameras[camera_id]["enabled"] = enabled
+        if auto_enabled is not None:
+            cameras[camera_id]["auto_enabled"] = auto_enabled
+        if capture_every_seconds is not None:
+            cameras[camera_id]["capture_every_seconds"] = capture_every_seconds
+        if manual_prefix is not None:
+            cameras[camera_id]["manual_prefix"] = manual_prefix
+        if auto_prefix is not None:
+            cameras[camera_id]["auto_prefix"] = auto_prefix
+        if autofocus_mode is not None:
+            cameras[camera_id]["autofocus_mode"] = autofocus_mode
+        if autofocus_delay_ms is not None:
+            cameras[camera_id]["autofocus_delay_ms"] = autofocus_delay_ms
     return cameras
 
 

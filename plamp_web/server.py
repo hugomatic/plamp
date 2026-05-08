@@ -1576,6 +1576,7 @@ def get_host_time() -> dict[str, Any]:
 
 @app.get("/api/camera/captures")
 def get_camera_captures(
+    camera_id: str | None = None,
     source: str = "all",
     grow_id: str | None = None,
     limit: int = 24,
@@ -1587,9 +1588,13 @@ def get_camera_captures(
         repo_root=camera_capture.REPO_ROOT,
         data_dir=camera_capture.DATA_DIR,
         grows_dir=camera_capture.GROWS_DIR,
+        config_file=camera_capture.CONFIG_FILE,
         source=source,
         grow_id=grow_id,
     )
+    selected_camera_id = str(camera_id or "").strip()
+    if selected_camera_id:
+        all_captures = [item for item in all_captures if str(item.get("camera_id") or "") == selected_camera_id]
     captures = all_captures[safe_offset : safe_offset + safe_limit + 1]
     return {
         "captures": captures[:safe_limit],
@@ -1617,6 +1622,7 @@ def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
             config_file=camera_capture.CONFIG_FILE,
             grow_config_file=camera_capture.TRANSITIONAL_GROW_CONFIG_FILE,
             camera_id=camera_id,
+            capture_kind="manual",
         )
     except camera_capture.CameraCaptureError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -1624,7 +1630,13 @@ def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
 
 @app.get("/api/camera/captures/{capture_id}/image")
 def get_camera_capture_image(capture_id: str) -> FileResponse:
-    image_path = camera_capture.find_capture_image(capture_id, data_dir=camera_capture.DATA_DIR)
+    image_path = camera_capture.find_capture_image(
+        capture_id,
+        repo_root=camera_capture.REPO_ROOT,
+        data_dir=camera_capture.DATA_DIR,
+        grows_dir=camera_capture.GROWS_DIR,
+        config_file=camera_capture.CONFIG_FILE,
+    )
     if image_path is None:
         raise HTTPException(status_code=404, detail=f"unknown camera capture: {capture_id}")
     return FileResponse(image_path, media_type="image/jpeg")
@@ -1748,5 +1760,6 @@ def get_timer_dashboard_page() -> HTMLResponse:
             configured_timer_channels(),
             seconds_since_midnight(),
             configured_camera_ids(),
+            socket.gethostname(),
         )
     )

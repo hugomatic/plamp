@@ -24,7 +24,21 @@ class CameraApiTests(unittest.TestCase):
             data_dir = root / "data"
             config_file = data_dir / "config.json"
             config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(json.dumps({"timers": [], "camera": {"capture_script": str(script)}}), encoding="utf-8")
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "timers": [],
+                        "camera": {"capture_script": str(script)},
+                        "cameras": {
+                            "rpicam_cam0": {
+                                "capture_dir": "grow/grows/grow-basil/captures",
+                                "enabled": True,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with (
                 patch.object(server.camera_capture, "REPO_ROOT", root),
@@ -32,12 +46,13 @@ class CameraApiTests(unittest.TestCase):
                 patch.object(server.camera_capture, "CONFIG_FILE", config_file),
                 patch.object(server.camera_capture, "TRANSITIONAL_GROW_CONFIG_FILE", root / "grow.json"),
             ):
-                data = server.post_camera_capture()
+                data = server.post_camera_capture(camera_id="rpicam_cam0")
 
-            self.assertTrue(data["capture_id"].startswith("cap-"))
+            self.assertTrue(data["capture_id"].startswith("manual-rpicam_cam0-"))
             self.assertEqual(data["image_url"], f"/api/camera/captures/{data['capture_id']}/image")
             self.assertTrue((root / data["image_path"]).exists())
-            self.assertTrue((root / data["sidecar_path"]).exists())
+            self.assertNotIn("sidecar_path", data)
+            self.assertEqual(data["camera_id"], "rpicam_cam0")
 
 
 
@@ -48,7 +63,20 @@ class CameraApiTests(unittest.TestCase):
             data_dir = root / "data"
             config_file = data_dir / "config.json"
             config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_text(json.dumps({"camera": {"capture_script": str(script)}}), encoding="utf-8")
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "camera": {"capture_script": str(script)},
+                        "cameras": {
+                            "rpicam_cam0": {
+                                "capture_dir": "grow/grows/grow-basil/captures",
+                                "enabled": True,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with (
                 patch.object(server.camera_capture, "REPO_ROOT", root),
@@ -65,23 +93,28 @@ class CameraApiTests(unittest.TestCase):
             root = Path(tmp)
             data_dir = root / "data"
             grows_dir = root / "grow" / "grows"
-            image = data_dir / "camera" / "captures" / "2026-04-13" / "cap-roll.jpg"
-            image.parent.mkdir(parents=True)
-            image.write_bytes(b"jpg")
-            image.with_suffix(".json").write_text(
-                json.dumps({"timestamp": "2026-04-13T00:00:00+00:00", "image_path": str(image.relative_to(root)), "sidecar_path": str(image.with_suffix(".json").relative_to(root))}),
+            config_file = data_dir / "config.json"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
                 encoding="utf-8",
             )
+            image = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / "manual-rpicam_cam0-2026-04-13T00-00-00Z-a1.jpg"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"jpg")
 
             with (
                 patch.object(server.camera_capture, "REPO_ROOT", root),
                 patch.object(server.camera_capture, "DATA_DIR", data_dir),
                 patch.object(server.camera_capture, "GROWS_DIR", grows_dir),
+                patch.object(server.camera_capture, "CONFIG_FILE", config_file),
             ):
                 data = server.get_camera_captures()
 
             self.assertEqual(len(data["captures"]), 1)
-            self.assertEqual(data["captures"][0]["source"], "camera_roll")
+            self.assertEqual(data["captures"][0]["source"], "grow")
+            self.assertEqual(data["captures"][0]["camera_id"], "rpicam_cam0")
+            self.assertEqual(data["captures"][0]["capture_kind"], "manual")
             self.assertTrue(data["captures"][0]["image_url"].startswith("/api/camera/images/"))
 
 
@@ -90,28 +123,26 @@ class CameraApiTests(unittest.TestCase):
             root = Path(tmp)
             data_dir = root / "data"
             grows_dir = root / "grow" / "grows"
+            config_file = data_dir / "config.json"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
+                encoding="utf-8",
+            )
             for index in range(3):
-                image = data_dir / "camera" / "captures" / "2026-04-13" / f"cap-{index}.jpg"
+                image = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / f"manual-rpicam_cam0-2026-04-13T00-00-0{index}Z-a{index}.jpg"
                 image.parent.mkdir(parents=True, exist_ok=True)
                 image.write_bytes(b"jpg")
-                image.with_suffix(".json").write_text(
-                    json.dumps({
-                        "capture_id": f"cap-{index}",
-                        "timestamp": f"2026-04-13T00:00:0{index}+00:00",
-                        "image_path": str(image.relative_to(root)),
-                        "sidecar_path": str(image.with_suffix(".json").relative_to(root)),
-                    }),
-                    encoding="utf-8",
-                )
 
             with (
                 patch.object(server.camera_capture, "REPO_ROOT", root),
                 patch.object(server.camera_capture, "DATA_DIR", data_dir),
                 patch.object(server.camera_capture, "GROWS_DIR", grows_dir),
+                patch.object(server.camera_capture, "CONFIG_FILE", config_file),
             ):
                 data = server.get_camera_captures(limit=1, offset=1)
 
-            self.assertEqual([item["capture_id"] for item in data["captures"]], ["cap-1"])
+            self.assertEqual(len(data["captures"]), 1)
             self.assertEqual(data["limit"], 1)
             self.assertEqual(data["offset"], 1)
             self.assertTrue(data["has_more"])
@@ -133,14 +164,27 @@ class CameraApiTests(unittest.TestCase):
 
     def test_get_camera_capture_image_returns_jpeg_response(self):
         with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
             data_dir = Path(tmp) / "data"
-            image_dir = data_dir / "camera" / "captures" / "2026-04-12"
+            grows_dir = root / "grow" / "grows"
+            config_file = data_dir / "config.json"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_text(
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
+                encoding="utf-8",
+            )
+            image_dir = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12"
             image_dir.mkdir(parents=True)
-            image_path = image_dir / "cap-test.jpg"
+            image_path = image_dir / "manual-rpicam_cam0-2026-04-12T00-00-00Z-a1.jpg"
             image_path.write_bytes(b"jpg")
 
-            with patch.object(server.camera_capture, "DATA_DIR", data_dir):
-                response = server.get_camera_capture_image("cap-test")
+            with (
+                patch.object(server.camera_capture, "REPO_ROOT", root),
+                patch.object(server.camera_capture, "DATA_DIR", data_dir),
+                patch.object(server.camera_capture, "GROWS_DIR", grows_dir),
+                patch.object(server.camera_capture, "CONFIG_FILE", config_file),
+            ):
+                response = server.get_camera_capture_image("manual-rpicam_cam0-2026-04-12T00-00-00Z-a1")
 
             self.assertEqual(Path(response.path), image_path)
             self.assertEqual(response.media_type, "image/jpeg")

@@ -4,6 +4,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import secrets
 import subprocess
 import time
@@ -99,8 +100,77 @@ def repo_relative(path: Path, repo_root: Path) -> str:
         return str(path)
 
 
-def new_capture_id() -> str:
-    return f"cap-{secrets.token_hex(3)}"
+CAPTURE_FILE_RE = re.compile(
+    r"^(?P<kind>manual|auto)-(?P<camera_id>.+)-(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)-(?P<token>[A-Za-z0-9]+)$"
+)
+
+
+def sanitize_capture_fragment(value: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    return sanitized or "camera"
+
+
+def parse_capture_filename(stem: str) -> tuple[str | None, str | None, str | None]:
+    match = CAPTURE_FILE_RE.match(stem)
+    if not match:
+        return None, None, None
+    timestamp_raw = match.group("timestamp")
+    try:
+        parsed = datetime.strptime(timestamp_raw, "%Y-%m-%dT%H-%M-%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None, None, None
+    return match.group("kind"), match.group("camera_id"), parsed.isoformat()
+
+
+def configured_camera_capture_dirs(
+    *,
+    repo_root: Path,
+    config_file: Path,
+    strict: bool,
+) -> dict[str, Path]:
+    config = load_json_object(config_file)
+    cameras = config.get("cameras")
+    if not isinstance(cameras, dict):
+        return {}
+    dirs: dict[str, Path] = {}
+    resolved_root = repo_root.resolve()
+    for camera_id, item in cameras.items():
+        if not isinstance(camera_id, str) or not isinstance(item, dict):
+            continue
+        capture_dir = item.get("capture_dir")
+        if not isinstance(capture_dir, str) or not capture_dir.strip():
+            continue
+        path = Path(capture_dir.strip()).expanduser()
+        if path.is_absolute():
+            if strict:
+                raise CameraCaptureError(f"camera {camera_id} capture_dir must be repo-relative, got absolute path: {capture_dir}")
+            continue
+        resolved_path = (repo_root / path).resolve()
+        if not resolved_path.is_relative_to(resolved_root):
+            if strict:
+                raise CameraCaptureError(f"camera {camera_id} capture_dir escapes repo root: {capture_dir}")
+            continue
+        dirs[camera_id] = resolved_path
+    return dirs
+
+
+def select_capture_target(
+    *,
+    repo_root: Path,
+    data_dir: Path,
+    config_file: Path,
+    camera_id: str | None,
+) -> tuple[str, Path]:
+    configured_dirs = configured_camera_capture_dirs(repo_root=repo_root, config_file=config_file, strict=True)
+    requested_camera_id = str(camera_id or "").strip()
+    if requested_camera_id:
+        if requested_camera_id not in configured_dirs:
+            raise CameraCaptureError(f"unknown camera_id or missing capture_dir: {requested_camera_id}", status_code=404)
+        return requested_camera_id, configured_dirs[requested_camera_id]
+    if configured_dirs:
+        selected = next(iter(configured_dirs))
+        return selected, configured_dirs[selected]
+    return "camera", (data_dir / "camera" / "captures").resolve()
 
 
 def capture_camera_image(
@@ -111,22 +181,31 @@ def capture_camera_image(
     grow_config_file: Path = TRANSITIONAL_GROW_CONFIG_FILE,
     capture_id: str | None = None,
     camera_id: str | None = None,
+    capture_kind: str = "manual",
 ) -> dict[str, Any]:
     script = configured_capture_script(config_file, grow_config_file)
     if not script.exists():
         raise CameraCaptureError(f"capture script not found: {script}")
 
     now = utc_now_dt()
-    final_capture_id = capture_id or new_capture_id()
-    day_dir = data_dir / "camera" / "captures" / now.strftime("%Y-%m-%d")
+    final_capture_kind = capture_kind if capture_kind in {"manual", "auto"} else "manual"
+    selected_camera_id, capture_root = select_capture_target(
+        repo_root=repo_root,
+        data_dir=data_dir,
+        config_file=config_file,
+        camera_id=camera_id,
+    )
+    timestamp_tag = now.strftime("%Y-%m-%dT%H-%M-%SZ")
+    default_capture_id = f"{final_capture_kind}-{sanitize_capture_fragment(selected_camera_id)}-{timestamp_tag}-{secrets.token_hex(3)}"
+    final_capture_id = str(capture_id or default_capture_id).strip()
+    if not final_capture_id or "/" in final_capture_id or "\\" in final_capture_id:
+        raise CameraCaptureError(f"invalid capture_id: {final_capture_id}", status_code=422)
+    day_dir = capture_root / now.strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True, exist_ok=True)
     image_path = day_dir / f"{final_capture_id}.jpg"
-    sidecar_path = image_path.with_suffix(".json")
     command = [str(script), str(image_path)]
     env = os.environ.copy()
-    selected_camera_id = str(camera_id or "").strip()
-    if selected_camera_id:
-        env["PLAMP_CAMERA_ID"] = selected_camera_id
+    env["PLAMP_CAMERA_ID"] = selected_camera_id
 
     try:
         completed = subprocess.run(command, check=True, capture_output=True, text=True, env=env)
@@ -143,30 +222,87 @@ def capture_camera_image(
     metadata: dict[str, Any] = {
         "capture_id": final_capture_id,
         "timestamp": now.isoformat(),
+        "capture_kind": final_capture_kind,
         "image_url": f"/api/camera/captures/{final_capture_id}/image",
         "image_path": repo_relative(image_path, repo_root),
-        "sidecar_path": repo_relative(sidecar_path, repo_root),
         "camera_script": str(script),
         "camera_command": command,
         "camera_summary": parse_camera_output(completed.stdout),
         "camera_stderr": completed.stderr.strip(),
+        "camera_id": selected_camera_id,
     }
-    if selected_camera_id:
-        metadata["camera_id"] = selected_camera_id
     if brightness is not None:
         metadata["brightness_mean"] = brightness
 
-    sidecar_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return metadata
 
 
-def find_capture_image(capture_id: str, *, data_dir: Path = DATA_DIR) -> Path | None:
-    if not capture_id.startswith("cap-") or "/" in capture_id or "\\" in capture_id:
+def candidate_grows_dirs(*, repo_root: Path, data_dir: Path, grows_dir: Path) -> list[Path]:
+    dirs: list[Path] = []
+    for candidate in [grows_dir, data_dir.resolve().parent / "grow" / "grows"]:
+        resolved = candidate.resolve()
+        if any(existing.resolve() == resolved for existing in dirs):
+            continue
+        dirs.append(candidate)
+    return dirs
+
+
+def scan_capture_dirs(
+    *,
+    repo_root: Path,
+    data_dir: Path,
+    grows_dir: Path,
+    config_file: Path,
+) -> list[Path]:
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        dirs.append(path)
+
+    add(data_dir / "camera" / "captures")
+    for candidate in candidate_grows_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir):
+        for capture_root in candidate.glob("*/captures"):
+            add(capture_root)
+    try:
+        for capture_dir in configured_camera_capture_dirs(repo_root=repo_root, config_file=config_file, strict=False).values():
+            add(capture_dir)
+    except CameraCaptureError:
+        pass
+    return dirs
+
+
+def iter_capture_images(scan_dirs: list[Path]) -> list[Path]:
+    images: list[Path] = []
+    for capture_dir in scan_dirs:
+        if not capture_dir.exists() or not capture_dir.is_dir():
+            continue
+        for image_path in capture_dir.rglob("*"):
+            if not image_path.is_file():
+                continue
+            if image_path.suffix.lower() in {".jpg", ".jpeg"}:
+                images.append(image_path)
+    images.sort()
+    return images
+
+
+def find_capture_image(
+    capture_id: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+    data_dir: Path = DATA_DIR,
+    grows_dir: Path = GROWS_DIR,
+    config_file: Path = CONFIG_FILE,
+) -> Path | None:
+    if not capture_id or "/" in capture_id or "\\" in capture_id:
         return None
-    matches = sorted((data_dir / "camera" / "captures").glob(f"*/{capture_id}.jpg"))
-    for match in matches:
-        if match.exists() and match.is_file():
-            return match
+    for image_path in iter_capture_images(scan_capture_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir, config_file=config_file)):
+        if image_path.stem == capture_id:
+            return image_path
     return None
 
 
@@ -236,60 +372,52 @@ def grow_display_names(grows_dir: Path = GROWS_DIR) -> dict[str, str]:
     return names
 
 
-def candidate_grows_dirs(*, repo_root: Path, data_dir: Path, grows_dir: Path) -> list[Path]:
-    dirs: list[Path] = []
-    for candidate in [grows_dir, data_dir.resolve().parent / "grow" / "grows"]:
-        resolved = candidate.resolve()
-        if any(existing.resolve() == resolved for existing in dirs):
+def classify_capture_source(image_path: Path, *, data_dir: Path, grows_dirs: list[Path]) -> tuple[str, str | None]:
+    resolved = image_path.resolve()
+    for grows_root in grows_dirs:
+        root_resolved = grows_root.resolve()
+        if not resolved.is_relative_to(root_resolved):
             continue
-        dirs.append(candidate)
-    return dirs
+        relative = resolved.relative_to(root_resolved)
+        if len(relative.parts) >= 3 and relative.parts[1] == "captures":
+            return "grow", relative.parts[0]
+    if resolved.is_relative_to((data_dir / "camera" / "captures").resolve()):
+        return "camera_roll", None
+    return "camera_roll", None
 
 
-def path_from_metadata(metadata: dict[str, Any], key: str, root_base: Path) -> Path | None:
-    value = metadata.get(key)
-    if not isinstance(value, str) or not value:
-        return None
-    path = Path(value)
-    return path if path.is_absolute() else root_base / path
+def capture_timestamp(image_path: Path, timestamp_from_name: str | None) -> str:
+    if timestamp_from_name:
+        return timestamp_from_name
+    fallback = datetime.fromtimestamp(image_path.stat().st_mtime, tz=timezone.utc).replace(microsecond=0)
+    return fallback.isoformat()
 
 
-def normalized_capture_from_sidecar(
-    sidecar_path: Path,
+def normalized_capture_from_image(
+    image_path: Path,
     *,
     repo_root: Path,
-    root_base: Path,
-    source: str,
+    data_dir: Path,
+    grows_dirs: list[Path],
     grow_names: dict[str, str],
-) -> dict[str, Any] | None:
-    try:
-        metadata = json.loads(sidecar_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(metadata, dict):
-        return None
-    image_path = path_from_metadata(metadata, "image_path", root_base) or sidecar_path.with_suffix(".jpg")
-    if not image_path.exists() or not image_path.is_file():
-        return None
-    grow_id = metadata.get("grow_id") if isinstance(metadata.get("grow_id"), str) else None
-    capture_id = metadata.get("capture_id") if isinstance(metadata.get("capture_id"), str) else image_path.stem
-    timestamp = metadata.get("timestamp") if isinstance(metadata.get("timestamp"), str) else ""
+) -> dict[str, Any]:
+    kind, camera_id, name_timestamp = parse_capture_filename(image_path.stem)
+    source, detected_grow_id = classify_capture_source(image_path, data_dir=data_dir, grows_dirs=grows_dirs)
     key = capture_image_key(image_path, repo_root=repo_root)
     item: dict[str, Any] = {
-        "capture_id": capture_id,
-        "timestamp": timestamp,
+        "capture_id": image_path.stem,
+        "timestamp": capture_timestamp(image_path, name_timestamp),
         "source": source,
-        "grow_id": grow_id,
-        "grow_name": grow_names.get(grow_id, grow_id) if grow_id else None,
+        "grow_id": detected_grow_id,
+        "grow_name": grow_names.get(detected_grow_id, detected_grow_id) if detected_grow_id else None,
         "image_path": repo_relative(image_path, repo_root),
-        "sidecar_path": repo_relative(sidecar_path, repo_root),
         "image_key": key,
         "image_url": f"/api/camera/images/{key}",
     }
-    if "brightness_mean" in metadata:
-        item["brightness_mean"] = metadata["brightness_mean"]
-    if isinstance(metadata.get("camera_id"), str) and metadata["camera_id"]:
-        item["camera_id"] = metadata["camera_id"]
+    if kind:
+        item["capture_kind"] = kind
+    if camera_id:
+        item["camera_id"] = camera_id
     return item
 
 
@@ -298,33 +426,34 @@ def collect_camera_captures(
     repo_root: Path = REPO_ROOT,
     data_dir: Path = DATA_DIR,
     grows_dir: Path = GROWS_DIR,
+    config_file: Path = CONFIG_FILE,
     source: str = "all",
     grow_id: str | None = None,
 ) -> list[dict[str, Any]]:
     if source not in {"all", "camera_roll", "grow"}:
         source = "all"
+
     grow_names: dict[str, str] = {}
     grows_dirs = candidate_grows_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir)
     for candidate in grows_dirs:
         grow_names.update(grow_display_names(candidate))
-    sidecars: list[tuple[str, Path, Path]] = []
-    shared_root = data_dir.resolve().parent
-    if source in {"all", "camera_roll"} and grow_id is None:
-        sidecars.extend(("camera_roll", path, shared_root) for path in (data_dir / "camera" / "captures").glob("*/*.json"))
-    if source in {"all", "grow"}:
-        for candidate in grows_dirs:
-            sidecars.extend(("grow", path, candidate.resolve().parents[1]) for path in candidate.glob("*/captures/*/*.json"))
 
     captures: list[dict[str, Any]] = []
-    for item_source, sidecar, root_base in sidecars:
-        item = normalized_capture_from_sidecar(
-            sidecar,
+    scan_dirs = scan_capture_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir, config_file=config_file)
+    seen: set[Path] = set()
+    for image_path in iter_capture_images(scan_dirs):
+        resolved = image_path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        item = normalized_capture_from_image(
+            image_path,
             repo_root=repo_root,
-            root_base=root_base,
-            source=item_source,
+            data_dir=data_dir,
+            grows_dirs=grows_dirs,
             grow_names=grow_names,
         )
-        if item is None:
+        if source != "all" and item.get("source") != source:
             continue
         if grow_id is not None and item.get("grow_id") != grow_id:
             continue
@@ -339,12 +468,20 @@ def list_camera_captures(
     repo_root: Path = REPO_ROOT,
     data_dir: Path = DATA_DIR,
     grows_dir: Path = GROWS_DIR,
+    config_file: Path = CONFIG_FILE,
     source: str = "all",
     grow_id: str | None = None,
     limit: int = 24,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    captures = collect_camera_captures(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir, source=source, grow_id=grow_id)
+    captures = collect_camera_captures(
+        repo_root=repo_root,
+        data_dir=data_dir,
+        grows_dir=grows_dir,
+        config_file=config_file,
+        source=source,
+        grow_id=grow_id,
+    )
     start = max(0, offset)
     stop = start + max(0, limit)
     return captures[start:stop]

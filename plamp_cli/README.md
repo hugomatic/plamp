@@ -66,7 +66,7 @@ uv run python -m plamp_cli pics --help
 uv run python -m plamp_cli config get
 uv run python -m plamp_cli controllers list
 uv run python -m plamp_cli pico-scheduler list
-uv run python -m plamp_cli pics list --source grow --limit 10
+uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
 ```
 
 ## Smoke Test
@@ -143,7 +143,7 @@ Expected shape:
 5. List a few pictures and copy one `image_key`:
 
 ```bash
-uv run python -m plamp_cli --pretty pics list --limit 3
+uv run python -m plamp_cli --pretty pics list --camera-id rpicam_cam0 --limit 3
 ```
 
 Expected shape:
@@ -166,7 +166,7 @@ Expected shape:
 6. Trigger one capture:
 
 ```bash
-uv run python -m plamp_cli --pretty pics take
+uv run python -m plamp_cli --pretty pics take --camera-id rpicam_cam0
 ```
 
 Expected shape:
@@ -266,6 +266,7 @@ Commands:
 
 ```bash
 uv run python -m plamp_cli pics list
+uv run python -m plamp_cli pics list --camera-id rpicam_cam0
 uv run python -m plamp_cli pics take
 uv run python -m plamp_cli pics take --camera-id rpicam_cam0
 uv run python -m plamp_cli pics get <image_key> --out latest.jpg
@@ -275,8 +276,8 @@ uv run python -m plamp_cli pics get <image_key> --stdout > latest.jpg
 Examples:
 
 ```bash
-uv run python -m plamp_cli pics list --source grow --limit 10
-uv run python -m plamp_cli pics list --source camera_roll --offset 10 --limit 10
+uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
+uv run python -m plamp_cli --pretty pics list --camera-id rpicam_cam0 --offset 10 --limit 10
 uv run python -m plamp_cli pics take --camera-id rpicam_cam0
 # get a real image_key from `pics list`, then:
 uv run python -m plamp_cli pics get <image_key> --out latest.jpg
@@ -309,7 +310,7 @@ ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest
 
 ```bash
 uv run python -m plamp_cli --host 127.0.0.1 pico-scheduler get pump_lights
-uv run python -m plamp_cli --host 192.168.68.56 pics list
+uv run python -m plamp_cli --host 192.168.68.56 pics list --camera-id rpicam_cam0
 ssh localhost /home/hugo/.local/bin/plamp config get
 ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
 ```
