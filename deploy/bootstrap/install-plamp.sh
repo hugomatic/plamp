@@ -91,6 +91,16 @@ echo "==> Syncing Python environment"
 ${uv_bin} sync --project "${repo_dir}"
 mkdir -p "${repo_dir}/data"
 
+echo "==> Installing mpremote tool (required for Pico flashing from web UI)"
+${uv_bin} tool install mpremote
+if ! command -v mpremote >/dev/null 2>&1; then
+  export PATH="${HOME}/.local/bin:${PATH}"
+fi
+if ! command -v mpremote >/dev/null 2>&1; then
+  echo "mpremote install failed or is not on PATH; cannot continue." >&2
+  exit 1
+fi
+
 echo "==> Installing plamp-web systemd service"
 "${repo_dir}/deploy/systemd/install-plamp-web-service.sh" --repo-root "${repo_dir}" --host 127.0.0.1 --port 8000
 
