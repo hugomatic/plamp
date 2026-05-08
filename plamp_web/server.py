@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import glob
+import getpass
 import json
 import logging
 import logging.handlers
 import os
+import platform
 import queue
 import re
 import shutil
@@ -29,6 +31,7 @@ from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_sc
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 TIMERS_DIR = DATA_DIR / "timers"
@@ -59,6 +62,11 @@ def startup() -> None:
     configure_logging()
     start_configured_monitors()
     get_or_start_camera_worker()
+
+
+@app.get("/favicon.svg")
+def favicon_svg() -> FileResponse:
+    return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
 @app.on_event("shutdown")
@@ -1502,14 +1510,28 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     branch = git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_root=repo_root)
     commit_timestamp = git_output(["git", "show", "-s", "--format=%cI", "HEAD"], repo_root=repo_root)
     status = git_output(["git", "status", "--short"], repo_root=repo_root)
+    mpremote_path = shutil.which("mpremote")
+    mpremote_version = None
+    if mpremote_path:
+        rc, out, _ = run_command([mpremote_path, "--version"], timeout=5)
+        if rc == 0:
+            first_line = next((line.strip() for line in out.splitlines() if line.strip()), "")
+            if first_line:
+                mpremote_version = first_line
     return {
         "name": "plamp",
         "path": str(repo_root.resolve()),
+        "user_name": getpass.getuser(),
+        "os_name": platform.system(),
+        "os_arch": platform.machine(),
+        "os_version": platform.release(),
         "git_commit": commit,
         "git_short_commit": commit[:7] if commit else None,
         "git_branch": branch,
         "git_commit_timestamp": commit_timestamp,
         "git_dirty": None if status is None else bool(status),
+        "mpremote_path": mpremote_path,
+        "mpremote_version": mpremote_version,
     }
 
 
@@ -1528,10 +1550,13 @@ def settings_summary() -> dict[str, Any]:
         },
         "picos": enumerate_picos(),
         "tools": {
-            "mpremote": shutil.which("mpremote"),
             "pyserial": getattr(serial, "VERSION", "unknown"),
         },
         "software": software_summary(),
+        "paths": {
+            "repo_root": str(REPO_ROOT.resolve()),
+            "data_dir": str(DATA_DIR.resolve()),
+        },
         "cameras": {"rpicam": hardware_inventory.detect_rpicam_cameras()},
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),

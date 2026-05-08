@@ -965,6 +965,66 @@ class PageRenderTests(unittest.TestCase):
             html.index("<label>JSON payload"),
         )
 
+    def test_pages_link_favicon_svg(self):
+        settings_html = render_settings_page(
+            {"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}}
+        )
+        dashboard_html = render_timer_dashboard_page(
+            [],
+            "pump_n_lights",
+            {"host_time": {"display": "-"}, "host": {"hostname": "plamp"}, "captures": {"items": []}, "timer_states": []},
+            "CLOCK_24",
+        )
+        api_html = render_api_test_page(["pump_n_lights"], "pump_n_lights", '{"channels":[]}', "CLOCK_24")
+        expected = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+        self.assertIn(expected, settings_html)
+        self.assertIn(expected, dashboard_html)
+        self.assertIn(expected, api_html)
+
+    def test_settings_page_explains_camera_capture_dir_and_schedule_and_shows_paths(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {
+                    "path": "/repo/plamp",
+                    "user_name": "hugo",
+                    "os_name": "Linux",
+                    "os_arch": "aarch64",
+                    "os_version": "6.18.18-v8-16k+",
+                    "git_short_commit": "abc123",
+                    "git_branch": "main",
+                    "git_dirty": False,
+                    "git_commit_timestamp": "2026-05-08T09:00:00+00:00",
+                    "mpremote_path": "/home/hugo/.local/bin/mpremote",
+                    "mpremote_version": "mpremote 1.28.0",
+                },
+                "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
+                "storage": {"path": "/repo/plamp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+                "tools": {"pyserial": "3.5"},
+            }
+        )
+
+        self.assertIn("Capture dir must stay inside Plamp root.", html)
+        self.assertIn("absolute paths are rejected", html)
+        self.assertIn("Set it to <code>0</code> to disable scheduling for that camera.", html)
+        self.assertIn("<title>plamp Settings</title>", html)
+        self.assertIn("<h1>plamp Settings</h1>", html)
+        self.assertIn("<th>Property</th><th>Value</th>", html)
+        self.assertIn("<td>Plamp root</td>", html)
+        self.assertIn("<code>/repo/plamp</code>", html)
+        self.assertIn("<td>Plamp data</td>", html)
+        self.assertIn("<code>/repo/plamp/data</code>", html)
+        self.assertIn("<td>OS name, arch, version</td>", html)
+        self.assertIn("Linux aarch64 version 6.18.18-v8-16k+", html)
+        self.assertIn("<td>User name</td>", html)
+        self.assertIn("<code>hugo</code>", html)
+        self.assertIn("/home/hugo/.local/bin/mpremote version 1.28.0", html)
+        self.assertIn("version 3.5", html)
+        self.assertIn("Git commit time", html)
+
     def test_api_test_page_has_copyable_curl_commands_and_camera_paging_inputs(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Plamp leaf">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#eef7e8"/>
+  <path d="M49 17c-14 1-26 8-33 20-4 7-5 15-4 22 7 1 15 0 22-4 12-7 19-19 20-33-1-2-3-4-5-5z" fill="#2f8f45"/>
+  <path d="M18 45c7-1 13-4 18-9 5-5 8-11 10-17" fill="none" stroke="#165c2b" stroke-linecap="round" stroke-width="3"/>
+</svg>

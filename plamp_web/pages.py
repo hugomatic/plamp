@@ -3,11 +3,37 @@ from __future__ import annotations
 import html
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
 GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
 MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
+FAVICON_LINK = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+
+
+def relative_time_label(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    now = datetime.now(parsed.tzinfo)
+    delta = now - parsed
+    seconds = max(0, int(delta.total_seconds()))
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    if seconds < 86400:
+        hours = seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = seconds // 86400
+    return f"{days} day{'s' if days != 1 else ''} ago"
 
 
 def normalize_camera_key(value: Any) -> str:
@@ -271,6 +297,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plamp config</title>
+  {FAVICON_LINK}
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     table {{ border-collapse: collapse; margin: 1rem 0 2rem; width: 100%; max-width: 1100px; }}
@@ -365,6 +392,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
     camera_worker = summary.get("camera_worker") if isinstance(summary.get("camera_worker"), dict) else {}
+    paths = summary.get("paths") if isinstance(summary.get("paths"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
     scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
@@ -534,15 +562,34 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
     git_branch = software.get("git_branch") or "unknown"
     git_commit_timestamp = software.get("git_commit_timestamp") or "unknown"
+    git_commit_relative = relative_time_label(software.get("git_commit_timestamp"))
+    git_commit_timestamp_display = (
+        f"{git_commit_timestamp} ({git_commit_relative})" if git_commit_relative else str(git_commit_timestamp)
+    )
     git_dirty = software.get("git_dirty")
     git_dirty_display = "unknown" if git_dirty is None else ("yes" if git_dirty else "no")
+    os_name = str(software.get("os_name") or "unknown")
+    os_arch = str(software.get("os_arch") or "unknown")
+    os_version = str(software.get("os_version") or "unknown")
+    os_display = f"{os_name} {os_arch} version {os_version}"
+    user_name = str(software.get("user_name") or "unknown")
+    mpremote_path = str(software.get("mpremote_path") or "not found")
+    mpremote_version = str(software.get("mpremote_version") or "").strip()
+    mpremote_version_suffix = mpremote_version.removeprefix("mpremote ").strip()
+    mpremote_display = mpremote_path if not mpremote_version_suffix else f"{mpremote_path} version {mpremote_version_suffix}"
+    pyserial_value = str(tools.get("pyserial") or "-")
+    pyserial_display = pyserial_value if pyserial_value in {"-", "unknown"} else f"version {pyserial_value}"
     software_rows = (
+        "<tr><td>Plamp root</td>" f"<td><code>{html.escape(str(paths.get('repo_root') or repo_root_path))}</code></td></tr>"
+        "<tr><td>Plamp data</td>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
+        "<tr><td>OS name, arch, version</td>" f"<td><code>{html.escape(os_display)}</code></td></tr>"
+        "<tr><td>User name</td>" f"<td><code>{html.escape(user_name)}</code></td></tr>"
         "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
         "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
-        "<tr><td>Git commit time</td>" f"<td><code>{html.escape(str(git_commit_timestamp))}</code></td></tr>"
+        "<tr><td>Git commit time</td>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
         "<tr><td>Git dirty</td>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
-        "<tr><td>mpremote</td>" f"<td><code>{html.escape(str(tools.get('mpremote') or 'not found'))}</code></td></tr>"
-        "<tr><td>pyserial</td>" f"<td><code>{html.escape(str(tools.get('pyserial') or '-'))}</code></td></tr>"
+        "<tr><td>mpremote</td>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
+        "<tr><td>pyserial</td>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
     )
 
     storage_rows = (
@@ -562,13 +609,15 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         "<tr><td>Scheduled cameras</td>" f"<td><code>{html.escape(', '.join(camera_worker.get('scheduled_cameras') or []) or '-')}</code></td></tr>"
     )
     hostname = str(host.get("hostname") or "")
+    page_title = f"{hostname} Settings" if hostname else "Settings"
 
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plamp settings</title>
+  <title>{html.escape(page_title)}</title>
+  {FAVICON_LINK}
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     nav {{ margin-bottom: 1.5rem; }}
@@ -586,7 +635,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 </head>
 <body>
   {MAIN_NAV}
-  <h1>Settings</h1>
+  <h1>{html.escape(page_title)}</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <p><a href="{GITHUB_NEW_ISSUE_URL}">Report an issue</a></p>
 
@@ -598,8 +647,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
-    <p class="muted">Capture dir is relative to repo root: <code>{html.escape(repo_root_path)}</code></p>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds (0 disables schedule)</th><th>Autofocus</th><th>AF delay ms</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
+    <p class="muted">Capture dir must stay inside Plamp root. Use a repo-relative path like <code>grow/grows/&lt;grow-id&gt;/captures</code>; absolute paths are rejected.</p>
+    <p class="muted">Automatic capture uses <code>Every seconds</code>. Set it to <code>0</code> to disable scheduling for that camera.</p>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds</th><th>Autofocus</th><th>Autofocus delay ms</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   </section>
 
@@ -614,7 +664,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <p><strong>Hostname:</strong> {html.escape(hostname)}</p>
     <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
     <h3>Software</h3>
-    <table><thead><tr><th>Tool</th><th>Path</th></tr></thead><tbody>{software_rows}</tbody></table>
+    <table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>{software_rows}</tbody></table>
     <h3>Camera worker</h3>
     <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>{camera_worker_rows}</tbody></table>
     <h2>Storage</h2>
@@ -806,6 +856,7 @@ def render_timer_dashboard_page(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>__PAGE_NAME__</title>
+  __FAVICON_LINK__
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     nav { margin-bottom: 1.5rem; }
@@ -1509,7 +1560,10 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__MAIN_NAV__", MAIN_NAV).replace("__PAGE_NAME__", html.escape(page_name)).replace("__TIME_FORMAT__", json.dumps(time_format))
+        template.replace("__MAIN_NAV__", MAIN_NAV)
+        .replace("__PAGE_NAME__", html.escape(page_name))
+        .replace("__FAVICON_LINK__", FAVICON_LINK)
+        .replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
         .replace("__CAMERA_OPTIONS__", camera_options)
@@ -1534,6 +1588,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plamp API test</title>
+  {FAVICON_LINK}
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     fieldset {{ border: 1px solid #ccc; margin: 1rem 0 1.5rem; padding: 1rem; max-width: 980px; }}
