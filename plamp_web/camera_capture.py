@@ -247,7 +247,19 @@ def capture_camera_image(
             detail = f"{detail}: {stderr}"
         raise CameraCaptureError(detail, status_code=502) from exc
 
-    wait_for_file(image_path)
+    summary = parse_camera_output(completed.stdout)
+    try:
+        wait_for_file(image_path)
+    except CameraCaptureError as exc:
+        reported = str(summary.get("image") or "").strip()
+        log_path = str(summary.get("log") or "").strip()
+        detail_bits = []
+        if reported:
+            detail_bits.append(f"script reported image={reported}")
+        if log_path:
+            detail_bits.append(f"log={log_path}")
+        detail_suffix = f" ({'; '.join(detail_bits)})" if detail_bits else ""
+        raise CameraCaptureError(f"{exc}{detail_suffix}", status_code=502) from exc
     brightness = image_mean_brightness(image_path)
 
     metadata: dict[str, Any] = {
@@ -258,7 +270,7 @@ def capture_camera_image(
         "image_path": repo_relative(image_path, repo_root),
         "camera_script": str(script),
         "camera_command": command,
-        "camera_summary": parse_camera_output(completed.stdout),
+        "camera_summary": summary,
         "camera_stderr": completed.stderr.strip(),
         "camera_id": selected_camera_id,
     }
