@@ -142,8 +142,11 @@ def capture_with_picamera2(
     temp_path = Path(temp_file.name)
     temp_file.close()
     controls = build_picamera2_controls(camera_settings)
+    controls_summary: dict[str, Any] = {}
     autofocus_mode = camera_settings.get("autofocus_mode")
     autofocus_delay_ms = camera_settings.get("autofocus_delay_ms")
+    if isinstance(autofocus_mode, str) and autofocus_mode:
+        controls_summary["autofocus_mode"] = autofocus_mode
     try:
         configuration = picamera.create_still_configuration()
         picamera.configure(configuration)
@@ -183,7 +186,7 @@ def capture_with_picamera2(
         "backend": "picamera2",
         "camera_id": camera_id,
         "captured_at": captured_at,
-        "controls": controls,
+        "controls": controls_summary,
     }
 
 
