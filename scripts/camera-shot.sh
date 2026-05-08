@@ -25,7 +25,7 @@ else
   exit 127
 fi
 
-cmd+=(-o "${output_path}" -n)
+cmd+=(-e jpg -o "${output_path}" -n)
 if [[ -n "${af_mode}" ]]; then
   cmd+=(--autofocus-mode "${af_mode}")
 fi
