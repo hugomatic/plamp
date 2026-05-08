@@ -22,6 +22,8 @@ wget -qO- https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstra
 
 This installs Plamp and starts `plamp-web` on `127.0.0.1:8000`.
 
+It also installs the system `python3-picamera2` package used by camera capture.
+
 Optional flags:
 
 ```bash
@@ -72,6 +74,13 @@ Install Python requirements:
 
 ```bash
 uv run python -c "import fastapi, serial, uvicorn"
+```
+
+Install the Raspberry Pi camera Python package:
+
+```bash
+sudo apt update
+sudo apt install python3-picamera2
 ```
 
 ## Run

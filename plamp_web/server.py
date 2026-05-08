@@ -47,6 +47,8 @@ config_lock = threading.Lock()
 role_locks: dict[str, threading.Lock] = {}
 monitors_lock = threading.Lock()
 monitors: dict[str, "PicoMonitor"] = {}
+camera_worker_lock = threading.Lock()
+camera_worker: "CameraWorker | None" = None
 
 app = FastAPI(title="plamp web")
 
@@ -56,10 +58,12 @@ def startup() -> None:
     ensure_data_dir()
     configure_logging()
     start_configured_monitors()
+    get_or_start_camera_worker()
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
+    stop_camera_worker()
     stop_monitors()
 
 
@@ -566,6 +570,189 @@ class ApplyCommand:
     result: dict[str, Any] | None = None
     error_status: int | None = None
     error_detail: Any = None
+
+
+@dataclass
+class CameraCommand:
+    camera_id: str | None
+    capture_kind: str
+    done: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, Any] | None = None
+    error: camera_capture.CameraCaptureError | None = None
+
+
+class CameraWorker:
+    def __init__(self, capture_func: Any | None = None):
+        self.capture_func = capture_func or camera_capture.capture_camera_image
+        self.commands: queue.Queue[CameraCommand] = queue.Queue()
+        self.stop_event = threading.Event()
+        self.wake_event = threading.Event()
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self.run, name="camera-worker", daemon=True)
+        self.schedule_seconds: dict[str, int] = {}
+        self.next_due_at: dict[str, float] = {}
+        self.pending_auto: set[str] = set()
+        self.status: dict[str, Any] = {
+            "state": "starting",
+            "available": True,
+            "last_capture_at": None,
+            "last_error": None,
+            "queue_depth": 0,
+            "scheduled_cameras": [],
+        }
+
+    def start(self) -> None:
+        self.refresh_schedule(now=time.monotonic())
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.wake_event.set()
+
+    def join(self, timeout: float = 2.0) -> None:
+        self.thread.join(timeout=timeout)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            snapshot = dict(self.status)
+            snapshot["scheduled_cameras"] = list(self.status.get("scheduled_cameras", []))
+            return snapshot
+
+    def update_status(self, **changes: Any) -> None:
+        with self.lock:
+            self.status.update(changes)
+            self.status["queue_depth"] = self.commands.qsize()
+            self.status["scheduled_cameras"] = sorted(self.schedule_seconds)
+            self.status["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+    def refresh_schedule(self, cameras: dict[str, Any] | None = None, *, now: float | None = None) -> None:
+        now_value = time.monotonic() if now is None else now
+        if cameras is None:
+            config = load_config()
+            cameras = config.get("cameras", {}) if isinstance(config.get("cameras", {}), dict) else {}
+        next_schedule_seconds: dict[str, int] = {}
+        next_due_at: dict[str, float] = {}
+        for camera_id, item in sorted(cameras.items()):
+            if not isinstance(camera_id, str) or not isinstance(item, dict):
+                continue
+            every_seconds = item.get("capture_every_seconds")
+            if not isinstance(every_seconds, int) or every_seconds <= 0:
+                continue
+            next_schedule_seconds[camera_id] = every_seconds
+            next_due_at[camera_id] = self.next_due_at.get(camera_id, now_value)
+        self.schedule_seconds = next_schedule_seconds
+        self.next_due_at = next_due_at
+        self.pending_auto.intersection_update(self.schedule_seconds)
+        self.update_status()
+
+    def collect_due_camera_ids(self, *, now: float | None = None) -> list[str]:
+        now_value = time.monotonic() if now is None else now
+        due = [
+            camera_id
+            for camera_id in sorted(self.schedule_seconds)
+            if self.next_due_at.get(camera_id, now_value + 1) <= now_value and camera_id not in self.pending_auto
+        ]
+        return due
+
+    def mark_capture_complete(self, *, camera_id: str | None, capture_kind: str, now: float | None = None) -> None:
+        now_value = time.monotonic() if now is None else now
+        if capture_kind == "auto" and camera_id and camera_id in self.schedule_seconds:
+            self.next_due_at[camera_id] = now_value + self.schedule_seconds[camera_id]
+            self.pending_auto.discard(camera_id)
+        self.update_status(last_capture_at=datetime.now().isoformat(timespec="seconds"), last_error=None)
+
+    def mark_capture_failure(self, *, camera_id: str | None, capture_kind: str, error: str) -> None:
+        if capture_kind == "auto" and camera_id:
+            self.pending_auto.discard(camera_id)
+        self.update_status(last_error=error, available=False)
+
+    def enqueue_due_captures(self, *, now: float | None = None) -> None:
+        for camera_id in self.collect_due_camera_ids(now=now):
+            self.pending_auto.add(camera_id)
+            self.commands.put(CameraCommand(camera_id=camera_id, capture_kind="auto"))
+        self.update_status()
+
+    def capture(self, *, camera_id: str | None, capture_kind: str) -> dict[str, Any]:
+        command = CameraCommand(camera_id=camera_id, capture_kind=capture_kind)
+        self.commands.put(command)
+        self.update_status()
+        self.wake_event.set()
+        if not command.done.wait(timeout=60.0):
+            raise HTTPException(status_code=504, detail="timed out waiting for camera capture")
+        if command.error is not None:
+            raise HTTPException(status_code=command.error.status_code, detail=str(command.error))
+        if command.result is None:
+            raise HTTPException(status_code=500, detail="camera capture finished without a result")
+        return command.result
+
+    def run(self) -> None:
+        self.update_status(state="idle", available=True)
+        while not self.stop_event.is_set():
+            self.refresh_schedule()
+            self.enqueue_due_captures()
+            try:
+                command = self.commands.get(timeout=1.0)
+            except queue.Empty:
+                continue
+            self.update_status(state="capturing", available=True)
+            try:
+                result = self.capture_func(
+                    repo_root=camera_capture.REPO_ROOT,
+                    data_dir=camera_capture.DATA_DIR,
+                    config_file=camera_capture.CONFIG_FILE,
+                    camera_id=command.camera_id,
+                    capture_kind=command.capture_kind,
+                )
+            except camera_capture.CameraCaptureError as exc:
+                command.error = exc
+                self.mark_capture_failure(camera_id=command.camera_id, capture_kind=command.capture_kind, error=str(exc))
+            else:
+                command.result = result
+                self.mark_capture_complete(camera_id=command.camera_id, capture_kind=command.capture_kind)
+            finally:
+                command.done.set()
+                self.update_status(state="idle")
+        self.update_status(state="stopped")
+
+
+def get_or_start_camera_worker() -> CameraWorker:
+    global camera_worker
+    with camera_worker_lock:
+        if camera_worker is None:
+            camera_worker = CameraWorker()
+            camera_worker.start()
+        return camera_worker
+
+
+def camera_worker_summary() -> dict[str, Any]:
+    with camera_worker_lock:
+        if camera_worker is None:
+            return {
+                "state": "stopped",
+                "available": True,
+                "last_capture_at": None,
+                "last_error": None,
+                "queue_depth": 0,
+                "scheduled_cameras": [],
+            }
+        return camera_worker.snapshot()
+
+
+def reconcile_camera_worker() -> None:
+    with camera_worker_lock:
+        active = camera_worker
+    if active is not None:
+        active.refresh_schedule()
+
+
+def stop_camera_worker() -> None:
+    global camera_worker
+    with camera_worker_lock:
+        active = camera_worker
+        camera_worker = None
+    if active is not None:
+        active.stop()
+        active.join()
 
 
 class PicoMonitor:
@@ -1348,6 +1535,7 @@ def settings_summary() -> dict[str, Any]:
         "cameras": {"rpicam": hardware_inventory.detect_rpicam_cameras()},
         "storage": storage_summary(REPO_ROOT),
         "monitors": monitor_summaries(),
+        "camera_worker": camera_worker_summary(),
         "firmware": {
             "generator_path": str(PICO_GENERATOR_FILE),
             "generator_exists": PICO_GENERATOR_FILE.exists(),
@@ -1438,6 +1626,7 @@ def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
         saved.update(updated)
         atomic_write_json(CONFIG_FILE, saved)
     reconcile_configured_monitors()
+    reconcile_camera_worker()
     return config_response()
 
 
@@ -1453,6 +1642,7 @@ def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
         saved.update(updated)
         atomic_write_json(CONFIG_FILE, saved)
     reconcile_configured_monitors()
+    reconcile_camera_worker()
     return config_response()
 
 
@@ -1616,16 +1806,7 @@ def get_camera_image_by_key(image_key: str) -> FileResponse:
 
 @app.post("/api/camera/captures")
 def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
-    try:
-        return camera_capture.capture_camera_image(
-            repo_root=camera_capture.REPO_ROOT,
-            data_dir=camera_capture.DATA_DIR,
-            config_file=camera_capture.CONFIG_FILE,
-            camera_id=camera_id,
-            capture_kind="manual",
-        )
-    except camera_capture.CameraCaptureError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return get_or_start_camera_worker().capture(camera_id=camera_id, capture_kind="manual")
 
 
 @app.get("/api/camera/captures/{capture_id}/image")

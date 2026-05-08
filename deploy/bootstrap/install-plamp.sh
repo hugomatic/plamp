@@ -56,7 +56,7 @@ sudo apt-get update
 if [[ "${update_os}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade
 fi
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates python3-picamera2
 if [[ "${public_mode}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
 fi

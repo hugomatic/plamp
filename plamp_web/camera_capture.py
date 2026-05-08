@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import base64
 import binascii
+import importlib
 import json
 import os
 import re
 import secrets
-import subprocess
+import site
+import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -45,29 +48,34 @@ def load_json_object(path: Path) -> dict[str, Any]:
     return data
 
 
-def configured_capture_script(*, repo_root: Path = REPO_ROOT, config_file: Path = CONFIG_FILE) -> Path:
-    default_script = (repo_root / "scripts" / "camera-shot.sh").resolve()
-    config = load_json_object(config_file)
-    camera = config.get("camera")
-    if isinstance(camera, dict) and isinstance(camera.get("capture_script"), str) and camera["capture_script"]:
-        configured = Path(camera["capture_script"]).expanduser()
-        if configured.is_absolute():
-            configured_resolved = configured
-        else:
-            configured_resolved = (repo_root / configured).resolve()
-        if configured_resolved.exists():
-            return configured_resolved
-        if default_script.exists():
-            return default_script
-        return configured_resolved
+def load_picamera2_class() -> type[Any]:
+    try:
+        module = importlib.import_module("picamera2")
+    except ModuleNotFoundError:
+        for path in ("/usr/lib/python3/dist-packages", "/usr/lib/python3.11/dist-packages"):
+            if path not in sys.path and Path(path).exists():
+                site.addsitedir(path)
+        try:
+            module = importlib.import_module("picamera2")
+        except ModuleNotFoundError as exc:
+            raise CameraCaptureError("Picamera2 is not available in the plamp-web Python environment") from exc
+    camera_class = getattr(module, "Picamera2", None)
+    if camera_class is None:
+        raise CameraCaptureError("Picamera2 import succeeded but Picamera2 class is missing")
+    return camera_class
 
-    if default_script.exists():
-        return default_script
 
-    raise CameraCaptureError(
-        "no camera capture script configured; set camera.capture_script in data/config.json "
-        "or add scripts/camera-shot.sh"
-    )
+def load_libcamera_controls_module() -> Any | None:
+    try:
+        return importlib.import_module("libcamera").controls
+    except ModuleNotFoundError:
+        for path in ("/usr/lib/python3/dist-packages", "/usr/lib/python3.11/dist-packages"):
+            if path not in sys.path and Path(path).exists():
+                site.addsitedir(path)
+        try:
+            return importlib.import_module("libcamera").controls
+        except ModuleNotFoundError:
+            return None
 
 
 def configured_camera_settings(
@@ -94,6 +102,89 @@ def parse_camera_output(stdout: str) -> dict[str, str]:
         if key in {"timestamp", "image", "command", "exit_code", "log", "camera_id"}:
             summary[key] = value
     return summary
+
+
+def build_picamera2_controls(camera_settings: dict[str, Any]) -> dict[str, Any]:
+    controls: dict[str, Any] = {}
+    autofocus_mode = camera_settings.get("autofocus_mode")
+    libcamera_controls = load_libcamera_controls_module()
+    af_modes = getattr(libcamera_controls, "AfModeEnum", None) if libcamera_controls is not None else None
+    if isinstance(autofocus_mode, str) and autofocus_mode and af_modes is not None:
+        mode_map = {
+            "auto": getattr(af_modes, "Auto", None),
+            "continuous": getattr(af_modes, "Continuous", None),
+            "manual": getattr(af_modes, "Manual", None),
+        }
+        af_mode = mode_map.get(autofocus_mode)
+        if af_mode is not None:
+            controls["AfMode"] = af_mode
+    return controls
+
+
+def capture_with_picamera2(
+    *,
+    output_path: Path,
+    camera_id: str,
+    camera_settings: dict[str, Any],
+    captured_at: str,
+) -> dict[str, Any]:
+    camera_class = load_picamera2_class()
+    try:
+        picamera = camera_class()
+    except Exception as exc:
+        raise CameraCaptureError(f"camera capture failed: {exc}", status_code=502) from exc
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix=f"{sanitize_capture_fragment(camera_id)}-",
+        suffix=".jpg",
+        dir="/tmp",
+        delete=False,
+    )
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    controls = build_picamera2_controls(camera_settings)
+    autofocus_mode = camera_settings.get("autofocus_mode")
+    autofocus_delay_ms = camera_settings.get("autofocus_delay_ms")
+    try:
+        configuration = picamera.create_still_configuration()
+        picamera.configure(configuration)
+        if controls and hasattr(picamera, "set_controls"):
+            picamera.set_controls(controls)
+        if hasattr(picamera, "start"):
+            picamera.start()
+        if (
+            isinstance(autofocus_mode, str)
+            and autofocus_mode in {"auto", "continuous", "manual"}
+            and isinstance(autofocus_delay_ms, int)
+            and autofocus_delay_ms > 0
+        ):
+            time.sleep(autofocus_delay_ms / 1000.0)
+        picamera.capture_file(str(temp_path))
+        if hasattr(picamera, "stop"):
+            picamera.stop()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.replace(output_path)
+    except CameraCaptureError:
+        raise
+    except Exception as exc:
+        raise CameraCaptureError(f"camera capture failed: {exc}", status_code=502) from exc
+    finally:
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except OSError:
+            pass
+        close = getattr(picamera, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    return {
+        "backend": "picamera2",
+        "camera_id": camera_id,
+        "captured_at": captured_at,
+        "controls": controls,
+    }
 
 
 def wait_for_file(path: Path, timeout_s: float = 5.0) -> None:
@@ -207,10 +298,6 @@ def capture_camera_image(
     camera_id: str | None = None,
     capture_kind: str = "manual",
 ) -> dict[str, Any]:
-    script = configured_capture_script(repo_root=repo_root, config_file=config_file)
-    if not script.exists():
-        raise CameraCaptureError(f"capture script not found: {script}")
-
     now = utc_now_dt()
     final_capture_kind = capture_kind if capture_kind in {"manual", "auto"} else "manual"
     selected_camera_id, capture_root = select_capture_target(
@@ -227,39 +314,14 @@ def capture_camera_image(
     day_dir = capture_root / now.strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True, exist_ok=True)
     image_path = day_dir / f"{final_capture_id}.jpg"
-    command = [str(script), str(image_path)]
-    env = os.environ.copy()
-    env["PLAMP_CAMERA_ID"] = selected_camera_id
     camera_settings = configured_camera_settings(config_file=config_file, camera_id=selected_camera_id)
-    autofocus_mode = camera_settings.get("autofocus_mode")
-    autofocus_delay_ms = camera_settings.get("autofocus_delay_ms")
-    if isinstance(autofocus_mode, str) and autofocus_mode:
-        env["PLAMP_AUTOFOCUS_MODE"] = autofocus_mode
-    if isinstance(autofocus_delay_ms, int) and autofocus_delay_ms >= 0:
-        env["PLAMP_AUTOFOCUS_DELAY_MS"] = str(autofocus_delay_ms)
-
-    try:
-        completed = subprocess.run(command, check=True, capture_output=True, text=True, env=env)
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()
-        detail = f"camera command failed with exit code {exc.returncode}"
-        if stderr:
-            detail = f"{detail}: {stderr}"
-        raise CameraCaptureError(detail, status_code=502) from exc
-
-    summary = parse_camera_output(completed.stdout)
-    try:
-        wait_for_file(image_path)
-    except CameraCaptureError as exc:
-        reported = str(summary.get("image") or "").strip()
-        log_path = str(summary.get("log") or "").strip()
-        detail_bits = []
-        if reported:
-            detail_bits.append(f"script reported image={reported}")
-        if log_path:
-            detail_bits.append(f"log={log_path}")
-        detail_suffix = f" ({'; '.join(detail_bits)})" if detail_bits else ""
-        raise CameraCaptureError(f"{exc}{detail_suffix}", status_code=502) from exc
+    summary = capture_with_picamera2(
+        output_path=image_path,
+        camera_id=selected_camera_id,
+        camera_settings=camera_settings,
+        captured_at=now.isoformat(),
+    )
+    wait_for_file(image_path)
     brightness = image_mean_brightness(image_path)
 
     metadata: dict[str, Any] = {
@@ -268,10 +330,7 @@ def capture_camera_image(
         "capture_kind": final_capture_kind,
         "image_url": f"/api/camera/captures/{final_capture_id}/image",
         "image_path": repo_relative(image_path, repo_root),
-        "camera_script": str(script),
-        "camera_command": command,
         "camera_summary": summary,
-        "camera_stderr": completed.stderr.strip(),
         "camera_id": selected_camera_id,
     }
     if brightness is not None:

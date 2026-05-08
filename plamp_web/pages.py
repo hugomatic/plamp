@@ -364,6 +364,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     cameras = summary.get("cameras") if isinstance(summary.get("cameras"), dict) else {}
     rpicam_cameras = cameras.get("rpicam") if isinstance(cameras.get("rpicam"), list) else raw_detected_cameras
     tools = summary.get("tools") if isinstance(summary.get("tools"), dict) else {}
+    camera_worker = summary.get("camera_worker") if isinstance(summary.get("camera_worker"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
     scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
@@ -552,6 +553,14 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         f"<td>{html.escape(str(storage.get('total') or '-'))}</td>"
         "</tr>"
     )
+    camera_worker_rows = (
+        "<tr><td>State</td>" f"<td><code>{html.escape(str(camera_worker.get('state') or '-'))}</code></td></tr>"
+        "<tr><td>Available</td>" f"<td><code>{html.escape(str(camera_worker.get('available') if 'available' in camera_worker else '-'))}</code></td></tr>"
+        "<tr><td>Queue depth</td>" f"<td><code>{html.escape(str(camera_worker.get('queue_depth') or 0))}</code></td></tr>"
+        "<tr><td>Last capture</td>" f"<td><code>{html.escape(str(camera_worker.get('last_capture_at') or '-'))}</code></td></tr>"
+        "<tr><td>Last error</td>" f"<td><code>{html.escape(str(camera_worker.get('last_error') or '-'))}</code></td></tr>"
+        "<tr><td>Scheduled cameras</td>" f"<td><code>{html.escape(', '.join(camera_worker.get('scheduled_cameras') or []) or '-')}</code></td></tr>"
+    )
     hostname = str(host.get("hostname") or "")
 
     return f"""<!doctype html>
@@ -606,6 +615,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
     <h3>Software</h3>
     <table><thead><tr><th>Tool</th><th>Path</th></tr></thead><tbody>{software_rows}</tbody></table>
+    <h3>Camera worker</h3>
+    <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>{camera_worker_rows}</tbody></table>
     <h2>Storage</h2>
     <table><thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead><tbody>{storage_rows}</tbody></table>
   </section>
@@ -1559,7 +1570,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <h2>Camera</h2>
   <fieldset>
     <legend>POST /api/camera/captures</legend>
-    <p>Captures a new image and returns capture metadata.</p>
+    <p>Captures a new image and returns capture metadata. Uses the in-process Picamera2 worker.</p>
     <label>Camera ID (optional) <input id="camera-capture-camera-id" placeholder="rpicam_cam0"></label>
     <pre id="camera-capture-curl-command">curl -X POST http://localhost:8000/api/camera/captures</pre>
     <button class="copy-curl" type="button" data-copy-target="camera-capture-curl-command">Copy curl</button>
