@@ -49,6 +49,14 @@ def _required_positive_int(value: object, label: str) -> int:
     return value
 
 
+def _required_non_negative_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{label} must be a non-negative integer")
+    if value < 0:
+        raise ValueError(f"{label} must be a non-negative integer")
+    return value
+
+
 def _required_bool(value: object, label: str) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{label} must be a boolean")
@@ -208,14 +216,17 @@ def validate_cameras(value):
             auto_enabled = _required_bool(camera_value.get("auto_enabled"), f"camera {camera_id} auto_enabled")
         capture_every_seconds = None
         if "capture_every_seconds" in camera_value:
-            capture_every_seconds = _required_positive_int(
+            capture_every_seconds = _required_non_negative_int(
                 camera_value.get("capture_every_seconds"), f"camera {camera_id} capture_every_seconds"
             )
-        if auto_enabled:
-            if capture_dir is None:
-                raise ValueError(f"camera {camera_id} capture_dir is required when auto_enabled is true")
-            if capture_every_seconds is None:
-                raise ValueError(f"camera {camera_id} capture_every_seconds is required when auto_enabled is true")
+        # Backward-compat for legacy camera toggles:
+        # `enabled=false` or `auto_enabled=false` maps to capture_every_seconds=0.
+        if enabled is False or auto_enabled is False:
+            capture_every_seconds = 0
+        if auto_enabled is True and capture_every_seconds is None:
+            raise ValueError(f"camera {camera_id} capture_every_seconds is required when auto_enabled is true")
+        if capture_every_seconds is not None and capture_every_seconds > 0 and capture_dir is None:
+            raise ValueError(f"camera {camera_id} capture_dir is required when capture_every_seconds is greater than 0")
         if "manual_prefix" in camera_value and camera_value.get("manual_prefix") == "":
             raise ValueError(f"camera {camera_id} manual_prefix must be a valid id")
         if "auto_prefix" in camera_value and camera_value.get("auto_prefix") == "":
@@ -240,10 +251,6 @@ def validate_cameras(value):
             cameras[camera_id]["detected_key"] = detected_key
         if capture_dir is not None:
             cameras[camera_id]["capture_dir"] = capture_dir
-        if enabled is not None:
-            cameras[camera_id]["enabled"] = enabled
-        if auto_enabled is not None:
-            cameras[camera_id]["auto_enabled"] = auto_enabled
         if capture_every_seconds is not None:
             cameras[camera_id]["capture_every_seconds"] = capture_every_seconds
         if manual_prefix is not None:

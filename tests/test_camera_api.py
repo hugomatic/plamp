@@ -32,7 +32,6 @@ class CameraApiTests(unittest.TestCase):
                         "cameras": {
                             "rpicam_cam0": {
                                 "capture_dir": "grow/grows/grow-basil/captures",
-                                "enabled": True,
                             }
                         },
                     }
@@ -70,7 +69,6 @@ class CameraApiTests(unittest.TestCase):
                         "cameras": {
                             "rpicam_cam0": {
                                 "capture_dir": "grow/grows/grow-basil/captures",
-                                "enabled": True,
                             }
                         },
                     }

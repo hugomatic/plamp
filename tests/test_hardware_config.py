@@ -176,8 +176,6 @@ class HardwareConfigTests(unittest.TestCase):
                         "label": "Tent top",
                         "detected_key": "rpicam_cam0",
                         "capture_dir": "grow/grows/grow-basil/captures",
-                        "enabled": True,
-                        "auto_enabled": True,
                         "capture_every_seconds": 3600,
                         "manual_prefix": "manual",
                         "auto_prefix": "auto",
@@ -191,8 +189,6 @@ class HardwareConfigTests(unittest.TestCase):
                     "label": "Tent top",
                     "detected_key": "rpicam_cam0",
                     "capture_dir": "grow/grows/grow-basil/captures",
-                    "enabled": True,
-                    "auto_enabled": True,
                     "capture_every_seconds": 3600,
                     "manual_prefix": "manual",
                     "auto_prefix": "auto",
@@ -219,6 +215,18 @@ class HardwareConfigTests(unittest.TestCase):
             validate_cameras({"rpicam_cam0": {"enabled": "yes"}})
         with self.assertRaisesRegex(ValueError, "auto_enabled"):
             validate_cameras({"rpicam_cam0": {"auto_enabled": 1}})
+
+    def test_validate_cameras_accepts_zero_capture_every_seconds(self):
+        self.assertEqual(
+            validate_cameras({"rpicam_cam0": {"capture_every_seconds": 0}}),
+            {"rpicam_cam0": {"capture_every_seconds": 0}},
+        )
+
+    def test_validate_cameras_legacy_auto_enabled_false_maps_to_zero_seconds(self):
+        self.assertEqual(
+            validate_cameras({"rpicam_cam0": {"auto_enabled": False}}),
+            {"rpicam_cam0": {"capture_every_seconds": 0}},
+        )
 
     def test_validate_cameras_rejects_invalid_prefix_and_autofocus(self):
         with self.assertRaisesRegex(ValueError, "manual_prefix"):

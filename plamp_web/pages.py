@@ -104,6 +104,25 @@ def pico_options(picos: list[dict[str, Any]], selected: str | None) -> str:
     return "\n".join(options)
 
 
+def camera_peripheral_options(detected_cameras: list[dict[str, Any]], selected: str | None) -> str:
+    options = [option_tag("", "Unassigned", selected)]
+    seen: set[str] = set()
+    for item in detected_cameras:
+        if not isinstance(item, dict):
+            continue
+        detected_key = normalize_camera_key(item.get("key"))
+        if not detected_key:
+            continue
+        seen.add(detected_key)
+        model = camera_model_label(item)
+        lens = str(item.get("lens") or "").strip()
+        label = f"{detected_key} | {model}" if not lens else f"{detected_key} | {model} | {lens}"
+        options.append(option_tag(detected_key, label, selected))
+    if selected and selected not in seen:
+        options.append(option_tag(selected, f"{selected} (not detected)", selected))
+    return "\n".join(options)
+
+
 def pin_type_options(selected: str | None) -> str:
     return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
 
@@ -391,9 +410,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
         '<tbody>{controller_row}</tbody></table>'
-        '<h4>Devices</h4>'
+        '<div class="subsection-indent"><h4>Devices</h4>'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
-        '<tbody>{device_rows}</tbody></table>'
+        '<tbody>{device_rows}</tbody></table></div>'
         '</div>'.format(
             controller_row=render_scheduler_controller_row("", {}, new_row=True),
             device_rows=render_scheduler_device_row("", {}, "", new_row=True),
@@ -408,9 +427,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
-            '<h4>Devices</h4>'
+            '<div class="subsection-indent"><h4>Devices</h4>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
-            '<tbody>{device_rows}</tbody></table>'
+            '<tbody>{device_rows}</tbody></table></div>'
             '</div>'.format(
                 controller_id=html.escape(controller_id, quote=True),
                 controller_row=render_scheduler_controller_row(controller_id, controller),
@@ -421,6 +440,10 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     detected_by_key = {str(item.get("key")): item for item in detected_cameras if isinstance(item, dict) and item.get("key")}
     camera_detected_keys, unmatched_detected_keys = camera_detected_matches(configured_cameras, detected_cameras)
+    camera_assigned_map: dict[str, list[str]] = {}
+    for camera_id, detected_key in camera_detected_keys.items():
+        if detected_key:
+            camera_assigned_map.setdefault(detected_key, []).append(camera_id)
     all_camera_keys = list(configured_cameras) + unmatched_detected_keys
     camera_setup_rows = []
     for camera_id in all_camera_keys:
@@ -428,46 +451,46 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         detected_key = camera_detected_keys.get(camera_id, camera_id if camera_id in detected_by_key else "")
         detected_camera = detected_by_key.get(detected_key, {})
         detail = " ".join(part for part in [camera_model_label(detected_camera), str(detected_camera.get("lens") or "")] if part and part != "-")
+        status = "Configured + detected" if detected_key else "Configured only"
         autofocus_mode = str(camera.get("autofocus_mode") or "auto")
         camera_setup_rows.append(
-            '<tr class="camera-row" data-camera-key="{camera_id}" data-camera-detected-key="{detected_key}">'
+            '<tr class="camera-row" data-camera-key="{camera_id}">'
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
             '<td><input class="camera-label" placeholder="Tent camera" value="{label}"></td>'
+            '<td><select class="camera-detected-key">{detected_key_options}</select></td>'
             '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value="{capture_dir}"></td>'
-            '<td><input class="camera-enabled" type="checkbox" {enabled_checked}></td>'
-            '<td><input class="camera-auto-enabled" type="checkbox" {auto_enabled_checked}></td>'
-            '<td><input class="camera-capture-every-seconds" type="number" min="1" value="{capture_every_seconds}"></td>'
+            '<td><input class="camera-capture-every-seconds" type="number" min="0" value="{capture_every_seconds}"></td>'
             '<td><select class="camera-autofocus-mode">{autofocus_mode_options}</select></td>'
             '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value="{autofocus_delay_ms}"></td>'
+            '<td class="muted">{status}</td>'
             '<td class="muted">{detail}</td>'
             '</tr>'.format(
                 camera_id=html.escape(camera_id, quote=True),
-                detected_key=html.escape(detected_key, quote=True),
                 label=html.escape(str(camera.get("label") or ""), quote=True),
+                detected_key_options=camera_peripheral_options(detected_cameras, detected_key),
                 capture_dir=html.escape(str(camera.get("capture_dir") or ""), quote=True),
-                enabled_checked="checked" if bool(camera.get("enabled", True)) else "",
-                auto_enabled_checked="checked" if bool(camera.get("auto_enabled", False)) else "",
                 capture_every_seconds=html.escape(str(camera.get("capture_every_seconds") or ""), quote=True),
                 autofocus_mode_options="".join(
                     option_tag(value, value, autofocus_mode)
                     for value in ["auto", "continuous", "manual", "off"]
                 ),
                 autofocus_delay_ms=html.escape(str(camera.get("autofocus_delay_ms") or ""), quote=True),
-                detail=html.escape(f"Detected: {detail}" if detail else "Configured"),
+                status=html.escape(status),
+                detail=html.escape(detail or "-"),
             )
         )
     camera_setup_rows.append(
-        '<tr class="camera-row new-row" data-camera-key="" data-camera-detected-key="">'
+        '<tr class="camera-row new-row" data-camera-key="">'
         '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
         '<td><input class="camera-label" placeholder="Tent camera" value=""></td>'
+        '<td><select class="camera-detected-key">{detected_key_options}</select></td>'
         '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value=""></td>'
-        '<td><input class="camera-enabled" type="checkbox" checked></td>'
-        '<td><input class="camera-auto-enabled" type="checkbox"></td>'
-        '<td><input class="camera-capture-every-seconds" type="number" min="1" value=""></td>'
+        '<td><input class="camera-capture-every-seconds" type="number" min="0" value="0"></td>'
         '<td><select class="camera-autofocus-mode"><option value="auto" selected>auto</option><option value="continuous">continuous</option><option value="manual">manual</option><option value="off">off</option></select></td>'
         '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value=""></td>'
-        '<td class="muted">Add a camera id to save it.</td>'
-        '</tr>'
+        '<td class="muted">New camera config</td>'
+        '<td class="muted">Optional: add another logical camera config.</td>'
+        '</tr>'.format(detected_key_options=camera_peripheral_options(detected_cameras, ""))
     )
 
     pico_rows = "\n".join(
@@ -495,12 +518,13 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         "<tr>"
         f"<td>{html.escape(camera_status_name(item))}</td>"
         f"<td>{html.escape(camera_model_label(item))}</td>"
+        f"<td>{html.escape(', '.join(camera_assigned_map.get(normalize_camera_key(item.get('key')), [])) or 'Unassigned')}</td>"
         f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
         f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
         f"<td><code>{html.escape(str(item.get('path') or '-'))}</code></td>"
         "</tr>"
         for item in rpicam_cameras
-    ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
+    ) or '<tr><td colspan="6">No Raspberry Pi cameras found.</td></tr>'
 
     network_rows = "\n".join(
         "<tr>"
@@ -554,6 +578,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     code {{ background: #f4f4f4; padding: .1rem .25rem; }}
     .muted, .status {{ color: #555; font-size: .9rem; }}
     .host-clock {{ color: #555; font-size: .95rem; }}
+    .subsection-indent {{ margin-left: 1.5rem; max-width: 1050px; }}
   </style>
 </head>
 <body>
@@ -570,7 +595,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
-    <table><thead><tr><th>ID</th><th>Label</th><th>Capture dir</th><th>Enabled</th><th>Auto</th><th>Every seconds</th><th>Autofocus</th><th>AF delay ms</th><th>Detected</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
+    <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds (0 disables schedule)</th><th>Autofocus</th><th>AF delay ms</th><th>Status</th><th>Detected detail</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   </section>
 
@@ -580,7 +605,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <h3>Peripherals</h3>
     <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>Assigned</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
     <h3>Raspberry Pi cameras</h3>
-    <table><thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
+    <table><thead><tr><th>Camera</th><th>Model</th><th>Assigned</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
     <h3>Network</h3>
     <p><strong>Hostname:</strong> {html.escape(hostname)}</p>
     <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
@@ -677,10 +702,8 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const autofocusDelayRaw = row.querySelector(".camera-autofocus-delay-ms").value.trim();
         result[key] = cleanObject({{
           label: row.querySelector(".camera-label").value.trim(),
-          detected_key: row.dataset.cameraDetectedKey || "",
+          detected_key: row.querySelector(".camera-detected-key").value,
           capture_dir: row.querySelector(".camera-capture-dir").value.trim(),
-          enabled: row.querySelector(".camera-enabled").checked,
-          auto_enabled: row.querySelector(".camera-auto-enabled").checked,
           capture_every_seconds: everySecondsRaw === "" ? null : Number(everySecondsRaw),
           autofocus_mode: row.querySelector(".camera-autofocus-mode").value,
           autofocus_delay_ms: autofocusDelayRaw === "" ? null : Number(autofocusDelayRaw),
