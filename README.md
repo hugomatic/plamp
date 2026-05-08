@@ -11,9 +11,13 @@ Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
 From a fresh Raspberry Pi shell:
 
 ```bash
-git clone https://github.com/hugomatic/plamp.git
-cd plamp
-bash deploy/bootstrap/install-plamp.sh
+curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash
+```
+
+Alternative with `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash
 ```
 
 This installs Plamp and starts `plamp-web` on `127.0.0.1:8000`.
@@ -22,19 +26,16 @@ Optional flags:
 
 ```bash
 # Public web on port 80 via nginx
-bash deploy/bootstrap/install-plamp.sh --public
+curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --public
 
 # Include OS update
-bash deploy/bootstrap/install-plamp.sh --update-os
+curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --update-os
 
 # Install to a custom location (default is the current local repo directory)
-bash deploy/bootstrap/install-plamp.sh --plamp-dir ~/code/plamp
-
-# Enable hourly capture cron for one grow
-bash deploy/bootstrap/install-plamp.sh --enable-hourly-capture --grow-id <grow-id>
+curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --plamp-dir ~/code/plamp
 
 # Enable heartbeat cron, writing to a specific dead-man-switch file
-bash deploy/bootstrap/install-plamp.sh --enable-heartbeat --heartbeat-file /path/to/last_seen_alive.txt
+curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --enable-heartbeat --heartbeat-file /path/to/last_seen_alive.txt
 ```
 
 Notes:
