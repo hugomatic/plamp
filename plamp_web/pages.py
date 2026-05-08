@@ -773,7 +773,6 @@ def render_timer_dashboard_page(
     button { border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }
     input, select { box-sizing: border-box; padding: .35rem; }
     .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
-    .host-name { color: #333; font-size: .95rem; margin: -.75rem 0 1rem; }
     .status-board { display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }
     .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
     .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
@@ -810,8 +809,7 @@ def render_timer_dashboard_page(
 </head>
 <body>
   __MAIN_NAV__
-  <p class="host-name">__PAGE_NAME__</p>
-  <h1>Plamp</h1>
+  <h1>__PAGE_NAME__</h1>
   <h2>Timers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>

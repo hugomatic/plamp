@@ -37,8 +37,7 @@ class PageRenderTests(unittest.TestCase):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0, hostname="nurse-plamp")
 
         self.assertIn("<title>nurse-plamp Plamp</title>", html)
-        self.assertIn('<p class="host-name">nurse-plamp Plamp</p>', html)
-        self.assertIn("<h1>Plamp</h1>", html)
+        self.assertIn("<h1>nurse-plamp Plamp</h1>", html)
 
 
     def test_pages_use_same_nav_with_github_link(self):
