@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-default_repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
+script_source="${BASH_SOURCE[0]-}"
+if [[ -n "${script_source}" && -f "${script_source}" ]]; then
+  script_dir="$(cd -- "$(dirname -- "${script_source}")" && pwd)"
+  default_repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
+else
+  script_dir=""
+  default_repo_dir="${HOME}/plamp"
+fi
 
 repo_url="https://github.com/hugomatic/plamp.git"
 repo_dir="${default_repo_dir}"
