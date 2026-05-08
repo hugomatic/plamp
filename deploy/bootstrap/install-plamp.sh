@@ -20,6 +20,7 @@ Bootstrap Plamp on a Raspberry Pi with optional public nginx and automation cron
 Options:
   --repo-url URL              Git repo URL (default: https://github.com/hugomatic/plamp.git)
   --repo-dir PATH             Clone/install directory (default: ~/plamp)
+  --plamp-dir PATH            Alias for --repo-dir
   --branch NAME               Git branch/tag to check out (default: main)
   --public                    Configure nginx on port 80 proxying plamp-web on 127.0.0.1:8000
   --update-os                 Run apt update + full-upgrade
@@ -34,7 +35,7 @@ USAGE
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo-url) repo_url="$2"; shift 2 ;;
-    --repo-dir) repo_dir="$2"; shift 2 ;;
+    --repo-dir|--plamp-dir) repo_dir="$2"; shift 2 ;;
     --branch) branch="$2"; shift 2 ;;
     --public) public_mode=1; shift ;;
     --update-os) update_os=1; shift ;;

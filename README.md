@@ -27,6 +27,9 @@ bash deploy/bootstrap/install-plamp.sh --public
 # Include OS update
 bash deploy/bootstrap/install-plamp.sh --update-os
 
+# Install to a custom location (instead of ~/plamp)
+bash deploy/bootstrap/install-plamp.sh --plamp-dir ~/code/plamp
+
 # Enable hourly capture cron for one grow
 bash deploy/bootstrap/install-plamp.sh --enable-hourly-capture --grow-id <grow-id>
 
