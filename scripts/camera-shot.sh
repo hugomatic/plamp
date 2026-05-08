@@ -12,7 +12,11 @@ timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 timestamp_fs="${timestamp//:/-}"
 af_mode="${PLAMP_AUTOFOCUS_MODE:-auto}"
 af_delay_ms="${PLAMP_AUTOFOCUS_DELAY_MS:-1200}"
+output_name="$(basename -- "${output_path}")"
+output_stem="${output_name%.*}"
+safe_output_stem="${output_stem//[^A-Za-z0-9_.-]/_}"
 log_file="/tmp/plamp-camera-${camera_id}-${timestamp_fs}.log"
+temp_output_path="/tmp/${safe_output_stem:-plamp-camera}-${timestamp_fs}-${RANDOM}.jpg"
 
 mkdir -p "$(dirname -- "${output_path}")"
 
@@ -25,7 +29,7 @@ else
   exit 127
 fi
 
-cmd+=(-e jpg -o "${output_path}" -n)
+cmd+=(-e jpg -o "${temp_output_path}" -n)
 if [[ -n "${af_mode}" ]]; then
   cmd+=(--autofocus-mode "${af_mode}")
 fi
@@ -35,8 +39,10 @@ fi
 
 if "${cmd[@]}" >"${log_file}" 2>&1; then
   exit_code=0
+  mv -f -- "${temp_output_path}" "${output_path}"
 else
   exit_code=$?
+  rm -f -- "${temp_output_path}"
 fi
 
 echo "timestamp=${timestamp}"
