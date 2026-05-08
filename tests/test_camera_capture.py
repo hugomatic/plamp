@@ -1,8 +1,8 @@
 import json
-import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from plamp_web.camera_capture import (
     CameraCaptureError,
@@ -15,16 +15,8 @@ from plamp_web.camera_capture import (
 
 
 class CameraCaptureTests(unittest.TestCase):
-    def make_script(self, directory: Path, body: str) -> Path:
-        script = directory / "fake-camera.sh"
-        script.write_text(body, encoding="utf-8")
-        script.chmod(script.stat().st_mode | stat.S_IXUSR)
-        return script
-
-    def write_config(self, path: Path, script: Path | None = None, cameras: dict[str, dict] | None = None) -> None:
+    def write_config(self, path: Path, cameras: dict[str, dict] | None = None) -> None:
         data: dict[str, object] = {"timers": []}
-        if script is not None:
-            data["camera"] = {"capture_script": str(script)}
         if cameras is not None:
             data["cameras"] = cameras
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,26 +30,51 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            script = self.make_script(
-                root,
-                "#!/usr/bin/env bash\n"
-                "printf 'jpg' > \"$1\"\n"
-                "echo camera_id=$PLAMP_CAMERA_ID\n",
-            )
             self.write_config(
                 config_file,
-                script,
                 cameras={
-                    "rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"},
+                    "rpicam_cam0": {
+                        "capture_dir": "grow/grows/grow-basil/captures",
+                        "autofocus_mode": "auto",
+                        "autofocus_delay_ms": 1500,
+                    },
                 },
             )
 
-            metadata = capture_camera_image(
-                repo_root=root,
-                data_dir=root / "data",
-                config_file=config_file,
-                camera_id="rpicam_cam0",
-            )
+            class FakePicamera2:
+                def __init__(self) -> None:
+                    self.controls = None
+                    self.capture_path = None
+
+                def create_still_configuration(self) -> dict[str, str]:
+                    return {"mode": "still"}
+
+                def configure(self, config: dict[str, str]) -> None:
+                    self.config = config
+
+                def set_controls(self, controls: dict[str, object]) -> None:
+                    self.controls = dict(controls)
+
+                def start(self) -> None:
+                    pass
+
+                def capture_file(self, path: str) -> None:
+                    self.capture_path = path
+                    Path(path).write_bytes(b"jpg")
+
+                def stop(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            with patch("plamp_web.camera_capture.load_picamera2_class", return_value=FakePicamera2):
+                metadata = capture_camera_image(
+                    repo_root=root,
+                    data_dir=root / "data",
+                    config_file=config_file,
+                    camera_id="rpicam_cam0",
+                )
 
             image_path = root / metadata["image_path"]
             self.assertTrue(image_path.exists())
@@ -67,8 +84,11 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(metadata["capture_kind"], "manual")
             self.assertEqual(metadata["camera_id"], "rpicam_cam0")
             self.assertEqual(metadata["camera_summary"]["camera_id"], "rpicam_cam0")
-            self.assertEqual(metadata["camera_command"], [str(script), str(image_path)])
+            self.assertEqual(metadata["camera_summary"]["backend"], "picamera2")
             self.assertEqual(metadata["image_url"], f"/api/camera/captures/{metadata['capture_id']}/image")
+            self.assertNotIn("camera_script", metadata)
+            self.assertNotIn("camera_command", metadata)
+            self.assertNotIn("camera_stderr", metadata)
 
             resolved = find_capture_image(
                 metadata["capture_id"],
@@ -83,8 +103,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            script = self.make_script(root, "#!/usr/bin/env bash\nprintf 'jpg' > \"$1\"\n")
-            self.write_config(config_file, script, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
 
             with self.assertRaisesRegex(CameraCaptureError, "unknown camera_id"):
                 capture_camera_image(
@@ -98,8 +117,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            script = self.make_script(root, "#!/usr/bin/env bash\nprintf 'jpg' > \"$1\"\n")
-            self.write_config(config_file, script, cameras={"rpicam_cam0": {"capture_dir": "/tmp/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "/tmp/captures"}})
 
             with self.assertRaisesRegex(CameraCaptureError, "repo-relative"):
                 capture_camera_image(
@@ -115,7 +133,6 @@ class CameraCaptureTests(unittest.TestCase):
             config_file = root / "data" / "config.json"
             self.write_config(
                 config_file,
-                script=None,
                 cameras={
                     "rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"},
                     "rpicam_cam1": {"capture_dir": "data/camera/captures"},
@@ -158,7 +175,6 @@ class CameraCaptureTests(unittest.TestCase):
             config_file = root / "data" / "config.json"
             self.write_config(
                 config_file,
-                script=None,
                 cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}},
             )
 
@@ -214,7 +230,7 @@ class CameraCaptureTests(unittest.TestCase):
             )
 
             config_file = linked_data_dir / "config.json"
-            self.write_config(config_file, script=None, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
 
             shared_grow_image = shared_root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12" / "manual-rpicam_cam0-2026-04-12T10-00-01Z-deadbe.jpg"
             self.write_image(shared_grow_image)
@@ -236,50 +252,94 @@ class CameraCaptureTests(unittest.TestCase):
             key = capture_image_key(Path("/tmp/outside.jpg"), repo_root=root)
             self.assertIsNone(resolve_capture_image_key(key, repo_root=root))
 
-    def test_missing_script_raises_clear_error(self):
+    def test_missing_picamera2_dependency_raises_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            missing = root / "missing-camera.sh"
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, missing, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
 
-            with self.assertRaisesRegex(CameraCaptureError, "capture script not found"):
-                capture_camera_image(
-                    repo_root=root,
-                    data_dir=root / "data",
-                    config_file=config_file,
-                    camera_id="rpicam_cam0",
-                )
+            with patch("plamp_web.camera_capture.load_picamera2_class", side_effect=CameraCaptureError("Picamera2 is not available")):
+                with self.assertRaisesRegex(CameraCaptureError, "Picamera2 is not available"):
+                    capture_camera_image(
+                        repo_root=root,
+                        data_dir=root / "data",
+                        config_file=config_file,
+                        camera_id="rpicam_cam0",
+                    )
 
     def test_successful_script_without_image_raises_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            script = self.make_script(root, "#!/usr/bin/env bash\nexit 0\n")
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, script, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
 
-            with self.assertRaisesRegex(CameraCaptureError, "image file is missing"):
-                capture_camera_image(
-                    repo_root=root,
-                    data_dir=root / "data",
-                    config_file=config_file,
-                    camera_id="rpicam_cam0",
-                )
+            class FakePicamera2:
+                def create_still_configuration(self) -> dict[str, str]:
+                    return {"mode": "still"}
 
-    def test_nonzero_script_raises_bad_gateway_error(self):
+                def configure(self, config: dict[str, str]) -> None:
+                    pass
+
+                def set_controls(self, controls: dict[str, object]) -> None:
+                    pass
+
+                def start(self) -> None:
+                    pass
+
+                def capture_file(self, path: str) -> None:
+                    return None
+
+                def stop(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            with patch("plamp_web.camera_capture.load_picamera2_class", return_value=FakePicamera2):
+                with self.assertRaisesRegex(CameraCaptureError, "image file is missing"):
+                    capture_camera_image(
+                        repo_root=root,
+                        data_dir=root / "data",
+                        config_file=config_file,
+                        camera_id="rpicam_cam0",
+                    )
+
+    def test_backend_failure_raises_bad_gateway_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            script = self.make_script(root, "#!/usr/bin/env bash\necho 'camera failed' >&2\nexit 7\n")
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, script, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
 
-            with self.assertRaisesRegex(CameraCaptureError, "camera command failed") as cm:
-                capture_camera_image(
-                    repo_root=root,
-                    data_dir=root / "data",
-                    config_file=config_file,
-                    camera_id="rpicam_cam0",
-                )
+            class FakePicamera2:
+                def create_still_configuration(self) -> dict[str, str]:
+                    return {"mode": "still"}
+
+                def configure(self, config: dict[str, str]) -> None:
+                    pass
+
+                def set_controls(self, controls: dict[str, object]) -> None:
+                    pass
+
+                def start(self) -> None:
+                    pass
+
+                def capture_file(self, path: str) -> None:
+                    raise RuntimeError("camera failed")
+
+                def stop(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            with patch("plamp_web.camera_capture.load_picamera2_class", return_value=FakePicamera2):
+                with self.assertRaisesRegex(CameraCaptureError, "camera capture failed") as cm:
+                    capture_camera_image(
+                        repo_root=root,
+                        data_dir=root / "data",
+                        config_file=config_file,
+                        camera_id="rpicam_cam0",
+                    )
             self.assertEqual(cm.exception.status_code, 502)
 
 
