@@ -243,5 +243,5 @@ The printed camera stand and holder live in [`things/plamp_stand/`](./things/pla
 - [`docs/spec-current.md`](./docs/spec-current.md) - current architecture and contracts spec
 - [`plamp_web/`](./plamp_web/) - web server and pages
 - [`pico_scheduler/`](./pico_scheduler/) - MicroPython Pico firmware
-- [`grow/`](./grow/) - grow log tools
+- `grow/grows/` - local grow runtime data directory (not tracked in git)
 - [`things/`](./things/) - printable parts

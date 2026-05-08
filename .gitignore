@@ -18,14 +18,8 @@ things/plamp_stand/doc/*
 !things/plamp_stand/doc/stand.jpg
 things/plamp_stand/prints/
 
-# Runtime grow data (tracked grow.json files live alongside these)
-grow/grows/*/captures/
-grow/grows/*/events.jsonl
-grow/grows/*/summaries/
-grow/grows/*/predictions/
-grow/grows/*/amendments/
-grow/grows/*/evidence/
-grow/cron-capture.log
+# Runtime grow data (all grow instances are local host data)
+grow/grows/
 # Local git worktrees
 .worktrees/
 

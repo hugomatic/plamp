@@ -11,7 +11,7 @@ This first slice does not add the polished main-page web button or grow gallery.
 - Add a REST endpoint that takes one camera picture on demand.
 - Store pictures outside grow folders so quick framing or visibility checks do not pollute grow history.
 - Return enough metadata for a future UI to show the picture immediately.
-- Keep the implementation compatible with the existing camera wrapper and metadata style used by `grow/capture_photo.py`.
+- Keep the implementation compatible with the existing camera wrapper and metadata style used by the host capture flow.
 - Leave grow album attachment and gallery browsing as follow-up slices.
 - Add the camera controls to a shared API test page so the endpoint is easy to debug and has a browser-visible curl example.
 

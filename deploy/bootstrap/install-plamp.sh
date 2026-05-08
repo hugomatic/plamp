@@ -15,8 +15,6 @@ repo_dir="${default_repo_dir}"
 branch="main"
 public_mode=0
 update_os=0
-enable_hourly_capture=0
-grow_id=""
 enable_heartbeat=0
 heartbeat_file=""
 
@@ -24,7 +22,7 @@ usage() {
   cat <<'USAGE'
 Usage: deploy/bootstrap/install-plamp.sh [options]
 
-Bootstrap Plamp on a Raspberry Pi with optional public nginx and automation cron jobs.
+Bootstrap Plamp on a Raspberry Pi with optional public nginx and heartbeat cron jobs.
 
 Options:
   --repo-url URL              Git repo URL (default: https://github.com/hugomatic/plamp.git)
@@ -33,8 +31,6 @@ Options:
   --branch NAME               Git branch/tag to check out (default: main)
   --public                    Configure nginx on port 80 proxying plamp-web on 127.0.0.1:8000
   --update-os                 Run apt update + full-upgrade
-  --enable-hourly-capture     Install cron job for grow/hourly_tend.py
-  --grow-id ID                Required with --enable-hourly-capture
   --enable-heartbeat          Install cron job running agent/check_alive.bash
   --heartbeat-file PATH       Heartbeat target file (used by check_alive via PLAMP_HEARTBEAT_FILE)
   -h, --help                  Show this help
@@ -48,19 +44,12 @@ while [[ $# -gt 0 ]]; do
     --branch) branch="$2"; shift 2 ;;
     --public) public_mode=1; shift ;;
     --update-os) update_os=1; shift ;;
-    --enable-hourly-capture) enable_hourly_capture=1; shift ;;
-    --grow-id) grow_id="$2"; shift 2 ;;
     --enable-heartbeat) enable_heartbeat=1; shift ;;
     --heartbeat-file) heartbeat_file="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
-
-if [[ "${enable_hourly_capture}" -eq 1 && -z "${grow_id}" ]]; then
-  echo "--grow-id is required with --enable-hourly-capture" >&2
-  exit 2
-fi
 
 echo "==> Installing system packages"
 sudo apt-get update
@@ -123,17 +112,9 @@ if [[ "${public_mode}" -eq 1 ]]; then
   sudo systemctl reload nginx
 fi
 
-install_user="$(id -un)"
 tmp_cron="$(mktemp)"
 trap 'rm -f "${tmp_cron}"' EXIT
 crontab -l 2>/dev/null > "${tmp_cron}" || true
-
-if [[ "${enable_hourly_capture}" -eq 1 ]]; then
-  echo "==> Installing hourly capture cron"
-  sed -i '/# plamp-hourly-capture/d' "${tmp_cron}"
-  sed -i '/grow\/hourly_tend.py --grow/d' "${tmp_cron}"
-  echo "0 * * * * cd ${repo_dir} && ${uv_bin} run python grow/hourly_tend.py --grow ${grow_id} >> ${repo_dir}/data/hourly_tend.log 2>&1 # plamp-hourly-capture" >> "${tmp_cron}"
-fi
 
 if [[ "${enable_heartbeat}" -eq 1 ]]; then
   echo "==> Installing heartbeat cron"
