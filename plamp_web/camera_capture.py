@@ -104,20 +104,18 @@ def parse_camera_output(stdout: str) -> dict[str, str]:
     return summary
 
 
-def jsonable_value(value: Any) -> Any:
+def serialize_picamera2_control_value(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(key): jsonable_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [jsonable_value(item) for item in value]
     name = getattr(value, "name", None)
     enum_value = getattr(value, "value", None)
-    if isinstance(name, str) and enum_value is not None:
-        return {"name": name, "value": jsonable_value(enum_value)}
+    if isinstance(name, str) and isinstance(enum_value, (str, int, float, bool)):
+        return {"name": name, "value": enum_value}
     return str(value)
+
+
+def serialize_picamera2_controls(controls: dict[str, Any]) -> dict[str, Any]:
+    return {str(name): serialize_picamera2_control_value(value) for name, value in controls.items()}
 
 
 def build_picamera2_controls(camera_settings: dict[str, Any]) -> dict[str, Any]:
@@ -199,7 +197,7 @@ def capture_with_picamera2(
         "backend": "picamera2",
         "camera_id": camera_id,
         "captured_at": captured_at,
-        "controls": jsonable_value(controls),
+        "controls": serialize_picamera2_controls(controls),
     }
 
 
