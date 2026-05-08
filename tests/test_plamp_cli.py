@@ -408,12 +408,12 @@ class PlampCliTimerTests(unittest.TestCase):
 
 class PlampCliPictureTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
-    def test_pics_list_uses_camera_captures_endpoint(self, request_json):
+    def test_pics_list_uses_camera_captures_endpoint_with_camera_filter(self, request_json):
         request_json.return_value = {"captures": [], "limit": 24, "offset": 0, "has_more": False, "total": 0}
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["pics", "list", "--source", "grow", "--limit", "5"], stdout=stdout, stderr=stderr)
+        code = main(["pics", "list", "--camera-id", "rpicam_cam0", "--limit", "5"], stdout=stdout, stderr=stderr)
 
         self.assertEqual(code, 0)
         self.assertEqual(stderr.getvalue(), "")
@@ -421,7 +421,7 @@ class PlampCliPictureTests(unittest.TestCase):
             "GET",
             "http://127.0.0.1:8000",
             "/api/camera/captures",
-            query={"source": "grow", "limit": 5, "offset": 0},
+            query={"camera_id": "rpicam_cam0", "limit": 5, "offset": 0},
         )
 
     @patch("plamp_cli.main.request_json")
@@ -502,7 +502,7 @@ class PlampCliFirmwareTests(unittest.TestCase):
 
 
 class PlampCliDocsTests(unittest.TestCase):
-    def test_readmes_match_pico_scheduler_cli_shape(self):
+    def test_readmes_match_new_camera_cli_shape(self):
         cli_readme = Path("plamp_cli/README.md").read_text(encoding="utf-8")
         root_readme = Path("README.md").read_text(encoding="utf-8")
         web_readme = Path("plamp_web/README.md").read_text(encoding="utf-8")
@@ -513,9 +513,12 @@ class PlampCliDocsTests(unittest.TestCase):
         self.assertIn("uv run python -m plamp_cli config get", cli_readme)
         self.assertIn("uv run python -m plamp_cli controllers list", cli_readme)
         self.assertIn("uv run python -m plamp_cli pico-scheduler list", cli_readme)
+        self.assertIn("uv run python -m plamp_cli pics list --camera-id rpicam_cam0", cli_readme)
+        self.assertIn("uv run python -m plamp_cli --pretty pics take --camera-id rpicam_cam0", cli_readme)
         self.assertIn("uv run python -m plamp_cli pics get <image_key> --out latest.jpg", cli_readme)
         self.assertIn("--stdout", cli_readme)
         self.assertIn("ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg", cli_readme)
+        self.assertNotIn("camera_roll", cli_readme)
         self.assertNotIn("uv run python -m plamp_cli timers", cli_readme)
 
         self.assertIn("plamp config get", root_readme)

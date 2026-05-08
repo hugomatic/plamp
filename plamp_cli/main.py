@@ -169,8 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     pic_subparsers = pics.add_subparsers(dest="pics_action", required=True)
 
     pic_list = pic_subparsers.add_parser("list")
-    pic_list.add_argument("--source", default="all")
-    pic_list.add_argument("--grow-id")
+    pic_list.add_argument("--camera-id")
     pic_list.add_argument("--limit", type=int, default=24)
     pic_list.add_argument("--offset", type=int, default=0)
     pic_list.set_defaults(pics_action="list")
@@ -374,9 +373,9 @@ def _handle_firmware(args: argparse.Namespace, stderr: TextIO) -> object | bytes
 
 def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
     if args.pics_action == "list":
-        query = {"source": args.source, "limit": args.limit, "offset": args.offset}
-        if args.grow_id:
-            query["grow_id"] = args.grow_id
+        query = {"limit": args.limit, "offset": args.offset}
+        if args.camera_id:
+            query["camera_id"] = args.camera_id
         return request_json("GET", base_url, "/api/camera/captures", query=query)
 
     if args.pics_action == "take":

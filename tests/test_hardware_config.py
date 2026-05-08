@@ -168,6 +168,70 @@ class HardwareConfigTests(unittest.TestCase):
             {"picam0": {"label": "Tent", "detected_key": "rpicam_cam0"}},
         )
 
+    def test_validate_cameras_accepts_capture_ownership_fields(self):
+        self.assertEqual(
+            validate_cameras(
+                {
+                    "rpicam_cam0": {
+                        "label": "Tent top",
+                        "detected_key": "rpicam_cam0",
+                        "capture_dir": "grow/grows/grow-basil/captures",
+                        "enabled": True,
+                        "auto_enabled": True,
+                        "capture_every_seconds": 3600,
+                        "manual_prefix": "manual",
+                        "auto_prefix": "auto",
+                        "autofocus_mode": "auto",
+                        "autofocus_delay_ms": 1200,
+                    }
+                }
+            ),
+            {
+                "rpicam_cam0": {
+                    "label": "Tent top",
+                    "detected_key": "rpicam_cam0",
+                    "capture_dir": "grow/grows/grow-basil/captures",
+                    "enabled": True,
+                    "auto_enabled": True,
+                    "capture_every_seconds": 3600,
+                    "manual_prefix": "manual",
+                    "auto_prefix": "auto",
+                    "autofocus_mode": "auto",
+                    "autofocus_delay_ms": 1200,
+                }
+            },
+        )
+
+    def test_validate_cameras_rejects_absolute_capture_dir(self):
+        with self.assertRaisesRegex(ValueError, "capture_dir must be repo-relative"):
+            validate_cameras({"rpicam_cam0": {"capture_dir": "/tmp/captures"}})
+
+    def test_validate_cameras_rejects_non_relative_capture_dir_traversal(self):
+        with self.assertRaisesRegex(ValueError, "capture_dir must be repo-relative"):
+            validate_cameras({"rpicam_cam0": {"capture_dir": "../captures"}})
+
+    def test_validate_cameras_requires_capture_every_seconds_when_auto_enabled(self):
+        with self.assertRaisesRegex(ValueError, "capture_every_seconds"):
+            validate_cameras({"rpicam_cam0": {"auto_enabled": True, "capture_dir": "grow/grows/grow-basil/captures"}})
+
+    def test_validate_cameras_rejects_invalid_boolean_fields(self):
+        with self.assertRaisesRegex(ValueError, "enabled"):
+            validate_cameras({"rpicam_cam0": {"enabled": "yes"}})
+        with self.assertRaisesRegex(ValueError, "auto_enabled"):
+            validate_cameras({"rpicam_cam0": {"auto_enabled": 1}})
+
+    def test_validate_cameras_rejects_invalid_prefix_and_autofocus(self):
+        with self.assertRaisesRegex(ValueError, "manual_prefix"):
+            validate_cameras({"rpicam_cam0": {"manual_prefix": "manual pics"}})
+        with self.assertRaisesRegex(ValueError, "auto_prefix"):
+            validate_cameras({"rpicam_cam0": {"auto_prefix": ""}})
+        with self.assertRaisesRegex(ValueError, "autofocus_mode"):
+            validate_cameras({"rpicam_cam0": {"autofocus_mode": "tracking"}})
+
+    def test_validate_cameras_rejects_invalid_autofocus_delay(self):
+        with self.assertRaisesRegex(ValueError, "autofocus_delay_ms"):
+            validate_cameras({"rpicam_cam0": {"autofocus_delay_ms": -1}})
+
     def test_validate_rejects_non_string_label(self):
         with self.assertRaisesRegex(ValueError, "label"):
             validate_controllers({"ctrl_a": {"label": 123}})
