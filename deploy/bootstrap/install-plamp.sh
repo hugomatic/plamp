@@ -131,9 +131,26 @@ crontab "${tmp_cron}"
 
 echo "==> Health checks"
 sudo systemctl status plamp-web --no-pager | sed -n '1,10p' || true
-curl -fsS http://127.0.0.1:8000/ >/dev/null && echo "plamp-web :8000 OK"
+wait_for_http() {
+  local url="$1"
+  local label="$2"
+  local attempts="${3:-15}"
+  local delay="${4:-1}"
+  local attempt
+  for ((attempt = 1; attempt <= attempts; attempt += 1)); do
+    if curl -fsS "${url}" >/dev/null; then
+      echo "${label} OK"
+      return 0
+    fi
+    sleep "${delay}"
+  done
+  echo "${label} failed" >&2
+  return 1
+}
+
+wait_for_http "http://127.0.0.1:8000/" "plamp-web :8000"
 if [[ "${public_mode}" -eq 1 ]]; then
-  curl -fsS http://127.0.0.1/ >/dev/null && echo "nginx :80 OK"
+  wait_for_http "http://127.0.0.1/" "nginx :80"
 fi
 
 echo "Done."
