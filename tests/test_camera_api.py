@@ -50,7 +50,7 @@ class CameraApiTests(unittest.TestCase):
                         "timers": [],
                         "cameras": {
                             "rpicam_cam0": {
-                                "capture_dir": "grow/grows/grow-basil/captures",
+                                "capture_dir": "data/grow/grows/grow-basil/captures",
                             }
                         },
                     }
@@ -88,7 +88,7 @@ class CameraApiTests(unittest.TestCase):
                     {
                         "cameras": {
                             "rpicam_cam0": {
-                                "capture_dir": "grow/grows/grow-basil/captures",
+                                "capture_dir": "data/grow/grows/grow-basil/captures",
                             }
                         },
                     }
@@ -151,14 +151,14 @@ class CameraApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             data_dir = root / "data"
-            grows_dir = root / "grow" / "grows"
+            grows_dir = root / "data" / "grow" / "grows"
             config_file = data_dir / "config.json"
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_text(
-                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}}}),
                 encoding="utf-8",
             )
-            image = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / "manual-rpicam_cam0-2026-04-13T00-00-00Z-a1.jpg"
+            image = root / "data" / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / "manual-rpicam_cam0-2026-04-13T00-00-00Z-a1.jpg"
             image.parent.mkdir(parents=True)
             image.write_bytes(b"jpg")
 
@@ -181,15 +181,15 @@ class CameraApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             data_dir = root / "data"
-            grows_dir = root / "grow" / "grows"
+            grows_dir = root / "data" / "grow" / "grows"
             config_file = data_dir / "config.json"
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_text(
-                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}}}),
                 encoding="utf-8",
             )
             for index in range(3):
-                image = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / f"manual-rpicam_cam0-2026-04-13T00-00-0{index}Z-a{index}.jpg"
+                image = root / "data" / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-13" / f"manual-rpicam_cam0-2026-04-13T00-00-0{index}Z-a{index}.jpg"
                 image.parent.mkdir(parents=True, exist_ok=True)
                 image.write_bytes(b"jpg")
 
@@ -225,14 +225,14 @@ class CameraApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             data_dir = Path(tmp) / "data"
-            grows_dir = root / "grow" / "grows"
+            grows_dir = root / "data" / "grow" / "grows"
             config_file = data_dir / "config.json"
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_text(
-                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}}}),
+                json.dumps({"cameras": {"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}}}),
                 encoding="utf-8",
             )
-            image_dir = root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12"
+            image_dir = root / "data" / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12"
             image_dir.mkdir(parents=True)
             image_path = image_dir / "manual-rpicam_cam0-2026-04-12T00-00-00Z-a1.jpg"
             image_path.write_bytes(b"jpg")

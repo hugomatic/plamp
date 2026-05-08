@@ -1012,6 +1012,7 @@ class PageRenderTests(unittest.TestCase):
         )
 
         self.assertIn("Capture dir must stay inside Plamp root.", html)
+        self.assertIn("data/grow/grows/&lt;grow-id&gt;/captures", html)
         self.assertIn("absolute paths are rejected", html)
         self.assertIn("Set it to <code>0</code> to disable scheduling for that camera.", html)
         self.assertIn("<title>plamp Settings</title>", html)

@@ -175,7 +175,7 @@ class HardwareConfigTests(unittest.TestCase):
                     "rpicam_cam0": {
                         "label": "Tent top",
                         "detected_key": "rpicam_cam0",
-                        "capture_dir": "grow/grows/grow-basil/captures",
+                        "capture_dir": "data/grow/grows/grow-basil/captures",
                         "capture_every_seconds": 3600,
                         "manual_prefix": "manual",
                         "auto_prefix": "auto",
@@ -188,7 +188,7 @@ class HardwareConfigTests(unittest.TestCase):
                 "rpicam_cam0": {
                     "label": "Tent top",
                     "detected_key": "rpicam_cam0",
-                    "capture_dir": "grow/grows/grow-basil/captures",
+                    "capture_dir": "data/grow/grows/grow-basil/captures",
                     "capture_every_seconds": 3600,
                     "manual_prefix": "manual",
                     "auto_prefix": "auto",
@@ -208,7 +208,7 @@ class HardwareConfigTests(unittest.TestCase):
 
     def test_validate_cameras_requires_capture_every_seconds_when_auto_enabled(self):
         with self.assertRaisesRegex(ValueError, "capture_every_seconds"):
-            validate_cameras({"rpicam_cam0": {"auto_enabled": True, "capture_dir": "grow/grows/grow-basil/captures"}})
+            validate_cameras({"rpicam_cam0": {"auto_enabled": True, "capture_dir": "data/grow/grows/grow-basil/captures"}})
 
     def test_validate_cameras_rejects_invalid_boolean_fields(self):
         with self.assertRaisesRegex(ValueError, "enabled"):

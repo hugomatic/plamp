@@ -20,7 +20,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
-GROWS_DIR = REPO_ROOT / "grow" / "grows"
+GROWS_DIR = DATA_DIR / "grow" / "grows"
 
 
 @dataclass
@@ -344,7 +344,7 @@ def capture_camera_image(
 
 def candidate_grows_dirs(*, repo_root: Path, data_dir: Path, grows_dir: Path) -> list[Path]:
     dirs: list[Path] = []
-    for candidate in [grows_dir, data_dir.resolve().parent / "grow" / "grows"]:
+    for candidate in [grows_dir, repo_root / "grow" / "grows", data_dir.resolve().parent / "grow" / "grows"]:
         resolved = candidate.resolve()
         if any(existing.resolve() == resolved for existing in dirs):
             continue

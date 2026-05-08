@@ -485,7 +485,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '<td><input class="camera-id" placeholder="rpicam_cam0" value="{camera_id}"></td>'
             '<td><input class="camera-label" placeholder="Tent camera" value="{label}"></td>'
             '<td><select class="camera-detected-key">{detected_key_options}</select></td>'
-            '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value="{capture_dir}"></td>'
+            '<td><input class="camera-capture-dir" placeholder="data/grow/grows/<grow-id>/captures" value="{capture_dir}"></td>'
             '<td><input class="camera-capture-every-seconds" type="number" min="0" value="{capture_every_seconds}"></td>'
             '<td><select class="camera-autofocus-mode">{autofocus_mode_options}</select></td>'
             '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value="{autofocus_delay_ms}"></td>'
@@ -507,7 +507,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         '<td><input class="camera-id" placeholder="rpicam_cam0" value=""></td>'
         '<td><input class="camera-label" placeholder="Tent camera" value=""></td>'
         '<td><select class="camera-detected-key">{detected_key_options}</select></td>'
-        '<td><input class="camera-capture-dir" placeholder="grow/grows/<grow-id>/captures" value=""></td>'
+        '<td><input class="camera-capture-dir" placeholder="data/grow/grows/<grow-id>/captures" value=""></td>'
         '<td><input class="camera-capture-every-seconds" type="number" min="0" value="0"></td>'
         '<td><select class="camera-autofocus-mode"><option value="auto" selected>auto</option><option value="continuous">continuous</option><option value="manual">manual</option><option value="off">off</option></select></td>'
         '<td><input class="camera-autofocus-delay-ms" type="number" min="0" value=""></td>'
@@ -664,7 +664,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-controllers" type="button">Save controllers</button> <span id="controllers-status" class="status">Ready.</span>
     <button id="save-devices" type="button">Save devices</button> <span id="devices-status" class="status">Ready.</span>
     <h3>Cameras</h3>
-    <p class="muted">Capture dir must stay inside Plamp root. Use a repo-relative path like <code>grow/grows/&lt;grow-id&gt;/captures</code>; absolute paths are rejected.</p>
+    <p class="muted">Capture dir must stay inside Plamp root. Use a repo-relative path like <code>data/grow/grows/&lt;grow-id&gt;/captures</code>; absolute paths are rejected.</p>
     <p class="muted">Automatic capture uses <code>Every seconds</code>. Set it to <code>0</code> to disable scheduling for that camera.</p>
     <table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds</th><th>Autofocus</th><th>Autofocus delay ms</th></tr></thead><tbody>{''.join(camera_setup_rows)}</tbody></table>
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>

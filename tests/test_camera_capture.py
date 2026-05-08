@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from plamp_web import camera_capture
 from plamp_web.camera_capture import (
     CameraCaptureError,
     capture_camera_image,
@@ -26,6 +27,9 @@ class CameraCaptureTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"jpg")
 
+    def test_default_grows_dir_lives_under_data(self):
+        self.assertEqual(camera_capture.GROWS_DIR, camera_capture.DATA_DIR / "grow" / "grows")
+
     def test_successful_capture_writes_image_in_camera_capture_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -34,7 +38,7 @@ class CameraCaptureTests(unittest.TestCase):
                 config_file,
                 cameras={
                     "rpicam_cam0": {
-                        "capture_dir": "grow/grows/grow-basil/captures",
+                        "capture_dir": "data/grow/grows/grow-basil/captures",
                         "autofocus_mode": "auto",
                         "autofocus_delay_ms": 1500,
                     },
@@ -79,7 +83,7 @@ class CameraCaptureTests(unittest.TestCase):
             image_path = root / metadata["image_path"]
             self.assertTrue(image_path.exists())
             self.assertEqual(image_path.read_bytes(), b"jpg")
-            self.assertEqual(image_path.parent.parent, root / "grow" / "grows" / "grow-basil" / "captures")
+            self.assertEqual(image_path.parent.parent, root / "data" / "grow" / "grows" / "grow-basil" / "captures")
             self.assertTrue(metadata["capture_id"].startswith("manual-rpicam_cam0-"))
             self.assertEqual(metadata["capture_kind"], "manual")
             self.assertEqual(metadata["camera_id"], "rpicam_cam0")
@@ -95,7 +99,7 @@ class CameraCaptureTests(unittest.TestCase):
                 metadata["capture_id"],
                 repo_root=root,
                 data_dir=root / "data",
-                grows_dir=root / "grow" / "grows",
+                grows_dir=root / "data" / "grow" / "grows",
                 config_file=config_file,
             )
             self.assertEqual(resolved, image_path)
@@ -104,7 +108,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
 
             with self.assertRaisesRegex(CameraCaptureError, "unknown camera_id"):
                 capture_camera_image(
@@ -135,11 +139,11 @@ class CameraCaptureTests(unittest.TestCase):
             self.write_config(
                 config_file,
                 cameras={
-                    "rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"},
+                    "rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"},
                     "rpicam_cam1": {"capture_dir": "data/camera/captures"},
                 },
             )
-            grow_dir = root / "grow" / "grows" / "grow-basil"
+            grow_dir = root / "data" / "grow" / "grows" / "grow-basil"
             grow_dir.mkdir(parents=True, exist_ok=True)
             grow_dir.joinpath("grow.json").write_text(
                 json.dumps({"grow_id": "grow-basil", "crop": {"common_name": "Basil", "cultivar": "Siam Queen"}}),
@@ -154,7 +158,7 @@ class CameraCaptureTests(unittest.TestCase):
             captures = list_camera_captures(
                 repo_root=root,
                 data_dir=root / "data",
-                grows_dir=root / "grow" / "grows",
+                grows_dir=root / "data" / "grow" / "grows",
                 config_file=config_file,
             )
 
@@ -176,10 +180,10 @@ class CameraCaptureTests(unittest.TestCase):
             config_file = root / "data" / "config.json"
             self.write_config(
                 config_file,
-                cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}},
+                cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}},
             )
 
-            grow_dir = root / "grow" / "grows" / "grow-basil"
+            grow_dir = root / "data" / "grow" / "grows" / "grow-basil"
             grow_dir.mkdir(parents=True, exist_ok=True)
             grow_dir.joinpath("grow.json").write_text(json.dumps({"grow_id": "grow-basil"}), encoding="utf-8")
             self.write_image(grow_dir / "captures" / "2026-05-07" / "manual-rpicam_cam0-2026-05-07T18-12-44Z-a1b2c3.jpg")
@@ -189,7 +193,7 @@ class CameraCaptureTests(unittest.TestCase):
             grow_only = list_camera_captures(
                 repo_root=root,
                 data_dir=root / "data",
-                grows_dir=root / "grow" / "grows",
+                grows_dir=root / "data" / "grow" / "grows",
                 config_file=config_file,
                 source="grow",
                 grow_id="grow-basil",
@@ -197,7 +201,7 @@ class CameraCaptureTests(unittest.TestCase):
             roll_only = list_camera_captures(
                 repo_root=root,
                 data_dir=root / "data",
-                grows_dir=root / "grow" / "grows",
+                grows_dir=root / "data" / "grow" / "grows",
                 config_file=config_file,
                 source="camera_roll",
                 limit=1,
@@ -209,7 +213,7 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(len(roll_only), 1)
             self.assertEqual(roll_only[0]["source"], "camera_roll")
 
-    def test_list_camera_captures_falls_back_to_shared_grows_dir_from_data_symlink(self):
+    def test_list_camera_captures_falls_back_to_legacy_repo_grows_dir_from_data_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             shared_root = root / "shared-root"
@@ -231,7 +235,7 @@ class CameraCaptureTests(unittest.TestCase):
             )
 
             config_file = linked_data_dir / "config.json"
-            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
 
             shared_grow_image = shared_root / "grow" / "grows" / "grow-basil" / "captures" / "2026-04-12" / "manual-rpicam_cam0-2026-04-12T10-00-01Z-deadbe.jpg"
             self.write_image(shared_grow_image)
@@ -247,6 +251,29 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(captures[0]["source"], "grow")
             self.assertEqual(captures[0]["grow_id"], "grow-basil")
 
+    def test_list_camera_captures_scans_legacy_repo_grows_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = root / "data" / "config.json"
+            self.write_config(config_file, cameras={})
+
+            legacy_grow_dir = root / "grow" / "grows" / "grow-basil"
+            legacy_grow_dir.mkdir(parents=True, exist_ok=True)
+            legacy_grow_dir.joinpath("grow.json").write_text(json.dumps({"grow_id": "grow-basil"}), encoding="utf-8")
+            legacy_image = legacy_grow_dir / "captures" / "2026-05-07" / "manual-rpicam_cam0-2026-05-07T18-12-44Z-a1b2c3.jpg"
+            self.write_image(legacy_image)
+
+            captures = list_camera_captures(
+                repo_root=root,
+                data_dir=root / "data",
+                grows_dir=root / "data" / "grow" / "grows",
+                config_file=config_file,
+            )
+
+            self.assertEqual([item["capture_id"] for item in captures], [legacy_image.stem])
+            self.assertEqual(captures[0]["source"], "grow")
+            self.assertEqual(captures[0]["grow_id"], "grow-basil")
+
     def test_capture_image_key_rejects_paths_outside_repo(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -257,7 +284,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
 
             with patch("plamp_web.camera_capture.load_picamera2_class", side_effect=CameraCaptureError("Picamera2 is not available")):
                 with self.assertRaisesRegex(CameraCaptureError, "Picamera2 is not available"):
@@ -272,7 +299,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
 
             class FakePicamera2:
                 def create_still_configuration(self) -> dict[str, str]:
@@ -309,7 +336,7 @@ class CameraCaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = root / "data" / "config.json"
-            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "grow/grows/grow-basil/captures"}})
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
 
             class FakePicamera2:
                 def create_still_configuration(self) -> dict[str, str]:
