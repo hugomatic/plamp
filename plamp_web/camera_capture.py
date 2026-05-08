@@ -104,20 +104,6 @@ def parse_camera_output(stdout: str) -> dict[str, str]:
     return summary
 
 
-def serialize_picamera2_control_value(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    name = getattr(value, "name", None)
-    enum_value = getattr(value, "value", None)
-    if isinstance(name, str) and isinstance(enum_value, (str, int, float, bool)):
-        return {"name": name, "value": enum_value}
-    return str(value)
-
-
-def serialize_picamera2_controls(controls: dict[str, Any]) -> dict[str, Any]:
-    return {str(name): serialize_picamera2_control_value(value) for name, value in controls.items()}
-
-
 def build_picamera2_controls(camera_settings: dict[str, Any]) -> dict[str, Any]:
     controls: dict[str, Any] = {}
     autofocus_mode = camera_settings.get("autofocus_mode")
@@ -156,8 +142,11 @@ def capture_with_picamera2(
     temp_path = Path(temp_file.name)
     temp_file.close()
     controls = build_picamera2_controls(camera_settings)
+    controls_summary: dict[str, Any] = {}
     autofocus_mode = camera_settings.get("autofocus_mode")
     autofocus_delay_ms = camera_settings.get("autofocus_delay_ms")
+    if isinstance(autofocus_mode, str) and autofocus_mode:
+        controls_summary["autofocus_mode"] = autofocus_mode
     try:
         configuration = picamera.create_still_configuration()
         picamera.configure(configuration)
@@ -197,7 +186,7 @@ def capture_with_picamera2(
         "backend": "picamera2",
         "camera_id": camera_id,
         "captured_at": captured_at,
-        "controls": serialize_picamera2_controls(controls),
+        "controls": controls_summary,
     }
 
 

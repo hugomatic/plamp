@@ -85,6 +85,7 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(metadata["camera_id"], "rpicam_cam0")
             self.assertEqual(metadata["camera_summary"]["camera_id"], "rpicam_cam0")
             self.assertEqual(metadata["camera_summary"]["backend"], "picamera2")
+            self.assertEqual(metadata["camera_summary"]["controls"], {"autofocus_mode": "auto"})
             self.assertEqual(metadata["image_url"], f"/api/camera/captures/{metadata['capture_id']}/image")
             self.assertNotIn("camera_script", metadata)
             self.assertNotIn("camera_command", metadata)
