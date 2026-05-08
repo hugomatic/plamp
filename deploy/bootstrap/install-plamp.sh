@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+default_repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
+
 repo_url="https://github.com/hugomatic/plamp.git"
-repo_dir="${HOME}/plamp"
+repo_dir="${default_repo_dir}"
 branch="main"
 public_mode=0
 update_os=0
@@ -19,7 +22,7 @@ Bootstrap Plamp on a Raspberry Pi with optional public nginx and automation cron
 
 Options:
   --repo-url URL              Git repo URL (default: https://github.com/hugomatic/plamp.git)
-  --repo-dir PATH             Clone/install directory (default: ~/plamp)
+  --repo-dir PATH             Clone/install directory (default: local repo directory)
   --plamp-dir PATH            Alias for --repo-dir
   --branch NAME               Git branch/tag to check out (default: main)
   --public                    Configure nginx on port 80 proxying plamp-web on 127.0.0.1:8000
