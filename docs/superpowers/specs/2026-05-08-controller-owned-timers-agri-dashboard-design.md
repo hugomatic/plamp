@@ -93,7 +93,7 @@ Rules:
 - The controller owns both device metadata and timer state.
 - Timer rows live inside the controller record.
 - Timer editor mode is explicit config and is preserved as-is.
-- Device icons are explicit user-selected config, not inferred from device ids.
+- Device icons are explicit user-selected config, not inferred from device ids, and unknown device types fall back to generated placeholder icons.
 - Device and camera lane ordering is explicit config, so fan and camera lanes can be aligned visually.
 - Controller background color is explicit user-selected config, not inferred from hostname or controller id.
 - `report_every` is a controller-level setting and is edited with the controller.
@@ -170,7 +170,7 @@ Editing rules:
 - There is one `Apply all changes to Controller` button for the controller, visible only in edit mode.
 - The reset warning appears only in edit mode, next to the fields and apply button.
 - `report every N seconds` appears in the edit surface as a controller-level setting.
-- Device icons are explicitly selectable by the user in edit mode.
+- Device icons are explicitly selectable by the user in edit mode and the UI can generate placeholders for unforeseen device types like `ionizer` and `air purifier`.
 - Controller background color is explicitly selectable by the user in edit mode.
 - Device order is explicitly selectable by the user in edit mode and persisted in config.
 - The edit panel sits above telemetry, and collapses away when not editing.

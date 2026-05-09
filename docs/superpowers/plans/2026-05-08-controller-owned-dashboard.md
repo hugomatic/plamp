@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move Plamp to a controller-owned config and UI model with explicit device icons, telemetry/telecommand separation, a single edit/apply flow, and a controller dashboard that matches the agreed agri-style layout.
+**Goal:** Move Plamp to a controller-owned config and UI model with explicit device icons, placeholder icons for unforeseen devices, telemetry/telecommand separation, a single edit/apply flow, and a controller dashboard that matches the agreed agri-style layout.
 
 **Architecture:** Treat `plamp_web/hardware_config.py` as the schema gate for the new controller-owned config, `plamp_web/server.py` as the source of controller telemetry and apply payloads, and `plamp_web/pages.py` as the rendering layer for the new dashboard and edit panel. Preserve existing values through a migration path, but make the new controller object the canonical runtime shape so the UI can render controllers, nested devices, controller colors, explicit device ordering, timer editor modes, timelines, and camera snapshot lanes without guessing from flat records.
 
@@ -14,7 +14,7 @@
 
 - Modify `plamp_web/hardware_config.py`: extend validation to accept controller-owned `devices`, timer rows, explicit `icon` fields, explicit `display_order`, explicit timer `editor` modes, controller-level `background_color`, and controller-level `report_every` while keeping the existing id and type rules.
 - Modify `plamp_web/server.py`: reshape controller state payloads, keep telemetry separate from telecommand, preserve full-controller apply behavior, and add the controller-facing health data needed by the dashboard.
-- Modify `plamp_web/pages.py`: replace the current flat timer dashboard with the controller list, hostname chip, top-level health light, edit-only apply panel, 24h timelines, and camera lane.
+- Modify `plamp_web/pages.py`: replace the current flat timer dashboard with the controller list, hostname chip, top-level health light, edit-only apply panel, 24h timelines, camera lane, and icon generation fallbacks.
 - Modify `tests/test_hardware_config.py`: cover controller-owned config validation and migration behavior.
 - Modify `tests/test_config_api.py`: cover controller payload shape, apply semantics, and the warning/edit mode behavior exposed by the API.
 - Modify `tests/test_pages.py`: cover the new dashboard structure, hostname chip, edit panel placement, timeline layout, and explicit icon selection.
@@ -54,6 +54,20 @@ def test_validate_controllers_accepts_controller_owned_devices_and_report_every(
 def test_validate_devices_rejects_implicit_icon_mapping():
     with pytest.raises(ValueError):
         validate_devices({"lights": {"controller": "pump_n_lights", "pin": 2, "editor": "cycle"}}, {"pump_n_lights": {}})
+
+def test_validate_devices_accepts_unknown_device_types_with_placeholder_icon():
+    controllers = {"pump_n_lights": {"type": "pico_scheduler"}}
+    devices = {
+        "air_purifier": {
+            "controller": "pump_n_lights",
+            "display_order": 2,
+            "pin": 7,
+            "type": "gpio",
+            "editor": "cycle",
+            "icon": "placeholder",
+        }
+    }
+    assert validate_devices(devices, controllers)["air_purifier"]["icon"] == "placeholder"
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -64,7 +78,7 @@ Expected: fail because the current validators still understand only the flat dev
 
 - [ ] **Step 3: Implement the new config shape**
 
-Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon`, `display_order`, and `editor` explicit and reject any attempt to infer them from ids or normalize `cycle` and `clock_window` into one generic mode.
+Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon`, `display_order`, and `editor` explicit and reject any attempt to infer them from ids or normalize `cycle` and `clock_window` into one generic mode. Unknown devices should be able to carry a generated placeholder icon so they still render in the UI.
 
 ```python
 def validate_controllers(value):
@@ -236,6 +250,7 @@ Behavior to preserve:
 - the big `Apply all changes to Controller` button appears only in edit mode
 - `Updating timer resets all` appears only inside edit mode
 - device icons are user-selected in the edit UI, not auto-mapped from ids
+- unknown devices like `ionizer` and `air purifier` render with generated placeholder icons until the user picks a dedicated icon
 - controller background color is user-selected in the edit UI and persisted in config
 - device order is user-selected in the edit UI and persisted in config
 - timer editor mode is user-selected in the edit UI and preserves `cycle`, `clock_window`, and later `events`
