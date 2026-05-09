@@ -151,6 +151,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("border-left: 4px solid #174ea6;", html)
         self.assertIn("padding: .35rem .5rem;", html)
 
+    def test_timer_dashboard_buttons_pin_readable_mobile_text_style(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("appearance: none;", html)
+        self.assertIn("-webkit-appearance: none;", html)
+        self.assertIn("color: #111;", html)
+        self.assertIn("font: inherit;", html)
+
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

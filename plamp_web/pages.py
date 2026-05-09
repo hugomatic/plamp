@@ -878,7 +878,7 @@ def render_timer_dashboard_page(
     body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     nav { margin-bottom: 1.5rem; }
     a { color: #174ea6; }
-    button { border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }
+    button { -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }
     input, select { box-sizing: border-box; padding: .35rem; }
     .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
     .status-board { display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }
