@@ -6,12 +6,13 @@ install_script="${script_dir}/deploy/bootstrap/install-plamp.sh"
 
 usage() {
   cat <<'USAGE'
-Usage: ./plampctl [restart|reinstall|remote-install|set-hostname] [args...]
+Usage: ./plampctl [restart|upgrade|reinstall|remote-install|set-hostname] [args...]
 
 Without an action, prompts interactively.
 
 Actions:
   restart                  Restart plamp-web and show status
+  upgrade [BRANCH]         Pull latest code from origin/BRANCH (default main), sync Python deps, and restart
   reinstall [options...]   Run deploy/bootstrap/install-plamp.sh with --plamp-dir set to this repo root
   remote-install HOST REMOTE_DIR [options...]
                            Copy deploy/bootstrap/install-plamp.sh to HOST and run it there with --plamp-dir REMOTE_DIR
@@ -20,6 +21,8 @@ Actions:
 Examples:
   ./plampctl
   ./plampctl restart
+  ./plampctl upgrade
+  ./plampctl upgrade feature-timer-visibility-modes
   ./plampctl reinstall --public
   ./plampctl reinstall --update-os --enable-heartbeat
   ./plampctl remote-install hugo@sprout ~/plamp --public
@@ -33,6 +36,50 @@ USAGE
 restart_plamp() {
   sudo systemctl restart plamp-web
   sudo systemctl status plamp-web --no-pager
+}
+
+upgrade_plamp() {
+  if [[ $# -gt 1 ]]; then
+    echo "upgrade accepts at most one branch." >&2
+    usage >&2
+    exit 2
+  fi
+
+  local branch="${1:-main}"
+  echo "Upgrading Plamp from origin/${branch}"
+  git -C "${script_dir}" fetch origin "${branch}"
+
+  local dirty
+  dirty="$(git -C "${script_dir}" status --porcelain)"
+  if [[ -n "${dirty}" ]]; then
+    echo "cannot upgrade with uncommitted changes:" >&2
+    printf '%s\n' "${dirty}" >&2
+    exit 1
+  fi
+
+  local local_commit
+  local remote_commit
+  local_commit="$(git -C "${script_dir}" rev-parse --verify "${branch}" 2>/dev/null || true)"
+  remote_commit="$(git -C "${script_dir}" rev-parse --verify "origin/${branch}")"
+  if [[ -n "${local_commit}" && "${local_commit}" == "${remote_commit}" ]]; then
+    echo "origin/${branch} is already up to date."
+    return 0
+  fi
+  if [[ -n "${local_commit}" ]]; then
+    echo "Incoming commits:"
+    git -C "${script_dir}" log --format="%h %s" "${local_commit}..origin/${branch}"
+  fi
+
+  git -C "${script_dir}" switch "${branch}"
+  git -C "${script_dir}" pull --ff-only origin "${branch}"
+
+  if command -v uv >/dev/null 2>&1; then
+    uv sync --project "${script_dir}"
+  else
+    echo "uv not found; skipping Python dependency sync." >&2
+  fi
+
+  restart_plamp
 }
 
 set_hostname_plamp() {
@@ -106,11 +153,14 @@ remote_install_plamp() {
 
 prompt_action() {
   local reply
-  printf 'Choose action: [r]estart, re[i]nstall, remote-[s]sh install, set-[h]ostname, [c]ancel: '
+  printf 'Choose action: [r]estart, [u]pgrade, re[i]nstall, remote-[s]sh install, set-[h]ostname, [c]ancel: '
   read -r reply
   case "${reply}" in
     r|R|restart|Restart)
       restart_plamp
+      ;;
+    u|U|upgrade|Upgrade)
+      upgrade_plamp
       ;;
     i|I|reinstall|Reinstall)
       reinstall_plamp
@@ -156,6 +206,10 @@ case "${1-}" in
       exit 2
     fi
     restart_plamp
+    ;;
+  upgrade)
+    shift
+    upgrade_plamp "$@"
     ;;
   reinstall)
     shift
