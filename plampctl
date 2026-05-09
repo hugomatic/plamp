@@ -48,6 +48,28 @@ upgrade_plamp() {
   local branch="${1:-main}"
   echo "Upgrading Plamp from origin/${branch}"
   git -C "${script_dir}" fetch origin "${branch}"
+
+  local dirty
+  dirty="$(git -C "${script_dir}" status --porcelain)"
+  if [[ -n "${dirty}" ]]; then
+    echo "cannot upgrade with uncommitted changes:" >&2
+    printf '%s\n' "${dirty}" >&2
+    exit 1
+  fi
+
+  local local_commit
+  local remote_commit
+  local_commit="$(git -C "${script_dir}" rev-parse --verify "${branch}" 2>/dev/null || true)"
+  remote_commit="$(git -C "${script_dir}" rev-parse --verify "origin/${branch}")"
+  if [[ -n "${local_commit}" && "${local_commit}" == "${remote_commit}" ]]; then
+    echo "origin/${branch} is already up to date."
+    return 0
+  fi
+  if [[ -n "${local_commit}" ]]; then
+    echo "Incoming commits:"
+    git -C "${script_dir}" log --format="%h %s" "${local_commit}..origin/${branch}"
+  fi
+
   git -C "${script_dir}" switch "${branch}"
   git -C "${script_dir}" pull --ff-only origin "${branch}"
 
