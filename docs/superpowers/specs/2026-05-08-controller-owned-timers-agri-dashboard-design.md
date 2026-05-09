@@ -4,7 +4,7 @@
 
 Move Plamp from a flat controller/device config toward a controller-owned model where each controller contains its devices, timers, reporting cadence, and telemetry-derived health. The user edits one controller at a time, and applying any timer change reprograms the whole controller state.
 
-The UI should move closer to the `agri-ui.png` direction: stronger visual hierarchy, device icons, a sequence/timeline view, and a controller health summary that makes sync freshness obvious.
+The UI should move closer to the `agri-ui.png` direction: stronger visual hierarchy, explicit user-chosen device icons, a sequence/timeline view, and a controller health summary that makes sync freshness obvious.
 
 This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor types, labels, and timer settings are not lost.
 
@@ -43,11 +43,13 @@ Example:
         "pumpON": {
           "pin": 3,
           "type": "gpio",
+          "icon": "pump",
           "editor": "cycle"
         },
         "lightsON": {
           "pin": 2,
           "type": "gpio",
+          "icon": "light",
           "editor": "clock_window"
         }
       },
@@ -56,6 +58,7 @@ Example:
           "id": "pumpON",
           "pin": 3,
           "type": "gpio",
+          "icon": "pump",
           "editor": "cycle",
           "schedule": {
             "on_at": "22:00",
@@ -66,6 +69,7 @@ Example:
           "id": "lightsON",
           "pin": 2,
           "type": "gpio",
+          "icon": "light",
           "editor": "clock_window",
           "schedule": {
             "on_at": "06:00",
@@ -82,6 +86,7 @@ Rules:
 
 - The controller owns both device metadata and timer state.
 - Timer rows live inside the controller record.
+- Device icons are explicit user-selected config, not inferred from device ids.
 - `report_every` is a controller-level setting and is edited with the controller.
 - Existing values from the current schema must be migrated into the new shape.
 - The migration should preserve stable ids, labels, pins, editor values, and schedule values.
@@ -102,6 +107,7 @@ Telemetry should be able to represent at least:
 - last periodic message time
 - controller identity and firmware/version metadata
 - current sync status
+- camera capture state if the controller owns capture scheduling
 
 The UI must not pretend telecommand is already active when the controller has not applied it yet.
 
@@ -136,26 +142,34 @@ If the system restarts and the controller is not yet synced, health should refle
 
 The dashboard should move toward an agri-style controller card layout:
 
-- controller summary at the top
-- icon-driven device cards
-- a sequence/timeline view for the controller
-- a health strip that shows freshness clearly
-- a controller edit view with all timers visible at once
+- hostname chip at the top
+- one top-level health light for the whole app
+- controller list, with each controller rendered as a container card
+- icon-driven device cards inside each controller
+- a centered-now timeline that scrolls/zooms around the current time
+- a 24h controller timeline for timer lanes
+- a camera lane that uses the same scale so it can line up visually with fan timing
+- a controller edit view that appears above telemetry only when editing
+- a visible apply area only in edit mode
 
 Editing rules:
 
 - When edit mode is on, each timer shows its parameters inline.
 - Live widgets continue to show telemetry.
 - Edit fields represent telecommand.
-- There is one `Apply controller` button for the controller.
-- `report every N seconds` appears in the same edit surface as the timers, but visually as a controller-level setting.
+- There is one `Apply all changes to Controller` button for the controller, visible only in edit mode.
+- The reset warning appears only in edit mode, next to the fields and apply button.
+- `report every N seconds` appears in the edit surface as a controller-level setting.
+- Device icons are explicitly selectable by the user in edit mode.
+- The edit panel sits above telemetry, and collapses away when not editing.
 
 Suggested layout:
 
-- Top row: controller name, health, report cadence, firmware/version, last message age
-- Middle: timer sequence view and current-state cards
-- Lower: controller device cards with icons and status
-- Edit mode overlay or panel: timer fields and controller settings side by side
+- Top row: hostname chip, app-level health light, uptime
+- Controller list: controller card, per-controller status code, nested device cards
+- Middle: 24h timeline lanes for timers with a centered now marker
+- Camera row: same time scale as the controller lanes
+- Edit mode panel: timer fields and controller settings above telemetry, with warnings and apply button
 
 The UI should emphasize that the controller is one unit, not a set of unrelated rows.
 
@@ -196,4 +210,4 @@ Future command/event transport is intentionally out of scope for v1, but the sch
 - Tests that one apply action sends a full controller state.
 - Tests that `report_every` is part of controller editing and payload generation.
 - Tests that health is `Good` for fresh telemetry and `Bad` for late telemetry.
-- UI tests for the controller summary, icon-driven device cards, sequence view, and apply warning copy.
+- UI tests for the hostname chip, controller list, icon selector, centered-now timeline, camera lane, and apply warning copy.
