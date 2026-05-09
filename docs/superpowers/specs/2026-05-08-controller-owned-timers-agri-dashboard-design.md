@@ -43,12 +43,14 @@ Example:
       "report_every": 10,
       "devices": {
         "pumpON": {
+          "display_order": 0,
           "pin": 3,
           "type": "gpio",
           "icon": "pump",
           "editor": "cycle"
         },
         "lightsON": {
+          "display_order": 1,
           "pin": 2,
           "type": "gpio",
           "icon": "light",
@@ -89,6 +91,7 @@ Rules:
 - The controller owns both device metadata and timer state.
 - Timer rows live inside the controller record.
 - Device icons are explicit user-selected config, not inferred from device ids.
+- Device and camera lane ordering is explicit config, so fan and camera lanes can be aligned visually.
 - Controller background color is explicit user-selected config, not inferred from hostname or controller id.
 - `report_every` is a controller-level setting and is edited with the controller.
 - Existing values from the current schema must be migrated into the new shape.
@@ -149,6 +152,7 @@ The dashboard should move toward an agri-style controller card layout:
 - one top-level health light for the whole app
 - controller list, with each controller rendered as a container card
 - icon-driven device cards inside each controller
+- explicit lane order for devices and camera captures
 - a centered-now timeline that scrolls/zooms around the current time
 - a 24h controller timeline for timer lanes
 - a camera lane that uses the same scale so it can line up visually with fan timing and shows capture snapshots plus delay
@@ -165,14 +169,15 @@ Editing rules:
 - `report every N seconds` appears in the edit surface as a controller-level setting.
 - Device icons are explicitly selectable by the user in edit mode.
 - Controller background color is explicitly selectable by the user in edit mode.
+- Device order is explicitly selectable by the user in edit mode and persisted in config.
 - The edit panel sits above telemetry, and collapses away when not editing.
 
 Suggested layout:
 
 - Top row: hostname chip, app-level health light, uptime
 - Controller list: controller card, per-controller status code, nested device cards
-- Middle: 24h timeline lanes for timers with a centered now marker
-- Camera row: same time scale as the controller lanes, showing snapshots and capture delay markers
+- Middle: 24h timeline lanes for timers with a centered now marker, ordered by display_order
+- Camera row: same time scale as the controller lanes, showing snapshots and capture delay markers, and positioned by display_order so it can sit next to the fan lane
 - Edit mode panel: timer fields and controller settings above telemetry, with warnings and apply button
 
 The UI should emphasize that the controller is one unit, not a set of unrelated rows.
@@ -214,4 +219,4 @@ Future command/event transport is intentionally out of scope for v1, but the sch
 - Tests that one apply action sends a full controller state.
 - Tests that `report_every` is part of controller editing and payload generation.
 - Tests that health is `Good` for fresh telemetry and `Bad` for late telemetry.
-- UI tests for the hostname chip, controller list, icon selector, controller color selector, centered-now timeline, camera snapshots lane, and apply warning copy.
+- UI tests for the hostname chip, controller list, icon selector, controller color selector, device ordering, centered-now timeline, camera snapshots lane, and apply warning copy.

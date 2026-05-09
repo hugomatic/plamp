@@ -4,7 +4,7 @@
 
 **Goal:** Move Plamp to a controller-owned config and UI model with explicit device icons, telemetry/telecommand separation, a single edit/apply flow, and a controller dashboard that matches the agreed agri-style layout.
 
-**Architecture:** Treat `plamp_web/hardware_config.py` as the schema gate for the new controller-owned config, `plamp_web/server.py` as the source of controller telemetry and apply payloads, and `plamp_web/pages.py` as the rendering layer for the new dashboard and edit panel. Preserve existing values through a migration path, but make the new controller object the canonical runtime shape so the UI can render controllers, nested devices, controller colors, timelines, and camera snapshot lanes without guessing from flat records.
+**Architecture:** Treat `plamp_web/hardware_config.py` as the schema gate for the new controller-owned config, `plamp_web/server.py` as the source of controller telemetry and apply payloads, and `plamp_web/pages.py` as the rendering layer for the new dashboard and edit panel. Preserve existing values through a migration path, but make the new controller object the canonical runtime shape so the UI can render controllers, nested devices, controller colors, explicit device ordering, timelines, and camera snapshot lanes without guessing from flat records.
 
 **Tech Stack:** Python 3.11, FastAPI, server-rendered HTML, vanilla browser JavaScript, stdlib `unittest`, existing JSON config helpers.
 
@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Modify `plamp_web/hardware_config.py`: extend validation to accept controller-owned `devices`, timer rows, explicit `icon` fields, controller-level `background_color`, and controller-level `report_every` while keeping the existing id and type rules.
+- Modify `plamp_web/hardware_config.py`: extend validation to accept controller-owned `devices`, timer rows, explicit `icon` fields, explicit `display_order`, controller-level `background_color`, and controller-level `report_every` while keeping the existing id and type rules.
 - Modify `plamp_web/server.py`: reshape controller state payloads, keep telemetry separate from telecommand, preserve full-controller apply behavior, and add the controller-facing health data needed by the dashboard.
 - Modify `plamp_web/pages.py`: replace the current flat timer dashboard with the controller list, hostname chip, top-level health light, edit-only apply panel, 24h timelines, and camera lane.
 - Modify `tests/test_hardware_config.py`: cover controller-owned config validation and migration behavior.
@@ -41,8 +41,8 @@ def test_validate_controllers_accepts_controller_owned_devices_and_report_every(
             "background_color": "#204b33",
             "report_every": 10,
             "devices": {
-                "pumpON": {"pin": 3, "type": "gpio", "icon": "pump", "editor": "cycle"},
-                "lightsON": {"pin": 2, "type": "gpio", "icon": "light", "editor": "clock_window"},
+                "pumpON": {"display_order": 0, "pin": 3, "type": "gpio", "icon": "pump", "editor": "cycle"},
+                "lightsON": {"display_order": 1, "pin": 2, "type": "gpio", "icon": "light", "editor": "clock_window"},
             },
         }
     }
@@ -62,7 +62,7 @@ Expected: fail because the current validators still understand only the flat dev
 
 - [ ] **Step 3: Implement the new config shape**
 
-Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon` explicit and reject any attempt to infer it from ids.
+Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon` and `display_order` explicit and reject any attempt to infer them from ids.
 
 ```python
 def validate_controllers(value):
@@ -87,6 +87,7 @@ def validate_devices(value, controllers):
         device_value = _as_mapping(device_value, f"device {device_id}")
         normalized[device_id] = {
             "controller": device_value.get("controller"),
+            "display_order": device_value.get("display_order"),
             "pin": device_value.get("pin"),
             "type": device_value.get("type", "gpio"),
             "editor": device_value.get("editor", "cycle"),
@@ -201,6 +202,7 @@ def test_timer_dashboard_page_renders_controller_list_and_hostname_chip():
     assert "hostname-chip" in html
     assert "controller-card" in html
     assert "background-color" in html or "controller-color" in html
+    assert "display_order" in html or "device-order" in html
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -233,6 +235,7 @@ Behavior to preserve:
 - `Updating timer resets all` appears only inside edit mode
 - device icons are user-selected in the edit UI, not auto-mapped from ids
 - controller background color is user-selected in the edit UI and persisted in config
+- device order is user-selected in the edit UI and persisted in config
 - the 24h timeline uses a centered-now model and can zoom without moving the now marker
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -308,6 +311,7 @@ def lane_for_camera_capture(camera_id: str, capture_time: int) -> dict[str, Any]
         "camera_id": camera_id,
         "capture_time": capture_time,
         "kind": "camera_capture",
+        "display_order": 0,
         "delay_seconds": 0,
         "snapshot_url": "",
     }
