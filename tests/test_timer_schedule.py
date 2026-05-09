@@ -63,6 +63,22 @@ class TimerScheduleTests(unittest.TestCase):
             ],
         )
 
+    def test_channel_metadata_shows_disabled_and_hides_hidden_devices(self):
+        config = {
+            "controllers": {"sprouter": {"pico_serial": "abc123"}},
+            "devices": {
+                "pump": {"controller": "sprouter", "pin": 2, "editor": "disabled"},
+                "lights": {"controller": "sprouter", "pin": 3, "editor": "hidden"},
+            },
+        }
+
+        self.assertEqual(
+            channel_metadata_for_role("sprouter", config, {"devices": []}),
+            [
+                {"role": "sprouter", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "disabled"},
+            ],
+        )
+
     def test_inspect_two_step_pattern_accepts_on_off(self):
         event = {"pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}], "current_t": 10}
 

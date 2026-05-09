@@ -673,6 +673,30 @@ class ConfigApiTests(unittest.TestCase):
             },
         )
 
+    def test_timer_state_for_pico_excludes_disabled_and_hidden_devices(self):
+        raw_state = {
+            "report_every": 1,
+            "devices": [
+                {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
+                {"id": "lights", "type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
+                {"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
+            ],
+        }
+        config = {
+            "controllers": {"sprouter": {"type": "pico_scheduler", "report_every": 10}},
+            "devices": {
+                "pump": {"controller": "sprouter", "pin": 2, "type": "gpio", "editor": "disabled"},
+                "lights": {"controller": "sprouter", "pin": 3, "type": "gpio", "editor": "hidden"},
+                "fan": {"controller": "sprouter", "pin": 4, "type": "gpio", "editor": "cycle"},
+            },
+            "cameras": {},
+        }
+
+        with patch.object(server, "load_config", return_value=config):
+            state = server.timer_state_for_pico("sprouter", raw_state)
+
+        self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
+
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
         config = {
             "controllers": {

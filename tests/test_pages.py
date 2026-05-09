@@ -159,6 +159,32 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("color: #111;", html)
         self.assertIn("font: inherit;", html)
 
+    def test_settings_page_device_editor_offers_disabled_and_hidden(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {"pump_lights": {"type": "pico_scheduler"}},
+                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "disabled"}},
+                    "cameras": {},
+                },
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {},
+            }
+        )
+
+        self.assertIn('<option value="disabled" selected>disabled</option>', html)
+        self.assertIn('<option value="hidden">hidden</option>', html)
+
+    def test_timer_dashboard_renders_disabled_channels_without_editor_button(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}]}, 0)
+
+        self.assertIn('const disabled = channel.default_editor === "disabled";', html)
+        self.assertIn('badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");', html)
+        self.assertIn("if (!disabled) {", html)
+
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

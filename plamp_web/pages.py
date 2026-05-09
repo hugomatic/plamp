@@ -241,7 +241,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
                 controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("type") or "gpio")),
-                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
+                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
             )
         )
     device_rows.append(
@@ -254,7 +254,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         '</tr>'.format(
             controller_options_html=controller_options(controllers, ""),
             type_options=pin_type_options("gpio"),
-            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window"]),
+            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window", "disabled", "hidden"]),
         )
     )
 
@@ -431,7 +431,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
                 controller_id=html.escape(controller_id, quote=True),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("type") or "gpio")),
-                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window"]),
+                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
             )
         )
 
@@ -1318,6 +1318,7 @@ def render_timer_dashboard_page(
           : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
         for (const item of items) {
           const channel = item.channel;
+          const disabled = channel.default_editor === "disabled";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
@@ -1332,7 +1333,7 @@ def render_timer_dashboard_page(
           name.textContent = role + " / " + channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
-          badge.textContent = isOn ? "ON" : "OFF";
+          badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
@@ -1345,11 +1346,13 @@ def render_timer_dashboard_page(
           bar.append(fill);
           const actions = document.createElement("div");
           actions.className = "timer-actions";
-          const edit = document.createElement("button");
-          edit.type = "button";
-          edit.textContent = "Edit schedule";
-          edit.addEventListener("click", () => openScheduleEditor(role, channel, event));
-          actions.append(edit);
+          if (!disabled) {
+            const edit = document.createElement("button");
+            edit.type = "button";
+            edit.textContent = "Edit schedule";
+            edit.addEventListener("click", () => openScheduleEditor(role, channel, event));
+            actions.append(edit);
+          }
           card.append(top, meta, bar, actions);
           timerBoard.append(card);
           if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {

@@ -50,7 +50,9 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
         if pin < 0 or pin > 29:
             raise ValueError(f"device {device_id} pin must be in range 0..29")
         default_editor = device.get("editor", "cycle")
-        if default_editor not in {"cycle", "clock_window"}:
+        if default_editor == "hidden":
+            continue
+        if default_editor not in {"cycle", "clock_window", "disabled"}:
             default_editor = "cycle"
         live_device = live_by_pin.get(pin)
         configured_type = device.get("type")
