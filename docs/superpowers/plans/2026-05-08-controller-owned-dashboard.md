@@ -4,7 +4,7 @@
 
 **Goal:** Move Plamp to a controller-owned config and UI model with explicit device icons, telemetry/telecommand separation, a single edit/apply flow, and a controller dashboard that matches the agreed agri-style layout.
 
-**Architecture:** Treat `plamp_web/hardware_config.py` as the schema gate for the new controller-owned config, `plamp_web/server.py` as the source of controller telemetry and apply payloads, and `plamp_web/pages.py` as the rendering layer for the new dashboard and edit panel. Preserve existing values through a migration path, but make the new controller object the canonical runtime shape so the UI can render controllers, nested devices, controller colors, explicit device ordering, timelines, and camera snapshot lanes without guessing from flat records.
+**Architecture:** Treat `plamp_web/hardware_config.py` as the schema gate for the new controller-owned config, `plamp_web/server.py` as the source of controller telemetry and apply payloads, and `plamp_web/pages.py` as the rendering layer for the new dashboard and edit panel. Preserve existing values through a migration path, but make the new controller object the canonical runtime shape so the UI can render controllers, nested devices, controller colors, explicit device ordering, timer editor modes, timelines, and camera snapshot lanes without guessing from flat records.
 
 **Tech Stack:** Python 3.11, FastAPI, server-rendered HTML, vanilla browser JavaScript, stdlib `unittest`, existing JSON config helpers.
 
@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Modify `plamp_web/hardware_config.py`: extend validation to accept controller-owned `devices`, timer rows, explicit `icon` fields, explicit `display_order`, controller-level `background_color`, and controller-level `report_every` while keeping the existing id and type rules.
+- Modify `plamp_web/hardware_config.py`: extend validation to accept controller-owned `devices`, timer rows, explicit `icon` fields, explicit `display_order`, explicit timer `editor` modes, controller-level `background_color`, and controller-level `report_every` while keeping the existing id and type rules.
 - Modify `plamp_web/server.py`: reshape controller state payloads, keep telemetry separate from telecommand, preserve full-controller apply behavior, and add the controller-facing health data needed by the dashboard.
 - Modify `plamp_web/pages.py`: replace the current flat timer dashboard with the controller list, hostname chip, top-level health light, edit-only apply panel, 24h timelines, and camera lane.
 - Modify `tests/test_hardware_config.py`: cover controller-owned config validation and migration behavior.
@@ -48,6 +48,8 @@ def test_validate_controllers_accepts_controller_owned_devices_and_report_every(
     }
     assert validate_controllers(controllers)["pump_n_lights"]["report_every"] == 10
     assert validate_controllers(controllers)["pump_n_lights"]["background_color"] == "#204b33"
+    assert validate_controllers(controllers)["pump_n_lights"]["devices"]["pumpON"]["editor"] == "cycle"
+    assert validate_controllers(controllers)["pump_n_lights"]["devices"]["lightsON"]["editor"] == "clock_window"
 
 def test_validate_devices_rejects_implicit_icon_mapping():
     with pytest.raises(ValueError):
@@ -62,7 +64,7 @@ Expected: fail because the current validators still understand only the flat dev
 
 - [ ] **Step 3: Implement the new config shape**
 
-Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon` and `display_order` explicit and reject any attempt to infer them from ids.
+Update `validate_controllers()` so it preserves `type`, `pico_serial`, `label`, `background_color`, `report_every`, and the controller-owned `devices` container. Keep device `icon`, `display_order`, and `editor` explicit and reject any attempt to infer them from ids or normalize `cycle` and `clock_window` into one generic mode.
 
 ```python
 def validate_controllers(value):
@@ -236,6 +238,7 @@ Behavior to preserve:
 - device icons are user-selected in the edit UI, not auto-mapped from ids
 - controller background color is user-selected in the edit UI and persisted in config
 - device order is user-selected in the edit UI and persisted in config
+- timer editor mode is user-selected in the edit UI and preserves `cycle`, `clock_window`, and later `events`
 - the 24h timeline uses a centered-now model and can zoom without moving the now marker
 
 - [ ] **Step 4: Run the tests to verify they pass**

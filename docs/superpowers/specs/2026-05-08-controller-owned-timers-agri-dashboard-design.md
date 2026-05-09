@@ -6,7 +6,7 @@ Move Plamp from a flat controller/device config toward a controller-owned model 
 
 The UI should move closer to the `agri-ui.png` direction: stronger visual hierarchy, explicit user-chosen device icons, a sequence/timeline view, and a controller health summary that makes sync freshness obvious.
 
-This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor types, labels, timer settings, and controller color choices are not lost.
+This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor modes, labels, timer settings, and controller color choices are not lost.
 
 ## Goals
 
@@ -17,12 +17,14 @@ This is a breaking config change, but the migration must preserve current values
 - Add a controller health signal that reflects whether the periodic controller message is fresh or late.
 - Update the dashboard look and information density toward the agri-style layout with icons, sequence view, and health.
 - Keep a persisted background color per controller so multiple plamps can be visually distinguished.
+- Preserve distinct timer editor modes: `cycle`, `clock_window` / 24h, and `events` later.
 - Preserve current values during migration from the existing flat schema.
 
 ## Non-Goals
 
 - No per-timer partial apply in v1.
 - No new event/command transport in v1.
+- No attempt to flatten `cycle` and `clock_window` into one generic timer editor; `events` remains a later editor mode.
 - No attempt to keep the old flat schema as the canonical persisted shape.
 - No redesign of unrelated settings pages outside the controller flow.
 - No requirement to perfectly copy the reference image; the goal is to converge on its structure and feel.
@@ -90,12 +92,13 @@ Rules:
 
 - The controller owns both device metadata and timer state.
 - Timer rows live inside the controller record.
+- Timer editor mode is explicit config and is preserved as-is.
 - Device icons are explicit user-selected config, not inferred from device ids.
 - Device and camera lane ordering is explicit config, so fan and camera lanes can be aligned visually.
 - Controller background color is explicit user-selected config, not inferred from hostname or controller id.
 - `report_every` is a controller-level setting and is edited with the controller.
 - Existing values from the current schema must be migrated into the new shape.
-- The migration should preserve stable ids, labels, pins, editor values, and schedule values.
+- The migration should preserve stable ids, labels, pins, editor modes, and schedule values.
 
 ## State Model
 
