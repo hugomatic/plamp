@@ -2,123 +2,200 @@
 
 ## Overview
 
-Move Plamp from a flat controller/device config toward a controller-owned model where each controller contains its devices, timers, reporting cadence, and telemetry-derived health. The user edits one controller at a time, and applying any timer change reprograms the whole controller state.
+Move Plamp from the current flat `controllers` + `devices` config toward a controller-owned model. A controller owns the devices it programs, each device owns its timer schedule, and cameras remain top-level peripherals that can opt into the same timeline view.
 
-The UI should move closer to the `agri-ui.png` direction: stronger visual hierarchy, explicit user-chosen device icons, a sequence/timeline view, and a controller health summary that makes sync freshness obvious.
+The UI should follow the agri dashboard direction: a compact hostname chip, one top-level health light, controller cards, explicit device icons, centered timeline lanes, per-camera snapshot sections, and an edit panel that appears only when the user is changing controller state.
 
-This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor modes, labels, timer settings, and controller color choices are not lost.
+This is a breaking config change, but migration must preserve current values: controller ids, serial bindings, report cadence, device ids, pins, pin types, timer editor modes, schedule values, camera settings, capture paths, and the new host color choice.
 
 ## Goals
 
-- Make the controller the primary unit of ownership in config, UI, and runtime state.
-- Keep telemetry separate from telecommand so live widgets can continue showing actual device/controller state while edits are staged.
-- Make it obvious that applying one timer change reprograms the whole controller.
-- Include `report every N seconds` in controller edit mode because it is part of the same controller state.
-- Add a controller health signal that reflects whether the periodic controller message is fresh or late.
-- Update the dashboard look and information density toward the agri-style layout with icons, sequence view, and health.
-- Keep a persisted background color per controller so multiple plamps can be visually distinguished.
-- Preserve distinct timer editor modes: `cycle`, `clock_window` / 24h, and `events` later.
-- Preserve current values during migration from the existing flat schema.
+- Make each controller the primary owner of its programmable devices.
+- Keep cameras top-level, while allowing each camera to appear in the same timeline as a controller.
+- Keep telemetry and telecommand separate: widgets show live reported state, edit fields show staged commands.
+- Make one controller apply action send a full controller state.
+- Preserve distinct timer editor modes: `cycle`, `clock_window` / 24h, and future `events`.
+- Move disabled and hidden behavior out of timer editor mode so the timer editor remains about how time is specified.
+- Persist the hostname chip color in `config.json` so different Plamps can be visually distinguished.
+- Persist device icon and display order in config.
+- Render a generic `other` icon for unforeseen devices such as ionizers or air purifiers.
+- Show one camera section per camera, with snapshot preview, same-scale timeline lane, capture delay, and capture list.
 
 ## Non-Goals
 
-- No per-timer partial apply in v1.
-- No new event/command transport in v1.
-- No attempt to flatten `cycle` and `clock_window` into one generic timer editor; `events` remains a later editor mode.
-- No attempt to keep the old flat schema as the canonical persisted shape.
-- No redesign of unrelated settings pages outside the controller flow.
-- No requirement to perfectly copy the reference image; the goal is to converge on its structure and feel.
+- No partial per-timer apply in v1.
+- No command/event transport in v1.
+- No weekly or monthly scheduling in this controller timer slice.
+- No hidden inference from ids such as mapping `lights` to the light icon.
+- No prominent firmware-version dashboard hero item.
+- No always-visible controller reset warning.
+- No attempt to keep the old flat `devices` object as canonical.
 
-## Proposed Config Shape
+## Canonical Config Shape
 
-Canonical persisted state should be controller-owned.
-
-Example:
+`data/config.json` remains the persisted authority for user-editable intent. Runtime telemetry, capture files, health, uptime, and hostname are not persisted here unless explicitly listed.
 
 ```json
 {
+  "appearance": {
+    "host_color": "#204b33"
+  },
   "controllers": {
     "pump_n_lights": {
+      "type": "pico_scheduler",
       "label": "Pump and lights",
-      "background_color": "#204b33",
-      "pico_serial": "E661...",
+      "pico_serial": "e66038b71387a039",
       "report_every": 10,
       "devices": {
-        "pumpON": {
+        "pump": {
+          "label": "Pump",
           "display_order": 0,
           "pin": 3,
           "type": "gpio",
           "icon": "pump",
-          "editor": "cycle"
+          "visibility": "visible",
+          "programming": "enabled",
+          "timer": {
+            "editor": "cycle",
+            "schedule": {
+              "mode": "cycle",
+              "on_seconds": 90,
+              "off_seconds": 810,
+              "start_at_seconds": 0
+            }
+          }
         },
-        "lightsON": {
+        "lights": {
+          "label": "Lights",
           "display_order": 1,
           "pin": 2,
           "type": "gpio",
           "icon": "light",
-          "editor": "clock_window"
-        }
-      },
-      "timers": [
-        {
-          "id": "pumpON",
-          "pin": 3,
-          "type": "gpio",
-          "icon": "pump",
-          "editor": "cycle",
-          "schedule": {
-            "on_at": "22:00",
-            "off_at": "22:15"
+          "visibility": "visible",
+          "programming": "enabled",
+          "timer": {
+            "editor": "clock_window",
+            "schedule": {
+              "mode": "clock_window",
+              "on_time": "06:00",
+              "off_time": "23:00"
+            }
           }
         },
-        {
-          "id": "lightsON",
-          "pin": 2,
+        "fan": {
+          "label": "Fan",
+          "display_order": 2,
+          "pin": 4,
           "type": "gpio",
-          "icon": "light",
-          "editor": "clock_window",
-          "schedule": {
-            "on_at": "06:00",
-            "off_at": "23:00"
+          "icon": "fan",
+          "visibility": "visible",
+          "programming": "enabled",
+          "timer": {
+            "editor": "clock_window",
+            "schedule": {
+              "mode": "clock_window",
+              "on_time": "08:00",
+              "off_time": "22:00"
+            }
           }
         }
-      ]
+      }
+    }
+  },
+  "cameras": {
+    "rpicam_cam0": {
+      "label": "Tent camera",
+      "detected_key": "rpicam_cam0",
+      "capture_dir": "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures",
+      "enabled": true,
+      "auto_enabled": true,
+      "capture_every_seconds": 3600,
+      "manual_prefix": "manual",
+      "auto_prefix": "auto",
+      "autofocus_mode": "auto",
+      "autofocus_delay_ms": 1500,
+      "timeline": {
+        "controller": "pump_n_lights",
+        "display_order": 3,
+        "icon": "camera",
+        "capture_delay_seconds": 300,
+        "align_with": {
+          "device": "fan",
+          "transition": "off"
+        }
+      }
     }
   }
 }
 ```
 
-Rules:
+## Config Ownership Map
 
-- The controller owns both device metadata and timer state.
-- Timer rows live inside the controller record.
-- Timer editor mode is explicit config and is preserved as-is.
-- Device icons are explicit user-selected config, not inferred from device ids, and unknown device types fall back to generated placeholder icons.
-- Device and camera lane ordering is explicit config, so fan and camera lanes can be aligned visually.
-- Controller background color is explicit user-selected config, not inferred from hostname or controller id.
-- `report_every` is a controller-level setting and is edited with the controller.
-- Existing values from the current schema must be migrated into the new shape.
-- The migration should preserve stable ids, labels, pins, editor modes, and schedule values.
+These fields are persisted in `config.json`:
 
-## State Model
+| Concept | Config path | Notes |
+| --- | --- | --- |
+| Host chip color | `appearance.host_color` | Used to distinguish Plamps. Hostname itself comes from the OS. |
+| Controller identity | `controllers.<id>` | Controller id remains the stable config key. |
+| Controller label | `controllers.<id>.label` | Human label, optional. |
+| Pico serial | `controllers.<id>.pico_serial` | Binding to hardware. |
+| Report cadence | `controllers.<id>.report_every` | Edited in controller edit mode and applied with the full controller. |
+| Device identity | `controllers.<id>.devices.<device_id>` | Device id remains stable and is not inferred from label/icon. |
+| Device hardware | `pin`, `type` | `type` remains `gpio` or `pwm`. |
+| Device icon | `icon` | User-selected. Unknown devices use `other`. |
+| Device order | `display_order` | Drives device card order and timeline lane order. |
+| Device visibility | `visibility` | `visible` or `hidden`. Hidden devices are omitted from the dashboard. |
+| Device programming | `programming` | `enabled` or `disabled`. Disabled devices can be visible but are not programmed. |
+| Timer editor | `timer.editor` | `cycle`, `clock_window`, or future `events`. |
+| Timer schedule | `timer.schedule` | Shape depends on `timer.editor`. |
+| Camera settings | `cameras.<id>` | Existing camera settings stay top-level. |
+| Camera timeline placement | `cameras.<id>.timeline` | Lets camera lanes align visually with controller device lanes. |
+| Camera capture delay | `cameras.<id>.timeline.capture_delay_seconds` | Shows intended delay such as capture 5 minutes after fan off. |
+
+These are runtime-only and are not persisted in `config.json`:
+
+- live GPIO value
+- current timer position
+- last heartbeat time
+- controller health
+- uptime
+- snapshot thumbnails and capture list contents
+- current hostname
+- firmware version unless a later feature makes version reconciliation user-editable
+
+## Timer Editors
+
+Timer editor mode is not the same as visibility or programming state.
+
+- `cycle`: repeating on/off duration, such as pump on for 90 seconds and off for 810 seconds.
+- `clock_window`: a daily 24h window, such as lights on at `06:00` and off at `23:00`.
+- `events`: reserved for later event-based scheduling.
+
+Disabled and hidden behavior should not remain editor modes in the new schema:
+
+- current `editor: "disabled"` migrates to `programming: "disabled"` and `visibility: "visible"`
+- current `editor: "hidden"` migrates to `programming: "disabled"` and `visibility: "hidden"`
+- current `editor: "cycle"` migrates to `timer.editor: "cycle"`
+- current `editor: "clock_window"` migrates to `timer.editor: "clock_window"`
+
+If an old device has no explicit schedule, migration should preserve the editor mode and create the smallest valid default schedule for that editor, then let the user adjust it in edit mode.
+
+## Telemetry And Telecommand
 
 Use two separate state layers:
 
-- Telemetry: the live controller state reported by the hardware.
-- Telecommand: the staged edits the user is preparing to send.
+- Telemetry is live controller truth reported by hardware.
+- Telecommand is the staged config the user is editing.
 
-Telemetry is the source of truth for the widgets shown during normal viewing. Telecommand is the source of truth for the edit form.
+Normal widgets show telemetry. Edit fields show telecommand. The UI must not make staged values look applied before the controller accepts them.
 
-Telemetry should be able to represent at least:
+Telemetry should include enough state to show:
 
-- current timer state
-- current reporting cadence
-- last periodic message time
-- controller identity and firmware/version metadata
-- current sync status
-- camera capture state if the controller owns capture scheduling
-
-The UI must not pretend telecommand is already active when the controller has not applied it yet.
+- device on/off value
+- timer progress and next transition when available
+- report cadence currently running on the controller
+- last heartbeat age
+- sync status
 
 ## Apply Semantics
 
@@ -126,100 +203,130 @@ There is one apply action for the whole controller.
 
 Behavior:
 
-- Editing a timer stages a telecommand change.
-- Editing `report every N seconds` stages a controller-level telecommand change.
-- Pressing `Apply controller` sends the full controller state.
-- Applying one timer change reprograms every timer in that controller.
-- The controller state should be treated as a full sync payload, not a partial patch.
-
-The UI should make the reset behavior explicit before saving. The warning should say, in substance, that updating any timer will reset and resend all timers in the controller.
+- Editing any timer stages a controller telecommand change.
+- Editing `report_every`, icon, device order, visibility, or programming state stages a controller telecommand change.
+- Pressing `Apply all changes to Controller` sends the full controller state.
+- The reset warning appears only inside edit mode, next to the fields and apply button.
+- The UI copy should be direct: updating any timer resets and resends all timers in this controller.
 
 ## Health Model
 
-Keep health simple and derived from telemetry freshness.
+Use one top-level check-engine style health light for the app, with compact per-controller codes.
 
-Proposed states:
+Base rule:
 
-- `Good` when the controller periodic message is current.
-- `Bad` when the periodic message is late.
+- `Good` when controller periodic messages are current.
+- `Bad` when any expected controller periodic message is late.
 
-Implementation should avoid inventing extra health states unless a later transport problem makes them necessary. The key signal for now is whether the controller is talking on time.
+The health light is derived from telemetry freshness, not from config. Controller rows can show small codes such as `OK`, `LATE`, `DISABLED`, or `HIDDEN` where useful.
 
-If the system restarts and the controller is not yet synced, health should reflect that the controller is not in a trusted fresh state until telemetry resumes and a sync has happened.
+## Dashboard UI
 
-## UI Design
+Default view:
 
-The dashboard should move toward an agri-style controller card layout:
+- hostname chip showing `tower`, not `tower.local`
+- host color from `appearance.host_color`
+- uptime
+- one top-level health light
+- list of controller cards
+- nested device cards inside each controller
+- timer lanes ordered by `display_order`
+- one camera section per camera that has timeline config
+- capture list under each camera section
 
-- hostname chip at the top
-- one top-level health light for the whole app
-- controller list, with each controller rendered as a container card
-- icon-driven device cards inside each controller
-- explicit lane order for devices and camera captures
-- a centered-now timeline that scrolls/zooms around the current time
-- a 24h controller timeline for timer lanes
-- a camera lane that uses the same scale so it can line up visually with fan timing and shows capture snapshots plus delay
-- a controller edit view that appears above telemetry only when editing
-- a visible apply area only in edit mode
+Edit mode:
 
-Editing rules:
+- opens a controller edit panel above telemetry
+- shows controller settings such as `report_every`
+- shows each device timer editor
+- shows icon selector, order control, visibility, and programming state
+- shows one apply button for the controller
+- shows the reset warning only while editing
 
-- When edit mode is on, each timer shows its parameters inline.
-- Live widgets continue to show telemetry.
-- Edit fields represent telecommand.
-- There is one `Apply all changes to Controller` button for the controller, visible only in edit mode.
-- The reset warning appears only in edit mode, next to the fields and apply button.
-- `report every N seconds` appears in the edit surface as a controller-level setting.
-- Device icons are explicitly selectable by the user in edit mode and the UI can generate placeholders for unforeseen device types like `ionizer` and `air purifier`.
-- Controller background color is explicitly selectable by the user in edit mode.
-- Device order is explicitly selectable by the user in edit mode and persisted in config.
-- The edit panel sits above telemetry, and collapses away when not editing.
+Timeline behavior:
 
-Suggested layout:
+- the 24h view has a 0 to 24 hour scale
+- orange means ON for every device
+- pump cycle lanes render as segmented/dotted on/off intervals
+- current time is a vertical marker
+- when zooming, the marker stays centered and the timeline scrolls underneath it
+- camera lanes use the same time scale as controller lanes
+- camera sections show snapshot preview, capture delay, and capture history
 
-- Top row: hostname chip, app-level health light, uptime
-- Controller list: controller card, per-controller status code, nested device cards
-- Middle: 24h timeline lanes for timers with a centered now marker, ordered by display_order
-- Camera row: same time scale as the controller lanes, showing snapshots and capture delay markers, and positioned by display_order so it can sit next to the fan lane
-- Edit mode panel: timer fields and controller settings above telemetry, with warnings and apply button
+## Camera UI
 
-The UI should emphasize that the controller is one unit, not a set of unrelated rows.
+Each configured camera with timeline metadata gets its own section.
+
+Each camera section shows:
+
+- last or selected snapshot preview
+- same-scale timeline lane
+- scheduled captures as snapshot markers
+- capture delay label such as `5 min after fan off`
+- capture list with thumbnails and timestamps
+
+The camera lane does not show on/off state. It shows captures. Camera alignment is visual and config-driven; the agent can later inspect drift by comparing capture timestamps with controller telemetry.
 
 ## Migration
 
-The migration must preserve current values.
+Migration reads the current flat shape:
 
-Rules:
+```json
+{
+  "controllers": {
+    "pump_n_lights": {
+      "type": "pico_scheduler",
+      "report_every": 10,
+      "pico_serial": "e66038b71387a039"
+    }
+  },
+  "devices": {
+    "pump": {
+      "controller": "pump_n_lights",
+      "pin": 3,
+      "type": "gpio",
+      "editor": "cycle"
+    }
+  },
+  "cameras": {}
+}
+```
 
-- Existing controller ids remain the controller ids.
-- Existing labels, pico serial bindings, device pins, editor values, and schedule values are copied into the controller-owned shape.
-- Legacy flat device records are not discarded during migration.
-- The first save after migration should rewrite the new canonical controller-owned shape.
-- If the old config cannot be mapped cleanly, the migration should fail loudly rather than silently dropping values.
+Migration writes the new canonical shape:
 
-Recommended migration strategy:
+- controllers stay keyed by the same id
+- each flat device moves under `controllers.<controller>.devices`
+- device id, label, pin, type, and editor mode are preserved
+- `editor` becomes `timer.editor` unless it was `disabled` or `hidden`
+- `disabled` becomes `programming: "disabled"`
+- `hidden` becomes `visibility: "hidden"`
+- existing cameras stay top-level
+- existing camera capture settings and capture paths are preserved
+- missing icons become `other`
+- missing display orders are assigned by stable input order
+- missing host color gets a conservative default
 
-- Read the current flat schema.
-- Group devices under their controller.
-- Copy controller-level values into the controller record.
-- Copy timer-specific values into controller timer rows.
-- Rewrite the canonical config on next save.
+Migration must fail loudly if a device references a missing controller, if two devices use the same controller pin, or if a value cannot be mapped without losing meaning.
 
 ## API And Runtime Implications
 
-- The controller GET/PUT path remains the primary interface for controller state.
-- The API should treat the whole controller payload as the unit of sync.
-- The current implementation can keep using the existing full-state reprogramming path under the hood.
-- The UI should not expose transport details beyond the controller apply warning.
+- `GET /api/controllers/{controller}` returns controller telemetry plus controller config context.
+- `PUT /api/controllers/{controller}` applies the full controller state.
+- Existing full-state Pico programming remains the v1 transport.
+- Camera captures and capture lists are served from camera/capture APIs and joined into the dashboard by camera id.
+- The UI should not expose transport details beyond the edit-mode reset warning.
 
-Future command/event transport is intentionally out of scope for v1, but the schema should not block it later.
+Future event transport remains compatible because timer mode is explicit and `events` has a reserved place.
 
 ## Testing
 
-- Migration tests that preserve current controller and device values.
-- Tests that the controller-owned schema round-trips through config save/load.
-- Tests that edit mode shows timer parameters without replacing telemetry widgets.
-- Tests that one apply action sends a full controller state.
-- Tests that `report_every` is part of controller editing and payload generation.
+- Config validation tests for the new `appearance`, controller-owned devices, camera timeline metadata, and timer editor modes.
+- Migration tests that preserve current controller, device, and camera values.
+- Tests that old `disabled` and `hidden` editor values migrate into `programming` and `visibility`.
+- Tests that unknown device icons render as `other`.
+- Tests that controller-owned config round-trips through save/load.
+- Tests that edit mode shows telecommand fields without replacing telemetry widgets.
+- Tests that apply sends a full controller state.
+- Tests that `report_every` is part of controller edit/apply.
 - Tests that health is `Good` for fresh telemetry and `Bad` for late telemetry.
-- UI tests for the hostname chip, controller list, icon selector, controller color selector, device ordering, centered-now timeline, camera snapshots lane, and apply warning copy.
+- UI tests for hostname chip, host color, controller list, icon selector, order controls, centered timeline, per-camera snapshot sections, capture lists, and edit-only reset warning.
