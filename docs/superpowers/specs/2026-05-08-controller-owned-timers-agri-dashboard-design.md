@@ -6,7 +6,7 @@ Move Plamp from a flat controller/device config toward a controller-owned model 
 
 The UI should move closer to the `agri-ui.png` direction: stronger visual hierarchy, explicit user-chosen device icons, a sequence/timeline view, and a controller health summary that makes sync freshness obvious.
 
-This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor types, labels, and timer settings are not lost.
+This is a breaking config change, but the migration must preserve current values so existing controller names, device pins, editor types, labels, timer settings, and controller color choices are not lost.
 
 ## Goals
 
@@ -16,6 +16,7 @@ This is a breaking config change, but the migration must preserve current values
 - Include `report every N seconds` in controller edit mode because it is part of the same controller state.
 - Add a controller health signal that reflects whether the periodic controller message is fresh or late.
 - Update the dashboard look and information density toward the agri-style layout with icons, sequence view, and health.
+- Keep a persisted background color per controller so multiple plamps can be visually distinguished.
 - Preserve current values during migration from the existing flat schema.
 
 ## Non-Goals
@@ -37,6 +38,7 @@ Example:
   "controllers": {
     "pump_n_lights": {
       "label": "Pump and lights",
+      "background_color": "#204b33",
       "pico_serial": "E661...",
       "report_every": 10,
       "devices": {
@@ -87,6 +89,7 @@ Rules:
 - The controller owns both device metadata and timer state.
 - Timer rows live inside the controller record.
 - Device icons are explicit user-selected config, not inferred from device ids.
+- Controller background color is explicit user-selected config, not inferred from hostname or controller id.
 - `report_every` is a controller-level setting and is edited with the controller.
 - Existing values from the current schema must be migrated into the new shape.
 - The migration should preserve stable ids, labels, pins, editor values, and schedule values.
@@ -148,7 +151,7 @@ The dashboard should move toward an agri-style controller card layout:
 - icon-driven device cards inside each controller
 - a centered-now timeline that scrolls/zooms around the current time
 - a 24h controller timeline for timer lanes
-- a camera lane that uses the same scale so it can line up visually with fan timing
+- a camera lane that uses the same scale so it can line up visually with fan timing and shows capture snapshots plus delay
 - a controller edit view that appears above telemetry only when editing
 - a visible apply area only in edit mode
 
@@ -161,6 +164,7 @@ Editing rules:
 - The reset warning appears only in edit mode, next to the fields and apply button.
 - `report every N seconds` appears in the edit surface as a controller-level setting.
 - Device icons are explicitly selectable by the user in edit mode.
+- Controller background color is explicitly selectable by the user in edit mode.
 - The edit panel sits above telemetry, and collapses away when not editing.
 
 Suggested layout:
@@ -168,7 +172,7 @@ Suggested layout:
 - Top row: hostname chip, app-level health light, uptime
 - Controller list: controller card, per-controller status code, nested device cards
 - Middle: 24h timeline lanes for timers with a centered now marker
-- Camera row: same time scale as the controller lanes
+- Camera row: same time scale as the controller lanes, showing snapshots and capture delay markers
 - Edit mode panel: timer fields and controller settings above telemetry, with warnings and apply button
 
 The UI should emphasize that the controller is one unit, not a set of unrelated rows.
@@ -210,4 +214,4 @@ Future command/event transport is intentionally out of scope for v1, but the sch
 - Tests that one apply action sends a full controller state.
 - Tests that `report_every` is part of controller editing and payload generation.
 - Tests that health is `Good` for fresh telemetry and `Bad` for late telemetry.
-- UI tests for the hostname chip, controller list, icon selector, centered-now timeline, camera lane, and apply warning copy.
+- UI tests for the hostname chip, controller list, icon selector, controller color selector, centered-now timeline, camera snapshots lane, and apply warning copy.
