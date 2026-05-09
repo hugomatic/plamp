@@ -131,6 +131,23 @@ class HardwareConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "bad"}}, controllers)
 
+    def test_validate_devices_accepts_disabled_and_hidden_editors(self):
+        controllers = {"ctrl_a": {}}
+
+        self.assertEqual(
+            validate_devices(
+                {
+                    "disabled_pump": {"controller": "ctrl_a", "pin": 3, "editor": "disabled"},
+                    "hidden_light": {"controller": "ctrl_a", "pin": 4, "editor": "hidden"},
+                },
+                controllers,
+            ),
+            {
+                "disabled_pump": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "disabled"},
+                "hidden_light": {"controller": "ctrl_a", "pin": 4, "type": "gpio", "editor": "hidden"},
+            },
+        )
+
     def test_validate_devices_rejects_duplicate_pin_per_controller(self):
         controllers = {"ctrl_a": {}, "ctrl_b": {}}
         with self.assertRaisesRegex(ValueError, "duplicate pin"):

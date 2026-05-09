@@ -8,7 +8,7 @@ import re
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_EDITORS = {"cycle", "clock_window"}
+_EDITORS = {"cycle", "clock_window", "disabled", "hidden"}
 _PIN_TYPES = {"gpio", "pwm"}
 _CONTROLLER_TYPES = {"pico_scheduler", "pico_doser"}
 _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"

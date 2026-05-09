@@ -381,7 +381,34 @@ def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
     report_every = require_int(role_config.get("report_every", 10), "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
-    return {"report_every": report_every, "devices": state["devices"]}
+    disabled = disabled_timer_device_keys(role)
+    devices = [
+        device
+        for device in state["devices"]
+        if (device.get("id"), int(device.get("pin"))) not in disabled
+        and (None, int(device.get("pin"))) not in disabled
+    ]
+    return {"report_every": report_every, "devices": devices}
+
+
+def disabled_timer_device_keys(role: str) -> set[tuple[str | None, int]]:
+    disabled: set[tuple[str | None, int]] = set()
+    config = load_config()
+    devices = config.get("devices", {})
+    if not isinstance(devices, dict):
+        return disabled
+    for device_id, device in devices.items():
+        if not isinstance(device_id, str) or not isinstance(device, dict):
+            continue
+        if device.get("controller") != role or device.get("editor") not in {"disabled", "hidden"}:
+            continue
+        try:
+            pin = int(device.get("pin"))
+        except (TypeError, ValueError):
+            continue
+        disabled.add((device_id, pin))
+        disabled.add((None, pin))
+    return disabled
 
 
 def empty_timer_state() -> dict[str, Any]:
