@@ -1,0 +1,52 @@
+{
+  "date": "2026-05-10",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "daily",
+  "since_previous_daily_log": "2026-05-09",
+  "produced_at": "2026-05-11T01:12:00Z",
+  "artifact_timing": "produced from latest runtime evidence with reduced confidence because fresh saved capture artifacts were missing",
+  "nature": {
+    "summary": "The crop is still modeled as vegetative basil with moderate canopy fill, uneven vigor, mild stretch, and mixed leaf posture, but confidence is reduced because no fresh saved image artifacts were available in this grow path after 2026-05-08.",
+    "status": "evidence_limited",
+    "notable_events": [
+      "No new high-confidence visual biology read was possible this pass because saved capture artifacts were missing in the expected grow path.",
+      "The prior crop model remains the best available baseline rather than being confidently updated."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-08/cap-f2b375.jpg"
+    ]
+  },
+  "plamp": {
+    "summary": "Camera runtime is active, but saved grow capture artifacts in this path stopped after 2026-05-08, so picture persistence or storage location is now suspect.",
+    "runtime_events": [
+      "Logs show repeated successful Picamera2 start/stop cycles through 2026-05-10 04:46 HST.",
+      "Saved capture artifacts under this grow path stop at 2026-05-08, creating a fresh evidence gap for camera continuity and daylight verification.",
+      "No fresh Pico disconnect or apply/reconnect fault appeared in the latest log window."
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-08/cap-f2b375.jpg"
+    ]
+  },
+  "gardener": {
+    "next_actions": [
+      {
+        "priority": "high",
+        "task": "Inspect why camera runs are appearing in logs but new saved grow capture files are not landing in this grow path after 2026-05-08.",
+        "why": "Fresh visual evidence is currently missing, so automatic crop and light-state review is no longer trustworthy."
+      },
+      {
+        "priority": "high",
+        "task": "Physically verify whether the grow light is visibly on during the daytime window.",
+        "why": "Saved evidence is currently incomplete and cannot confirm the daytime state."
+      },
+      {
+        "priority": "medium",
+        "task": "Keep the Pico/controller path under suspicion, but treat the missing capture-artifact issue as the more immediate blocker.",
+        "why": "The latest log window was quiet on controller faults, while the evidence pipeline is actively degraded."
+      }
+    ],
+    "pictures": [
+      "grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-08/cap-f2b375.jpg"
+    ]
+  }
+}
