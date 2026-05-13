@@ -21,6 +21,53 @@ GIT_FOLDER="${cad}"
 # name of this script (generate.bash)
 name=$0
 
+find_openscad() {
+  if [[ -n "${OPENSCAD_BIN:-}" ]]; then
+    [[ -x "$OPENSCAD_BIN" ]] && {
+      printf '%s\n' "$OPENSCAD_BIN"
+      return 0
+    }
+    echo "OPENSCAD_BIN is set but not executable: $OPENSCAD_BIN" >&2
+    return 1
+  fi
+
+  if command -v openscad >/dev/null 2>&1; then
+    command -v openscad
+    return 0
+  fi
+
+  case "$(uname -s)" in
+    Darwin)
+      for p in \
+        "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD" \
+        "$HOME/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+      do
+        [[ -x "$p" ]] && {
+          printf '%s\n' "$p"
+          return 0
+        }
+      done
+      ;;
+    Linux)
+      for p in \
+        "/usr/bin/openscad" \
+        "/usr/local/bin/openscad" \
+        "/snap/bin/openscad" \
+        "/var/lib/flatpak/exports/bin/org.openscad.OpenSCAD" \
+        "$HOME/.local/share/flatpak/exports/bin/org.openscad.OpenSCAD"
+      do
+        [[ -x "$p" ]] && {
+          printf '%s\n' "$p"
+          return 0
+        }
+      done
+      ;;
+  esac
+
+  echo "OpenSCAD not found. Set OPENSCAD_BIN=/path/to/openscad" >&2
+  return 1
+}
+
 if [[ "$#" -ne 2 ]];
     then
         last_commit=`git log -n 1 --pretty=format:%h -- $SCAD_FILE`
@@ -51,9 +98,11 @@ target_directory=$1
 [ -d "$1" ] && echo "Error: directory $1 already exists." && exit -2
 
 commit=$2
+OPENSCAD_CMD="$(find_openscad)" || exit 1
 
 echo "commit $commit"
 echo "target_directory $target_directory"
+echo "openscad $OPENSCAD_CMD"
 
 
 mkdir -p $target_directory
@@ -80,6 +129,6 @@ do
   echo -e "\noptions: $options\n" | tee -a $log
 
   echo '```' >> $log
-  time /Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD $options --export-format asciistl -o $stl_file /tmp/scad_doc.scad 2>&1 | tee -a $log
+  time "$OPENSCAD_CMD" $options --export-format asciistl -o $stl_file /tmp/scad_doc.scad 2>&1 | tee -a $log
   echo '```' >> $log
 done
