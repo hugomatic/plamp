@@ -23,6 +23,9 @@ grow/grows/
 # Local git worktrees
 .worktrees/
 
+# Local brainstorm/visual companion artifacts
+.superpowers/
+
 # Legacy heartbeat runtime files (now stored in data/agent/)
 agent/check_alive_state.json
 agent/last_seen_alive.txt
