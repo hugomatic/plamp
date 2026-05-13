@@ -1,0 +1,53 @@
+{
+  "date": "2026-05-13",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "daily",
+  "since_previous_daily_log": "2026-05-12",
+  "produced_at": "2026-05-13T15:08:00Z",
+  "artifact_timing": "produced from restored saved captures and the latest runtime log window",
+  "nature": {
+    "summary": "The crop is still modeled as vegetative Thai basil with moderate canopy fill, uneven vigor, mild stretch, and mixed leaf posture; the main improvement today is evidence confidence, not a confirmed biology shift.",
+    "status": "acceptable",
+    "notable_events": [
+      "Fresh saved captures are now landing again in the current grow path, so crop review is no longer blocked by the earlier evidence gap.",
+      "No fresh high-confidence pest, disease, or recovery event stands out in this pass."
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-13/auto-rpicam_cam0-2026-05-13T13-49-26Z-007daa.jpg"
+    ]
+  },
+  "plamp": {
+    "summary": "Camera continuity is healthy again and saved captures are landing hourly in the data-path grow tree; no new controller fault appeared in the latest log window, though the 2026-05-11 /dev/ttyACM0 churn still keeps controller stability cautious.",
+    "runtime_events": [
+      "plamp.log shows uninterrupted Picamera2 start/stop cycles through 2026-05-13 04:49 HST.",
+      "Saved captures are present in the grow path through 2026-05-13 04:49 HST, clearing the earlier no-files-landing symptom.",
+      "No fresh Pico disconnect, apply/reconnect event, or invalid-JSON burst appeared in the latest log window."
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-13/auto-rpicam_cam0-2026-05-13T13-49-26Z-007daa.jpg",
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-13/auto-rpicam_cam0-2026-05-13T14-49-29Z-7e6046.jpg"
+    ]
+  },
+  "gardener": {
+    "next_actions": [
+      {
+        "priority": "high",
+        "task": "Use the restored daytime captures or one in-person check to verify whether the daytime light-on state looks robust.",
+        "why": "The evidence pipeline is back, so light-state confidence can now be rebuilt instead of being blocked by missing files."
+      },
+      {
+        "priority": "medium",
+        "task": "Keep watching pump_n_lights for another /dev/ttyACM0 reconnect cycle.",
+        "why": "The last known controller instability was recent enough that full trust would be premature."
+      },
+      {
+        "priority": "medium",
+        "task": "Reassess canopy fill over the next day or two now that fresh saved images are available again.",
+        "why": "Confidence in crop progression can improve only if the restored capture stream stays stable."
+      }
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-13/auto-rpicam_cam0-2026-05-13T14-49-29Z-7e6046.jpg"
+    ]
+  }
+}
