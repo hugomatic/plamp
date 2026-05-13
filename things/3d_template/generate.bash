@@ -16,10 +16,15 @@ log="readme.md"
 SCAD_FILE="${cad}.scad"
 # name of the stl file, without the commit
 STL_PREFIX="${cad}"
-# where to find the scad file in git
-GIT_FOLDER="${cad}"
 # name of this script (generate.bash)
 name=$0
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "Could not find git repository root for $SCRIPT_DIR" >&2
+  exit 1
+}
+SCAD_REPO_DIR="${SCRIPT_DIR#$REPO_ROOT/}"
+SCAD_REPO_PATH="$SCAD_REPO_DIR/$SCAD_FILE"
 
 find_openscad() {
   if [[ -n "${OPENSCAD_BIN:-}" ]]; then
@@ -70,7 +75,7 @@ find_openscad() {
 
 if [[ "$#" -ne 2 ]];
     then
-        last_commit=`git log -n 1 --pretty=format:%h -- $SCAD_FILE`
+        last_commit=`git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCAD_REPO_PATH"`
         today=`date +%b%d | tr 'A-Z' 'a-z'`
         echo
         echo "$cad stl generator"
@@ -82,7 +87,7 @@ if [[ "$#" -ne 2 ]];
         echo
         echo
         # check if file is modified on disk
-        git_stat=`git status --porcelain -s | grep $SCAD_FILE`
+        git_stat=`git -C "$REPO_ROOT" status --porcelain -s | grep "$SCAD_REPO_PATH"`
         if [[ $git_stat ]];
           then
             echo "!!"
@@ -106,9 +111,9 @@ echo "openscad $OPENSCAD_CMD"
 
 
 mkdir -p $target_directory
-cd $target_directory
+cd "$target_directory"
 # remove any previous file
-rm /tmp/scad_doc.scad
+rm -f /tmp/scad_doc.scad
 
 
 # get the correct version of the cad file in the temp directory
@@ -116,9 +121,12 @@ echo "# $SCAD_FILE" | tee -a $log
 date | tee -a $log
 echo "get the source CAD:" | tee -a $log
 echo '```' >> $log
-echo "git show $commit:$GIT_FOLDER/$SCAD_FILE" | tee -a $log
+echo "git show $commit:$SCAD_REPO_PATH" | tee -a $log
 echo '```' >> $log
-git show $commit:$GIT_FOLDER/$SCAD_FILE > /tmp/scad_doc.scad
+if ! git -C "$REPO_ROOT" show "$commit:$SCAD_REPO_PATH" > /tmp/scad_doc.scad; then
+  echo "Could not read $SCAD_REPO_PATH at commit $commit" >&2
+  exit 1
+fi
 
 for view in "${views[@]}"
 do
