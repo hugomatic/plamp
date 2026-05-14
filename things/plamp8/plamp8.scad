@@ -1,4 +1,6 @@
-$fn = 96;
+render_fn = 96;
+render_text = true;
+$fn = render_fn;
 
 view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
 
@@ -80,23 +82,23 @@ relay_mount_hole_d = 5;
 relay_mount_x = 135;
 relay_mount_y = 70;
 
-box_w = 330;
-box_d = 380;
+box_w = 280;
+box_d = 330;
 box_h = 70;
 wall_t = 3;
 top_panel_w = box_w;
 top_panel_h = box_d;
-service_row_y = 118;
-ac_row_y = 10;
+service_row_y = 105;
+ac_row_y = 25;
 dc_row_y = -106;
 usb_c_panel_x = -usb_c_panel_w / 2;
 c13_panel_x = c13_panel_w / 2;
 left_ac_x = -56;
 right_ac_x = 56;
 dc_grid_x = -43;
-dc_grid_y = -100;
+dc_grid_y = -65;
 dc_col_spacing = 86;
-dc_row_spacing = 68;
+dc_row_spacing = 62;
 revision_x = 96;
 revision_y = 110;
 toggle_label_x_offset = 14;
@@ -121,15 +123,16 @@ dc_details = ["CH5 GP17", "CH6 GP16", "CH7 GP15", "CH8 GP14"];
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
-    translate([0, 0, z0])
-        linear_extrude(write_t)
-            text(
-                string,
-                size = font_size,
-                font = "DejaVu Sans",
-                halign = "center",
-                valign = "center"
-            );
+    if (render_text)
+        translate([0, 0, z0])
+            linear_extrude(write_t)
+                text(
+                    string,
+                    size = font_size,
+                    font = "DejaVu Sans",
+                    halign = "center",
+                    valign = "center"
+                );
 }
 
 module round_hull(x, y, r, h) {
@@ -310,6 +313,10 @@ module fit_plate(w, h) {
         cube([w, h, plate_t]);
 }
 
+module fit_plate_from_origin(w, h) {
+    cube([w, h, plate_t]);
+}
+
 module label_pocket(w, h) {
     translate([0, 0, plate_t + label_pocket_h / 2 - 0.5])
         round_hull(w, h, label_pocket_r, label_pocket_h);
@@ -459,59 +466,62 @@ function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
 
 module top_panel_8ch(include_revision = true) {
-    difference() {
-        fit_plate(top_panel_w, top_panel_h);
+    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+        difference() {
+            translate([-top_panel_w / 2, -top_panel_h / 2, 0])
+                fit_plate_from_origin(top_panel_w, top_panel_h);
+
+            translate([left_ac_x, ac_row_y, 0])
+                outlet_cover_negative(false);
+            translate([right_ac_x, ac_row_y, 0])
+                outlet_cover_negative(false);
+
+            for (i = [0:3])
+                translate([dc_channel_x(i), dc_channel_y(i), 0])
+                    barrel_channel_negative();
+
+            translate([usb_c_panel_x, service_row_y, 0])
+                usb_c_panel_negative();
+
+            translate([c13_panel_x, service_row_y, 0])
+                c13_inlet_negative();
+
+            if (include_revision)
+                translate([revision_x, revision_y, 0])
+                    label_pocket(revision_label_w, revision_label_h);
+        }
 
         translate([left_ac_x, ac_row_y, 0])
-            outlet_cover_negative(false);
+            positive_plate_writings(ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
         translate([right_ac_x, ac_row_y, 0])
-            outlet_cover_negative(false);
+            positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
 
         for (i = [0:3])
-            translate([dc_channel_x(i), dc_channel_y(i), 0])
-                barrel_channel_negative();
+            translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
+                flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
 
-        translate([usb_c_panel_x, service_row_y, 0])
-            usb_c_panel_negative();
+        for (i = [0:3])
+            translate([dc_channel_x(i) + 12 + toggle_label_x_offset, dc_channel_y(i), 0])
+                toggle_state_labels();
 
-        translate([c13_panel_x, service_row_y, 0])
-            c13_inlet_negative();
+        translate([usb_c_panel_x, service_row_y - usb_c_panel_h / 2 + 8, 0])
+            flush_label("USB-C", 4);
+
+        translate([c13_panel_x, service_row_y - c13_panel_h / 2 + 8, 0])
+            flush_label("120V IN", 4.5);
 
         if (include_revision)
             translate([revision_x, revision_y, 0])
-                label_pocket(revision_label_w, revision_label_h);
+                flush_revision_label();
     }
-
-    translate([left_ac_x, ac_row_y, 0])
-        positive_plate_writings(ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
-    translate([right_ac_x, ac_row_y, 0])
-        positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
-
-    for (i = [0:3])
-        translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
-            flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
-
-    for (i = [0:3])
-        translate([dc_channel_x(i) + 12 + toggle_label_x_offset, dc_channel_y(i), 0])
-            toggle_state_labels();
-
-    translate([usb_c_panel_x, service_row_y - usb_c_panel_h / 2 + 8, 0])
-        flush_label("USB-C", 4);
-
-    translate([c13_panel_x, service_row_y - c13_panel_h / 2 + 8, 0])
-        flush_label("120V IN", 4.5);
-
-    if (include_revision)
-        translate([revision_x, revision_y, 0])
-            flush_revision_label();
 }
 
 module box_context() {
     color([0.7, 0.72, 0.68, 0.35])
         difference() {
-            translate([-box_w / 2, -box_d / 2, -box_h])
+            translate([0, 0, -box_h])
                 cube([box_w, box_d, box_h]);
-            translate([-box_w / 2 + wall_t, -box_d / 2 + wall_t, -box_h + wall_t])
+            translate([wall_t, wall_t, -box_h + wall_t])
                 cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
         }
 }
@@ -556,10 +566,12 @@ module assembly() {
     box_context();
     top_panel_8ch(true);
 
-    translate([-34, 20, -box_h + wall_t])
-        psu_keepout();
-    translate([42, -38, -box_h + wall_t])
-        relay_board_keepout();
+    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+        translate([-34, 20, -box_h + wall_t])
+            psu_keepout();
+        translate([42, -38, -box_h + wall_t])
+            relay_board_keepout();
+    }
 }
 
 if (view == "plate") {
