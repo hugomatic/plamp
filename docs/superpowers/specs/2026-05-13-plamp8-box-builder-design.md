@@ -61,6 +61,7 @@ Core modules:
 Known values:
 
 - Toggle switch mounting hole: `toggle_hole_d = 12`.
+- Duplex outlet mounting has one visible center screw hole plus two screws under the face plate. These should be treated as available load paths for outlet retention where practical.
 - 2.1 mm barrel jack mounting hole: `barrel_jack_hole_d = 12`.
 - USB-C panel connector cutout: `usb_c_cutout_w = 14`, `usb_c_cutout_h = 8`.
 - USB-C panel connector screws: two M3 screws, `usb_c_screw_spacing = 20`, centered around the rectangular cutout.
@@ -105,6 +106,8 @@ Individual fit-test views:
 
 Underside alignment walls/ribs should be part of each channel module. They are not separate inserts; they are reusable CAD geometry that helps locate hardware and stiffen the panel.
 
+AC outlet channels must resist both downward and upward forces from plugging and unplugging cords. The outlet should not rely only on thin panel material around the cutout. The CAD should provide local stiffness and retention around the duplex channel, using the center screw and the two screws hidden under the face plate as mounting/load-transfer points where practical.
+
 The first pass should prefer printable, easy-to-measure coupons over a highly detailed final enclosure. Each coupon should make one hardware fit question answerable.
 
 Labels should be parameterized and readable. Revision branding should use `revision_string` so generated STLs can be tied to the commit hash or explicit dirty revision text.
@@ -140,5 +143,6 @@ Expected verification:
 - Exact 2.1 mm barrel jack nut/body keepout behind the known 12 mm panel hole.
 - Exact toggle switch rectangular body keepout size under the 12 mm mounting hole.
 - C13 inlet screw diameter and exact screw spacing.
+- Exact duplex outlet hidden faceplate screw positions and screw diameter.
 - PSU screw mount positions.
 - Final enclosure footprint and whether the C13 inlet goes on the back or side.
