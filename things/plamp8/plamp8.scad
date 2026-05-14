@@ -24,9 +24,13 @@ toggle_hole_d = 12;
 barrel_jack_hole_d = 12;
 barrel_channel_w = 44;
 barrel_channel_h = 58;
+barrel_label_w = 34;
+barrel_label_h = 10;
 
 usb_c_panel_w = 44;
 usb_c_panel_h = 34;
+usb_c_label_w = 32;
+usb_c_label_h = 9;
 usb_c_cutout_w = 14;
 usb_c_cutout_h = 8;
 usb_c_screw_d = 3.2;
@@ -35,6 +39,8 @@ usb_c_screw_spacing = 20;
 inch = 25.4;
 c13_panel_w = 72;
 c13_panel_h = 68;
+c13_label_w = 48;
+c13_label_h = 10;
 c13_cutout_w = 1.9 * inch;
 c13_cutout_h = 2.0 * inch;
 c13_screw_d = 3.5;
@@ -61,6 +67,10 @@ top_panel_h = box_d;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
+label_pocket_h = 3;
+label_pocket_r = 3;
+revision_label_w = 34;
+revision_label_h = 9;
 
 letter_size = 6;
 write_t = 0.75;
@@ -233,13 +243,18 @@ module fit_plate(w, h) {
         cube([w, h, plate_t]);
 }
 
-module fit_label(label, font_size = 5) {
+module label_pocket(w, h) {
+    translate([0, 0, plate_t + label_pocket_h / 2 - 0.5])
+        round_hull(w, h, label_pocket_r, label_pocket_h);
+}
+
+module flush_label(label, font_size = 5) {
     translate([0, 0, plate_t])
         write_text(label, font_size);
 }
 
-module revision_label() {
-    fit_label(revision_string, 4);
+module flush_revision_label() {
+    flush_label(revision_string, 4);
 }
 
 module barrel_channel_negative() {
@@ -247,6 +262,14 @@ module barrel_channel_negative() {
         screw_hole(barrel_jack_hole_d);
     translate([12, 0, 0])
         screw_hole(toggle_hole_d);
+
+    translate([0, -barrel_channel_h / 2 + 10, 0])
+        label_pocket(barrel_label_w, barrel_label_h);
+}
+
+module barrel_revision_negative() {
+    translate([0, barrel_channel_h / 2 - 9, 0])
+        label_pocket(revision_label_w, revision_label_h);
 }
 
 module dc_barrel_channel_unit(label = "12V 1", include_revision = true) {
@@ -256,14 +279,16 @@ module dc_barrel_channel_unit(label = "12V 1", include_revision = true) {
             alignment_walls(barrel_channel_w - 8, barrel_channel_h - 8);
         }
         barrel_channel_negative();
+        if (include_revision)
+            barrel_revision_negative();
     }
 
     translate([0, -barrel_channel_h / 2 + 10, 0])
-        fit_label(label, 4.5);
+        flush_label(label, 4.5);
 
     if (include_revision)
         translate([0, barrel_channel_h / 2 - 9, 0])
-            revision_label();
+            flush_revision_label();
 }
 
 module usb_c_panel_negative() {
@@ -272,6 +297,14 @@ module usb_c_panel_negative() {
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
             screw_hole(usb_c_screw_d);
+
+    translate([0, -usb_c_panel_h / 2 + 8, 0])
+        label_pocket(usb_c_label_w, usb_c_label_h);
+}
+
+module usb_c_revision_negative() {
+    translate([0, usb_c_panel_h / 2 - 8, 0])
+        label_pocket(revision_label_w, revision_label_h);
 }
 
 module usb_c_panel_unit(include_revision = true) {
@@ -281,14 +314,16 @@ module usb_c_panel_unit(include_revision = true) {
             alignment_walls(usb_c_panel_w - 8, usb_c_panel_h - 8);
         }
         usb_c_panel_negative();
+        if (include_revision)
+            usb_c_revision_negative();
     }
 
     translate([0, -usb_c_panel_h / 2 + 8, 0])
-        fit_label("USB-C", 4);
+        flush_label("USB-C", 4);
 
     if (include_revision)
         translate([0, usb_c_panel_h / 2 - 8, 0])
-            revision_label();
+            flush_revision_label();
 }
 
 module c13_inlet_negative() {
@@ -297,6 +332,14 @@ module c13_inlet_negative() {
     for (x = [-c13_screw_spacing / 2, c13_screw_spacing / 2])
         translate([x, 0, 0])
             screw_hole(c13_screw_d);
+
+    translate([0, -c13_panel_h / 2 + 8, 0])
+        label_pocket(c13_label_w, c13_label_h);
+}
+
+module c13_revision_negative() {
+    translate([0, c13_panel_h / 2 - 8, 0])
+        label_pocket(revision_label_w, revision_label_h);
 }
 
 module c13_inlet_unit(include_revision = true) {
@@ -306,14 +349,16 @@ module c13_inlet_unit(include_revision = true) {
             alignment_walls(c13_panel_w - 8, c13_panel_h - 8);
         }
         c13_inlet_negative();
+        if (include_revision)
+            c13_revision_negative();
     }
 
     translate([0, -c13_panel_h / 2 + 8, 0])
-        fit_label("120V IN", 4.5);
+        flush_label("120V IN", 4.5);
 
     if (include_revision)
         translate([0, c13_panel_h / 2 - 8, 0])
-            revision_label();
+            flush_revision_label();
 }
 
 module psu_keepout() {
@@ -348,6 +393,17 @@ module top_panel_8ch(include_revision = true) {
 
         translate([88, -5, 0])
             usb_c_panel_negative();
+
+        for (i = [0:3])
+            translate([-72 + i * 48, -58 - barrel_channel_h / 2 + 10, 0])
+                label_pocket(barrel_label_w, barrel_label_h);
+
+        translate([88, -5 - usb_c_panel_h / 2 + 8, 0])
+            label_pocket(usb_c_label_w, usb_c_label_h);
+
+        if (include_revision)
+            translate([top_panel_w / 2 - 28, -top_panel_h / 2 + 12, 0])
+                label_pocket(revision_label_w, revision_label_h);
     }
 
     translate([-58, 34, 0])
@@ -357,14 +413,14 @@ module top_panel_8ch(include_revision = true) {
 
     for (i = [0:3])
         translate([-72 + i * 48, -58 - barrel_channel_h / 2 + 10, 0])
-            fit_label(str("12V ", i + 1), 4.5);
+            flush_label(str("12V ", i + 1), 4.5);
 
     translate([88, -5 - usb_c_panel_h / 2 + 8, 0])
-        fit_label("USB-C", 4);
+        flush_label("USB-C", 4);
 
     if (include_revision)
         translate([top_panel_w / 2 - 28, -top_panel_h / 2 + 12, 0])
-            revision_label();
+            flush_revision_label();
 }
 
 module box_context() {
