@@ -14,6 +14,10 @@ hole_h = 24;        // final vertical height after trimming
 hole_depth = 10;    // taller than plate_t for clean boolean
 cut_off_y = 2.5;
 outlet_spacing = 40;
+outlet_toggle_x = 25;
+outlet_group_x = 3;
+outlet_group_w = 66;
+outlet_group_h = 54;
 
 screw_d = 4;
 screw_spacing = 84;
@@ -26,11 +30,17 @@ barrel_channel_w = 44;
 barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
+barrel_group_y = -8;
+barrel_group_w = 40;
+barrel_group_h = 42;
 
 usb_c_panel_w = 44;
 usb_c_panel_h = 34;
 usb_c_label_w = 32;
 usb_c_label_h = 9;
+usb_c_group_y = -4;
+usb_c_group_w = 36;
+usb_c_group_h = 28;
 usb_c_cutout_w = 14;
 usb_c_cutout_h = 8;
 usb_c_screw_d = 3.2;
@@ -41,6 +51,8 @@ c13_panel_w = 72;
 c13_panel_h = 68;
 c13_label_w = 48;
 c13_label_h = 10;
+c13_group_w = 66;
+c13_group_h = 64;
 c13_cutout_w = 1.9 * inch;
 c13_cutout_h = 2.0 * inch;
 c13_screw_d = 3.5;
@@ -116,15 +128,15 @@ module positive_plate_writings() {
     y_line = -bfont - 1;
 
     translate([x1, y1, plate_t]) {
-        write_text("Pump", bfont);
+        write_text("Pump", bfont, -write_t);
         translate([0, y_line, 0])
-            write_text("ch 1 pin 21", sfont);
+            write_text("ch 1 pin 21", sfont, -write_t);
     }
 
     translate([x2, y2, plate_t]) {
-        write_text("lights", bfont);
+        write_text("lights", bfont, -write_t);
         translate([0, y_line, 0])
-            write_text("ch 2 pin 22", sfont);
+            write_text("ch 2 pin 22", sfont, -write_t);
     }
 }
 
@@ -177,6 +189,10 @@ module outlet_cover_negative(include_revision = true) {
         translate([0, y, plate_t / 2])
             negative_roundish_outlet();
 
+    for (y = [-outlet_spacing / 2, outlet_spacing / 2])
+        translate([outlet_toggle_x, y, 0])
+            screw_hole(toggle_hole_d);
+
     /*
     // screw openings
     for (y = [-screw_spacing / 2, screw_spacing / 2])
@@ -190,14 +206,12 @@ module outlet_cover_negative(include_revision = true) {
 
     hh = 3;
     hr = 3;
-    hx = 40;
-    hy = 54;
     h_y = screw_spacing / 2 - 13;
     h_z = plate_t + hh / 2 - 0.5;
 
     for (y = [-h_y, h_y])
-        translate([0, y, h_z])
-            round_hull(hx, hy, hr, hh);
+        translate([outlet_group_x, y, h_z])
+            round_hull(outlet_group_w, outlet_group_h, hr, hh);
 }
 
 // ---------------- final ----------------
@@ -250,7 +264,7 @@ module label_pocket(w, h) {
 
 module flush_label(label, font_size = 5) {
     translate([0, 0, plate_t])
-        write_text(label, font_size);
+        write_text(label, font_size, -write_t);
 }
 
 module flush_revision_label() {
@@ -263,8 +277,8 @@ module barrel_channel_negative() {
     translate([12, 0, 0])
         screw_hole(toggle_hole_d);
 
-    translate([0, -barrel_channel_h / 2 + 10, 0])
-        label_pocket(barrel_label_w, barrel_label_h);
+    translate([0, barrel_group_y, 0])
+        label_pocket(barrel_group_w, barrel_group_h);
 }
 
 module barrel_revision_negative() {
@@ -298,8 +312,8 @@ module usb_c_panel_negative() {
         translate([x, 0, 0])
             screw_hole(usb_c_screw_d);
 
-    translate([0, -usb_c_panel_h / 2 + 8, 0])
-        label_pocket(usb_c_label_w, usb_c_label_h);
+    translate([0, usb_c_group_y, 0])
+        label_pocket(usb_c_group_w, usb_c_group_h);
 }
 
 module usb_c_revision_negative() {
@@ -333,8 +347,7 @@ module c13_inlet_negative() {
         translate([x, 0, 0])
             screw_hole(c13_screw_d);
 
-    translate([0, -c13_panel_h / 2 + 8, 0])
-        label_pocket(c13_label_w, c13_label_h);
+    label_pocket(c13_group_w, c13_group_h);
 }
 
 module c13_revision_negative() {
@@ -393,13 +406,6 @@ module top_panel_8ch(include_revision = true) {
 
         translate([88, -5, 0])
             usb_c_panel_negative();
-
-        for (i = [0:3])
-            translate([-72 + i * 48, -58 - barrel_channel_h / 2 + 10, 0])
-                label_pocket(barrel_label_w, barrel_label_h);
-
-        translate([88, -5 - usb_c_panel_h / 2 + 8, 0])
-            label_pocket(usb_c_label_w, usb_c_label_h);
 
         if (include_revision)
             translate([top_panel_w / 2 - 28, -top_panel_h / 2 + 12, 0])
