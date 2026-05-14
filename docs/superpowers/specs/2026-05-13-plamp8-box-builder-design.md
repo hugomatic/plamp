@@ -34,7 +34,7 @@ The box controls eight relay channels:
 - Four 12V channels, physically represented as four barrel-jack channel units.
 - One USB-C panel connector for service/control access.
 - One C13 mains input with switch for 120V input, likely on a side/back wall rather than the top.
-- Internal space for a 12V/5V PSU, 8-channel relay board, and diode wiring. These internals are represented as keepout placeholders in the first pass, not detailed mounts.
+- Internal space for a 12V/5V PSU, 8-channel relay board, and diode wiring. These internals are represented as keepout placeholders in the first pass. The relay board can show known mounting hole positions, but detailed standoffs are not part of the first pass.
 
 All connectors should be on the top panel except the 120V input, which may move to a side/back wall.
 
@@ -50,6 +50,8 @@ Core modules:
 - `dc_barrel_channel_unit(label)`: One 2.1 mm barrel jack cutout, one toggle hole, label, and underside alignment walls/ribs.
 - `usb_c_panel_unit()`: USB-C panel connector cutout using the measured 14 mm by 8 mm rectangle and two M3 screw holes 20 mm apart.
 - `c13_inlet_unit()`: C13 inlet and switch cutout using the measured 1.9 inch by 2.0 inch opening, with tunable screw holes. This may be placed on a side wall in the final assembly.
+- `psu_keepout()`: Internal 12V/5V PSU keepout using the measured 160 mm by 98 mm by 38 mm envelope. Do not add screw mounts until hole positions are measured.
+- `relay_board_keepout()`: Internal Waveshare Pico relay keepout using the measured 145 mm by 90 mm by 40 mm envelope. Show four 5 mm mounting hole positions on a 135 mm by 70 mm XY pattern for layout planning.
 - `top_panel_8ch()`: Places two AC duplex channel units and four DC barrel channel units on one top panel.
 - `assembly()`: Shows the rough full box/top layout assembled in place.
 - `plate()`: Lays out all printable/testable pieces separated for export.
@@ -64,6 +66,9 @@ Known values:
 - USB-C panel connector screws: two M3 screws, `usb_c_screw_spacing = 20`, centered around the rectangular cutout.
 - C13 mains inlet/switch module cutout: `c13_cutout_w = 1.9 * 25.4`, `c13_cutout_h = 2.0 * 25.4`.
 - C13 screw holes: left and right, vertically centered on the inlet; screw diameter and exact spacing remain tunable. Initial spacing should be derived from the 1.9 inch width minus 1-2 mm inset per side.
+- PSU keepout: `psu_w = 160`, `psu_d = 98`, `psu_h = 38`.
+- Waveshare Pico relay keepout: `relay_w = 145`, `relay_d = 90`, `relay_h = 40`.
+- Waveshare Pico relay mounting holes: `relay_mount_hole_d = 5`, `relay_mount_x = 135`, `relay_mount_y = 70`.
 - Final top/channel plate thickness: `plate_t = 3`.
 - The existing `plamp8` outlet plate geometry is a useful starting reference.
 
@@ -72,8 +77,9 @@ Unknown values should be explicit parameters with conservative defaults:
 - Toggle switch body keepout rectangle width/depth.
 - 2.1 mm barrel jack nut/body keepout.
 - C13 inlet screw diameter and exact screw spacing.
+- PSU screw mount positions.
 - Final enclosure width/depth/height and wall thickness.
-- Internal keepout sizes for PSU, relay board, and wire paths.
+- Internal keepout sizes for wire paths and diode wiring.
 
 Do not hide unknown hardware dimensions in magic numbers. Name them so they can be tuned after caliper measurements or fit-test prints.
 
@@ -107,7 +113,7 @@ Label construction should follow the successful `plamp8` approach: text is extru
 
 ## Non-Goals For First Pass
 
-- No detailed relay-board mount.
+- No detailed relay-board standoffs or fastener design, beyond showing the known mounting hole pattern for layout planning.
 - No detailed PSU mount.
 - No screw bosses for the final box unless they fall out naturally from the top-panel prototype.
 - No separate removable cartridge inserts.
@@ -134,4 +140,5 @@ Expected verification:
 - Exact 2.1 mm barrel jack nut/body keepout behind the known 12 mm panel hole.
 - Exact toggle switch rectangular body keepout size under the 12 mm mounting hole.
 - C13 inlet screw diameter and exact screw spacing.
+- PSU screw mount positions.
 - Final enclosure footprint and whether the C13 inlet goes on the back or side.
