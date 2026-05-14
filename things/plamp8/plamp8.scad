@@ -26,12 +26,14 @@ screw_spacing = 84;
 toggle_hole_d = 12;
 
 barrel_jack_hole_d = 12;
-barrel_channel_w = 44;
+barrel_channel_w = 60;
 barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
+barrel_label_x = 7;
 barrel_group_y = -8;
-barrel_group_w = 40;
+barrel_group_x = 4;
+barrel_group_w = 54;
 barrel_group_h = 42;
 
 usb_c_panel_w = 44;
@@ -75,20 +77,20 @@ relay_mount_x = 135;
 relay_mount_y = 70;
 
 box_w = 235;
-box_d = 250;
+box_d = 310;
 box_h = 70;
 wall_t = 3;
 top_panel_w = box_w;
 top_panel_h = box_d;
-service_row_y = 86;
-ac_row_y = 18;
-dc_row_y = -84;
-usb_c_panel_x = -48;
-c13_panel_x = 48;
+service_row_y = 118;
+ac_row_y = 10;
+dc_row_y = -106;
+usb_c_panel_x = -usb_c_panel_w / 2;
+c13_panel_x = c13_panel_w / 2;
 left_ac_x = -56;
 right_ac_x = 56;
-dc_start_x = -72;
-dc_spacing_x = 48;
+dc_start_x = -81;
+dc_spacing_x = 54;
 revision_x = 96;
 revision_y = 110;
 toggle_label_x_offset = 8;
@@ -167,7 +169,7 @@ module positive_plate_writings(
         translate([0, y_line, 0])
             write_text(detail_a, sfont, -write_t);
     }
-    translate([outlet_toggle_x + toggle_label_x_offset, y1 - 7, 0])
+    translate([outlet_toggle_x + toggle_label_x_offset, outlet_spacing / 2, 0])
         toggle_state_labels();
 
     translate([x2, y2, plate_t]) {
@@ -175,7 +177,7 @@ module positive_plate_writings(
         translate([0, y_line, 0])
             write_text(detail_b, sfont, -write_t);
     }
-    translate([outlet_toggle_x + toggle_label_x_offset, y2 - 7, 0])
+    translate([outlet_toggle_x + toggle_label_x_offset, -outlet_spacing / 2, 0])
         toggle_state_labels();
 }
 
@@ -330,7 +332,7 @@ module barrel_channel_negative() {
     translate([12, 0, 0])
         screw_hole(toggle_hole_d);
 
-    translate([0, barrel_group_y, 0])
+    translate([barrel_group_x, barrel_group_y, 0])
         label_pocket(barrel_group_w, barrel_group_h);
 }
 
@@ -350,7 +352,7 @@ module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_r
             barrel_revision_negative();
     }
 
-    translate([0, -barrel_channel_h / 2 + 10, 0])
+    translate([barrel_label_x, -barrel_channel_h / 2 + 10, 0])
         flush_two_line_label(device, detail, 4.3, 2.9, 5.5);
     translate([12 + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
@@ -478,7 +480,7 @@ module top_panel_8ch(include_revision = true) {
         positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
 
     for (i = [0:3])
-        translate([dc_start_x + i * dc_spacing_x, dc_row_y - barrel_channel_h / 2 + 10, 0])
+        translate([dc_start_x + i * dc_spacing_x + barrel_label_x, dc_row_y - barrel_channel_h / 2 + 10, 0])
             flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
 
     for (i = [0:3])
