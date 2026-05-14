@@ -3,7 +3,7 @@ $fn = 96;
 view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
 
 // ---------------- dimensions ----------------
-plate_w = 70;
+plate_w = 92;
 plate_h = 120;
 plate_t = 3;
 
@@ -14,9 +14,9 @@ hole_h = 24;        // final vertical height after trimming
 hole_depth = 10;    // taller than plate_t for clean boolean
 cut_off_y = 2.5;
 outlet_spacing = 40;
-outlet_toggle_x = 25;
-outlet_group_x = 3;
-outlet_group_w = 66;
+outlet_toggle_x = 36;
+outlet_group_x = 8;
+outlet_group_w = 84;
 outlet_group_h = 54;
 
 screw_d = 4;
@@ -43,6 +43,8 @@ usb_c_group_w = 36;
 usb_c_group_h = 28;
 usb_c_cutout_w = 14;
 usb_c_cutout_h = 8;
+usb_c_wire_cutout_w = 10;
+usb_c_wire_cutout_h = 16;
 usb_c_screw_d = 3.2;
 usb_c_screw_spacing = 20;
 
@@ -55,6 +57,8 @@ c13_group_w = 66;
 c13_group_h = 64;
 c13_cutout_w = 1.9 * inch;
 c13_cutout_h = 2.0 * inch;
+c13_wire_cutout_w = c13_cutout_w;
+c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
 c13_screw_spacing = c13_cutout_w - 2 * c13_screw_inset;
@@ -71,11 +75,25 @@ relay_mount_x = 135;
 relay_mount_y = 70;
 
 box_w = 235;
-box_d = 190;
+box_d = 250;
 box_h = 70;
 wall_t = 3;
 top_panel_w = box_w;
 top_panel_h = box_d;
+service_row_y = 86;
+ac_row_y = 18;
+dc_row_y = -84;
+usb_c_panel_x = -48;
+c13_panel_x = 48;
+left_ac_x = -56;
+right_ac_x = 56;
+dc_start_x = -72;
+dc_spacing_x = 48;
+revision_x = 96;
+revision_y = 110;
+toggle_label_x_offset = 8;
+toggle_label_step = 6;
+toggle_label_font = 2.4;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -149,12 +167,16 @@ module positive_plate_writings(
         translate([0, y_line, 0])
             write_text(detail_a, sfont, -write_t);
     }
+    translate([outlet_toggle_x + toggle_label_x_offset, y1 - 7, 0])
+        toggle_state_labels();
 
     translate([x2, y2, plate_t]) {
         write_text(device_b, bfont, -write_t);
         translate([0, y_line, 0])
             write_text(detail_b, sfont, -write_t);
     }
+    translate([outlet_toggle_x + toggle_label_x_offset, y2 - 7, 0])
+        toggle_state_labels();
 }
 
 module outlet_cover_positive() {
@@ -290,6 +312,14 @@ module flush_label(label, font_size = 5) {
         write_text(label, font_size, -write_t);
 }
 
+module toggle_state_labels() {
+    translate([0, toggle_label_step, 0])
+        flush_label("Auto", toggle_label_font);
+    flush_label("Off", toggle_label_font);
+    translate([0, -toggle_label_step, 0])
+        flush_label("On", toggle_label_font);
+}
+
 module flush_revision_label() {
     flush_label(revision_string, 4);
 }
@@ -322,6 +352,8 @@ module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_r
 
     translate([0, -barrel_channel_h / 2 + 10, 0])
         flush_two_line_label(device, detail, 4.3, 2.9, 5.5);
+    translate([12 + toggle_label_x_offset, 0, 0])
+        toggle_state_labels();
 
     if (include_revision)
         translate([0, barrel_channel_h / 2 - 9, 0])
@@ -330,6 +362,7 @@ module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_r
 
 module usb_c_panel_negative() {
     rect_cutout(usb_c_cutout_w, usb_c_cutout_h);
+    rect_cutout(usb_c_wire_cutout_w, usb_c_wire_cutout_h);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
@@ -365,6 +398,7 @@ module usb_c_panel_unit(include_revision = true) {
 
 module c13_inlet_negative() {
     rect_cutout(c13_cutout_w, c13_cutout_h);
+    rect_cutout(c13_wire_cutout_w, c13_wire_cutout_h);
 
     for (x = [-c13_screw_spacing / 2, c13_screw_spacing / 2])
         translate([x, 0, 0])
@@ -418,37 +452,47 @@ module top_panel_8ch(include_revision = true) {
     difference() {
         fit_plate(top_panel_w, top_panel_h);
 
-        translate([-58, 34, 0])
+        translate([left_ac_x, ac_row_y, 0])
             outlet_cover_negative(false);
-        translate([58, 34, 0])
+        translate([right_ac_x, ac_row_y, 0])
             outlet_cover_negative(false);
 
         for (i = [0:3])
-            translate([-72 + i * 48, -58, 0])
+            translate([dc_start_x + i * dc_spacing_x, dc_row_y, 0])
                 barrel_channel_negative();
 
-        translate([88, -5, 0])
+        translate([usb_c_panel_x, service_row_y, 0])
             usb_c_panel_negative();
 
+        translate([c13_panel_x, service_row_y, 0])
+            c13_inlet_negative();
+
         if (include_revision)
-            translate([top_panel_w / 2 - 28, -top_panel_h / 2 + 12, 0])
+            translate([revision_x, revision_y, 0])
                 label_pocket(revision_label_w, revision_label_h);
     }
 
-    translate([-58, 34, 0])
+    translate([left_ac_x, ac_row_y, 0])
         positive_plate_writings(ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
-    translate([58, 34, 0])
+    translate([right_ac_x, ac_row_y, 0])
         positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
 
     for (i = [0:3])
-        translate([-72 + i * 48, -58 - barrel_channel_h / 2 + 10, 0])
+        translate([dc_start_x + i * dc_spacing_x, dc_row_y - barrel_channel_h / 2 + 10, 0])
             flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
 
-    translate([88, -5 - usb_c_panel_h / 2 + 8, 0])
+    for (i = [0:3])
+        translate([dc_start_x + i * dc_spacing_x + 12 + toggle_label_x_offset, dc_row_y, 0])
+            toggle_state_labels();
+
+    translate([usb_c_panel_x, service_row_y - usb_c_panel_h / 2 + 8, 0])
         flush_label("USB-C", 4);
 
+    translate([c13_panel_x, service_row_y - c13_panel_h / 2 + 8, 0])
+        flush_label("120V IN", 4.5);
+
     if (include_revision)
-        translate([top_panel_w / 2 - 28, -top_panel_h / 2 + 12, 0])
+        translate([revision_x, revision_y, 0])
             flush_revision_label();
 }
 
@@ -485,26 +529,22 @@ module top_panel() {
 }
 
 module plate() {
-    translate([-126, 46, 0])
+    translate([-146, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
-    translate([-48, 62, 0])
+    translate([-58, 66, 0])
         dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
-    translate([16, 62, 0])
+    translate([6, 66, 0])
         usb_c_panel_unit(true);
-    translate([88, 46, 0])
+    translate([78, 56, 0])
         c13_inlet_unit(true);
 
-    translate([0, -112, 0])
+    translate([0, -140, 0])
         top_panel_8ch(true);
 }
 
 module assembly() {
     box_context();
     top_panel_8ch(true);
-
-    translate([0, -box_d / 2 - 0.1, -box_h / 2])
-        rotate([90, 0, 0])
-            c13_inlet_unit(false);
 
     translate([-34, 20, -box_h + wall_t])
         psu_keepout();
