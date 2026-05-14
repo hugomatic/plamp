@@ -3,7 +3,9 @@ $fn = 96;
 view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
 
 // ---------------- dimensions ----------------
-plate_w = 92;
+outlet_plate_left = 46;
+outlet_plate_right = 76;
+plate_w = outlet_plate_left + outlet_plate_right;
 plate_h = 120;
 plate_t = 3;
 
@@ -182,7 +184,7 @@ module positive_plate_writings(
 }
 
 module outlet_cover_positive() {
-    translate([-plate_w / 2, -plate_h / 2, 0])
+    translate([-outlet_plate_left, -plate_h / 2, 0])
         cube([plate_w, plate_h, plate_t]);
 }
 
@@ -531,7 +533,7 @@ module top_panel() {
 }
 
 module plate() {
-    translate([-146, 56, 0])
+    translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([-58, 66, 0])
         dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
