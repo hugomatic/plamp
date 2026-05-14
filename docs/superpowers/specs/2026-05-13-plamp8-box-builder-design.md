@@ -112,6 +112,8 @@ The first pass should prefer printable, easy-to-measure coupons over a highly de
 
 Labels should be parameterized and readable. Revision branding should use `revision_string` so generated STLs can be tied to the commit hash or explicit dirty revision text.
 
+Revision branding is per printable part, not per repeated module. The full top panel should have one revision string total even if it contains two duplex channel modules and four DC channel modules. The eventual box body should also have one revision string. Individual fit-test coupons may include their own revision string because each coupon is a standalone printable part.
+
 Label construction should follow the successful `plamp8` approach: text is extruded from a rounded rectangle that sits lower than the top surface, leaving the text flush with the panel surface rather than raised above it.
 
 ## Non-Goals For First Pass
