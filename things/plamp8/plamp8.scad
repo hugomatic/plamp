@@ -109,9 +109,9 @@ write_t = 0.75;
 revision_string = "dev";
 
 ac_devices = ["Pump", "Lights", "Fan", "Aux"];
-ac_details = ["ch 1 pin ?", "ch 2 pin ?", "ch 3 pin ?", "ch 4 pin ?"];
+ac_details = ["CH1 GP21", "CH2 GP20", "CH3 GP19", "CH4 GP18"];
 dc_devices = ["PH up", "PH down", "Agitator", "Nutrients"];
-dc_details = ["ch 5 pin ?", "ch 6 pin ?", "ch 7 pin ?", "ch 8 pin ?"];
+dc_details = ["CH5 GP17", "CH6 GP16", "CH7 GP15", "CH8 GP14"];
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
