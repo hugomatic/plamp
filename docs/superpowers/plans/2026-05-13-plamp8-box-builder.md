@@ -2,28 +2,27 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first modular OpenSCAD `plamp8_box` part with reusable channel modules, fit-test views, and a rough assembly/top-panel layout.
+**Goal:** Evolve the existing OpenSCAD `plamp8` part with reusable channel modules, fit-test views, and a rough assembly/top-panel layout.
 
-**Architecture:** Add a new `things/plamp8_box` part using the existing CAD generator. Keep geometry correctness primarily human/print-verified; automated checks focus on Bash syntax and SCAD view/module structure. Use top-level parameters for all known and unknown hardware dimensions.
+**Architecture:** Evolve the existing `things/plamp8` part using its current CAD generator. Keep geometry correctness primarily human/print-verified; automated checks focus on Bash syntax and SCAD view/module structure. Use top-level parameters for all known and unknown hardware dimensions.
 
 **Tech Stack:** Bash, OpenSCAD, existing `things/template.bash` and `things/3d_template/generate.bash`.
 
 ---
 
-### Task 1: Scaffold `plamp8_box`
+### Task 1: Evolve `plamp8`
 
 **Files:**
-- Create: `things/plamp8_box/generate.bash`
-- Create: `things/plamp8_box/plamp8_box.scad`
+- Modify: `things/plamp8/generate.bash`
+- Modify: `things/plamp8/plamp8.scad`
 
-- [ ] Run `cd things && ./template.bash plamp8_box --template positive_negative`.
-- [ ] Replace `plamp8_box.scad` with a modular SCAD file exposing `view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]`.
+- [ ] Replace the existing `plamp8.scad` with a modular SCAD file exposing `view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]`.
 - [ ] Keep `revision_string = "dev"` and do not add generated STL files.
 
 ### Task 2: Implement reusable CAD modules
 
 **Files:**
-- Modify: `things/plamp8_box/plamp8_box.scad`
+- Modify: `things/plamp8/plamp8.scad`
 
 - [ ] Add top-level dimensions for plate thickness, outlet geometry, toggle holes, barrel jack holes, USB-C, C13, PSU keepout, relay keepout, relay mounting pattern, labels, and layout spacing.
 - [ ] Add helper modules: rounded rectangles, rounded boxes, screw holes, label plaque/text, revision text, and alignment walls.
@@ -33,7 +32,7 @@
 ### Task 3: Implement views
 
 **Files:**
-- Modify: `things/plamp8_box/plamp8_box.scad`
+- Modify: `things/plamp8/plamp8.scad`
 
 - [ ] Add individual views for AC duplex, DC barrel, USB-C, C13, and top panel.
 - [ ] Add `plate()` with separated printable coupons and the rough top panel laid out on the build plane.
@@ -43,19 +42,18 @@
 ### Task 4: Lightweight verification
 
 **Files:**
-- Verify: `things/plamp8_box/generate.bash`
-- Verify: `things/plamp8_box/plamp8_box.scad`
+- Verify: `things/plamp8/generate.bash`
+- Verify: `things/plamp8/plamp8.scad`
 
-- [ ] Run `bash -n things/plamp8_box/generate.bash`.
-- [ ] Run `things/plamp8_box/generate.bash --revision plamp8-box-wip /tmp/plamp8_box_wip HEAD` only if OpenSCAD is available and time is reasonable. If rendering is slow, render a single coupon directly with OpenSCAD or report that full rendering was skipped.
+- [ ] Run `bash -n things/plamp8/generate.bash`.
+- [ ] Run `things/plamp8/generate.bash --revision plamp8-wip /tmp/plamp8_wip HEAD` only if OpenSCAD is available and time is reasonable. If rendering is slow, render a single coupon directly with OpenSCAD or report that full rendering was skipped.
 - [ ] Confirm no generated STL files were added to git.
 
 ### Task 5: Commit and push branch
 
 **Files:**
 - Add: `docs/superpowers/plans/2026-05-13-plamp8-box-builder.md`
-- Add: `things/plamp8_box/generate.bash`
-- Add: `things/plamp8_box/plamp8_box.scad`
+- Modify: `things/plamp8/plamp8.scad`
 
 - [ ] Commit with `git commit -m "Add plamp8 modular box builder"`.
 - [ ] Push branch `plamp8-box-builder` to origin.

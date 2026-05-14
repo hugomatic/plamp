@@ -4,16 +4,16 @@
 
 Create a modular OpenSCAD CAD builder for the `plamp8` relay enclosure. The first implementation should produce useful fit-test prints and establish reusable CAD modules for the final enclosure, without trying to finish the entire box in one pass.
 
-The current `things/plamp8` part remains a work-in-progress double-wall outlet plate with inscriptions. The new builder should live separately so the existing fit-tested part is not broken.
+The current `things/plamp8` double-wall outlet plate is the starting point. The builder should evolve this part in place, preserving its outlet cutout approach and inscription style while adding modular channels and views.
 
-## New CAD Part
+## CAD Part
 
-Add a new part directory:
+Use the existing part directory:
 
 ```text
-things/plamp8_box/
+things/plamp8/
   generate.bash
-  plamp8_box.scad
+  plamp8.scad
 ```
 
 Use the existing `things/template.bash` and `things/3d_template/generate.bash` conventions.
@@ -130,12 +130,12 @@ Label construction should follow the successful `plamp8` approach: text is extru
 Use the CAD generator rather than direct OpenSCAD calls:
 
 ```bash
-things/plamp8_box/generate.bash --revision fit-test-1 /tmp/plamp8_box_fit HEAD
+things/plamp8/generate.bash --revision fit-test-1 /tmp/plamp8_fit HEAD
 ```
 
 Expected verification:
 
-- `bash -n things/plamp8_box/generate.bash`
+- `bash -n things/plamp8/generate.bash`
 - Render all declared views using the generator.
 - Confirm STL files are created and non-empty.
 - Treat OpenSCAD non-manifold warnings as informational for early fit-test coupons unless the geometry is visibly empty or broken.
