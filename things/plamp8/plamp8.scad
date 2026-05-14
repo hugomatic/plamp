@@ -28,14 +28,14 @@ screw_spacing = 84;
 toggle_hole_d = 12;
 
 barrel_jack_hole_d = 12;
-barrel_channel_w = 60;
+barrel_channel_w = 70;
 barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
 barrel_label_x = 7;
 barrel_group_y = -8;
-barrel_group_x = 4;
-barrel_group_w = 54;
+barrel_group_x = 5;
+barrel_group_w = 66;
 barrel_group_h = 42;
 
 usb_c_panel_w = 44;
@@ -78,7 +78,7 @@ relay_mount_hole_d = 5;
 relay_mount_x = 135;
 relay_mount_y = 70;
 
-box_w = 235;
+box_w = 330;
 box_d = 310;
 box_h = 70;
 wall_t = 3;
@@ -91,11 +91,11 @@ usb_c_panel_x = -usb_c_panel_w / 2;
 c13_panel_x = c13_panel_w / 2;
 left_ac_x = -56;
 right_ac_x = 56;
-dc_start_x = -81;
-dc_spacing_x = 54;
+dc_start_x = -114;
+dc_spacing_x = 76;
 revision_x = 96;
 revision_y = 110;
-toggle_label_x_offset = 8;
+toggle_label_x_offset = 14;
 toggle_label_step = 6;
 toggle_label_font = 2.4;
 
@@ -297,7 +297,7 @@ module screw_hole(d, depth = 30) {
 }
 
 module rect_cutout(w, h, depth = 30) {
-    translate([0, 0, -depth / 2])
+    translate([0, 0, plate_t / 2])
         cube([w, h, depth], center = true);
 }
 
@@ -535,7 +535,7 @@ module top_panel() {
 module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
-    translate([-58, 66, 0])
+    translate([-62, 66, 0])
         dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
     translate([6, 66, 0])
         usb_c_panel_unit(true);
