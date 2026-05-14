@@ -88,6 +88,11 @@ letter_size = 6;
 write_t = 0.75;
 revision_string = "dev";
 
+ac_devices = ["Pump", "Lights", "Fan", "Aux"];
+ac_details = ["ch 1 pin ?", "ch 2 pin ?", "ch 3 pin ?", "ch 4 pin ?"];
+dc_devices = ["PH up", "PH down", "Agitator", "Nutrients"];
+dc_details = ["ch 5 pin ?", "ch 6 pin ?", "ch 7 pin ?", "ch 8 pin ?"];
+
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
     translate([0, 0, z0])
@@ -116,7 +121,19 @@ module round_hull(x, y, r, h) {
 
 // ---------------- positive modules ----------------
 
-module positive_plate_writings() {
+module flush_two_line_label(device, detail, big_font = 5, small_font = 3.2, line_gap = 6) {
+    translate([0, line_gap / 2, plate_t])
+        write_text(device, big_font, -write_t);
+    translate([0, -line_gap / 2, plate_t])
+        write_text(detail, small_font, -write_t);
+}
+
+module positive_plate_writings(
+    device_a = "Pump",
+    detail_a = "ch 1 pin ?",
+    device_b = "Lights",
+    detail_b = "ch 2 pin ?"
+) {
     bfont = 7;
     sfont = 4;
     x1 = 0;
@@ -128,15 +145,15 @@ module positive_plate_writings() {
     y_line = -bfont - 1;
 
     translate([x1, y1, plate_t]) {
-        write_text("Pump", bfont, -write_t);
+        write_text(device_a, bfont, -write_t);
         translate([0, y_line, 0])
-            write_text("ch 1 pin 21", sfont, -write_t);
+            write_text(detail_a, sfont, -write_t);
     }
 
     translate([x2, y2, plate_t]) {
-        write_text("lights", bfont, -write_t);
+        write_text(device_b, bfont, -write_t);
         translate([0, y_line, 0])
-            write_text("ch 2 pin 22", sfont, -write_t);
+            write_text(detail_b, sfont, -write_t);
     }
 }
 
@@ -216,14 +233,20 @@ module outlet_cover_negative(include_revision = true) {
 
 // ---------------- final ----------------
 
-module outlet_cover(include_revision = true) {
+module outlet_cover(
+    include_revision = true,
+    device_a = "Pump",
+    detail_a = "ch 1 pin ?",
+    device_b = "Lights",
+    detail_b = "ch 2 pin ?"
+) {
     union() {
         difference() {
             outlet_cover_positive();
             outlet_cover_negative(include_revision);
         }
 
-        positive_plate_writings();
+        positive_plate_writings(device_a, detail_a, device_b, detail_b);
     }
 }
 
@@ -286,7 +309,7 @@ module barrel_revision_negative() {
         label_pocket(revision_label_w, revision_label_h);
 }
 
-module dc_barrel_channel_unit(label = "12V 1", include_revision = true) {
+module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_revision = true) {
     difference() {
         union() {
             fit_plate(barrel_channel_w, barrel_channel_h);
@@ -298,7 +321,7 @@ module dc_barrel_channel_unit(label = "12V 1", include_revision = true) {
     }
 
     translate([0, -barrel_channel_h / 2 + 10, 0])
-        flush_label(label, 4.5);
+        flush_two_line_label(device, detail, 4.3, 2.9, 5.5);
 
     if (include_revision)
         translate([0, barrel_channel_h / 2 - 9, 0])
@@ -413,13 +436,13 @@ module top_panel_8ch(include_revision = true) {
     }
 
     translate([-58, 34, 0])
-        positive_plate_writings();
+        positive_plate_writings(ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([58, 34, 0])
-        positive_plate_writings();
+        positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
 
     for (i = [0:3])
         translate([-72 + i * 48, -58 - barrel_channel_h / 2 + 10, 0])
-            flush_label(str("12V ", i + 1), 4.5);
+            flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
 
     translate([88, -5 - usb_c_panel_h / 2 + 8, 0])
         flush_label("USB-C", 4);
@@ -442,11 +465,11 @@ module box_context() {
 // ---------------- views ----------------
 
 module ac_duplex_channel() {
-    outlet_cover(true);
+    outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
 }
 
 module dc_barrel_channel() {
-    dc_barrel_channel_unit("12V 1", true);
+    dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
 }
 
 module usb_c_panel() {
@@ -463,9 +486,9 @@ module top_panel() {
 
 module plate() {
     translate([-126, 46, 0])
-        outlet_cover(true);
+        outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([-48, 62, 0])
-        dc_barrel_channel_unit("12V 1", true);
+        dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
     translate([16, 62, 0])
         usb_c_panel_unit(true);
     translate([88, 46, 0])
