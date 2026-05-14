@@ -48,8 +48,8 @@ Core modules:
 
 - `ac_duplex_channel_unit(label_a, label_b)`: One double-wall outlet plate area with two outlet cutouts, two toggle holes, labels, and underside alignment walls/ribs.
 - `dc_barrel_channel_unit(label)`: One 2.1 mm barrel jack cutout, one toggle hole, label, and underside alignment walls/ribs.
-- `usb_c_panel_unit()`: Placeholder rectangular cutout for a USB-C panel connector, with tunable width/height.
-- `c13_inlet_unit()`: Placeholder C13 inlet and switch cutout, with tunable dimensions. This may be placed on a side wall in the final assembly.
+- `usb_c_panel_unit()`: USB-C panel connector cutout using the measured 14 mm by 8 mm rectangle and two M3 screw holes 20 mm apart.
+- `c13_inlet_unit()`: C13 inlet and switch cutout using the measured 1.9 inch by 2.0 inch opening, with tunable screw holes. This may be placed on a side wall in the final assembly.
 - `top_panel_8ch()`: Places two AC duplex channel units and four DC barrel channel units on one top panel.
 - `assembly()`: Shows the rough full box/top layout assembled in place.
 - `plate()`: Lays out all printable/testable pieces separated for export.
@@ -59,15 +59,19 @@ Core modules:
 Known values:
 
 - Toggle switch mounting hole: `toggle_hole_d = 12`.
+- 2.1 mm barrel jack mounting hole: `barrel_jack_hole_d = 12`.
+- USB-C panel connector cutout: `usb_c_cutout_w = 14`, `usb_c_cutout_h = 8`.
+- USB-C panel connector screws: two M3 screws, `usb_c_screw_spacing = 20`, centered around the rectangular cutout.
+- C13 mains inlet/switch module cutout: `c13_cutout_w = 1.9 * 25.4`, `c13_cutout_h = 2.0 * 25.4`.
+- C13 screw holes: left and right, vertically centered on the inlet; screw diameter and exact spacing remain tunable. Initial spacing should be derived from the 1.9 inch width minus 1-2 mm inset per side.
 - Final top/channel plate thickness: `plate_t = 3`.
 - The existing `plamp8` outlet plate geometry is a useful starting reference.
 
 Unknown values should be explicit parameters with conservative defaults:
 
 - Toggle switch body keepout rectangle width/depth.
-- 2.1 mm barrel jack panel hole diameter and nut keepout.
-- USB-C panel connector rectangular cutout dimensions.
-- C13 inlet and switch cutout dimensions.
+- 2.1 mm barrel jack nut/body keepout.
+- C13 inlet screw diameter and exact screw spacing.
 - Final enclosure width/depth/height and wall thickness.
 - Internal keepout sizes for PSU, relay board, and wire paths.
 
@@ -99,6 +103,8 @@ The first pass should prefer printable, easy-to-measure coupons over a highly de
 
 Labels should be parameterized and readable. Revision branding should use `revision_string` so generated STLs can be tied to the commit hash or explicit dirty revision text.
 
+Label construction should follow the successful `plamp8` approach: text is extruded from a rounded rectangle that sits lower than the top surface, leaving the text flush with the panel surface rather than raised above it.
+
 ## Non-Goals For First Pass
 
 - No detailed relay-board mount.
@@ -125,8 +131,7 @@ Expected verification:
 
 ## Open Questions For Implementation
 
-- Exact 2.1 mm barrel jack panel cutout diameter and body keepout.
+- Exact 2.1 mm barrel jack nut/body keepout behind the known 12 mm panel hole.
 - Exact toggle switch rectangular body keepout size under the 12 mm mounting hole.
-- USB-C panel connector cutout dimensions.
-- C13 inlet and switch dimensions.
+- C13 inlet screw diameter and exact screw spacing.
 - Final enclosure footprint and whether the C13 inlet goes on the back or side.
