@@ -82,12 +82,9 @@ relay_mount_hole_d = 5;
 relay_mount_x = 135;
 relay_mount_y = 70;
 
-box_w = 235;
-box_d = 245;
 box_h = 70;
 wall_t = 3;
-top_panel_w = box_w;
-top_panel_h = box_d;
+panel_margin = 5;
 service_row_y = 58;
 ac_row_y = -62;
 dc_row_y = -106;
@@ -112,6 +109,17 @@ revision_y = nutrients_recess_bottom_y + 9 / 2;
 toggle_label_x_offset = 14;
 toggle_label_step = 6;
 toggle_label_font = 2.4;
+
+content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
+content_right_x = outlet_right_x;
+content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
+content_top_y = service_row_y + c13_group_h / 2;
+box_w = content_right_x - content_left_x + 2 * panel_margin;
+box_d = content_top_y - content_bottom_y + 2 * panel_margin;
+top_panel_w = box_w;
+top_panel_h = box_d;
+layout_offset_x = panel_margin - content_left_x;
+layout_offset_y = panel_margin - content_bottom_y;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -474,9 +482,9 @@ function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
 
 module top_panel_8ch(include_revision = true) {
-    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+    translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
-            translate([-top_panel_w / 2, -top_panel_h / 2, 0])
+            translate([-layout_offset_x, -layout_offset_y, 0])
                 fit_plate_from_origin(top_panel_w, top_panel_h);
 
             translate([left_ac_x, ac_row_y, 0])
