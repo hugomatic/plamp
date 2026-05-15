@@ -88,17 +88,18 @@ box_h = 70;
 wall_t = 3;
 top_panel_w = box_w;
 top_panel_h = box_d;
-service_row_y = 65;
+service_row_y = 60;
 ac_row_y = -85;
 dc_row_y = -106;
 usb_c_panel_x = 83;
+usb_c_panel_y = 15;
 c13_panel_x = 83;
 left_ac_x = -66;
 right_ac_x = 46;
 dc_grid_x = -76;
 dc_grid_y = 65;
 dc_col_spacing = 86;
-dc_row_spacing = 62;
+dc_row_spacing = 56;
 revision_x = 83;
 revision_y = -18;
 toggle_label_x_offset = 14;
@@ -480,7 +481,7 @@ module top_panel_8ch(include_revision = true) {
                 translate([dc_channel_x(i), dc_channel_y(i), 0])
                     barrel_channel_negative();
 
-            translate([usb_c_panel_x, service_row_y, 0])
+            translate([usb_c_panel_x, usb_c_panel_y, 0])
                 usb_c_panel_negative();
 
             translate([c13_panel_x, service_row_y, 0])
@@ -504,7 +505,7 @@ module top_panel_8ch(include_revision = true) {
             translate([dc_channel_x(i) + 12 + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
-        translate([usb_c_panel_x, service_row_y - usb_c_panel_h / 2 + 8, 0])
+        translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 8, 0])
             flush_label("USB-C", 4);
 
         translate([c13_panel_x, service_row_y - c13_panel_h / 2 + 8, 0])
