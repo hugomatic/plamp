@@ -2,7 +2,12 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
+view = "internal"; // [internal, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
+
+show_internal_box = true;
+show_internal_psu = true;
+show_internal_relay = true;
+show_internal_top_outline = true;
 
 // ---------------- dimensions ----------------
 outlet_plate_left = 46;
@@ -88,6 +93,8 @@ relay_mount_y = 70;
 box_h = 70;
 wall_t = 3;
 panel_margin = 5;
+top_outline_w = 2;
+top_outline_h = 1;
 service_row_y = 58;
 ac_row_y = -62;
 dc_row_y = -106;
@@ -538,6 +545,19 @@ module box_context() {
         }
 }
 
+module top_panel_outline() {
+    color([0.85, 0.72, 0.15, 0.8])
+        linear_extrude(height = top_outline_h)
+            difference() {
+                square([top_panel_w, top_panel_h]);
+                translate([top_outline_w, top_outline_w])
+                    square([
+                        top_panel_w - 2 * top_outline_w,
+                        top_panel_h - 2 * top_outline_w
+                    ]);
+            }
+}
+
 // ---------------- views ----------------
 
 module ac_duplex_channel() {
@@ -586,7 +606,26 @@ module assembly() {
     }
 }
 
-if (view == "plate") {
+module internal() {
+    if (show_internal_box)
+        box_context();
+
+    if (show_internal_top_outline)
+        top_panel_outline();
+
+    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+        if (show_internal_psu)
+            translate([-34, 20, -box_h + wall_t])
+                psu_keepout();
+        if (show_internal_relay)
+            translate([42, -38, -box_h + wall_t])
+                relay_board_keepout();
+    }
+}
+
+if (view == "internal") {
+    internal();
+} else if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
     ac_duplex_channel();
