@@ -97,8 +97,10 @@ top_outline_w = 2;
 top_outline_h = 1;
 internal_psu_x = -4;
 internal_psu_y = 55;
+internal_psu_rot_z = 90;
 internal_relay_x = 2;
 internal_relay_y = -48;
+internal_relay_rot_z = 90;
 service_row_y = 58;
 ac_row_y = -62;
 dc_row_y = -106;
@@ -620,10 +622,12 @@ module internal() {
     translate([top_panel_w / 2, top_panel_h / 2, 0]) {
         if (show_internal_psu)
             translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
-                psu_keepout();
+                rotate([0, 0, internal_psu_rot_z])
+                    psu_keepout();
         if (show_internal_relay)
             translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
-                relay_board_keepout();
+                rotate([0, 0, internal_relay_rot_z])
+                    relay_board_keepout();
     }
 }
 
