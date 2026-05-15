@@ -202,7 +202,10 @@ fi
 
 OPENSCAD_CMD="$(find_openscad)" || exit 1
 
-part_status="$(git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR")"
+part_status="$(
+  git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR" |
+    grep -Ev '^[?MADRCU ][?MADRCU ] '"$SCAD_REPO_DIR"'/prints(/|$)' || true
+)"
 dirty_part=0
 [[ -n "$part_status" ]] && dirty_part=1
 
