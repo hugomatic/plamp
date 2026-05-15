@@ -94,17 +94,20 @@ dc_row_y = -106;
 left_ac_x = -66;
 right_ac_x = 40;
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
-usb_c_panel_x = outlet_right_x - usb_c_panel_w / 2;
+usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
 usb_c_panel_y = 15;
-c13_panel_x = outlet_right_x - c13_panel_w / 2;
+c13_panel_x = outlet_right_x - c13_group_w / 2;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
-dc_channel_gap = 8;
+dc_channel_gap = (
+    outlet_right_x - c13_group_w
+    - dc_grid_x - barrel_group_w - barrel_group_x - barrel_group_w / 2
+) / 2;
 dc_col_spacing = barrel_group_w + dc_channel_gap;
 dc_row_spacing = barrel_group_h + dc_channel_gap;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
-revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_panel_w / 2) / 2;
+revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = nutrients_recess_bottom_y + 9 / 2;
 toggle_label_x_offset = 14;
 toggle_label_step = 6;
