@@ -18,7 +18,8 @@ hole_h = 24;        // final vertical height after trimming
 hole_depth = 10;    // taller than plate_t for clean boolean
 cut_off_y = 2.5;
 outlet_spacing = 40;
-outlet_toggle_x = 36;
+outlet_feature_x = -4;
+outlet_toggle_x = 32;
 outlet_group_x = 8;
 outlet_group_w = 104;
 outlet_group_h = 54;
@@ -39,6 +40,8 @@ barrel_group_y = -8;
 barrel_group_x = 5;
 barrel_group_w = 66;
 barrel_group_h = 42;
+barrel_jack_x = -13;
+barrel_toggle_x = 8;
 
 usb_c_panel_w = 44;
 usb_c_panel_h = 34;
@@ -63,8 +66,8 @@ c13_group_w = 66;
 c13_group_h = 64;
 c13_face_w = 1.9 * inch;
 c13_face_h = 2.0 * inch;
-c13_cutout_w = 34;
-c13_cutout_h = 28;
+c13_cutout_w = 28;
+c13_cutout_h = 48;
 c13_wire_cutout_w = c13_cutout_w;
 c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
@@ -92,7 +95,7 @@ left_ac_x = -66;
 right_ac_x = 40;
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
 usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
-usb_c_panel_y = 15;
+usb_c_panel_y = 14;
 c13_panel_x = outlet_right_x - c13_group_w / 2;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
@@ -106,9 +109,9 @@ nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
 revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = nutrients_recess_bottom_y + 9 / 2;
-toggle_label_x_offset = 14;
-toggle_label_step = 6;
-toggle_label_font = 2.4;
+toggle_label_x_offset = 15;
+toggle_label_step = 7;
+toggle_label_font = 3.2;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -134,8 +137,7 @@ revision_string = "dev";
 
 ac_devices = ["Pump", "Lights", "Fan", "Aux"];
 ac_details = ["CH1 GP21", "CH2 GP20", "CH3 GP19", "CH4 GP18"];
-dc_devices = ["PH up", "PH down", "Agitator", "Nutrients"];
-dc_details = ["CH5 GP17", "CH6 GP16", "CH7 GP15", "CH8 GP14"];
+dc_labels = ["PH Up CH5 GP17", "PH Down CH6 GP16", "Agitator CH7 GP15", "Nutrients CH8 GP14"];
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
@@ -252,7 +254,7 @@ module negative_screw_hole() {
 module outlet_cover_negative(include_revision = true) {
     // outlet openings
     for (y = [-outlet_spacing / 2, outlet_spacing / 2])
-        translate([0, y, plate_t / 2])
+        translate([outlet_feature_x, y, plate_t / 2])
             negative_roundish_outlet();
 
     for (y = [-outlet_spacing / 2, outlet_spacing / 2])
@@ -356,9 +358,9 @@ module flush_revision_label() {
 }
 
 module barrel_channel_negative() {
-    translate([-9, 0, 0])
+    translate([barrel_jack_x, 0, 0])
         screw_hole(barrel_jack_hole_d);
-    translate([12, 0, 0])
+    translate([barrel_toggle_x, 0, 0])
         screw_hole(toggle_hole_d);
 
     translate([barrel_group_x, barrel_group_y, 0])
@@ -370,7 +372,7 @@ module barrel_revision_negative() {
         label_pocket(revision_label_w, revision_label_h);
 }
 
-module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_revision = true) {
+module dc_barrel_channel_unit(label = "PH Up CH5 GP17", include_revision = true) {
     difference() {
         union() {
             fit_plate(barrel_channel_w, barrel_channel_h);
@@ -382,8 +384,8 @@ module dc_barrel_channel_unit(device = "PH up", detail = "ch 5 pin ?", include_r
     }
 
     translate([barrel_label_x, -barrel_channel_h / 2 + 10, 0])
-        flush_two_line_label(device, detail, 4.3, 2.9, 5.5);
-    translate([12 + toggle_label_x_offset, 0, 0])
+        flush_label(label, 4.3);
+    translate([barrel_toggle_x + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
 
     if (include_revision)
@@ -419,7 +421,7 @@ module usb_c_panel_unit(include_revision = true) {
     }
 
     translate([0, -usb_c_panel_h / 2 + 8, 0])
-        flush_label("USB-C", 4);
+        flush_label("COM", 4);
 
     if (include_revision)
         translate([0, usb_c_panel_h / 2 - 8, 0])
@@ -452,9 +454,6 @@ module c13_inlet_unit(include_revision = true) {
         if (include_revision)
             c13_revision_negative();
     }
-
-    translate([0, -c13_panel_h / 2 + 8, 0])
-        flush_label("120V IN", 4.5);
 
     if (include_revision)
         translate([0, c13_panel_h / 2 - 8, 0])
@@ -514,17 +513,14 @@ module top_panel_8ch(include_revision = true) {
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
-                flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 2.9, 5.5);
+                flush_label(dc_labels[i], 4.3);
 
         for (i = [0:3])
-            translate([dc_channel_x(i) + 12 + toggle_label_x_offset, dc_channel_y(i), 0])
+            translate([dc_channel_x(i) + barrel_toggle_x + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
         translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 8, 0])
-            flush_label("USB-C", 4);
-
-        translate([c13_panel_x, service_row_y - c13_panel_h / 2 + 8, 0])
-            flush_label("120V IN", 4.5);
+            flush_label("COM", 4);
 
         if (include_revision)
             translate([revision_x, revision_y, 0])
@@ -549,7 +545,7 @@ module ac_duplex_channel() {
 }
 
 module dc_barrel_channel() {
-    dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
+    dc_barrel_channel_unit(dc_labels[0], true);
 }
 
 module usb_c_panel() {
@@ -568,7 +564,7 @@ module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([-62, 66, 0])
-        dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
+        dc_barrel_channel_unit(dc_labels[0], true);
     translate([6, 66, 0])
         usb_c_panel_unit(true);
     translate([78, 56, 0])
