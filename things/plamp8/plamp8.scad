@@ -4,7 +4,7 @@ $fn = render_fn;
 
 view = "internal"; // [internal, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
 
-show_internal_box = false;
+show_internal_box = true;
 show_internal_psu = false;
 show_internal_relay = false;
 show_internal_top_outline = false;
@@ -89,8 +89,10 @@ relay_h = 40;
 relay_mount_hole_d = 5;
 relay_mount_x = 135;
 relay_mount_y = 70;
+relay_countersink_d = 9;
 
 wall_t = 3;
+relay_countersink_h = wall_t;
 internal_clearance_h = 50;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
@@ -108,8 +110,6 @@ internal_relay_y = 0;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
-bottom_vent_cols = 7;
-bottom_vent_rows = 14;
 wall_vent_cols = 14;
 wall_vent_rows = 3;
 service_row_y = 58;
@@ -567,8 +567,8 @@ module box_context() {
                         cube([box_w, box_d, box_h]);
                     translate([wall_t, wall_t, -box_h + wall_t])
                         cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
-                    bottom_psu_vents();
                     side_wall_psu_vents();
+                    relay_bottom_mount_holes();
                 }
                 top_panel_ledge();
             }
@@ -603,22 +603,6 @@ module quarter_round(length, r) {
         }
 }
 
-module bottom_psu_vents() {
-    vent_x = box_inner_x + top_panel_w / 2 + internal_psu_x;
-    vent_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
-
-    for (
-        x = [-(bottom_vent_cols - 1) / 2:(bottom_vent_cols - 1) / 2],
-        y = [-(bottom_vent_rows - 1) / 2:(bottom_vent_rows - 1) / 2]
-    )
-        translate([
-            vent_x + x * vent_hole_spacing,
-            vent_y + y * vent_hole_spacing,
-            -box_h - 1
-        ])
-            cylinder(h = wall_t + 2, d = vent_hole_d);
-}
-
 module side_wall_psu_vents() {
     vent_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
     vent_z = -box_h / 2;
@@ -634,6 +618,24 @@ module side_wall_psu_vents() {
         ])
             rotate([0, 90, 0])
                 cylinder(h = wall_t + 2, d = vent_hole_d);
+}
+
+module relay_bottom_mount_holes() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_relay_x,
+        box_inner_y + top_panel_h / 2 + internal_relay_y,
+        0
+    ])
+        rotate([0, 0, internal_relay_rot_z])
+            for (
+                x = [-relay_mount_x / 2, relay_mount_x / 2],
+                y = [-relay_mount_y / 2, relay_mount_y / 2]
+            ) {
+                translate([x, y, -box_h - 1])
+                    cylinder(h = wall_t + 2, d = relay_mount_hole_d);
+                translate([x, y, -box_h - 0.1])
+                    cylinder(h = relay_countersink_h + 0.1, d1 = relay_countersink_d, d2 = relay_mount_hole_d);
+            }
 }
 
 module top_panel_outline() {
