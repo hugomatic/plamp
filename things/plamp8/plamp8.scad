@@ -88,6 +88,7 @@ psu_anchor_r = 5;
 psu_anchor_l = 14;
 psu_anchor_slot_w = 5;
 psu_anchor_slot_h = 2.5;
+psu_anchor_slot_z = 1;
 psu_anchor_gap = 4;
 psu_anchor_inset = 20;
 
@@ -678,16 +679,18 @@ module psu_right_wall_tie_wrap_anchors_in_box() {
 
     // Wall anchors are modeled in box coordinates so "right wall" stays literal.
     for (y = [psu_center_y - psu_w / 2 + psu_anchor_inset, psu_center_y + psu_w / 2 - psu_anchor_inset])
-        translate([box_w - wall_t, y, -box_h + wall_t + psu_anchor_r])
-            tie_wrap_wall_anchor_x();
+        translate([box_w - wall_t, y, -box_h + wall_t])
+            rotate([0, -90, 0])
+                tie_wrap_anchor_x();
 }
 
 module tie_wrap_anchor_x() {
     difference() {
         rotate([0, 90, 0])
             half_round(length = psu_anchor_l, r = psu_anchor_r);
-        translate([-psu_anchor_l / 2 - 1, -psu_anchor_slot_w / 2, 0])
-            cube([psu_anchor_l + 2, psu_anchor_slot_w, psu_anchor_slot_h]);
+        // The tie passes across the anchor, under the curved roof.
+        translate([-psu_anchor_slot_w / 2, -psu_anchor_r - 1, psu_anchor_slot_z])
+            cube([psu_anchor_slot_w, 2 * psu_anchor_r + 2, psu_anchor_slot_h]);
     }
 }
 
@@ -696,27 +699,13 @@ module tie_wrap_anchor_y() {
         tie_wrap_anchor_x();
 }
 
-module tie_wrap_wall_anchor_x() {
-    difference() {
-        rotate([90, 0, 0])
-            linear_extrude(height = psu_anchor_l, center = true)
-                intersection() {
-                    circle(r = psu_anchor_r);
-                    translate([-psu_anchor_r, -psu_anchor_r])
-                        square([psu_anchor_r, 2 * psu_anchor_r]);
-                }
-        translate([-psu_anchor_r - 1, -psu_anchor_slot_w / 2, -psu_anchor_slot_h / 2])
-            cube([psu_anchor_r + 2, psu_anchor_slot_w, psu_anchor_slot_h]);
-    }
-}
-
 module half_round(length, r) {
     translate([0, 0, -length / 2])
         linear_extrude(height = length)
             intersection() {
                 circle(r = r);
-                translate([-r, 0])
-                    square([2 * r, r]);
+                translate([-r, -r])
+                    square([r, 2 * r]);
             }
 }
 
