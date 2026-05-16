@@ -123,8 +123,8 @@ internal_relay_y = 0;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
-wall_vent_cols = 14;
-wall_vent_rows = 3;
+vent_wall_margin = 10;
+vent_top_margin = ledge_r + vent_hole_d;
 service_row_y = 58;
 ac_row_y = -62;
 dc_row_y = -106;
@@ -621,20 +621,23 @@ module quarter_round(length, r) {
 }
 
 module side_wall_psu_vents() {
-    vent_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
-    vent_z = -box_h / 2;
+    vent_zs = [-box_h + vent_wall_margin:vent_hole_spacing:-vent_top_margin];
+    right_wall_ys = [vent_wall_margin:vent_hole_spacing:box_d - vent_wall_margin];
+    side_wall_xs = [box_w / 2:vent_hole_spacing:box_w - vent_wall_margin];
 
-    for (
-        y = [-(wall_vent_cols - 1) / 2:(wall_vent_cols - 1) / 2],
-        z = [-(wall_vent_rows - 1) / 2:(wall_vent_rows - 1) / 2]
-    )
-        translate([
-            box_w + 1,
-            vent_y + y * vent_hole_spacing,
-            vent_z + z * vent_hole_spacing
-        ])
-            rotate([0, 90, 0])
+    for (y = right_wall_ys, z = vent_zs)
+        translate([box_w + 1, y, z])
+            rotate([0, -90, 0])
                 cylinder(h = wall_t + 2, d = vent_hole_d);
+
+    for (x = side_wall_xs, z = vent_zs) {
+        translate([x, -1, z])
+            rotate([-90, 0, 0])
+                cylinder(h = wall_t + 2, d = vent_hole_d);
+        translate([x, box_d + 1, z])
+            rotate([90, 0, 0])
+                cylinder(h = wall_t + 2, d = vent_hole_d);
+    }
 }
 
 module relay_bottom_mount_holes() {
