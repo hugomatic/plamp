@@ -92,6 +92,9 @@ psu_anchor_slot_z = 1;
 psu_anchor_gap = 4;
 psu_anchor_inset = 20;
 psu_wall_anchor_z = psu_h;
+psu_stop_l = 10;
+psu_stop_t = 2;
+psu_stop_h = 2;
 
 relay_w = 145;
 relay_d = 90;
@@ -582,6 +585,7 @@ module box_context() {
                 }
                 top_panel_ledge();
                 psu_floor_tie_wrap_anchors_in_box();
+                psu_floor_stops_in_box();
                 psu_right_wall_tie_wrap_anchors_in_box();
             }
             panel_corner_screw_holes_in_box();
@@ -668,11 +672,31 @@ module psu_floor_tie_wrap_anchors() {
             translate([x, y, 0])
                 tie_wrap_anchor_x();
 
-    for (x = [-psu_w / 2 - psu_anchor_gap, psu_w / 2 + psu_anchor_gap])
+    for (x = [-psu_w / 2 - psu_anchor_gap])
         for (y = [-psu_d / 2 + psu_anchor_inset, psu_d / 2 - psu_anchor_inset])
             translate([x, y, 0])
                 tie_wrap_anchor_y();
 
+}
+
+module psu_floor_stops_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_psu_x,
+        box_inner_y + top_panel_h / 2 + internal_psu_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_psu_rot_z])
+            psu_floor_stops();
+}
+
+module psu_floor_stops() {
+    for (y = [-psu_d / 2 - psu_stop_t, psu_d / 2])
+        translate([-psu_stop_l / 2, y, 0])
+            cube([psu_stop_l, psu_stop_t, psu_stop_h]);
+
+    for (x = [-psu_w / 2 - psu_stop_t, psu_w / 2])
+        translate([x, -psu_stop_l / 2, 0])
+            cube([psu_stop_t, psu_stop_l, psu_stop_h]);
 }
 
 module psu_right_wall_tie_wrap_anchors_in_box() {
