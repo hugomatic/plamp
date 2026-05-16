@@ -4,9 +4,9 @@ $fn = render_fn;
 
 view = "internal"; // [internal, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
 
-show_internal_box = true;
-show_internal_psu = true;
-show_internal_relay = true;
+show_internal_box = false;
+show_internal_psu = false;
+show_internal_relay = false;
 show_internal_top_outline = false;
 
 // ---------------- dimensions ----------------
