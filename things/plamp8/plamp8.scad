@@ -84,13 +84,12 @@ c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
 psu_w = 160;
 psu_d = 98;
 psu_h = 38;
-psu_post_w = 6;
-psu_post_h = 14;
-psu_post_gap = 1;
-psu_loop_w = 10;
-psu_loop_h = 5;
-psu_loop_slot_w = 5;
-psu_loop_slot_h = 2.5;
+psu_anchor_r = 5;
+psu_anchor_l = 14;
+psu_anchor_slot_w = 5;
+psu_anchor_slot_h = 2.5;
+psu_anchor_gap = 4;
+psu_anchor_inset = 20;
 
 relay_w = 145;
 relay_d = 90;
@@ -107,7 +106,7 @@ box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
-ledge_w = 10;
+ledge_w = 20;
 ledge_r = ledge_w;
 ledge_top_z = -plate_t;
 panel_screw_inset = wall_t + ledge_r / 2;
@@ -580,7 +579,8 @@ module box_context() {
                     relay_bottom_mount_holes();
                 }
                 top_panel_ledge();
-                psu_tie_wrap_posts_in_box();
+                psu_floor_tie_wrap_anchors_in_box();
+                psu_right_wall_tie_wrap_anchors_in_box();
             }
             panel_corner_screw_holes_in_box();
             panel_corner_nut_traps_in_box();
@@ -649,36 +649,75 @@ module relay_bottom_mount_holes() {
             }
 }
 
-module psu_tie_wrap_posts_in_box() {
+module psu_floor_tie_wrap_anchors_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_psu_x,
         box_inner_y + top_panel_h / 2 + internal_psu_y,
         -box_h + wall_t
     ])
         rotate([0, 0, internal_psu_rot_z])
-            psu_tie_wrap_posts();
+            psu_floor_tie_wrap_anchors();
 }
 
-module psu_tie_wrap_posts() {
-    for (
-        x = [-psu_w / 2 - psu_post_gap - psu_post_w / 2, psu_w / 2 + psu_post_gap + psu_post_w / 2],
-        y = [-psu_d / 2 - psu_post_gap - psu_post_w / 2, psu_d / 2 + psu_post_gap + psu_post_w / 2]
-    )
-        translate([x, y, 0])
-            tie_wrap_post();
+module psu_floor_tie_wrap_anchors() {
+    // Floor anchors route straps in both directions across the PSU footprint.
+    for (y = [-psu_d / 2 - psu_anchor_gap, psu_d / 2 + psu_anchor_gap])
+        for (x = [-psu_w / 2 + psu_anchor_inset, psu_w / 2 - psu_anchor_inset])
+            translate([x, y, 0])
+                tie_wrap_anchor_x();
+
+    for (x = [-psu_w / 2 - psu_anchor_gap, psu_w / 2 + psu_anchor_gap])
+        for (y = [-psu_d / 2 + psu_anchor_inset, psu_d / 2 - psu_anchor_inset])
+            translate([x, y, 0])
+                tie_wrap_anchor_y();
+
 }
 
-module tie_wrap_post() {
+module psu_right_wall_tie_wrap_anchors_in_box() {
+    psu_center_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
+
+    // Wall anchors are modeled in box coordinates so "right wall" stays literal.
+    for (y = [psu_center_y - psu_w / 2 + psu_anchor_inset, psu_center_y + psu_w / 2 - psu_anchor_inset])
+        translate([box_w - wall_t, y, -box_h + wall_t + psu_anchor_r])
+            tie_wrap_wall_anchor_x();
+}
+
+module tie_wrap_anchor_x() {
     difference() {
-        union() {
-            translate([-psu_post_w / 2, -psu_post_w / 2, 0])
-                cube([psu_post_w, psu_post_w, psu_post_h]);
-            translate([-psu_loop_w / 2, -psu_post_w / 2, psu_post_h - psu_loop_h])
-                cube([psu_loop_w, psu_post_w, psu_loop_h]);
-        }
-        translate([-psu_loop_slot_w / 2, -psu_post_w, psu_post_h - psu_loop_h + 1])
-            cube([psu_loop_slot_w, 2 * psu_post_w, psu_loop_slot_h + 1]);
+        rotate([0, 90, 0])
+            half_round(length = psu_anchor_l, r = psu_anchor_r);
+        translate([-psu_anchor_l / 2 - 1, -psu_anchor_slot_w / 2, 0])
+            cube([psu_anchor_l + 2, psu_anchor_slot_w, psu_anchor_slot_h]);
     }
+}
+
+module tie_wrap_anchor_y() {
+    rotate([0, 0, 90])
+        tie_wrap_anchor_x();
+}
+
+module tie_wrap_wall_anchor_x() {
+    difference() {
+        rotate([90, 0, 0])
+            linear_extrude(height = psu_anchor_l, center = true)
+                intersection() {
+                    circle(r = psu_anchor_r);
+                    translate([-psu_anchor_r, -psu_anchor_r])
+                        square([psu_anchor_r, 2 * psu_anchor_r]);
+                }
+        translate([-psu_anchor_r - 1, -psu_anchor_slot_w / 2, -psu_anchor_slot_h / 2])
+            cube([psu_anchor_r + 2, psu_anchor_slot_w, psu_anchor_slot_h]);
+    }
+}
+
+module half_round(length, r) {
+    translate([0, 0, -length / 2])
+        linear_extrude(height = length)
+            intersection() {
+                circle(r = r);
+                translate([-r, 0])
+                    square([2 * r, r]);
+            }
 }
 
 module top_panel_outline() {
