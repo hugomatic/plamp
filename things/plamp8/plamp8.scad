@@ -79,9 +79,9 @@ c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
 c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
 
-psu_w = 38;
-psu_d = 160;
-psu_h = 98;
+psu_w = 160;
+psu_d = 98;
+psu_h = 38;
 
 relay_w = 145;
 relay_d = 90;
@@ -95,18 +95,18 @@ box_h = psu_h + 2 * wall_t;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
-internal_psu_x = 84;
-internal_psu_y = 24;
+internal_psu_x = -4;
+internal_psu_y = 55;
 internal_psu_rot_z = 0;
 internal_relay_x = -30;
 internal_relay_y = 0;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
-bottom_vent_cols = 3;
-bottom_vent_rows = 14;
-wall_vent_cols = 3;
-wall_vent_rows = 8;
+bottom_vent_cols = 14;
+bottom_vent_rows = 7;
+wall_vent_cols = 14;
+wall_vent_rows = 3;
 service_row_y = 58;
 ac_row_y = -62;
 dc_row_y = -106;
@@ -555,7 +555,7 @@ module box_context() {
             translate([wall_t, wall_t, -box_h + wall_t])
                 cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
             bottom_psu_vents();
-            side_wall_psu_vents();
+            top_wall_psu_vents();
         }
 }
 
@@ -575,20 +575,20 @@ module bottom_psu_vents() {
             cylinder(h = wall_t + 2, d = vent_hole_d);
 }
 
-module side_wall_psu_vents() {
-    vent_y = top_panel_h / 2 + internal_psu_y;
+module top_wall_psu_vents() {
+    vent_x = top_panel_w / 2 + internal_psu_x;
     vent_z = -box_h / 2;
 
     for (
-        y = [-(wall_vent_cols - 1) / 2:(wall_vent_cols - 1) / 2],
+        x = [-(wall_vent_cols - 1) / 2:(wall_vent_cols - 1) / 2],
         z = [-(wall_vent_rows - 1) / 2:(wall_vent_rows - 1) / 2]
     )
         translate([
-            box_w + 1,
-            vent_y + y * vent_hole_spacing,
+            vent_x + x * vent_hole_spacing,
+            box_d + 1,
             vent_z + z * vent_hole_spacing
         ])
-            rotate([0, 90, 0])
+            rotate([90, 0, 0])
                 cylinder(h = wall_t + 2, d = vent_hole_d);
 }
 
