@@ -140,12 +140,16 @@ content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
 content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
 content_top_y = service_row_y + c13_group_h / 2;
-box_w = content_right_x - content_left_x + 2 * panel_margin;
-box_d = content_top_y - content_bottom_y + 2 * panel_margin;
-top_panel_w = box_w;
-top_panel_h = box_d;
+top_panel_w = content_right_x - content_left_x + 2 * panel_margin;
+top_panel_h = content_top_y - content_bottom_y + 2 * panel_margin;
+box_inner_w = top_panel_w;
+box_inner_d = top_panel_h;
+box_w = box_inner_w + 2 * wall_t;
+box_d = box_inner_d + 2 * wall_t;
 layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
+box_inner_x = wall_t;
+box_inner_y = wall_t;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -593,8 +597,8 @@ module quarter_round(length, r) {
 }
 
 module bottom_psu_vents() {
-    vent_x = top_panel_w / 2 + internal_psu_x;
-    vent_y = top_panel_h / 2 + internal_psu_y;
+    vent_x = box_inner_x + top_panel_w / 2 + internal_psu_x;
+    vent_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
 
     for (
         x = [-(bottom_vent_cols - 1) / 2:(bottom_vent_cols - 1) / 2],
@@ -609,7 +613,7 @@ module bottom_psu_vents() {
 }
 
 module side_wall_psu_vents() {
-    vent_y = top_panel_h / 2 + internal_psu_y;
+    vent_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
     vent_z = -box_h / 2;
 
     for (
@@ -681,9 +685,10 @@ module plate() {
 
 module assembly() {
     box_context();
-    mounted_top_panel();
+    translate([box_inner_x, box_inner_y, 0])
+        mounted_top_panel();
 
-    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+    translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
         translate([-34, 20, -box_h + wall_t])
             psu_keepout();
         translate([42, -38, -box_h + wall_t])
@@ -696,9 +701,10 @@ module internal() {
         box_context();
 
     if (show_internal_top_outline)
-        top_panel_outline();
+        translate([box_inner_x, box_inner_y, 0])
+            top_panel_outline();
 
-    translate([top_panel_w / 2, top_panel_h / 2, 0]) {
+    translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
         if (show_internal_psu)
             translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
                 rotate([0, 0, internal_psu_rot_z])
