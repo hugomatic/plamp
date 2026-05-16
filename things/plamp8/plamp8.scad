@@ -567,40 +567,21 @@ module box_context() {
 }
 
 module top_panel_ledge() {
-    difference() {
-        translate([wall_t, wall_t, ledge_top_z - wall_t])
-            cube([box_w - 2 * wall_t, box_d - 2 * wall_t, wall_t]);
-        translate([wall_t + ledge_w, wall_t + ledge_w, ledge_top_z - wall_t - 0.1])
-            cube([
-                box_w - 2 * (wall_t + ledge_w),
-                box_d - 2 * (wall_t + ledge_w),
-                wall_t + 0.2
-            ]);
-    }
-
-    translate([wall_t + ledge_w, wall_t + ledge_w, ledge_top_z - wall_t])
-        inner_ledge_supports(
-            box_w - 2 * (wall_t + ledge_w),
-            box_d - 2 * (wall_t + ledge_w),
-            ledge_r
-        );
-}
-
-module inner_ledge_supports(inner_w, inner_d, r) {
-    translate([0, 0, -r])
-        rotate([90, 0, 90])
-            quarter_round(length = inner_w, r = r);
-    translate([0, inner_d, -r])
-        rotate([90, 0, 90])
-            mirror([0, 1, 0])
-                quarter_round(length = inner_w, r = r);
-    translate([0, 0, -r])
-        rotate([90, 0, 0])
-            mirror([0, 1, 0])
-                quarter_round(length = inner_d, r = r);
-    translate([inner_w, 0, -r])
-        rotate([90, 0, 0])
-            quarter_round(length = inner_d, r = r);
+    // Four self-supporting lips: flat on top, flat against the wall.
+    translate([wall_t, wall_t, ledge_top_z])
+        rotate([0, 90, 0])
+            quarter_round(length = box_w - 2 * wall_t, r = ledge_r);
+    translate([wall_t, box_d - wall_t, ledge_top_z])
+        mirror([0, 1, 0])
+            rotate([0, 90, 0])
+                quarter_round(length = box_w - 2 * wall_t, r = ledge_r);
+    translate([wall_t, wall_t, ledge_top_z])
+        rotate([-90, 0, 0])
+            quarter_round(length = box_d - 2 * wall_t, r = ledge_r);
+    translate([box_w - wall_t, wall_t, ledge_top_z])
+        mirror([1, 0, 0])
+            rotate([-90, 0, 0])
+                quarter_round(length = box_d - 2 * wall_t, r = ledge_r);
 }
 
 module quarter_round(length, r) {
