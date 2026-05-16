@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "internal"; // [internal, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]
+view = "internal"; // [internal, top_panel, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
 
 show_internal_box = true;
 show_internal_psu = false;
