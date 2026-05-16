@@ -4,16 +4,16 @@
 
 Create a modular OpenSCAD CAD builder for the `plamp8` relay enclosure. The first implementation should produce useful fit-test prints and establish reusable CAD modules for the final enclosure, without trying to finish the entire box in one pass.
 
-The current `things/plamp8` part remains a work-in-progress double-wall outlet plate with inscriptions. The new builder should live separately so the existing fit-tested part is not broken.
+The current `things/plamp8` double-wall outlet plate is the starting point. The builder should evolve this part in place, preserving its outlet cutout approach and inscription style while adding modular channels and views.
 
-## New CAD Part
+## CAD Part
 
-Add a new part directory:
+Use the existing part directory:
 
 ```text
-things/plamp8_box/
+things/plamp8/
   generate.bash
-  plamp8_box.scad
+  plamp8.scad
 ```
 
 Use the existing `things/template.bash` and `things/3d_template/generate.bash` conventions.
@@ -112,6 +112,8 @@ The first pass should prefer printable, easy-to-measure coupons over a highly de
 
 Labels should be parameterized and readable. Revision branding should use `revision_string` so generated STLs can be tied to the commit hash or explicit dirty revision text.
 
+Channel labels should be two lines: a large device name on the first line and a smaller channel/Pico-pin line on the second line. The strings should be top-level parameters so relay channel numbers and Pico pins can be assigned later. Default AC outlet device names are `Pump`, `Lights`, `Fan`, and `Aux`. Default DC barrel channel device names are `PH up`, `PH down`, `Agitator`, and `Nutrients`.
+
 Revision branding is per printable part, not per repeated module. The full top panel should have one revision string total even if it contains two duplex channel modules and four DC channel modules. The eventual box body should also have one revision string. Individual fit-test coupons may include their own revision string because each coupon is a standalone printable part.
 
 Label construction should follow the successful `plamp8` approach: text is extruded from a rounded rectangle that sits lower than the top surface, leaving the text flush with the panel surface rather than raised above it.
@@ -130,12 +132,12 @@ Label construction should follow the successful `plamp8` approach: text is extru
 Use the CAD generator rather than direct OpenSCAD calls:
 
 ```bash
-things/plamp8_box/generate.bash --revision fit-test-1 /tmp/plamp8_box_fit HEAD
+things/plamp8/generate.bash --revision fit-test-1 /tmp/plamp8_fit HEAD
 ```
 
 Expected verification:
 
-- `bash -n things/plamp8_box/generate.bash`
+- `bash -n things/plamp8/generate.bash`
 - Render all declared views using the generator.
 - Confirm STL files are created and non-empty.
 - Treat OpenSCAD non-manifold warnings as informational for early fit-test coupons unless the geometry is visibly empty or broken.

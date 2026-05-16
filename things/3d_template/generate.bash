@@ -73,12 +73,13 @@ usage() {
 $cad stl generator
 
 usage:
-  $name [--revision TEXT] [--scad FILE] target_directory [commit]
+  $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
   $name prints/$today HEAD
   $name prints/$today ${last_commit:-HEAD}
   $name --revision fit-test-1 /tmp/${cad}_fit HEAD
+  $name --revision layout --preview --view top_panel /tmp/${cad}_preview HEAD
 
 EOF
 }
@@ -113,6 +114,9 @@ extract_views() {
 target_directory=""
 commit="HEAD"
 revision_text=""
+preview=0
+extra_defines=()
+view_filter=""
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -131,6 +135,26 @@ while [[ "$#" -gt 0 ]]; do
       }
       SCAD_FILE="$2"
       STL_PREFIX="$(basename "$SCAD_FILE" .scad)"
+      shift 2
+      ;;
+    --preview)
+      preview=1
+      shift
+      ;;
+    --view)
+      [[ "$#" -ge 2 ]] || {
+        echo "--view requires a value" >&2
+        exit 2
+      }
+      view_filter="$2"
+      shift 2
+      ;;
+    --define|-D)
+      [[ "$#" -ge 2 ]] || {
+        echo "$1 requires a value" >&2
+        exit 2
+      }
+      extra_defines+=("$2")
       shift 2
       ;;
     -h|--help)
@@ -178,7 +202,10 @@ fi
 
 OPENSCAD_CMD="$(find_openscad)" || exit 1
 
-part_status="$(git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR")"
+part_status="$(
+  git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR" |
+    grep -Ev '^[?MADRCU ][?MADRCU ] '"$SCAD_REPO_DIR"'/prints(/|$)' || true
+)"
 dirty_part=0
 [[ -n "$part_status" ]] && dirty_part=1
 
@@ -230,6 +257,9 @@ if [[ "${#views[@]}" -eq 0 ]]; then
   echo "No views found in $SCAD_FILE" >&2
   exit 1
 fi
+if [[ -n "$view_filter" ]]; then
+  views=("$view_filter")
+fi
 
 mkdir -p "$target_directory"
 cd "$target_directory"
@@ -255,6 +285,12 @@ do
   echo "## [$stl_file]($stl_file)" | tee -a $log
 
   options=(-D "revision_string=\"$revision_label\"" -D "view=\"$view\"" -D "ball_quality=64")
+  if [[ "$preview" -eq 1 ]]; then
+    options+=(-D "render_text=false" -D "render_fn=24")
+  fi
+  for define in "${extra_defines[@]}"; do
+    options+=(-D "$define")
+  done
   echo -e "\noptions: ${options[*]}\n" | tee -a $log
 
   echo '```' >> $log
