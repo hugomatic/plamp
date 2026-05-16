@@ -7,7 +7,7 @@ view = "internal"; // [internal, assembly, plate, ac_duplex_channel, dc_barrel_c
 show_internal_box = true;
 show_internal_psu = true;
 show_internal_relay = true;
-show_internal_top_outline = true;
+show_internal_top_outline = false;
 
 // ---------------- dimensions ----------------
 outlet_plate_left = 46;
