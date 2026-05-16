@@ -91,7 +91,7 @@ psu_anchor_slot_h = 2.5;
 psu_anchor_slot_z = 1;
 psu_anchor_gap = 4;
 psu_anchor_inset = 20;
-psu_wall_anchor_z = psu_h / 2;
+psu_wall_anchor_z = psu_h;
 
 relay_w = 145;
 relay_d = 90;
@@ -103,7 +103,7 @@ relay_countersink_d = 9;
 
 wall_t = 3;
 relay_countersink_h = wall_t;
-internal_clearance_h = 50;
+internal_clearance_h = 80;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
