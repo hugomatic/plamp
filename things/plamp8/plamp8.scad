@@ -91,20 +91,24 @@ relay_mount_x = 135;
 relay_mount_y = 70;
 
 wall_t = 3;
-box_h = psu_h + 2 * wall_t;
+internal_clearance_h = 50;
+box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
-internal_psu_x = -4;
-internal_psu_y = 55;
-internal_psu_rot_z = 0;
-internal_relay_x = -30;
+ledge_w = 5;
+ledge_r = ledge_w;
+ledge_top_z = -plate_t;
+internal_psu_x = 55;
+internal_psu_y = 10;
+internal_psu_rot_z = 90;
+internal_relay_x = -50;
 internal_relay_y = 0;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
-bottom_vent_cols = 14;
-bottom_vent_rows = 7;
+bottom_vent_cols = 7;
+bottom_vent_rows = 14;
 wall_vent_cols = 14;
 wall_vent_rows = 3;
 service_row_y = 58;
@@ -549,13 +553,55 @@ module top_panel_8ch(include_revision = true) {
 
 module box_context() {
     color([0.7, 0.72, 0.68, 0.35])
-        difference() {
-            translate([0, 0, -box_h])
-                cube([box_w, box_d, box_h]);
-            translate([wall_t, wall_t, -box_h + wall_t])
-                cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
-            bottom_psu_vents();
-            top_wall_psu_vents();
+        union() {
+            difference() {
+                translate([0, 0, -box_h])
+                    cube([box_w, box_d, box_h]);
+                translate([wall_t, wall_t, -box_h + wall_t])
+                    cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
+                bottom_psu_vents();
+                side_wall_psu_vents();
+            }
+            top_panel_ledge();
+        }
+}
+
+module top_panel_ledge() {
+    translate([wall_t, wall_t, ledge_top_z - wall_t])
+        cube([box_w - 2 * wall_t, ledge_w, wall_t]);
+    translate([wall_t, box_d - wall_t - ledge_w, ledge_top_z - wall_t])
+        cube([box_w - 2 * wall_t, ledge_w, wall_t]);
+    translate([wall_t, wall_t, ledge_top_z - wall_t])
+        cube([ledge_w, box_d - 2 * wall_t, wall_t]);
+    translate([box_w - wall_t - ledge_w, wall_t, ledge_top_z - wall_t])
+        cube([ledge_w, box_d - 2 * wall_t, wall_t]);
+
+    translate([wall_t + ledge_r, wall_t, ledge_top_z - wall_t - ledge_r])
+        rotate([-90, 0, 0])
+            quarter_round(length = box_d - 2 * wall_t, r = ledge_r, quadrant = "left");
+    translate([box_w - wall_t - ledge_r, wall_t, ledge_top_z - wall_t - ledge_r])
+        rotate([-90, 0, 0])
+            quarter_round(length = box_d - 2 * wall_t, r = ledge_r, quadrant = "right");
+    translate([wall_t, wall_t + ledge_r, ledge_top_z - wall_t - ledge_r])
+        rotate([0, 90, 0])
+            quarter_round(length = box_w - 2 * wall_t, r = ledge_r, quadrant = "front");
+    translate([wall_t, box_d - wall_t - ledge_r, ledge_top_z - wall_t - ledge_r])
+        rotate([0, 90, 0])
+            quarter_round(length = box_w - 2 * wall_t, r = ledge_r, quadrant = "back");
+}
+
+module quarter_round(length, r, quadrant) {
+    linear_extrude(height = length)
+        intersection() {
+            circle(r = r);
+            if (quadrant == "left")
+                square([r, r]);
+            else if (quadrant == "right")
+                translate([-r, 0]) square([r, r]);
+            else if (quadrant == "front")
+                square([r, r]);
+            else
+                translate([-r, 0]) square([r, r]);
         }
 }
 
@@ -575,20 +621,20 @@ module bottom_psu_vents() {
             cylinder(h = wall_t + 2, d = vent_hole_d);
 }
 
-module top_wall_psu_vents() {
-    vent_x = top_panel_w / 2 + internal_psu_x;
+module side_wall_psu_vents() {
+    vent_y = top_panel_h / 2 + internal_psu_y;
     vent_z = -box_h / 2;
 
     for (
-        x = [-(wall_vent_cols - 1) / 2:(wall_vent_cols - 1) / 2],
+        y = [-(wall_vent_cols - 1) / 2:(wall_vent_cols - 1) / 2],
         z = [-(wall_vent_rows - 1) / 2:(wall_vent_rows - 1) / 2]
     )
         translate([
-            vent_x + x * vent_hole_spacing,
-            box_d + 1,
+            box_w + 1,
+            vent_y + y * vent_hole_spacing,
             vent_z + z * vent_hole_spacing
         ])
-            rotate([90, 0, 0])
+            rotate([0, 90, 0])
                 cylinder(h = wall_t + 2, d = vent_hole_d);
 }
 
