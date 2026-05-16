@@ -660,6 +660,11 @@ module top_panel() {
     top_panel_8ch(true);
 }
 
+module mounted_top_panel() {
+    translate([0, 0, -plate_t])
+        top_panel_8ch(true);
+}
+
 module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
@@ -676,7 +681,7 @@ module plate() {
 
 module assembly() {
     box_context();
-    top_panel_8ch(true);
+    mounted_top_panel();
 
     translate([top_panel_w / 2, top_panel_h / 2, 0]) {
         translate([-34, 20, -box_h + wall_t])
