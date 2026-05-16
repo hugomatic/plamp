@@ -91,6 +91,7 @@ psu_anchor_slot_h = 2.5;
 psu_anchor_slot_z = 1;
 psu_anchor_gap = 4;
 psu_anchor_inset = 20;
+psu_wall_anchor_z = psu_h / 2;
 
 relay_w = 145;
 relay_d = 90;
@@ -107,10 +108,11 @@ box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
-ledge_w = 20;
+ledge_w = 10;
 ledge_r = ledge_w;
 ledge_top_z = -plate_t;
-panel_screw_inset = wall_t + ledge_r / 2;
+corner_boss_r = 10;
+panel_screw_inset = wall_t + corner_boss_r / 2;
 internal_psu_x = 55;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
@@ -580,6 +582,7 @@ module box_context() {
                     relay_bottom_mount_holes();
                 }
                 top_panel_ledge();
+                top_panel_corner_bosses();
                 psu_floor_tie_wrap_anchors_in_box();
                 psu_right_wall_tie_wrap_anchors_in_box();
             }
@@ -613,6 +616,29 @@ module quarter_round(length, r) {
             circle(r = r);
             square([r, r]);
         }
+}
+
+module top_panel_corner_bosses() {
+    translate([wall_t, wall_t, ledge_top_z])
+        quarter_sphere(corner_boss_r);
+    translate([box_w - wall_t, wall_t, ledge_top_z])
+        mirror([1, 0, 0])
+            quarter_sphere(corner_boss_r);
+    translate([wall_t, box_d - wall_t, ledge_top_z])
+        mirror([0, 1, 0])
+            quarter_sphere(corner_boss_r);
+    translate([box_w - wall_t, box_d - wall_t, ledge_top_z])
+        mirror([1, 0, 0])
+            mirror([0, 1, 0])
+                quarter_sphere(corner_boss_r);
+}
+
+module quarter_sphere(r) {
+    intersection() {
+        sphere(r = r);
+        translate([0, 0, -r])
+            cube([r, r, r]);
+    }
 }
 
 module side_wall_psu_vents() {
@@ -679,9 +705,9 @@ module psu_right_wall_tie_wrap_anchors_in_box() {
 
     // Wall anchors are modeled in box coordinates so "right wall" stays literal.
     for (y = [psu_center_y - psu_w / 2 + psu_anchor_inset, psu_center_y + psu_w / 2 - psu_anchor_inset])
-        translate([box_w - wall_t, y, -box_h + wall_t])
+        translate([box_w - wall_t, y, -box_h + wall_t + psu_wall_anchor_z])
             rotate([0, -90, 0])
-                tie_wrap_anchor_x();
+                tie_wrap_anchor_y();
 }
 
 module tie_wrap_anchor_x() {
