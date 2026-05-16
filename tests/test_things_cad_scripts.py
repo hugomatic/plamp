@@ -126,6 +126,31 @@ class ThingsCadScriptsTest(unittest.TestCase):
             ]
             self.assertEqual(rendered_views, ["assembly", "camera_clip", "plate"])
 
+    def test_generate_bash_preview_uses_render_fn_without_ball_quality(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = tmp_path / "repo"
+            part = repo / "things" / "preview_part"
+            part.mkdir(parents=True)
+            init_git_repo(repo)
+            generate = (REPO_ROOT / "things" / "3d_template" / "generate.bash").read_text()
+            (part / "generate.bash").write_text(generate.replace("__cad__name__", "preview_part"))
+            (part / "generate.bash").chmod(0o755)
+            (part / "preview_part.scad").write_text('view = "plate"; // [plate]\ncube([1,1,1]);\n')
+            run(["git", "add", "."], repo, check=True)
+            run(["git", "commit", "-m", "add cad part"], repo, check=True)
+            fake_openscad = tmp_path / "openscad"
+            make_fake_openscad(fake_openscad)
+            log = tmp_path / "openscad.log"
+            target = tmp_path / "rendered"
+
+            env = {**os.environ, "OPENSCAD_BIN": str(fake_openscad), "OPENSCAD_LOG": str(log)}
+            result = run(["./generate.bash", "--preview", str(target), "HEAD"], part, env=env)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("render_fn=24", result.stdout)
+            self.assertNotIn("ball_quality=", result.stdout)
+
     def test_generate_bash_refuses_dirty_part_without_revision_text(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

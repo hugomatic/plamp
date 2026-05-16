@@ -1,4 +1,5 @@
-$fn = 96;
+render_fn = 96;
+$fn = render_fn;
 view = "assembly"; // [assembly, plate]
 
 revision_string = "dev";

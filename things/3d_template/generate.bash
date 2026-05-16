@@ -284,7 +284,7 @@ do
   stl_file="${STL_PREFIX}_${view}_${revision_label}.stl"
   echo "## [$stl_file]($stl_file)" | tee -a $log
 
-  options=(-D "revision_string=\"$revision_label\"" -D "view=\"$view\"" -D "ball_quality=64")
+  options=(-D "revision_string=\"$revision_label\"" -D "view=\"$view\"")
   if [[ "$preview" -eq 1 ]]; then
     options+=(-D "render_text=false" -D "render_fn=24")
   fi

@@ -30,6 +30,8 @@ outlet_group_w = 104;
 outlet_group_h = 54;
 
 screw_d = 4;
+panel_nut_d = 7.4;
+panel_nut_h = 3.4;
 screw_spacing = 84;
 
 // Modular box-builder dimensions. Keep these near the top for fit tuning.
@@ -82,6 +84,13 @@ c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
 psu_w = 160;
 psu_d = 98;
 psu_h = 38;
+psu_post_w = 6;
+psu_post_h = 14;
+psu_post_gap = 1;
+psu_loop_w = 10;
+psu_loop_h = 5;
+psu_loop_slot_w = 5;
+psu_loop_slot_h = 2.5;
 
 relay_w = 145;
 relay_d = 90;
@@ -571,8 +580,10 @@ module box_context() {
                     relay_bottom_mount_holes();
                 }
                 top_panel_ledge();
+                psu_tie_wrap_posts_in_box();
             }
             panel_corner_screw_holes_in_box();
+            panel_corner_nut_traps_in_box();
         }
 }
 
@@ -638,6 +649,38 @@ module relay_bottom_mount_holes() {
             }
 }
 
+module psu_tie_wrap_posts_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_psu_x,
+        box_inner_y + top_panel_h / 2 + internal_psu_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_psu_rot_z])
+            psu_tie_wrap_posts();
+}
+
+module psu_tie_wrap_posts() {
+    for (
+        x = [-psu_w / 2 - psu_post_gap - psu_post_w / 2, psu_w / 2 + psu_post_gap + psu_post_w / 2],
+        y = [-psu_d / 2 - psu_post_gap - psu_post_w / 2, psu_d / 2 + psu_post_gap + psu_post_w / 2]
+    )
+        translate([x, y, 0])
+            tie_wrap_post();
+}
+
+module tie_wrap_post() {
+    difference() {
+        union() {
+            translate([-psu_post_w / 2, -psu_post_w / 2, 0])
+                cube([psu_post_w, psu_post_w, psu_post_h]);
+            translate([-psu_loop_w / 2, -psu_post_w / 2, psu_post_h - psu_loop_h])
+                cube([psu_loop_w, psu_post_w, psu_loop_h]);
+        }
+        translate([-psu_loop_slot_w / 2, -psu_post_w, psu_post_h - psu_loop_h + 1])
+            cube([psu_loop_slot_w, 2 * psu_post_w, psu_loop_slot_h + 1]);
+    }
+}
+
 module top_panel_outline() {
     color([0.85, 0.72, 0.15, 0.8])
         linear_extrude(height = top_outline_h)
@@ -667,6 +710,15 @@ module panel_corner_screw_holes_in_box() {
     )
         translate([x, y, ledge_top_z - ledge_r - 1])
             cylinder(h = ledge_r + plate_t + 2, d = screw_d);
+}
+
+module panel_corner_nut_traps_in_box() {
+    for (
+        x = [box_inner_x + panel_screw_inset, box_inner_x + top_panel_w - panel_screw_inset],
+        y = [box_inner_y + panel_screw_inset, box_inner_y + top_panel_h - panel_screw_inset]
+    )
+        translate([x, y, ledge_top_z - ledge_r - 0.1])
+            cylinder(h = panel_nut_h + 0.1, d = panel_nut_d, $fn = 6);
 }
 
 // ---------------- views ----------------

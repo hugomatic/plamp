@@ -1,4 +1,5 @@
-$fn = 64;
+render_fn = 64;
+$fn = render_fn;
 view = "assembly"; // [assembly, plate]
 
 letter_size = 6;
