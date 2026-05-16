@@ -99,6 +99,7 @@ top_outline_h = 1;
 ledge_w = 5;
 ledge_r = ledge_w;
 ledge_top_z = -plate_t;
+panel_screw_inset = wall_t + ledge_r / 2;
 internal_psu_x = 55;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
@@ -528,6 +529,8 @@ module top_panel_8ch(include_revision = true) {
             translate([c13_panel_x, service_row_y, 0])
                 c13_inlet_negative();
 
+            panel_corner_screw_holes();
+
             if (include_revision)
                 translate([revision_x, revision_y, 0])
                     label_pocket(revision_label_w, revision_label_h);
@@ -557,16 +560,19 @@ module top_panel_8ch(include_revision = true) {
 
 module box_context() {
     color([0.7, 0.72, 0.68, 0.35])
-        union() {
-            difference() {
-                translate([0, 0, -box_h])
-                    cube([box_w, box_d, box_h]);
-                translate([wall_t, wall_t, -box_h + wall_t])
-                    cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
-                bottom_psu_vents();
-                side_wall_psu_vents();
+        difference() {
+            union() {
+                difference() {
+                    translate([0, 0, -box_h])
+                        cube([box_w, box_d, box_h]);
+                    translate([wall_t, wall_t, -box_h + wall_t])
+                        cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
+                    bottom_psu_vents();
+                    side_wall_psu_vents();
+                }
+                top_panel_ledge();
             }
-            top_panel_ledge();
+            panel_corner_screw_holes_in_box();
         }
 }
 
@@ -586,6 +592,7 @@ module top_panel_ledge() {
         mirror([1, 0, 0])
             rotate([-90, 0, 0])
                 quarter_round(length = box_d - 2 * wall_t, r = ledge_r);
+
 }
 
 module quarter_round(length, r) {
@@ -642,6 +649,24 @@ module top_panel_outline() {
             }
 }
 
+module panel_corner_screw_holes() {
+    for (
+        x = [panel_screw_inset, top_panel_w - panel_screw_inset],
+        y = [panel_screw_inset, top_panel_h - panel_screw_inset]
+    )
+        translate([x - layout_offset_x, y - layout_offset_y, 0])
+            screw_hole(screw_d);
+}
+
+module panel_corner_screw_holes_in_box() {
+    for (
+        x = [box_inner_x + panel_screw_inset, box_inner_x + top_panel_w - panel_screw_inset],
+        y = [box_inner_y + panel_screw_inset, box_inner_y + top_panel_h - panel_screw_inset]
+    )
+        translate([x, y, ledge_top_z - ledge_r - 1])
+            cylinder(h = ledge_r + plate_t + 2, d = screw_d);
+}
+
 // ---------------- views ----------------
 
 module ac_duplex_channel() {
@@ -669,6 +694,19 @@ module mounted_top_panel() {
         top_panel_8ch(true);
 }
 
+module internal_components(show_psu = true, show_relay = true) {
+    translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
+        if (show_psu)
+            translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
+                rotate([0, 0, internal_psu_rot_z])
+                    psu_keepout();
+        if (show_relay)
+            translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
+                rotate([0, 0, internal_relay_rot_z])
+                    relay_board_keepout();
+    }
+}
+
 module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
@@ -687,13 +725,7 @@ module assembly() {
     box_context();
     translate([box_inner_x, box_inner_y, 0])
         mounted_top_panel();
-
-    translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
-        translate([-34, 20, -box_h + wall_t])
-            psu_keepout();
-        translate([42, -38, -box_h + wall_t])
-            relay_board_keepout();
-    }
+    internal_components();
 }
 
 module internal() {
@@ -704,16 +736,7 @@ module internal() {
         translate([box_inner_x, box_inner_y, 0])
             top_panel_outline();
 
-    translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
-        if (show_internal_psu)
-            translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
-                rotate([0, 0, internal_psu_rot_z])
-                    psu_keepout();
-        if (show_internal_relay)
-            translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
-                rotate([0, 0, internal_relay_rot_z])
-                    relay_board_keepout();
-    }
+    internal_components(show_internal_psu, show_internal_relay);
 }
 
 if (view == "internal") {
