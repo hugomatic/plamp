@@ -567,41 +567,47 @@ module box_context() {
 }
 
 module top_panel_ledge() {
-    translate([wall_t, wall_t, ledge_top_z - wall_t])
-        cube([box_w - 2 * wall_t, ledge_w, wall_t]);
-    translate([wall_t, box_d - wall_t - ledge_w, ledge_top_z - wall_t])
-        cube([box_w - 2 * wall_t, ledge_w, wall_t]);
-    translate([wall_t, wall_t, ledge_top_z - wall_t])
-        cube([ledge_w, box_d - 2 * wall_t, wall_t]);
-    translate([box_w - wall_t - ledge_w, wall_t, ledge_top_z - wall_t])
-        cube([ledge_w, box_d - 2 * wall_t, wall_t]);
+    difference() {
+        translate([wall_t, wall_t, ledge_top_z - wall_t])
+            cube([box_w - 2 * wall_t, box_d - 2 * wall_t, wall_t]);
+        translate([wall_t + ledge_w, wall_t + ledge_w, ledge_top_z - wall_t - 0.1])
+            cube([
+                box_w - 2 * (wall_t + ledge_w),
+                box_d - 2 * (wall_t + ledge_w),
+                wall_t + 0.2
+            ]);
+    }
 
-    translate([wall_t + ledge_r, wall_t, ledge_top_z - wall_t - ledge_r])
-        rotate([-90, 0, 0])
-            quarter_round(length = box_d - 2 * wall_t, r = ledge_r, quadrant = "left");
-    translate([box_w - wall_t - ledge_r, wall_t, ledge_top_z - wall_t - ledge_r])
-        rotate([-90, 0, 0])
-            quarter_round(length = box_d - 2 * wall_t, r = ledge_r, quadrant = "right");
-    translate([wall_t, wall_t + ledge_r, ledge_top_z - wall_t - ledge_r])
-        rotate([0, 90, 0])
-            quarter_round(length = box_w - 2 * wall_t, r = ledge_r, quadrant = "front");
-    translate([wall_t, box_d - wall_t - ledge_r, ledge_top_z - wall_t - ledge_r])
-        rotate([0, 90, 0])
-            quarter_round(length = box_w - 2 * wall_t, r = ledge_r, quadrant = "back");
+    translate([wall_t + ledge_w, wall_t + ledge_w, ledge_top_z - wall_t])
+        inner_ledge_supports(
+            box_w - 2 * (wall_t + ledge_w),
+            box_d - 2 * (wall_t + ledge_w),
+            ledge_r
+        );
 }
 
-module quarter_round(length, r, quadrant) {
+module inner_ledge_supports(inner_w, inner_d, r) {
+    translate([0, 0, -r])
+        rotate([90, 0, 90])
+            quarter_round(length = inner_w, r = r);
+    translate([0, inner_d, -r])
+        rotate([90, 0, 90])
+            mirror([0, 1, 0])
+                quarter_round(length = inner_w, r = r);
+    translate([0, 0, -r])
+        rotate([90, 0, 0])
+            mirror([0, 1, 0])
+                quarter_round(length = inner_d, r = r);
+    translate([inner_w, 0, -r])
+        rotate([90, 0, 0])
+            quarter_round(length = inner_d, r = r);
+}
+
+module quarter_round(length, r) {
     linear_extrude(height = length)
         intersection() {
             circle(r = r);
-            if (quadrant == "left")
-                square([r, r]);
-            else if (quadrant == "right")
-                translate([-r, 0]) square([r, r]);
-            else if (quadrant == "front")
-                square([r, r]);
-            else
-                translate([-r, 0]) square([r, r]);
+            square([r, r]);
         }
 }
 
