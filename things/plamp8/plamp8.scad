@@ -111,7 +111,6 @@ top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
 ledge_top_z = -plate_t;
-corner_boss_r = 10;
 panel_screw_inset = 4;
 internal_psu_x = 55;
 internal_psu_y = 10;
@@ -582,7 +581,6 @@ module box_context() {
                     relay_bottom_mount_holes();
                 }
                 top_panel_ledge();
-                top_panel_corner_bosses();
                 psu_floor_tie_wrap_anchors_in_box();
                 psu_right_wall_tie_wrap_anchors_in_box();
             }
@@ -616,29 +614,6 @@ module quarter_round(length, r) {
             circle(r = r);
             square([r, r]);
         }
-}
-
-module top_panel_corner_bosses() {
-    translate([wall_t, wall_t, ledge_top_z])
-        quarter_sphere(corner_boss_r);
-    translate([box_w - wall_t, wall_t, ledge_top_z])
-        mirror([1, 0, 0])
-            quarter_sphere(corner_boss_r);
-    translate([wall_t, box_d - wall_t, ledge_top_z])
-        mirror([0, 1, 0])
-            quarter_sphere(corner_boss_r);
-    translate([box_w - wall_t, box_d - wall_t, ledge_top_z])
-        mirror([1, 0, 0])
-            mirror([0, 1, 0])
-                quarter_sphere(corner_boss_r);
-}
-
-module quarter_sphere(r) {
-    intersection() {
-        sphere(r = r);
-        translate([0, 0, -r])
-            cube([r, r, r]);
-    }
 }
 
 module side_wall_psu_vents() {
