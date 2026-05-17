@@ -117,7 +117,6 @@ ledge_w = 10;
 ledge_r = ledge_w;
 ledge_top_z = -plate_t;
 panel_screw_inset = 4;
-internal_psu_x = 55;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
 internal_relay_x = -50;
@@ -166,6 +165,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
+internal_psu_x = top_panel_w / 2 - psu_d / 2;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -676,7 +676,7 @@ module psu_floor_tie_wrap_anchors_in_box() {
 
 module psu_floor_tie_wrap_anchors() {
     // Floor anchors route straps in both directions across the PSU footprint.
-    for (y = [-psu_d / 2 - psu_anchor_gap, psu_d / 2 + psu_anchor_gap])
+    for (y = [psu_d / 2 + psu_anchor_gap])
         for (x = [-psu_w / 2 + psu_anchor_inset, psu_w / 2 - psu_anchor_inset])
             translate([x, y, 0])
                 tie_wrap_anchor_x();
@@ -699,7 +699,7 @@ module psu_floor_stops_in_box() {
 }
 
 module psu_floor_stops() {
-    for (y = [-psu_d / 2 - psu_stop_t, psu_d / 2])
+    for (y = [psu_d / 2])
         translate([-psu_stop_l / 2, y, 0])
             cube([psu_stop_l, psu_stop_t, psu_stop_h]);
 
