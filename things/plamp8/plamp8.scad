@@ -8,8 +8,11 @@ show_internal_box = true;
 show_internal_psu = false;
 show_internal_relay = false;
 show_internal_top_outline = false;
-
+feature_ledge = true;
+feature_psu_tie_wrap_anchors = true;
+feature_psu_tie_wrap_anchors_wall = true;
 // ---------------- dimensions ----------------
+internal_clearance_h = 80;
 outlet_plate_left = 46;
 outlet_plate_right = 76;
 plate_w = outlet_plate_left + outlet_plate_right;
@@ -106,7 +109,6 @@ relay_countersink_d = 9;
 
 wall_t = 3;
 relay_countersink_h = wall_t;
-internal_clearance_h = 80;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
@@ -571,6 +573,8 @@ module top_panel_8ch(include_revision = true) {
     }
 }
 
+
+
 module box_context() {
     color([0.7, 0.72, 0.68, 0.35])
         difference() {
@@ -583,10 +587,12 @@ module box_context() {
                     side_wall_psu_vents();
                     relay_bottom_mount_holes();
                 }
-                top_panel_ledge();
-                psu_floor_tie_wrap_anchors_in_box();
+                if (feature_ledge) top_panel_ledge();
+                if (feature_psu_tie_wrap_anchors)
+                    psu_floor_tie_wrap_anchors_in_box();
                 psu_floor_stops_in_box();
-                psu_right_wall_tie_wrap_anchors_in_box();
+                if (feature_psu_tie_wrap_anchors_wall)
+                    psu_right_wall_tie_wrap_anchors_in_box();
             }
             panel_corner_screw_holes_in_box();
             panel_corner_nut_traps_in_box();
