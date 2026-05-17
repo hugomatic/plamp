@@ -96,8 +96,8 @@ psu_anchor_gap = 5;
 psu_anchor_inset = 20;
 psu_wall_anchor_z = psu_h + psu_anchor_gap;
 psu_stop_l = 10;
-psu_stop_t = 2;
-psu_stop_h = 2;
+psu_stop_t = 4;
+psu_stop_h = 4;
 psu_stop_anchor_clearance = 1;
 psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
 psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
@@ -176,6 +176,7 @@ label_pocket_h = 3;
 label_pocket_r = 3;
 revision_label_w = 26;
 revision_label_h = 9;
+box_revision_font = 6;
 
 letter_size = 6;
 write_t = 0.75;
@@ -589,6 +590,7 @@ module box_context() {
                         cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
                     side_wall_psu_vents();
                     relay_bottom_mount_holes();
+                    box_bottom_revision_negative();
                 }
                 if (feature_ledge) top_panel_ledge();
                 if (feature_psu_tie_wrap_anchors)
@@ -665,6 +667,11 @@ module relay_bottom_mount_holes() {
                 translate([x, y, -box_h - 0.1])
                     cylinder(h = relay_countersink_h + 0.1, d1 = relay_countersink_d, d2 = relay_mount_hole_d);
             }
+}
+
+module box_bottom_revision_negative() {
+    translate([box_w / 2, box_d / 2, -box_h])
+        write_text(revision_string, box_revision_font, -0.01);
 }
 
 module psu_floor_tie_wrap_anchors_in_box() {
