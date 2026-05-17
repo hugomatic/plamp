@@ -98,6 +98,9 @@ psu_wall_anchor_z = psu_h;
 psu_stop_l = 10;
 psu_stop_t = 2;
 psu_stop_h = 2;
+psu_stop_anchor_clearance = 1;
+psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
+psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
 
 relay_w = 145;
 relay_d = 90;
@@ -700,10 +703,13 @@ module psu_floor_stops_in_box() {
 
 module psu_floor_stops() {
     for (y = [psu_d / 2])
-        translate([-psu_stop_l / 2, y, 0])
-            cube([psu_stop_l, psu_stop_t, psu_stop_h]);
+        translate([-psu_stop_between_x_anchors_l / 2, y, 0])
+            cube([psu_stop_between_x_anchors_l, psu_stop_t, psu_stop_h]);
 
-    for (x = [-psu_w / 2 - psu_stop_t, psu_w / 2])
+    translate([-psu_w / 2 - psu_stop_t, -psu_stop_between_y_anchors_l / 2, 0])
+        cube([psu_stop_t, psu_stop_between_y_anchors_l, psu_stop_h]);
+
+    for (x = [psu_w / 2])
         translate([x, -psu_stop_l / 2, 0])
             cube([psu_stop_t, psu_stop_l, psu_stop_h]);
 }
