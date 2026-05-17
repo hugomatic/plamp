@@ -1,0 +1,53 @@
+{
+  "date": "2026-05-16",
+  "grow_id": "grow-thai-basil-siam-queen-2026-03-27",
+  "summary_type": "daily",
+  "since_previous_daily_log": "2026-05-15",
+  "produced_at": "2026-05-17T08:08:22Z",
+  "artifact_timing": "produced from current saved captures and the latest runtime log window",
+  "nature": {
+    "summary": "The Thai basil still reads as a slow vegetative fill-in: moderate canopy, uneven vigor, mild stretch, and no new high-confidence pest, disease, harvest, or recovery event since the last daily.",
+    "status": "acceptable",
+    "notable_events": [
+      "Available current evidence supports continuity more than change.",
+      "The tray appears to be holding its recent state rather than breaking out sharply."
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-16/auto-rpicam_cam0-2026-05-16T14-53-06Z-905914.jpg"
+    ]
+  },
+  "plamp": {
+    "summary": "Camera cadence is still healthy and no fresh controller fault appeared in the latest log window.",
+    "runtime_events": [
+      "Saved captures landed hourly across 2026-05-16 through at least 21:53 HST.",
+      "plamp.log shows uninterrupted Picamera2 open/start/stop/close cycles through 2026-05-16 21:53 HST.",
+      "No fresh Pico disconnect, apply/reconnect churn, or invalid-JSON burst appeared in the latest controller log window."
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-16/auto-rpicam_cam0-2026-05-16T14-53-06Z-905914.jpg",
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-16/auto-rpicam_cam0-2026-05-16T21-53-27Z-1594ae.jpg"
+    ]
+  },
+  "gardener": {
+    "next_actions": [
+      {
+        "priority": "high",
+        "task": "Keep using current daytime captures, or one in-person daytime look, to confirm the light-on state is convincingly healthy rather than merely not failing.",
+        "why": "The evidence pipeline is solid again, so the remaining question is light quality rather than capture continuity."
+      },
+      {
+        "priority": "medium",
+        "task": "Keep watching pump_n_lights for another /dev/ttyACM0 reconnect cycle before treating controller stability as fully recovered.",
+        "why": "The last meaningful controller fault is still historical rather than fully disproven."
+      },
+      {
+        "priority": "medium",
+        "task": "Compare the next daylight frames for real canopy fill improvement versus continued steady-state holding.",
+        "why": "Current evidence suggests continuity more than a new growth jump."
+      }
+    ],
+    "pictures": [
+      "data/grow/grows/grow-thai-basil-siam-queen-2026-03-27/captures/2026-05-16/auto-rpicam_cam0-2026-05-16T15-53-09Z-1e14d3.jpg"
+    ]
+  }
+}
