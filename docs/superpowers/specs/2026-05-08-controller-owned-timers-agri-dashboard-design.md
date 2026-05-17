@@ -2,11 +2,11 @@
 
 ## Overview
 
-Move Plamp from the current flat `controllers` + `devices` config toward a controller-owned model. A controller owns the devices it programs, each device owns its timer schedule, and cameras remain top-level peripherals that can opt into the same timeline view.
+Move Plamp from the current flat `controllers` + `devices` config toward a controller-owned instance tree. A controller instance owns the devices it programs, each instance has a type, and cameras remain top-level peripherals that can opt into the same timeline view.
 
 The UI should follow the agri dashboard direction: a compact hostname chip, one top-level health light, controller cards, explicit device icons, centered timeline lanes, per-camera snapshot sections, and an edit panel that appears only when the user is changing controller state.
 
-This is a breaking config change, but migration must preserve current values: controller ids, serial bindings, report cadence, device ids, pins, pin types, timer editor modes, schedule values, camera settings, capture paths, and the new host color choice.
+This is a breaking config change, but migration must preserve current values: controller ids, serial bindings, report cadence, device ids, pins, output types, schedule meaning, camera settings, capture paths, and the new host color choice.
 
 ## Goals
 
@@ -14,8 +14,8 @@ This is a breaking config change, but migration must preserve current values: co
 - Keep cameras top-level, while allowing each camera to appear in the same timeline as a controller.
 - Keep telemetry and telecommand separate: widgets show live reported state, edit fields show staged commands.
 - Make one controller apply action send a full controller state.
-- Preserve distinct timer editor modes: `cycle`, `clock_window` / 24h, and future `events`.
-- Move disabled and hidden behavior out of timer editor mode so the timer editor remains about how time is specified.
+- Preserve distinct schedule kinds: `cycle`, `daily_window`, and future `events`.
+- Move disabled and hidden behavior out of schedule shape so scheduling remains about desired behavior.
 - Persist the hostname chip color in `config.json` so different Plamps can be visually distinguished.
 - Persist device icon and display order in config.
 - Render a generic `other` icon for unforeseen devices such as ionizers or air purifiers.
@@ -30,6 +30,8 @@ This is a breaking config change, but migration must preserve current values: co
 - No prominent firmware-version dashboard hero item.
 - No always-visible controller reset warning.
 - No attempt to keep the old flat `devices` object as canonical.
+- No generic persisted `timer` node.
+- No persisted `ui` subtree, widget tree, aliases, path query API, or generic pub/sub in this config-first slice.
 
 ## Canonical Config Shape
 
@@ -43,22 +45,28 @@ This is a breaking config change, but migration must preserve current values: co
   "controllers": {
     "pump_n_lights": {
       "type": "pico_scheduler",
-      "label": "Pump and lights",
-      "pico_serial": "e66038b71387a039",
-      "report_every": 10,
+      "config": {
+        "label": "Pump and lights",
+        "pico_serial": "e66038b71387a039"
+      },
+      "settings": {
+        "report_every": 10
+      },
       "devices": {
         "pump": {
-          "label": "Pump",
-          "display_order": 0,
-          "pin": 3,
-          "type": "gpio",
-          "icon": "pump",
-          "visibility": "visible",
-          "programming": "enabled",
-          "timer": {
-            "editor": "cycle",
+          "type": "scheduled_output",
+          "config": {
+            "label": "Pump",
+            "display_order": 0,
+            "pin": 3,
+            "output_type": "gpio",
+            "icon": "pump",
+            "visibility": "visible"
+          },
+          "settings": {
+            "programming": "enabled",
             "schedule": {
-              "mode": "cycle",
+              "kind": "cycle",
               "on_seconds": 90,
               "off_seconds": 810,
               "start_at_seconds": 0
@@ -66,34 +74,38 @@ This is a breaking config change, but migration must preserve current values: co
           }
         },
         "lights": {
-          "label": "Lights",
-          "display_order": 1,
-          "pin": 2,
-          "type": "gpio",
-          "icon": "light",
-          "visibility": "visible",
-          "programming": "enabled",
-          "timer": {
-            "editor": "clock_window",
+          "type": "scheduled_output",
+          "config": {
+            "label": "Lights",
+            "display_order": 1,
+            "pin": 2,
+            "output_type": "gpio",
+            "icon": "light",
+            "visibility": "visible"
+          },
+          "settings": {
+            "programming": "enabled",
             "schedule": {
-              "mode": "clock_window",
+              "kind": "daily_window",
               "on_time": "06:00",
               "off_time": "23:00"
             }
           }
         },
         "fan": {
-          "label": "Fan",
-          "display_order": 2,
-          "pin": 4,
-          "type": "gpio",
-          "icon": "fan",
-          "visibility": "visible",
-          "programming": "enabled",
-          "timer": {
-            "editor": "clock_window",
+          "type": "scheduled_output",
+          "config": {
+            "label": "Fan",
+            "display_order": 2,
+            "pin": 4,
+            "output_type": "gpio",
+            "icon": "fan",
+            "visibility": "visible"
+          },
+          "settings": {
+            "programming": "enabled",
             "schedule": {
-              "mode": "clock_window",
+              "kind": "daily_window",
               "on_time": "08:00",
               "off_time": "22:00"
             }
@@ -137,17 +149,15 @@ These fields are persisted in `config.json`:
 | --- | --- | --- |
 | Host chip color | `appearance.host_color` | Used to distinguish Plamps. Hostname itself comes from the OS. |
 | Controller identity | `controllers.<id>` | Controller id remains the stable config key. |
-| Controller label | `controllers.<id>.label` | Human label, optional. |
-| Pico serial | `controllers.<id>.pico_serial` | Binding to hardware. |
-| Report cadence | `controllers.<id>.report_every` | Edited in controller edit mode and applied with the full controller. |
+| Controller type | `controllers.<id>.type` | Required instance type, such as `pico_scheduler`. |
+| Controller label | `controllers.<id>.config.label` | Human label, optional. |
+| Pico serial | `controllers.<id>.config.pico_serial` | Binding to hardware. |
+| Report cadence | `controllers.<id>.settings.report_every` | Desired mutable controller behavior. |
 | Device identity | `controllers.<id>.devices.<device_id>` | Device id remains stable and is not inferred from label/icon. |
-| Device hardware | `pin`, `type` | `type` remains `gpio` or `pwm`. |
-| Device icon | `icon` | User-selected. Unknown devices use `other`. |
-| Device order | `display_order` | Drives device card order and timeline lane order. |
-| Device visibility | `visibility` | `visible` or `hidden`. Hidden devices are omitted from the dashboard. |
-| Device programming | `programming` | `enabled` or `disabled`. Disabled devices can be visible but are not programmed. |
-| Timer editor | `timer.editor` | `cycle`, `clock_window`, or future `events`. |
-| Timer schedule | `timer.schedule` | Shape depends on `timer.editor`. |
+| Device type | `controllers.<id>.devices.<device_id>.type` | Required instance type, such as `scheduled_output`. |
+| Device setup | `.config.label`, `.config.pin`, `.config.output_type`, `.config.icon`, `.config.display_order`, `.config.visibility` | Kept together because the user sets up a device in one place. |
+| Device programming | `.settings.programming` | `enabled` or `disabled`. Disabled devices can be visible but are not programmed. |
+| Device schedule | `.settings.schedule` | Durable user intent; shape depends on `kind`. |
 | Camera settings | `cameras.<id>` | Existing camera settings stay top-level. |
 | Camera timeline placement | `cameras.<id>.timeline` | Lets camera lanes align visually with controller device lanes. |
 | Camera capture delay | `cameras.<id>.timeline.capture_delay_seconds` | Shows intended delay such as capture 5 minutes after fan off. |
@@ -163,22 +173,38 @@ These are runtime-only and are not persisted in `config.json`:
 - current hostname
 - firmware version unless a later feature makes version reconciliation user-editable
 
-## Timer Editors
+## Instance Tree And State Layers
 
-Timer editor mode is not the same as visibility or programming state.
+The config tree is a hierarchy of instances, not of type nodes. `pump_n_lights` is a `pico_scheduler` instance directly. Devices live under the controller instance that owns them. Future controller types such as `ph_reader` may define their own device types without reshaping the tree.
+
+Every persisted instance has a required `type`. Instance names must be unique among siblings; the full path is the stable identity. User-facing text belongs in `config.label`, not in the instance id.
+
+Use the same three meanings consistently:
+
+- `config`: identity, physical binding, and one-place user setup such as label, pin, icon, order, and visibility.
+- `settings`: desired mutable behavior that must survive restart, such as schedules and `report_every`.
+- `telemetry`: observed runtime state, overlaid into the runtime tree but not persisted in `config.json`.
+
+Aliases and a path-query/pub-sub layer remain compatible future extensions, but they are not required for the first hard config break.
+
+## Schedules
+
+There is no generic persisted `timer` node. A `scheduled_output` device owns durable desired behavior under `settings.schedule`; the firmware adapter compiles that intent into the controller program.
 
 - `cycle`: repeating on/off duration, such as pump on for 90 seconds and off for 810 seconds.
-- `clock_window`: a daily 24h window, such as lights on at `06:00` and off at `23:00`.
-- `events`: reserved for later event-based scheduling.
+- `daily_window`: a daily window, such as lights on at `06:00` and off at `23:00`.
+- `events`: reserved for later explicit event-based scheduling.
 
-Disabled and hidden behavior should not remain editor modes in the new schema:
+These are schedule kinds, not UI editor modes. The same schedule may be rendered as a 24h lane, an event list, or another view without changing controller intent.
 
-- current `editor: "disabled"` migrates to `programming: "disabled"` and `visibility: "visible"`
-- current `editor: "hidden"` migrates to `programming: "disabled"` and `visibility: "hidden"`
-- current `editor: "cycle"` migrates to `timer.editor: "cycle"`
-- current `editor: "clock_window"` migrates to `timer.editor: "clock_window"`
+Disabled and hidden behavior should not remain schedule kinds:
 
-If an old device has no explicit schedule, migration should preserve the editor mode and create the smallest valid default schedule for that editor, then let the user adjust it in edit mode.
+- current `editor: "disabled"` migrates to `settings.programming: "disabled"` and `config.visibility: "visible"`
+- current `editor: "hidden"` migrates to `settings.programming: "disabled"` and `config.visibility: "hidden"`
+- current `editor: "cycle"` migrates to `settings.schedule.kind: "cycle"`
+- current `editor: "clock_window"` migrates to `settings.schedule.kind: "daily_window"`
+
+If an old device has no explicit schedule, migration should preserve the old meaning and create the smallest valid default schedule for that kind, then let the user adjust it in edit mode.
 
 ## Telemetry And Telecommand
 
@@ -238,7 +264,7 @@ Edit mode:
 
 - opens a controller edit panel above telemetry
 - shows controller settings such as `report_every`
-- shows each device timer editor
+- shows each device schedule editor
 - shows icon selector, order control, visibility, and programming state
 - shows one apply button for the controller
 - shows the reset warning only while editing
@@ -296,10 +322,11 @@ Migration writes the new canonical shape:
 
 - controllers stay keyed by the same id
 - each flat device moves under `controllers.<controller>.devices`
-- device id, label, pin, type, and editor mode are preserved
-- `editor` becomes `timer.editor` unless it was `disabled` or `hidden`
-- `disabled` becomes `programming: "disabled"`
-- `hidden` becomes `visibility: "hidden"`
+- device id, label, pin, output type, and schedule meaning are preserved
+- `editor: "cycle"` becomes `settings.schedule.kind: "cycle"`
+- `editor: "clock_window"` becomes `settings.schedule.kind: "daily_window"`
+- `disabled` becomes `settings.programming: "disabled"`
+- `hidden` becomes `config.visibility: "hidden"` and `settings.programming: "disabled"`
 - existing cameras stay top-level
 - existing camera capture settings and capture paths are preserved
 - missing icons become `other`
@@ -316,11 +343,11 @@ Migration must fail loudly if a device references a missing controller, if two d
 - Camera captures and capture lists are served from camera/capture APIs and joined into the dashboard by camera id.
 - The UI should not expose transport details beyond the edit-mode reset warning.
 
-Future event transport remains compatible because timer mode is explicit and `events` has a reserved place.
+Future event transport remains compatible because schedule kind is explicit and `events` has a reserved place.
 
 ## Testing
 
-- Config validation tests for the new `appearance`, controller-owned devices, camera timeline metadata, and timer editor modes.
+- Config validation tests for the new `appearance`, controller-owned instances, camera timeline metadata, and schedule kinds.
 - Migration tests that preserve current controller, device, and camera values.
 - Tests that old `disabled` and `hidden` editor values migrate into `programming` and `visibility`.
 - Tests that unknown device icons render as `other`.
