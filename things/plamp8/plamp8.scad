@@ -92,7 +92,7 @@ psu_anchor_l = 14;
 psu_anchor_slot_w = 5;
 psu_anchor_slot_h = 2.5;
 psu_anchor_slot_z = 1;
-psu_anchor_gap = 4;
+psu_anchor_gap = 1;
 psu_anchor_inset = 20;
 psu_wall_anchor_z = psu_h;
 psu_stop_l = 10;
@@ -679,12 +679,12 @@ module psu_floor_tie_wrap_anchors_in_box() {
 
 module psu_floor_tie_wrap_anchors() {
     // Floor anchors route straps in both directions across the PSU footprint.
-    for (y = [psu_d / 2 + psu_anchor_gap])
+    for (y = [psu_d / 2 + psu_anchor_r + psu_anchor_gap])
         for (x = [-psu_w / 2 + psu_anchor_inset, psu_w / 2 - psu_anchor_inset])
             translate([x, y, 0])
                 tie_wrap_anchor_x();
 
-    for (x = [-psu_w / 2 - psu_anchor_gap])
+    for (x = [-psu_w / 2 - psu_anchor_r - psu_anchor_gap])
         for (y = [-psu_d / 2 + psu_anchor_inset, psu_d / 2 - psu_anchor_inset])
             translate([x, y, 0])
                 tie_wrap_anchor_y();
