@@ -8,12 +8,13 @@ import re
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-_EDITORS = {"cycle", "clock_window", "disabled", "hidden"}
+_SCHEDULE_KINDS = {"cycle", "daily_window", "events"}
 _PIN_TYPES = {"gpio", "pwm"}
 _CONTROLLER_TYPES = {"pico_scheduler", "pico_doser"}
+_DEVICE_TYPES = {"scheduled_output"}
 _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
 _DEFAULT_REPORT_EVERY = 10
-_CONFIG_KEYS = ("controllers", "devices", "cameras")
+_CONFIG_KEYS = ("controllers", "cameras")
 _RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler", "pico_doser"}
 _AUTOFOCUS_MODES = {"auto", "continuous", "manual", "off"}
 
@@ -93,7 +94,7 @@ def validate_controllers(value):
         if controller_id in _RESERVED_CONTROLLER_IDS:
             raise ValueError(f"controller id is reserved: {controller_id!r}")
         controller_value = _as_mapping(controller_value, f"controller {controller_id}")
-        extra_keys = set(controller_value) - {"pico_serial", "label", "type", "report_every"}
+        extra_keys = set(controller_value) - {"type", "config", "settings", "devices"}
         if extra_keys:
             raise ValueError(f"controller {controller_id} has unknown keys: {sorted(extra_keys)!r}")
 
@@ -101,22 +102,35 @@ def validate_controllers(value):
         if controller_type not in _CONTROLLER_TYPES:
             raise ValueError(f"controller {controller_id} type must be one of {sorted(_CONTROLLER_TYPES)!r}")
 
-        pico_serial = controller_value.get("pico_serial")
+        config = _as_mapping(controller_value.get("config", {}), f"controller {controller_id} config")
+        settings = _as_mapping(controller_value.get("settings", {}), f"controller {controller_id} settings")
+        extra_config = set(config) - {"pico_serial", "label"}
+        if extra_config:
+            raise ValueError(f"controller {controller_id} config has unknown keys: {sorted(extra_config)!r}")
+        extra_settings = set(settings) - {"report_every"}
+        if extra_settings:
+            raise ValueError(f"controller {controller_id} settings has unknown keys: {sorted(extra_settings)!r}")
+        pico_serial = config.get("pico_serial")
         if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
-        label = _optional_label(controller_value, f"controller {controller_id}")
-        controller = {"type": controller_type}
+        label = _optional_label(config, f"controller {controller_id}")
+        controller = {"type": controller_type, "config": {}, "settings": {}}
         if controller_type == "pico_scheduler":
-            controller["report_every"] = _required_positive_int(
-                controller_value.get("report_every", _DEFAULT_REPORT_EVERY),
+            controller["settings"]["report_every"] = _required_positive_int(
+                settings.get("report_every", _DEFAULT_REPORT_EVERY),
                 f"controller {controller_id} report_every",
             )
-        elif "report_every" in controller_value:
+        elif "report_every" in settings:
             raise ValueError(f"controller {controller_id} report_every is only valid for pico_scheduler")
         if pico_serial is not None:
-            controller["pico_serial"] = pico_serial
+            controller["config"]["pico_serial"] = pico_serial
         if label:
-            controller["label"] = label
+            controller["config"]["label"] = label
+        controller["devices"] = validate_controller_devices(
+            controller_value.get("devices", {}),
+            controller_id,
+            controller_type,
+        )
         controllers[controller_id] = controller
     return controllers
 
@@ -137,47 +151,99 @@ def scheduler_controller_ids(controllers) -> set[str]:
     }
 
 
-def validate_devices(value, controllers):
-    value = _as_mapping(value, "devices")
-    controllers = validate_controllers(controllers)
-    scheduler_controllers = scheduler_controller_ids(controllers)
+def _validate_schedule(value: object, label: str) -> dict:
+    value = _as_mapping(value, label)
+    kind = value.get("kind", "cycle")
+    if kind not in _SCHEDULE_KINDS:
+        raise ValueError(f"{label} kind must be one of {sorted(_SCHEDULE_KINDS)!r}")
+    schedule = {"kind": kind}
+    if kind == "cycle":
+        schedule["on_seconds"] = _required_positive_int(value.get("on_seconds", 1), f"{label} on_seconds")
+        schedule["off_seconds"] = _required_positive_int(value.get("off_seconds", 1), f"{label} off_seconds")
+        schedule["start_at_seconds"] = _required_non_negative_int(
+            value.get("start_at_seconds", 0), f"{label} start_at_seconds"
+        )
+    elif kind == "daily_window":
+        for key in ("on_time", "off_time"):
+            raw = value.get(key)
+            if not isinstance(raw, str) or not raw:
+                raise ValueError(f"{label} {key} must be a non-empty string")
+            schedule[key] = raw
+    else:
+        events = value.get("events", [])
+        if not isinstance(events, list):
+            raise ValueError(f"{label} events must be a list")
+        schedule["events"] = events
+    return schedule
+
+
+def validate_controller_devices(value, controller_id: str, controller_type: str):
+    value = _as_mapping(value, f"controller {controller_id} devices")
+    if controller_type != "pico_scheduler" and value:
+        raise ValueError(f"controller {controller_id} devices are only valid for pico_scheduler")
     devices = {}
     used_pins = set()
     for device_id, device_value in value.items():
         if not _is_valid_id(device_id):
             raise ValueError(f"invalid device id: {device_id!r}")
         device_value = _as_mapping(device_value, f"device {device_id}")
-        extra_keys = set(device_value) - {"controller", "pin", "type", "editor", "label"}
+        extra_keys = set(device_value) - {"type", "config", "settings"}
         if extra_keys:
             raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
-        controller = device_value.get("controller")
-        pin = device_value.get("pin")
-        pin_type = device_value.get("type", "gpio")
-        editor = device_value.get("editor", "cycle")
-        if controller not in controllers:
-            raise ValueError(f"device {device_id} references unknown controller: {controller!r}")
-        if controller not in scheduler_controllers:
-            raise ValueError(f"device {device_id} controller must reference a pico_scheduler controller: {controller!r}")
+        device_type = device_value.get("type")
+        if device_type not in _DEVICE_TYPES:
+            raise ValueError(f"device {device_id} type must be one of {sorted(_DEVICE_TYPES)!r}")
+        config = _as_mapping(device_value.get("config", {}), f"device {device_id} config")
+        settings = _as_mapping(device_value.get("settings", {}), f"device {device_id} settings")
+        extra_config = set(config) - {"label", "pin", "output_type", "icon", "display_order", "visibility"}
+        if extra_config:
+            raise ValueError(f"device {device_id} config has unknown keys: {sorted(extra_config)!r}")
+        extra_settings = set(settings) - {"programming", "schedule"}
+        if extra_settings:
+            raise ValueError(f"device {device_id} settings has unknown keys: {sorted(extra_settings)!r}")
+        pin = config.get("pin")
+        pin_type = config.get("output_type", "gpio")
+        programming = settings.get("programming", "enabled")
+        visibility = config.get("visibility", "visible")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
         if pin_type not in _PIN_TYPES:
-            raise ValueError(f"device {device_id} type must be one of {sorted(_PIN_TYPES)!r}")
-        if editor not in _EDITORS:
-            raise ValueError(f"device {device_id} editor must be one of {sorted(_EDITORS)!r}")
-        pin_key = (controller, pin)
+            raise ValueError(f"device {device_id} output_type must be one of {sorted(_PIN_TYPES)!r}")
+        if programming not in {"enabled", "disabled"}:
+            raise ValueError(f"device {device_id} programming must be enabled or disabled")
+        if visibility not in {"visible", "hidden"}:
+            raise ValueError(f"device {device_id} visibility must be visible or hidden")
+        pin_key = pin
         if pin_key in used_pins:
-            raise ValueError(f"device {device_id} uses duplicate pin {pin} for controller {controller}")
+            raise ValueError(f"device {device_id} uses duplicate pin {pin} for controller {controller_id}")
         used_pins.add(pin_key)
-        label = _optional_label(device_value, f"device {device_id}")
+        label = _optional_label(config, f"device {device_id}")
+        display_order = _required_non_negative_int(config.get("display_order", len(devices)), f"device {device_id} display_order")
         devices[device_id] = {
-            "controller": controller,
-            "pin": pin,
-            "type": pin_type,
-            "editor": editor,
+            "type": device_type,
+            "config": {
+                "pin": pin,
+                "output_type": pin_type,
+                "display_order": display_order,
+                "visibility": visibility,
+            },
+            "settings": {
+                "programming": programming,
+                "schedule": _validate_schedule(settings.get("schedule", {}), f"device {device_id} schedule"),
+            },
         }
         if label:
-            devices[device_id]["label"] = label
+            devices[device_id]["config"]["label"] = label
+        icon = config.get("icon")
+        if icon is not None:
+            if not isinstance(icon, str) or not icon:
+                raise ValueError(f"device {device_id} icon must be a non-empty string")
+            devices[device_id]["config"]["icon"] = icon
     return devices
+
+
+def validate_devices(value, controllers):
+    raise ValueError("top-level devices are no longer supported; nest devices under controllers")
 
 
 def validate_cameras(value):
@@ -266,10 +332,11 @@ def validate_cameras(value):
 
 def config_view(config):
     config = _as_mapping(config, "config")
+    if "devices" in config:
+        raise ValueError("top-level devices are no longer supported; nest devices under controllers")
     controllers = validate_controllers(config.get("controllers", {}))
     return {
         "controllers": controllers,
-        "devices": validate_devices(config.get("devices", {}), controllers),
         "cameras": validate_cameras(config.get("cameras", {})),
     }
 
@@ -278,9 +345,6 @@ def apply_config_section(config, section, value):
     config = config_view(config)
     if section == "controllers":
         config["controllers"] = validate_controllers(value)
-        config["devices"] = validate_devices(config["devices"], config["controllers"])
-    elif section == "devices":
-        config["devices"] = validate_devices(value, config["controllers"])
     elif section == "cameras":
         config["cameras"] = validate_cameras(value)
     else:
@@ -291,10 +355,17 @@ def apply_config_section(config, section, value):
 def runtime_controller_serials(config):
     controllers = config_view(config)["controllers"]
     return {
-        controller_id: controller_value["pico_serial"]
+        controller_id: controller_value["config"]["pico_serial"]
         for controller_id, controller_value in controllers.items()
-        if "pico_serial" in controller_value
+        if "pico_serial" in controller_value["config"]
     }
+
+
+def scheduler_devices_for_controller(config, controller_id: str) -> dict:
+    controller = config_view(config)["controllers"].get(controller_id, {})
+    if controller_type(controller) != "pico_scheduler":
+        return {}
+    return controller.get("devices", {})
 
 
 

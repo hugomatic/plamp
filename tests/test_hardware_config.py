@@ -9,7 +9,7 @@ from plamp_web.hardware_config import (
     runtime_controller_serials,
     validate_cameras,
     validate_controllers,
-    validate_devices,
+    validate_controller_devices,
 )
 
 
@@ -17,55 +17,43 @@ class HardwareConfigTests(unittest.TestCase):
     def test_empty_config_uses_new_top_level_shape(self):
         self.assertEqual(
             empty_config(),
-            {
-                "controllers": {},
-                "devices": {},
-                "cameras": {},
-            },
+            {"controllers": {}, "cameras": {}},
         )
 
-    def test_config_view_ignores_legacy_top_level_keys(self):
+    def test_config_view_rejects_legacy_top_level_devices(self):
         config = {
-            "controllers": {"ctrl_a": {"pico_serial": "PICO123"}},
+            "controllers": {},
             "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
-            "cameras": {"cam_1": {}},
-            "timers": {"legacy": {}},
-            "hardware": {"legacy": True},
+            "cameras": {},
         }
-        self.assertEqual(
-            config_view(config),
-            {
-                "controllers": {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10}},
-                "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
-                "cameras": {"cam_1": {}},
-            },
-        )
+        with self.assertRaisesRegex(ValueError, "top-level devices"):
+            config_view(config)
 
     def test_validate_controllers(self):
         self.assertEqual(
-            validate_controllers({"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}}),
+            validate_controllers({"ctrl_a": {}, "ctrl_b": {"config": {"pico_serial": "PICO123"}}}),
             {
-                "ctrl_a": {"type": "pico_scheduler", "report_every": 10},
-                "ctrl_b": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10},
+                "ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 10}, "devices": {}},
+                "ctrl_b": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}},
             },
         )
 
     def test_validate_controllers_defaults_to_pico_scheduler_type_and_report_every(self):
         self.assertEqual(
-            validate_controllers({"ctrl_a": {"pico_serial": "PICO123"}}),
-            {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10}},
+            validate_controllers({"ctrl_a": {"config": {"pico_serial": "PICO123"}}}),
+            {"ctrl_a": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}}},
         )
 
     def test_validate_controllers_accepts_pico_scheduler_report_every(self):
         self.assertEqual(
-            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": 30}}),
-            {"ctrl_a": {"type": "pico_scheduler", "report_every": 30}},
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"report_every": 30}}}),
+            {"ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 30}, "devices": {}}},
         )
 
     def test_validate_controllers_accepts_pico_doser_type(self):
         self.assertEqual(
             validate_controllers({"doser_a": {"type": "pico_doser"}}),
-            {"doser_a": {"type": "pico_doser"}},
+            {"doser_a": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}}},
         )
 
     def test_validate_controllers_rejects_reserved_controller_ids(self):
@@ -76,37 +64,46 @@ class HardwareConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "controller ctrl_a type"):
             validate_controllers({"ctrl_a": {"type": "ph_doser"}})
         with self.assertRaisesRegex(ValueError, "report_every"):
-            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": 0}})
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"report_every": 0}}})
         with self.assertRaisesRegex(ValueError, "report_every"):
-            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "report_every": True}})
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"report_every": True}}})
 
-    def test_validate_devices_defaults_missing_editor(self):
+    def test_validate_controller_devices_defaults_schedule(self):
         self.assertEqual(
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3}}, {"ctrl_a": {}}),
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "gpio"}},
+            validate_controller_devices(
+                {"dev_1": {"type": "scheduled_output", "config": {"pin": 3}}},
+                "ctrl_a",
+                "pico_scheduler",
+            ),
+            {
+                "dev_1": {
+                    "type": "scheduled_output",
+                    "config": {"pin": 3, "output_type": "gpio", "display_order": 0, "visibility": "visible"},
+                    "settings": {
+                        "programming": "enabled",
+                        "schedule": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0},
+                    },
+                }
+            },
         )
 
-    def test_validate_devices_allows_configured_pin_type(self):
+    def test_validate_controller_devices_allows_configured_pin_type(self):
         self.assertEqual(
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "pwm"}}, {"ctrl_a": {}}),
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "pwm"}},
+            validate_controller_devices(
+                {"dev_1": {"type": "scheduled_output", "config": {"pin": 3, "output_type": "pwm"}}},
+                "ctrl_a",
+                "pico_scheduler",
+            )["dev_1"]["config"]["output_type"],
+            "pwm",
         )
 
-    def test_validate_devices_requires_known_controller(self):
-        with self.assertRaises(ValueError):
-            validate_devices({"dev_1": {"controller": "missing", "pin": 3, "editor": "cycle"}}, {})
-
-    def test_validate_devices_requires_pico_scheduler_controller(self):
-        import plamp_web.hardware_config as hardware_config
-
-        controllers = {"timer": {"type": "pico_scheduler"}, "future": {"type": "future_controller"}}
-        original_types = hardware_config._CONTROLLER_TYPES
-        try:
-            hardware_config._CONTROLLER_TYPES = {"pico_scheduler", "future_controller"}
-            with self.assertRaisesRegex(ValueError, "pico_scheduler"):
-                validate_devices({"pump": {"controller": "future", "pin": 3}}, controllers)
-        finally:
-            hardware_config._CONTROLLER_TYPES = original_types
+    def test_validate_controller_devices_requires_pico_scheduler_controller(self):
+        with self.assertRaisesRegex(ValueError, "pico_scheduler"):
+            validate_controller_devices(
+                {"pump": {"type": "scheduled_output", "config": {"pin": 3}}},
+                "future",
+                "pico_doser",
+            )
 
     def test_scheduler_controller_ids_returns_only_pico_scheduler_controllers(self):
         from plamp_web.hardware_config import scheduler_controller_ids
@@ -122,42 +119,51 @@ class HardwareConfigTests(unittest.TestCase):
             {"timer", "legacy"},
         )
 
-    def test_validate_devices_requires_valid_editor_and_pin(self):
-        controllers = {"ctrl_a": {}}
+    def test_validate_controller_devices_requires_valid_schedule_and_pin(self):
         with self.assertRaises(ValueError):
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 30, "editor": "cycle"}}, controllers)
+            validate_controller_devices({"dev_1": {"type": "scheduled_output", "config": {"pin": 30}}}, "ctrl_a", "pico_scheduler")
         with self.assertRaises(ValueError):
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "bad"}}, controllers)
+            validate_controller_devices(
+                {"dev_1": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "bad"}}}},
+                "ctrl_a",
+                "pico_scheduler",
+            )
         with self.assertRaises(ValueError):
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "bad"}}, controllers)
+            validate_controller_devices(
+                {"dev_1": {"type": "scheduled_output", "config": {"pin": 3, "output_type": "bad"}}},
+                "ctrl_a",
+                "pico_scheduler",
+            )
 
-    def test_validate_devices_accepts_disabled_and_hidden_editors(self):
-        controllers = {"ctrl_a": {}}
-
-        self.assertEqual(
-            validate_devices(
-                {
-                    "disabled_pump": {"controller": "ctrl_a", "pin": 3, "editor": "disabled"},
-                    "hidden_light": {"controller": "ctrl_a", "pin": 4, "editor": "hidden"},
-                },
-                controllers,
-            ),
+    def test_validate_controller_devices_accepts_disabled_and_hidden_state(self):
+        devices = validate_controller_devices(
             {
-                "disabled_pump": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "disabled"},
-                "hidden_light": {"controller": "ctrl_a", "pin": 4, "type": "gpio", "editor": "hidden"},
-            },
-        )
-
-    def test_validate_devices_rejects_duplicate_pin_per_controller(self):
-        controllers = {"ctrl_a": {}, "ctrl_b": {}}
-        with self.assertRaisesRegex(ValueError, "duplicate pin"):
-            validate_devices(
-                {
-                    "dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"},
-                    "dev_2": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"},
-                    "dev_3": {"controller": "ctrl_b", "pin": 3, "editor": "cycle"},
+                "disabled_pump": {
+                    "type": "scheduled_output",
+                    "config": {"pin": 3},
+                    "settings": {"programming": "disabled"},
                 },
-                controllers,
+                "hidden_light": {
+                    "type": "scheduled_output",
+                    "config": {"pin": 4, "visibility": "hidden"},
+                    "settings": {"programming": "disabled"},
+                },
+            },
+            "ctrl_a",
+            "pico_scheduler",
+        )
+        self.assertEqual(devices["disabled_pump"]["settings"]["programming"], "disabled")
+        self.assertEqual(devices["hidden_light"]["config"]["visibility"], "hidden")
+
+    def test_validate_controller_devices_rejects_duplicate_pin_per_controller(self):
+        with self.assertRaisesRegex(ValueError, "duplicate pin"):
+            validate_controller_devices(
+                {
+                    "dev_1": {"type": "scheduled_output", "config": {"pin": 3}},
+                    "dev_2": {"type": "scheduled_output", "config": {"pin": 3}},
+                },
+                "ctrl_a",
+                "pico_scheduler",
             )
 
     def test_validate_cameras(self):
@@ -166,14 +172,14 @@ class HardwareConfigTests(unittest.TestCase):
 
     def test_validate_controllers_allows_optional_label(self):
         self.assertEqual(
-            validate_controllers({"ctrl_a": {"pico_serial": "PICO123", "label": "Pump lights"}}),
-            {"ctrl_a": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10, "label": "Pump lights"}},
+            validate_controllers({"ctrl_a": {"config": {"pico_serial": "PICO123", "label": "Pump lights"}}}),
+            {"ctrl_a": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123", "label": "Pump lights"}, "settings": {"report_every": 10}, "devices": {}}},
         )
 
-    def test_validate_devices_allows_optional_label(self):
+    def test_validate_controller_devices_allows_optional_label(self):
         self.assertEqual(
-            validate_devices({"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "label": "Main pump"}}, {"ctrl_a": {}}),
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle", "type": "gpio", "label": "Main pump"}},
+            validate_controller_devices({"dev_1": {"type": "scheduled_output", "config": {"pin": 3, "label": "Main pump"}}}, "ctrl_a", "pico_scheduler")["dev_1"]["config"]["label"],
+            "Main pump",
         )
 
     def test_validate_cameras_allows_optional_label(self):
@@ -259,50 +265,34 @@ class HardwareConfigTests(unittest.TestCase):
 
     def test_validate_rejects_non_string_label(self):
         with self.assertRaisesRegex(ValueError, "label"):
-            validate_controllers({"ctrl_a": {"label": 123}})
+            validate_controllers({"ctrl_a": {"config": {"label": 123}}})
 
-    def test_apply_config_section_devices_happy_path(self):
-        config = {"controllers": {"ctrl_a": {}}, "devices": {}, "cameras": {}}
-        updated = apply_config_section(
-            config,
-            "devices",
-            {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "clock_window"}},
-        )
-        self.assertEqual(updated["devices"], {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "clock_window"}})
+    def test_apply_config_section_rejects_devices_section(self):
+        with self.assertRaisesRegex(ValueError, "unknown section"):
+            apply_config_section(empty_config(), "devices", {})
 
     def test_apply_config_section_controllers_happy_path_and_runtime_serials(self):
         config = {
-            "controllers": {"ctrl_a": {}, "ctrl_b": {"pico_serial": "OLD"}},
-            "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
+            "controllers": {"ctrl_a": {}, "ctrl_b": {"config": {"pico_serial": "OLD"}}},
             "cameras": {},
         }
         updated = apply_config_section(
             config,
             "controllers",
-            {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
+            {"ctrl_a": {}, "ctrl_b": {"config": {"pico_serial": "PICO123"}}},
         )
         self.assertEqual(
             updated["controllers"],
             {
-                "ctrl_a": {"type": "pico_scheduler", "report_every": 10},
-                "ctrl_b": {"type": "pico_scheduler", "pico_serial": "PICO123", "report_every": 10},
+                "ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 10}, "devices": {}},
+                "ctrl_b": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}},
             },
         )
         self.assertEqual(runtime_controller_serials(updated), {"ctrl_b": "PICO123"})
 
-    def test_apply_config_section_validates_dependent_devices(self):
-        config = {
-            "controllers": {"ctrl_a": {}, "ctrl_b": {}},
-            "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "editor": "cycle"}},
-            "cameras": {},
-        }
-        with self.assertRaises(ValueError):
-            apply_config_section(config, "controllers", {"ctrl_b": {}})
-
     def test_runtime_controller_serials(self):
         config = {
-            "controllers": {"ctrl_a": {}, "ctrl_b": {"pico_serial": "PICO123"}},
-            "devices": {},
+            "controllers": {"ctrl_a": {}, "ctrl_b": {"config": {"pico_serial": "PICO123"}}},
             "cameras": {},
             "timers": {"legacy": {}},
         }

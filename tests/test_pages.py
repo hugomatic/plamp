@@ -501,10 +501,9 @@ class PageRenderTests(unittest.TestCase):
         html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
 
         self.assertIn("collectControllers()", html)
-        self.assertIn("collectDevices()", html)
+        self.assertIn("collectControllerDevices()", html)
         self.assertIn("collectCameras()", html)
         self.assertIn("function controllerRenames()", html)
-        self.assertIn("collectDevicesWithControllerRenames()", html)
         self.assertIn("collectConfigWithControllerRenames()", html)
         self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
         self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
@@ -553,7 +552,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<th>Report every seconds</th>", html)
         self.assertIn('class="controller-report-every"', html)
         self.assertIn('value="15"', html)
-        self.assertIn("payload.report_every = Number(reportEvery);", html)
+        self.assertIn("payload.settings.report_every = Number(reportEvery);", html)
 
     def test_settings_page_groups_scheduler_settings_by_controller(self):
         html = render_settings_page(
@@ -691,16 +690,16 @@ class PageRenderTests(unittest.TestCase):
             hidden_payload["unused"],
             {
                 "type": "pico_scheduler",
-                "pico_serial": "def",
-                "report_every": 20,
-                "label": "Unused & <grow> > flower </script> bloom",
+                "config": {"pico_serial": "def", "label": "Unused & <grow> > flower </script> bloom"},
+                "settings": {"report_every": 20},
+                "devices": {},
             },
         )
         self.assertIn(r'"Unused & <grow> > flower <\/script> bloom"', html)
         self.assertNotIn('"Unused & <grow> > flower </script> bloom"', html)
-        self.assertNotIn("&amp;", hidden_payload["unused"]["label"])
-        self.assertNotIn("&lt;", hidden_payload["unused"]["label"])
-        self.assertNotIn("&gt;", hidden_payload["unused"]["label"])
+        self.assertNotIn("&amp;", hidden_payload["unused"]["config"]["label"])
+        self.assertNotIn("&lt;", hidden_payload["unused"]["config"]["label"])
+        self.assertNotIn("&gt;", hidden_payload["unused"]["config"]["label"])
         self.assertIn('const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{}");', html)
         self.assertIn("const result = structuredClone(hiddenControllers);", html)
 
@@ -756,7 +755,7 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
         self.assertNotIn('saveSection("devices-status", "/api/config/devices", collectDevices())', html)
-        self.assertIn("function collectDevicesWithControllerRenames()", html)
+        self.assertIn("function collectControllerDevices()", html)
         self.assertIn("function collectConfigWithControllerRenames()", html)
 
     def test_settings_page_preserves_hidden_controller_fields_when_empty_state_reuses_hidden_id(self):
@@ -779,10 +778,10 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {};', html)
         self.assertIn('const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;', html)
-        self.assertIn('const payload = isHiddenReuse ? existingController : {type};', html)
-        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.label = label;', html)
-        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.pico_serial = picoSerial;', html)
-        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.report_every = Number(reportEvery);', html)
+        self.assertIn('const payload = isHiddenReuse ? existingController : {type, config: {}, settings: {}, devices: {}};', html)
+        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.config.label = label;', html)
+        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.config.pico_serial = picoSerial;', html)
+        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.settings.report_every = Number(reportEvery);', html)
 
     def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
         html = render_settings_page(
@@ -805,7 +804,7 @@ class PageRenderTests(unittest.TestCase):
         )
 
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('controller: blockController || row.dataset.deviceController || ""', html)
+        self.assertIn('const controller = blockController || row.dataset.deviceController || "";', html)
         self.assertNotIn('controller: row.querySelector(".device-controller").value || blockController', html)
 
     def test_settings_page_renders_create_block_even_when_scheduler_exists(self):
@@ -875,7 +874,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h3>Cameras</h3>", html)
         self.assertNotIn("<h3>Controllers</h3>", html)
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('controller: blockController || row.dataset.deviceController || ""', html)
+        self.assertIn('const controller = blockController || row.dataset.deviceController || "";', html)
 
     def test_settings_page_hydrates_create_block_from_hidden_controller_data(self):
         html = render_settings_page(
@@ -901,10 +900,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('function hydrateControllerRowFromHidden(row) {', html)
         self.assertIn('const hiddenController = hiddenControllers[key];', html)
         self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
-        self.assertIn('labelInput.defaultValue = hiddenController.label || "";', html)
+        self.assertIn('labelInput.defaultValue = hiddenConfig.label || "";', html)
         self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
-        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";', html)
-        self.assertIn('reportEveryInput.defaultValue = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");', html)
+        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenConfig.pico_serial || "";', html)
+        self.assertIn('reportEveryInput.defaultValue = String((hiddenSettings.report_every ?? reportEveryInput.defaultValue) || "");', html)
         self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
@@ -946,17 +945,15 @@ class PageRenderTests(unittest.TestCase):
             "GET /api/config",
             "PUT /api/config",
             "PUT /api/config/controllers",
-            "PUT /api/config/devices",
             "PUT /api/config/cameras",
         ]:
             self.assertIn(f"<legend>{route}</legend>", html)
         self.assertIn('data-copy-target="get-config-curl-command"', html)
-        self.assertIn('data-copy-target="put-config-devices-curl-command"', html)
+        self.assertNotIn('data-copy-target="put-config-devices-curl-command"', html)
         for button_id in [
             "get-config",
             "put-config",
             "put-config-controllers",
-            "put-config-devices",
             "put-config-cameras",
         ]:
             self.assertIn(f'id="{button_id}"', html)
@@ -964,12 +961,11 @@ class PageRenderTests(unittest.TestCase):
             "get-config-result",
             "put-config-result",
             "put-config-controllers-result",
-            "put-config-devices-result",
             "put-config-cameras-result",
         ]:
             self.assertIn(f'id="{result_id}"', html)
         self.assertIn("async function runConfigRequest", html)
-        self.assertIn('document.getElementById("put-config-devices").addEventListener("click", () => runConfigRequest("devices"));', html)
+        self.assertNotIn('document.getElementById("put-config-devices")', html)
 
     def test_api_test_page_uses_uniform_route_sections(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")

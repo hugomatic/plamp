@@ -27,7 +27,13 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
-from plamp_web.hardware_config import apply_config_section, config_view, empty_config, scheduler_controller_ids
+from plamp_web.hardware_config import (
+    apply_config_section,
+    config_view,
+    empty_config,
+    scheduler_controller_ids,
+    scheduler_devices_for_controller,
+)
 from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
 
 
@@ -139,7 +145,7 @@ def load_raw_config() -> dict[str, Any]:
     data = load_json_file(CONFIG_FILE)
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail="config.json must be an object")
-    for section in ("controllers", "devices", "cameras"):
+    for section in ("controllers", "cameras"):
         value = data.get(section, {})
         if not isinstance(value, dict):
             raise HTTPException(status_code=500, detail=f"config.json {section} must be an object")
@@ -148,7 +154,7 @@ def load_raw_config() -> dict[str, Any]:
 
 def load_config() -> dict[str, Any]:
     data = load_raw_config()
-    result = {section: data.get(section, {}) for section in ("controllers", "devices", "cameras")}
+    result = {section: data.get(section, {}) for section in ("controllers", "cameras")}
     try:
         return config_view(result)
     except ValueError as exc:
@@ -205,7 +211,7 @@ def configured_monitor_serials() -> dict[str, str]:
             raise HTTPException(status_code=500, detail=f"invalid controller role: {role}")
         if not isinstance(item, dict):
             raise HTTPException(status_code=500, detail=f"controller {role} must be an object")
-        serial = item.get("pico_serial")
+        serial = item.get("config", {}).get("pico_serial")
         if isinstance(serial, str) and serial:
             result[role] = serial
     return result
@@ -239,7 +245,7 @@ def controller_item(controller: str) -> dict[str, Any]:
 
 
 def pico_serial_for_role(role: str) -> str:
-    serial = timer_role(role).get("pico_serial")
+    serial = timer_role(role).get("config", {}).get("pico_serial")
     if not isinstance(serial, str) or not serial:
         raise HTTPException(status_code=409, detail=f"timer role {role} has no configured pico_serial")
     return serial
@@ -378,7 +384,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
     state = validate_timer_state(raw_state)
     role_config = timer_role(role)
-    report_every = require_int(role_config.get("report_every", 10), "report_every must be an integer")
+    report_every = require_int(role_config.get("settings", {}).get("report_every", 10), "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
     disabled = disabled_timer_device_keys(role)
@@ -394,16 +400,16 @@ def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
 def disabled_timer_device_keys(role: str) -> set[tuple[str | None, int]]:
     disabled: set[tuple[str | None, int]] = set()
     config = load_config()
-    devices = config.get("devices", {})
-    if not isinstance(devices, dict):
-        return disabled
+    devices = scheduler_devices_for_controller(config, role)
     for device_id, device in devices.items():
         if not isinstance(device_id, str) or not isinstance(device, dict):
             continue
-        if device.get("controller") != role or device.get("editor") not in {"disabled", "hidden"}:
+        settings = device.get("settings", {})
+        config_value = device.get("config", {})
+        if settings.get("programming") != "disabled" and config_value.get("visibility") != "hidden":
             continue
         try:
-            pin = int(device.get("pin"))
+            pin = int(config_value.get("pin"))
         except (TypeError, ValueError):
             continue
         disabled.add((device_id, pin))
@@ -1742,7 +1748,7 @@ def get_config() -> dict[str, Any]:
 def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
     with config_lock:
         raw_config = load_raw_config()
-        submitted = {name: config.get(name, {}) for name in ("controllers", "devices", "cameras")}
+        submitted = {name: config.get(name, {}) for name in ("controllers", "cameras")}
         try:
             updated = config_view(submitted)
         except ValueError as exc:
@@ -1758,7 +1764,7 @@ def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
 def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
     with config_lock:
         raw_config = load_raw_config()
-        config = {name: raw_config.get(name, {}) for name in ("controllers", "devices", "cameras")}
+        config = {name: raw_config.get(name, {}) for name in ("controllers", "cameras")}
         try:
             updated = apply_config_section(config, section, value)
         except ValueError as exc:
@@ -1774,11 +1780,6 @@ def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
 @app.put("/api/config/controllers")
 def put_config_controllers(controllers: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return put_config_section("controllers", controllers)
-
-
-@app.put("/api/config/devices")
-def put_config_devices(devices: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    return put_config_section("devices", devices)
 
 
 @app.put("/api/config/cameras")

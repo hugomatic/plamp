@@ -108,7 +108,7 @@ def peripheral_assignments(controllers: dict[str, Any]) -> dict[str, list[str]]:
     for controller_id, controller in controllers.items():
         if not isinstance(controller, dict):
             continue
-        serial = str(controller.get("pico_serial") or "")
+        serial = str(controller.get("config", {}).get("pico_serial") or "")
         if not serial:
             continue
         assignments.setdefault(serial, []).append(controller_id)
@@ -153,19 +153,13 @@ def pin_type_options(selected: str | None) -> str:
     return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
 
 
-def scheduler_devices_by_controller(controllers: dict[str, Any], devices: dict[str, Any]) -> list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]]:
-    grouped_devices: dict[str, list[tuple[str, dict[str, Any]]]] = {}
-    for device_id, device in devices.items():
-        if not isinstance(device, dict):
-            continue
-        controller_id = str(device.get("controller") or "")
-        grouped_devices.setdefault(controller_id, []).append((device_id, device))
-
+def scheduler_devices_by_controller(controllers: dict[str, Any]) -> list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]]:
     groups: list[tuple[str, dict[str, Any], list[tuple[str, dict[str, Any]]]]] = []
     for controller_id, controller in controllers.items():
         if not isinstance(controller, dict):
             continue
-        controller_devices = grouped_devices.get(controller_id, [])
+        devices = controller.get("devices") if isinstance(controller.get("devices"), dict) else {}
+        controller_devices = [(device_id, device) for device_id, device in devices.items() if isinstance(device, dict)]
         if controller_devices:
             groups.append((controller_id, controller, controller_devices))
     return groups
@@ -189,7 +183,13 @@ def json_script_text(value: Any) -> str:
 
 def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
-    devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
+    devices = {
+        device_id: {**device, "controller": controller_id}
+        for controller_id, controller in controllers.items()
+        if isinstance(controller, dict)
+        for device_id, device in (controller.get("devices") or {}).items()
+        if isinstance(device_id, str) and isinstance(device, dict)
+    }
     cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     raw_detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
@@ -214,7 +214,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
             '</tr>'.format(
                 controller_id=html.escape(controller_id, quote=True),
-                pico_options_html=pico_options(picos, str(controller.get("pico_serial") or "")),
+                pico_options_html=pico_options(picos, str(controller.get("config", {}).get("pico_serial") or "")),
             )
         )
     controller_rows.append(
@@ -239,9 +239,9 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
             '</tr>'.format(
                 device_id=html.escape(device_id, quote=True),
                 controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
-                pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
-                type_options=pin_type_options(str(device.get("type") or "gpio")),
-                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
+                pin=html.escape(str(device.get("config", {}).get("pin") if device.get("config", {}).get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("config", {}).get("output_type") or "gpio")),
+                editor_options="".join(option_tag(value, value, "disabled" if device.get("settings", {}).get("programming") == "disabled" else ("clock_window" if device.get("settings", {}).get("schedule", {}).get("kind") == "daily_window" else "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
             )
         )
     device_rows.append(
@@ -328,7 +328,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         const key = row.querySelector(".controller-id").value.trim();
         if (!key) continue;
         const picoSerial = row.querySelector(".controller-pico-serial").value;
-        result[key] = picoSerial ? {{pico_serial: picoSerial}} : {{}};
+        result[key] = {{type: "pico_scheduler", config: picoSerial ? {{pico_serial: picoSerial}} : {{}}, settings: {{report_every: 10}}, devices: {{}}}};
       }}
       return result;
     }}
@@ -338,7 +338,15 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         const key = row.querySelector(".device-id").value.trim();
         if (!key) continue;
         const pinValue = row.querySelector(".device-pin").value;
-        result[key] = {{controller: row.querySelector(".device-controller").value, pin: pinValue === "" ? null : Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value}};
+        const controller = row.querySelector(".device-controller").value;
+        if (!controller) continue;
+        const editor = row.querySelector(".device-editor").value;
+        const settings = editor === "disabled"
+          ? {{programming: "disabled", schedule: {{kind: "cycle"}}}}
+          : editor === "clock_window"
+            ? {{schedule: {{kind: "daily_window", on_time: "06:00", off_time: "18:00"}}}}
+            : {{schedule: {{kind: "cycle"}}}};
+        result[key] = {{controller, type: "scheduled_output", config: {{pin: pinValue === "" ? null : Number(pinValue), output_type: row.querySelector(".device-type").value, visibility: editor === "hidden" ? "hidden" : "visible"}}, settings}};
       }}
       return result;
     }}
@@ -351,14 +359,25 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
       }}
       return result;
     }}
+    function collectConfig() {{
+      const controllers = collectControllers();
+      for (const [deviceId, device] of Object.entries(collectDevices())) {{
+        const controller = controllers[device.controller];
+        if (!controller) continue;
+        const payload = {{...device}};
+        delete payload.controller;
+        controller.devices[deviceId] = payload;
+      }}
+      return {{controllers, cameras: collectCameras()}};
+    }}
     async function saveSection(statusId, url, payload) {{
       const status = document.getElementById(statusId);
       status.textContent = "Saving...";
       const response = await fetch(url, {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(payload)}});
       status.textContent = response.ok ? "Saved." : `${{response.status}} ${{await response.text()}}`;
     }}
-    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config/controllers", collectControllers()));
-    document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config/devices", collectDevices()));
+    document.getElementById("save-controllers").addEventListener("click", () => saveSection("controllers-status", "/api/config", collectConfig()));
+    document.getElementById("save-devices").addEventListener("click", () => saveSection("devices-status", "/api/config", collectConfig()));
     document.getElementById("save-cameras").addEventListener("click", () => saveSection("cameras-status", "/api/config/cameras", collectCameras()));
   </script>
 </body>
@@ -367,9 +386,52 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
 
 def render_settings_page(summary: dict[str, Any]) -> str:
     config = summary.get("config") if isinstance(summary.get("config"), dict) else {}
+    if isinstance(config.get("devices"), dict):
+        normalized_controllers: dict[str, dict[str, Any]] = {}
+        for controller_id, controller in (config.get("controllers") or {}).items():
+            if not isinstance(controller_id, str) or not isinstance(controller, dict):
+                continue
+            normalized_controllers[controller_id] = {
+                "type": str(controller.get("type") or "pico_scheduler"),
+                "config": {
+                    key: value
+                    for key, value in {
+                        "pico_serial": controller.get("pico_serial"),
+                        "label": controller.get("label"),
+                    }.items()
+                    if value not in {None, ""}
+                },
+                "settings": {"report_every": controller.get("report_every", 10)},
+                "devices": {},
+            }
+        for device_id, device in config["devices"].items():
+            if not isinstance(device_id, str) or not isinstance(device, dict):
+                continue
+            controller_id = device.get("controller")
+            if controller_id not in normalized_controllers:
+                continue
+            editor = str(device.get("editor") or "cycle")
+            normalized_controllers[controller_id]["devices"][device_id] = {
+                "type": "scheduled_output",
+                "config": {
+                    key: value
+                    for key, value in {
+                        "pin": device.get("pin"),
+                        "output_type": device.get("type", "gpio"),
+                        "label": device.get("label"),
+                        "visibility": "hidden" if editor == "hidden" else None,
+                    }.items()
+                    if value not in {None, ""}
+                },
+                "settings": (
+                    {"programming": "disabled", "schedule": {"kind": "cycle"}}
+                    if editor == "disabled"
+                    else {"schedule": {"kind": "daily_window" if editor == "clock_window" else "cycle"}}
+                ),
+            }
+        config = {"controllers": normalized_controllers, "cameras": config.get("cameras", {})}
     detected = summary.get("detected") if isinstance(summary.get("detected"), dict) else {}
     controllers = config.get("controllers") if isinstance(config.get("controllers"), dict) else {}
-    devices = config.get("devices") if isinstance(config.get("devices"), dict) else {}
     configured_cameras = config.get("cameras") if isinstance(config.get("cameras"), dict) else {}
     setup_picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     raw_detected_cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
@@ -395,7 +457,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     paths = summary.get("paths") if isinstance(summary.get("paths"), dict) else {}
     scheduler_controller_options = scheduler_controllers(controllers)
     peripheral_assignment_map = peripheral_assignments(scheduler_controller_options)
-    scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options, devices)
+    scheduler_groups = scheduler_devices_by_controller(scheduler_controller_options)
     hidden_controllers = hidden_scheduler_controllers(scheduler_controller_options, scheduler_groups)
 
     def render_scheduler_controller_row(controller_id: str, controller: dict[str, Any], *, new_row: bool = False) -> str:
@@ -409,9 +471,9 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '</tr>'.format(
                 new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
-                label=html.escape(str(controller.get("label") or ""), quote=True),
-                pico_options_html=pico_options(setup_picos, str(controller.get("pico_serial") or "")),
-                report_every=html.escape(str(controller.get("report_every") or 10), quote=True),
+                label=html.escape(str(controller.get("config", {}).get("label") or ""), quote=True),
+                pico_options_html=pico_options(setup_picos, str(controller.get("config", {}).get("pico_serial") or "")),
+                report_every=html.escape(str(controller.get("settings", {}).get("report_every") or 10), quote=True),
                 type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
             )
         )
@@ -427,11 +489,11 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             '</tr>'.format(
                 new_row_class=" new-row" if new_row else "",
                 device_id=html.escape(device_id, quote=True),
-                label=html.escape(str(device.get("label") or ""), quote=True),
+                label=html.escape(str(device.get("config", {}).get("label") or ""), quote=True),
                 controller_id=html.escape(controller_id, quote=True),
-                pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
-                type_options=pin_type_options(str(device.get("type") or "gpio")),
-                editor_options="".join(option_tag(value, value, str(device.get("editor") or "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
+                pin=html.escape(str(device.get("config", {}).get("pin") if device.get("config", {}).get("pin") is not None else ""), quote=True),
+                type_options=pin_type_options(str(device.get("config", {}).get("output_type") or "gpio")),
+                editor_options="".join(option_tag(value, value, "disabled" if device.get("settings", {}).get("programming") == "disabled" else ("clock_window" if device.get("settings", {}).get("schedule", {}).get("kind") == "daily_window" else "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
             )
         )
 
@@ -709,15 +771,17 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       const key = row.querySelector(".controller-id").value.trim();
       const hiddenController = hiddenControllers[key];
       if (!key || !hiddenController || row.dataset.controllerKey) return;
+      const hiddenConfig = hiddenController.config || {{}};
+      const hiddenSettings = hiddenController.settings || {{}};
       const labelInput = row.querySelector(".controller-label");
-      labelInput.value = hiddenController.label || "";
-      labelInput.defaultValue = hiddenController.label || "";
+      labelInput.value = hiddenConfig.label || "";
+      labelInput.defaultValue = hiddenConfig.label || "";
       const picoSerialSelect = row.querySelector(".controller-pico-serial");
-      picoSerialSelect.value = hiddenController.pico_serial || "";
-      picoSerialSelect.dataset.defaultValue = hiddenController.pico_serial || "";
+      picoSerialSelect.value = hiddenConfig.pico_serial || "";
+      picoSerialSelect.dataset.defaultValue = hiddenConfig.pico_serial || "";
       const reportEveryInput = row.querySelector(".controller-report-every");
-      reportEveryInput.value = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");
-      reportEveryInput.defaultValue = String((hiddenController.report_every ?? reportEveryInput.defaultValue) || "");
+      reportEveryInput.value = String((hiddenSettings.report_every ?? reportEveryInput.defaultValue) || "");
+      reportEveryInput.defaultValue = String((hiddenSettings.report_every ?? reportEveryInput.defaultValue) || "");
     }}
     const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
     const repoRootPath = {repo_root_path_json};
@@ -750,22 +814,27 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const reportEvery = reportEveryInput.value;
         const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {{}};
         const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
-        const payload = isHiddenReuse ? existingController : {{type}};
+        const payload = isHiddenReuse ? existingController : {{type, config: {{}}, settings: {{}}, devices: {{}}}};
         payload.type = type;
-        if (!isHiddenReuse || label !== labelInput.defaultValue) payload.label = label;
-        if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.pico_serial = picoSerial;
+        payload.config = payload.config || {{}};
+        payload.settings = payload.settings || {{}};
+        payload.devices = payload.devices || {{}};
+        if (!isHiddenReuse || label !== labelInput.defaultValue) payload.config.label = label;
+        if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.config.pico_serial = picoSerial;
         if (type === "pico_scheduler") {{
           if (reportEvery === "") {{
             if (!isHiddenReuse) throw new Error(`Report interval required for controller ${{key}}.`);
           }} else {{
-            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.report_every = Number(reportEvery);
+            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.settings.report_every = Number(reportEvery);
           }}
         }}
-        result[key] = cleanObject(payload);
+        payload.config = cleanObject(payload.config);
+        payload.settings = cleanObject(payload.settings);
+        result[key] = payload;
       }}
       return result;
     }}
-    function collectDevices() {{
+    function collectControllerDevices() {{
       const result = {{}};
         for (const row of document.querySelectorAll(".device-row")) {{
             const key = row.querySelector(".device-id").value.trim();
@@ -773,7 +842,20 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             const pinValue = row.querySelector(".device-pin").value;
             if (pinValue === "") throw new Error(`Pin required for device ${{key}}.`);
             const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
-            result[key] = cleanObject({{controller: blockController || row.dataset.deviceController || "", pin: Number(pinValue), type: row.querySelector(".device-type").value, editor: row.querySelector(".device-editor").value, label: row.querySelector(".device-label").value.trim()}});
+            const controller = blockController || row.dataset.deviceController || "";
+            if (!controller) throw new Error(`Controller required for device ${{key}}.`);
+            const editor = row.querySelector(".device-editor").value;
+            const settings = {{}};
+            if (editor === "disabled") settings.programming = "disabled";
+            else settings.schedule = {{kind: editor === "clock_window" ? "daily_window" : "cycle"}};
+            const config = cleanObject({{
+              pin: Number(pinValue),
+              output_type: row.querySelector(".device-type").value,
+              label: row.querySelector(".device-label").value.trim(),
+              visibility: editor === "hidden" ? "hidden" : "",
+            }});
+            result[controller] = result[controller] || {{}};
+            result[controller][key] = {{type: "scheduled_output", config, settings}};
         }}
         return result;
     }}
@@ -804,16 +886,21 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       }}
       return result;
     }}
-    function collectDevicesWithControllerRenames() {{
-      const devices = collectDevices();
-      const renames = controllerRenames();
-      for (const device of Object.values(devices)) {{
-        if (renames[device.controller]) device.controller = renames[device.controller];
-      }}
-      return devices;
-    }}
     function collectConfigWithControllerRenames() {{
-      return {{controllers: collectControllers(), devices: collectDevicesWithControllerRenames(), cameras: collectCameras()}};
+      const controllers = collectControllers();
+      const devicesByController = collectControllerDevices();
+      const renames = controllerRenames();
+      for (const [oldKey, newKey] of Object.entries(renames)) {{
+        if (devicesByController[oldKey]) {{
+          devicesByController[newKey] = devicesByController[oldKey];
+          delete devicesByController[oldKey];
+        }}
+      }}
+      for (const [controller, devices] of Object.entries(devicesByController)) {{
+        if (!controllers[controller]) throw new Error(`Unknown controller for devices: ${{controller}}.`);
+        controllers[controller].devices = devices;
+      }}
+      return {{controllers, cameras: collectCameras()}};
     }}
     async function saveSection(statusId, url, payload) {{
       const status = document.getElementById(statusId);
@@ -1682,8 +1769,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
   <fieldset>
     <legend>PUT /api/config</legend>
-    <p>Saves controllers, devices, and cameras together.</p>
-    <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"devices":{{}},"cameras":{{}}}}'</pre>
+    <p>Saves controllers and cameras together. Scheduler devices live inside each controller.</p>
+    <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"cameras":{{}}}}'</pre>
     <button class="copy-curl" type="button" data-copy-target="put-config-curl-command">Copy curl</button>
     <button id="put-config" type="button">Run request</button>
     <div><span id="put-config-status">Ready.</span></div>
@@ -1697,15 +1784,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <button id="put-config-controllers" type="button">Run request</button>
     <div><span id="put-config-controllers-status">Ready.</span></div>
     <pre id="put-config-controllers-result">PUT response will appear here.</pre>
-  </fieldset>
-  <fieldset>
-    <legend>PUT /api/config/devices</legend>
-    <p>Saves device mappings to controllers and pins.</p>
-    <pre id="put-config-devices-curl-command">curl -X PUT http://localhost:8000/api/config/devices -H 'content-type: application/json' --data '{{}}'</pre>
-    <button class="copy-curl" type="button" data-copy-target="put-config-devices-curl-command">Copy curl</button>
-    <button id="put-config-devices" type="button">Run request</button>
-    <div><span id="put-config-devices-status">Ready.</span></div>
-    <pre id="put-config-devices-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/cameras</legend>
@@ -1917,7 +1995,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         get: {{method: "GET", url: "/api/config", statusId: "get-config-status", resultId: "get-config-result"}},
         full: {{method: "PUT", url: "/api/config", statusId: "put-config-status", resultId: "put-config-result", section: null}},
         controllers: {{method: "PUT", url: "/api/config/controllers", statusId: "put-config-controllers-status", resultId: "put-config-controllers-result", section: "controllers"}},
-        devices: {{method: "PUT", url: "/api/config/devices", statusId: "put-config-devices-status", resultId: "put-config-devices-result", section: "devices"}},
         cameras: {{method: "PUT", url: "/api/config/cameras", statusId: "put-config-cameras-status", resultId: "put-config-cameras-result", section: "cameras"}},
       }};
       const spec = specs[kind];
@@ -2261,7 +2338,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
     document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
     document.getElementById("put-config-controllers").addEventListener("click", () => runConfigRequest("controllers"));
-    document.getElementById("put-config-devices").addEventListener("click", () => runConfigRequest("devices"));
     document.getElementById("put-config-cameras").addEventListener("click", () => runConfigRequest("cameras"));
     document.getElementById("get-state").addEventListener("click", getState);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
