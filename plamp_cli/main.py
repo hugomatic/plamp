@@ -17,7 +17,7 @@ if __package__ in {None, ""}:
 from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
 from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
-_CONFIG_SECTIONS = ("controllers", "devices", "cameras")
+_CONFIG_SECTIONS = ("controllers", "cameras")
 _AREAS = ("config", "controllers", "pico-scheduler", "pics", "firmware")
 
 
@@ -36,7 +36,7 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
     if args == ["config"]:
         return (
             "Command error: missing config action.\n"
-            "Choices: get, set, controllers, devices, cameras\n"
+            "Choices: get, set, controllers, cameras\n"
             "Example: plamp config get\n"
         )
 

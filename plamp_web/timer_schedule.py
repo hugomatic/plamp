@@ -4,6 +4,8 @@ import re
 from datetime import datetime, time
 from typing import Any
 
+from plamp_web.hardware_config import scheduler_devices_for_controller
+
 CLOCK_DAY_SECONDS = 24 * 60 * 60
 CLOCK_TIME_RE = re.compile(r"^(\d{2}):(\d{2})(?::(\d{2}))?$")
 
@@ -30,9 +32,7 @@ def _devices_by_pin(devices: list[dict[str, Any]] | None) -> dict[int, dict[str,
 
 
 def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str, Any] | None) -> list[dict[str, Any]]:
-    devices = config.get("devices", {})
-    if not isinstance(devices, dict):
-        raise ValueError("devices must be an object")
+    devices = scheduler_devices_for_controller(config, role)
 
     devices_state = state.get("devices", []) if isinstance(state, dict) else []
     if not isinstance(devices_state, list):
@@ -44,18 +44,22 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
         device = devices[device_id]
         if not isinstance(device, dict):
             raise ValueError(f"device {device_id} must be an object")
-        if device.get("controller") != role:
-            continue
-        pin = _as_int(device.get("pin"), f"device {device_id} pin")
+        device_config = device.get("config", {})
+        device_settings = device.get("settings", {})
+        pin = _as_int(device_config.get("pin"), f"device {device_id} pin")
         if pin < 0 or pin > 29:
             raise ValueError(f"device {device_id} pin must be in range 0..29")
-        default_editor = device.get("editor", "cycle")
-        if default_editor == "hidden":
+        visibility = device_config.get("visibility", "visible")
+        programming = device_settings.get("programming", "enabled")
+        if visibility == "hidden":
             continue
-        if default_editor not in {"cycle", "clock_window", "disabled"}:
-            default_editor = "cycle"
+        schedule = device_settings.get("schedule", {})
+        kind = schedule.get("kind", "cycle") if isinstance(schedule, dict) else "cycle"
+        default_editor = "clock_window" if kind == "daily_window" else "cycle"
+        if programming == "disabled":
+            default_editor = "disabled"
         live_device = live_by_pin.get(pin)
-        configured_type = device.get("type")
+        configured_type = device_config.get("output_type")
         if configured_type in {"gpio", "pwm"}:
             event_type = configured_type
         elif isinstance(live_device, dict):

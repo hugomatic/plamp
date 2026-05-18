@@ -82,8 +82,14 @@ Expected shape:
 ```json
 {
   "config": {
-    "controllers": { "...": {} },
-    "devices": { "...": {} },
+    "controllers": {
+      "pump_lights": {
+        "type": "pico_scheduler",
+        "config": { "pico_serial": "..." },
+        "settings": { "report_every": 10 },
+        "devices": { "...": {} }
+      }
+    },
     "cameras": { "...": {} }
   },
   "detected": {
@@ -209,8 +215,6 @@ uv run python -m plamp_cli config get
 uv run python -m plamp_cli config set @config.json
 uv run python -m plamp_cli config controllers get
 uv run python -m plamp_cli config controllers set @controllers.json
-uv run python -m plamp_cli config devices get
-uv run python -m plamp_cli config devices set @devices.json
 uv run python -m plamp_cli config cameras get
 uv run python -m plamp_cli config cameras set @cameras.json
 ```
@@ -220,8 +224,7 @@ Examples:
 ```bash
 uv run python -m plamp_cli config get
 uv run python -m plamp_cli config controllers get
-uv run python -m plamp_cli --pretty config devices get
-uv run python -m plamp_cli --table config devices get
+uv run python -m plamp_cli --pretty config controllers get
 uv run python -m plamp_cli config set @config.json
 ```
 

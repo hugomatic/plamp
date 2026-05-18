@@ -28,6 +28,29 @@ class DummyMonitor:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def scheduler_controller(self, *, serial: str | None = None, report_every: int = 10, devices: dict | None = None):
+        config = {}
+        if serial:
+            config["pico_serial"] = serial
+        return {
+            "type": "pico_scheduler",
+            "config": config,
+            "settings": {"report_every": report_every},
+            "devices": devices or {},
+        }
+
+    def scheduled_output(self, pin: int, *, output_type: str = "gpio", kind: str = "cycle", programming: str | None = None, visibility: str | None = None):
+        config = {"pin": pin, "output_type": output_type}
+        if visibility:
+            config["visibility"] = visibility
+        schedule = {"kind": kind}
+        if kind == "daily_window":
+            schedule.update({"on_time": "06:00", "off_time": "18:00"})
+        settings = {"schedule": schedule}
+        if programming:
+            settings["programming"] = programming
+        return {"type": "scheduled_output", "config": config, "settings": settings}
+
     def make_config(self, root: Path, data: dict) -> Path:
         path = root / "data" / "config.json"
         path.parent.mkdir(parents=True)
@@ -40,8 +63,20 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "abc"},
+                            "settings": {"report_every": 10},
+                            "devices": {
+                                "pump": {
+                                    "type": "scheduled_output",
+                                    "config": {"pin": 3, "output_type": "gpio"},
+                                    "settings": {"schedule": {"kind": "cycle"}},
+                                }
+                            },
+                        }
+                    },
                     "cameras": {"rpicam_cam0": {}},
                 },
             )
@@ -54,8 +89,11 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIn("config", data)
         self.assertIn("detected", data)
-        self.assertEqual(data["config"]["controllers"]["pump_lights"]["pico_serial"], "abc")
-        self.assertEqual(data["config"]["devices"]["pump"]["editor"], "cycle")
+        self.assertEqual(data["config"]["controllers"]["pump_lights"]["config"]["pico_serial"], "abc")
+        self.assertEqual(
+            data["config"]["controllers"]["pump_lights"]["devices"]["pump"]["settings"]["schedule"]["kind"],
+            "cycle",
+        )
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
 
@@ -66,10 +104,14 @@ class ConfigApiTests(unittest.TestCase):
                 root,
                 {
                     "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc"},
-                        "hello_doser": {"type": "pico_doser"},
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "abc"},
+                            "settings": {"report_every": 10},
+                            "devices": {},
+                        },
+                        "hello_doser": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}},
                     },
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
                     "cameras": {},
                 },
             )
@@ -92,8 +134,14 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "abc"},
+                            "settings": {"report_every": 10},
+                            "devices": {},
+                        }
+                    },
                     "cameras": {},
                 },
             )
@@ -125,8 +173,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"hello_doser": {"type": "pico_doser"}},
-                    "devices": {},
+                    "controllers": {"hello_doser": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}}},
                     "cameras": {},
                 },
             )
@@ -152,8 +199,14 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc", "label": "Pump lights"}},
-                    "devices": {},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "abc", "label": "Pump lights"},
+                            "settings": {"report_every": 10},
+                            "devices": {},
+                        }
+                    },
                     "cameras": {},
                 },
             )
@@ -166,14 +219,14 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIn("config", summary)
         self.assertIn("detected", summary)
-        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["label"], "Pump lights")
+        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["config"]["label"], "Pump lights")
 
     def test_get_settings_page_uses_combined_settings_payload(self):
         with patch.object(
             server,
             "settings_summary",
             return_value={
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "config": {"controllers": {}, "cameras": {}},
                 "detected": {"picos": [], "cameras": []},
                 "host": {"hostname": "plamp", "network": []},
                 "picos": [],
@@ -311,21 +364,45 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(cm.exception.status_code, 504)
         self.assertIn("224.0.0.251", cm.exception.detail)
 
-    def test_put_config_updates_controller_rename_and_dependent_devices_atomically(self):
+    def test_put_config_updates_controller_rename_and_nested_devices_atomically(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"lights": {"controller": "pump_lights", "pin": 3, "editor": "clock_window"}},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "abc"},
+                            "settings": {"report_every": 10},
+                            "devices": {
+                                "lights": {
+                                    "type": "scheduled_output",
+                                    "config": {"pin": 3, "output_type": "gpio"},
+                                    "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
+                                }
+                            },
+                        }
+                    },
                     "cameras": {},
                     "time_format": "24h",
                 },
             )
             payload = {
-                "controllers": {"grow_box": {"pico_serial": "abc"}},
-                "devices": {"lights": {"controller": "grow_box", "pin": 3, "editor": "clock_window"}},
+                "controllers": {
+                    "grow_box": {
+                        "type": "pico_scheduler",
+                        "config": {"pico_serial": "abc"},
+                        "settings": {"report_every": 10},
+                        "devices": {
+                            "lights": {
+                                "type": "scheduled_output",
+                                "config": {"pin": 3, "output_type": "gpio"},
+                                "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
+                            }
+                        },
+                    }
+                },
                 "cameras": {},
             }
             with patch.object(server, "CONFIG_FILE", config_file):
@@ -333,52 +410,30 @@ class ConfigApiTests(unittest.TestCase):
 
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
-        self.assertEqual(data["config"]["devices"]["lights"]["controller"], "grow_box")
-        self.assertEqual(saved["controllers"], {"grow_box": {"type": "pico_scheduler", "report_every": 10, "pico_serial": "abc"}})
-        self.assertEqual(saved["devices"]["lights"]["controller"], "grow_box")
+        self.assertIn("lights", data["config"]["controllers"]["grow_box"]["devices"])
+        self.assertIn("lights", saved["controllers"]["grow_box"]["devices"])
         self.assertEqual(saved["time_format"], "24h")
 
-    def test_put_config_devices_updates_top_level_devices(self):
+    def test_put_config_devices_endpoint_is_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "e66038b71387a039"}},
-                    "devices": {},
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "config": {"pico_serial": "e66038b71387a039"},
+                            "settings": {"report_every": 10},
+                            "devices": {},
+                        }
+                    },
                     "cameras": {},
                 },
             )
-            with patch.object(server, "CONFIG_FILE", config_file):
-                data = server.put_config_devices({"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}})
+            routes = {route.path for route in server.app.routes}
 
-            saved = json.loads(config_file.read_text(encoding="utf-8"))
-
-        self.assertEqual(data["config"]["devices"]["pump"]["pin"], 3)
-        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"})
-
-    def test_put_config_devices_preserves_unrelated_top_level_keys(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(
-                root,
-                {
-                    "controllers": {"pump_lights": {"pico_serial": "e66038b71387a039"}},
-                    "devices": {},
-                    "cameras": {"rpicam_cam0": {}},
-                    "time_format": "12h",
-                    "camera": {"ir_filter": "auto"},
-                },
-            )
-            with patch.object(server, "CONFIG_FILE", config_file):
-                server.put_config_devices({"pump": {"controller": "pump_lights", "pin": 3, "editor": "cycle"}})
-
-            saved = json.loads(config_file.read_text(encoding="utf-8"))
-
-        self.assertEqual(saved["time_format"], "12h")
-        self.assertEqual(saved["camera"], {"ir_filter": "auto"})
-        self.assertEqual(saved["cameras"], {"rpicam_cam0": {}})
-        self.assertEqual(saved["devices"]["pump"], {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"})
+        self.assertNotIn("/api/config/devices", routes)
 
     def test_reduce_report_normalizes_old_pin_key(self):
         old_pin_key = "c" + "h"
@@ -501,7 +556,7 @@ class ConfigApiTests(unittest.TestCase):
             ],
         }
 
-        with patch.object(server, "timer_role", return_value={"report_every": 7}):
+        with patch.object(server, "timer_role", return_value={"settings": {"report_every": 7}}):
             timer_state = server.timer_state_for_pico("timer", state)
 
         self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
@@ -572,8 +627,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )
@@ -635,8 +689,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"sprouter": {"pico_serial": "abc"}},
-                    "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
+                    "controllers": {"sprouter": self.scheduler_controller(serial="abc", devices={"lamp": self.scheduled_output(2, kind="daily_window")})},
                     "cameras": {},
                 },
             )
@@ -645,7 +698,17 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "state_for_role", return_value=state),
             ):
                 initial = server.get_timer_config()
-                server.put_config_devices({"fan": {"controller": "sprouter", "pin": 3, "type": "pwm", "editor": "cycle"}})
+                server.put_config(
+                    {
+                        "controllers": {
+                            "sprouter": self.scheduler_controller(
+                                serial="abc",
+                                devices={"fan": self.scheduled_output(3, output_type="pwm")},
+                            )
+                        },
+                        "cameras": {},
+                    }
+                )
                 updated = server.get_timer_config()
 
         self.assertEqual(
@@ -683,11 +746,14 @@ class ConfigApiTests(unittest.TestCase):
             ],
         }
         config = {
-            "controllers": {"sprouter": {"type": "pico_scheduler", "report_every": 10}},
-            "devices": {
-                "pump": {"controller": "sprouter", "pin": 2, "type": "gpio", "editor": "disabled"},
-                "lights": {"controller": "sprouter", "pin": 3, "type": "gpio", "editor": "hidden"},
-                "fan": {"controller": "sprouter", "pin": 4, "type": "gpio", "editor": "cycle"},
+            "controllers": {
+                "sprouter": self.scheduler_controller(
+                    devices={
+                        "pump": self.scheduled_output(2, programming="disabled"),
+                        "lights": self.scheduled_output(3, visibility="hidden"),
+                        "fan": self.scheduled_output(4),
+                    }
+                )
             },
             "cameras": {},
         }
@@ -700,10 +766,9 @@ class ConfigApiTests(unittest.TestCase):
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
         config = {
             "controllers": {
-                "timer": {"type": "pico_scheduler", "pico_serial": "TIMER", "report_every": 10},
-                "future": {"type": "future_controller", "pico_serial": "FUTURE"},
+                "timer": self.scheduler_controller(serial="TIMER"),
+                "future": {"type": "future_controller", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
             },
-            "devices": {},
             "cameras": {},
         }
         with patch.object(server, "load_config", return_value=config):
@@ -723,7 +788,6 @@ class ConfigApiTests(unittest.TestCase):
                 root,
                 {
                     "controllers": {},
-                    "devices": {},
                     "cameras": {},
                     "time_format": "24h",
                 },
@@ -734,7 +798,7 @@ class ConfigApiTests(unittest.TestCase):
     def test_api_test_page_uses_empty_payload_when_default_timer_state_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            config_file = self.make_config(root, {"controllers": {}, "devices": {}, "cameras": {}})
+            config_file = self.make_config(root, {"controllers": {}, "cameras": {}})
             timers_dir = root / "data" / "timers"
             timers_dir.mkdir(parents=True)
             with (
@@ -748,17 +812,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertIn(b"pump_n_lights", response.body)
         self.assertIn(b"{}", response.body)
 
-    def test_put_config_devices_rejects_unknown_controller(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(root, {"controllers": {}, "devices": {}, "cameras": {}})
-            with patch.object(server, "CONFIG_FILE", config_file):
-                with self.assertRaises(HTTPException) as cm:
-                    server.put_config_devices({"pump": {"controller": "missing", "pin": 3, "editor": "cycle"}})
-
-        self.assertEqual(cm.exception.status_code, 422)
-        self.assertIn("unknown controller", cm.exception.detail)
-
     def test_put_config_controllers_reconciles_running_monitors(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -766,10 +819,9 @@ class ConfigApiTests(unittest.TestCase):
                 root,
                 {
                     "controllers": {
-                        "keep": {"pico_serial": "KEEP_NEW"},
-                        "drop": {"pico_serial": "DROP_OLD"},
+                        "keep": self.scheduler_controller(serial="KEEP_NEW"),
+                        "drop": self.scheduler_controller(serial="DROP_OLD"),
                     },
-                    "devices": {},
                     "cameras": {},
                 },
             )
@@ -782,7 +834,7 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "monitors", monitor_map),
                 patch.object(server, "PicoMonitor", side_effect=[new_keep]),
             ):
-                server.put_config_controllers({"keep": {"pico_serial": "KEEP_NEW"}})
+                server.put_config_controllers({"keep": self.scheduler_controller(serial="KEEP_NEW")})
 
         self.assertTrue(old_keep.stopped)
         self.assertFalse(old_keep.started)
@@ -799,10 +851,14 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"},
-                        "lights": {"controller": "pump_lights", "pin": 3, "editor": "clock_window"},
+                    "controllers": {
+                        "pump_lights": self.scheduler_controller(
+                            serial="abc",
+                            devices={
+                                "pump": self.scheduled_output(2),
+                                "lights": self.scheduled_output(3, kind="daily_window"),
+                            },
+                        )
                     },
                     "cameras": {},
                 },
@@ -846,8 +902,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )
@@ -875,8 +930,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )
@@ -902,8 +956,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"pico_serial": "abc"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )
@@ -954,8 +1007,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 42}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", report_every=42, devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )
@@ -995,8 +1047,7 @@ class ConfigApiTests(unittest.TestCase):
             config_file = self.make_config(
                 root,
                 {
-                    "controllers": {"pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 42}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle"}},
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", report_every=42, devices={"pump": self.scheduled_output(2)})},
                     "cameras": {},
                 },
             )

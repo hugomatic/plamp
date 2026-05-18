@@ -13,11 +13,14 @@ from plamp_web.timer_schedule import (
 class TimerScheduleTests(unittest.TestCase):
     def test_channel_metadata_uses_configured_devices_for_role(self):
         config = {
-            "controllers": {"sprouter": {"pico_serial": "abc123"}, "other": {"pico_serial": "def456"}},
-            "devices": {
-                "lamp": {"controller": "sprouter", "pin": 2, "type": "pwm", "editor": "clock_window"},
-                "fan": {"controller": "sprouter", "pin": 3, "editor": "cycle"},
-                "pump": {"controller": "other", "pin": 4, "editor": "cycle"},
+            "controllers": {
+                "sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
+                    "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "pwm"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
+                    "fan": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "cycle"}}},
+                }},
+                "other": {"config": {"pico_serial": "def456"}, "devices": {
+                    "pump": {"type": "scheduled_output", "config": {"pin": 4}, "settings": {"schedule": {"kind": "cycle"}}},
+                }},
             },
         }
         state = {
@@ -38,8 +41,9 @@ class TimerScheduleTests(unittest.TestCase):
 
     def test_channel_metadata_uses_configured_type_when_no_live_event_exists(self):
         config = {
-            "controllers": {"sprouter": {"pico_serial": "abc123"}},
-            "devices": {"lamp": {"controller": "sprouter", "pin": 2, "type": "pwm", "editor": "clock_window"}},
+            "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
+                "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "pwm"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
+            }}},
         }
 
         self.assertEqual(
@@ -51,8 +55,9 @@ class TimerScheduleTests(unittest.TestCase):
 
     def test_channel_metadata_ignores_unconfigured_runtime_events(self):
         config = {
-            "controllers": {"sprouter": {"pico_serial": "abc123"}},
-            "devices": {"lamp": {"controller": "sprouter", "pin": 2, "editor": "clock_window"}},
+            "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
+                "lamp": {"type": "scheduled_output", "config": {"pin": 2}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
+            }}},
         }
         state = {"devices": [{"id": "lamp-live", "type": "gpio", "pin": 2}, {"type": "gpio", "pin": 3}]}
 
@@ -65,11 +70,10 @@ class TimerScheduleTests(unittest.TestCase):
 
     def test_channel_metadata_shows_disabled_and_hides_hidden_devices(self):
         config = {
-            "controllers": {"sprouter": {"pico_serial": "abc123"}},
-            "devices": {
-                "pump": {"controller": "sprouter", "pin": 2, "editor": "disabled"},
-                "lights": {"controller": "sprouter", "pin": 3, "editor": "hidden"},
-            },
+            "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
+                "pump": {"type": "scheduled_output", "config": {"pin": 2}, "settings": {"programming": "disabled"}},
+                "lights": {"type": "scheduled_output", "config": {"pin": 3, "visibility": "hidden"}, "settings": {"programming": "disabled"}},
+            }}},
         }
 
         self.assertEqual(

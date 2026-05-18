@@ -93,8 +93,26 @@ Controller config includes the scheduler firmware type and reporting interval:
   "controllers": {
     "pump_lights": {
       "type": "pico_scheduler",
-      "pico_serial": "e66038b71387a039",
-      "report_every": 10
+      "config": {
+        "pico_serial": "e66038b71387a039"
+      },
+      "settings": {
+        "report_every": 10
+      },
+      "devices": {
+        "pump": {
+          "type": "scheduled_output",
+          "config": {
+            "pin": 15,
+            "output_type": "gpio"
+          },
+          "settings": {
+            "schedule": {
+              "kind": "cycle"
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -129,7 +147,8 @@ Pico scheduler devices use `pin`:
 }
 ```
 
-`report_every` is configured on the controller in `data/config.json`. Pico
+`report_every` is configured at `controllers.<id>.settings.report_every` in
+`data/config.json`. Pico
 scheduler state files keep device state; any older `report_every` value in
 `data/timers/<controller>.json` is legacy and is not the source of truth for
 Pico scheduler reporting cadence.

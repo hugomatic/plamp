@@ -132,41 +132,16 @@ class PlampCliConfigTests(unittest.TestCase):
         )
         self.assertEqual(stderr.getvalue(), "")
 
-    @patch("plamp_cli.main.request_json")
-    @patch("plamp_cli.main.load_json_input")
-    def test_config_devices_set_calls_section_endpoint(self, load_json_input, request_json):
-        load_json_input.return_value = {"pump": {"controller": "timer", "pin": 3, "editor": "cycle"}}
-        request_json.return_value = {"config": {"devices": {}}, "detected": {"picos": [], "cameras": []}}
-
-        code = main(["config", "devices", "set", "@devices.json"], stdout=StringIO(), stderr=StringIO())
-
-        self.assertEqual(code, 0)
-        request_json.assert_called_once_with(
-            "PUT",
-            "http://127.0.0.1:8000",
-            "/api/config/devices",
-            {"pump": {"controller": "timer", "pin": 3, "editor": "cycle"}},
-        )
-
-    @patch("plamp_cli.main.request_json")
-    def test_config_devices_get_returns_section_payload(self, request_json):
-        request_json.return_value = {
-            "config": {
-                "controllers": {"main": {}},
-                "devices": {"pump": {"controller": "timer"}},
-                "cameras": {},
-            },
-            "detected": {"picos": [], "cameras": []},
-        }
+    def test_config_devices_subcommand_is_removed(self):
         stdout = StringIO()
         stderr = StringIO()
 
-        code = main(["config", "devices", "get"], stdout=stdout, stderr=stderr)
+        with redirect_stderr(stderr):
+            code = main(["config", "devices", "get"], stdout=stdout, stderr=stderr)
 
-        self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"pump": {"controller": "timer"}}\n')
-        self.assertEqual(stderr.getvalue(), "")
-        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+        self.assertNotEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid choice", stderr.getvalue())
 
     @patch("plamp_cli.main.request_json")
     @patch("plamp_cli.main.load_json_input", side_effect=InputError("invalid JSON input: Expecting value"))
@@ -204,40 +179,23 @@ class PlampCliConfigTests(unittest.TestCase):
         self.assertIn("connection refused", stderr.getvalue())
 
     @patch("plamp_cli.main.request_json")
-    def test_config_devices_get_renders_table_output(self, request_json):
-        request_json.return_value = {
-            "config": {
-                "controllers": {},
-                "devices": {
-                    "pump": {"controller": "timer", "pin": 3},
-                    "fan": {"controller": "timer", "pin": 4},
-                },
-                "cameras": {},
-            },
-            "detected": {"picos": [], "cameras": []},
-        }
-        stdout = StringIO()
-        stderr = StringIO()
-
-        code = main(["--table", "config", "devices", "get"], stdout=stdout, stderr=stderr)
-
-        self.assertEqual(code, 0)
-        self.assertEqual(stderr.getvalue(), "")
-        self.assertEqual(
-            stdout.getvalue(),
-            "id   | controller | pin\n"
-            "----+----------+---\n"
-            "pump | timer      | 3  \n"
-            "fan  | timer      | 4  \n",
-        )
-        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
-
-    @patch("plamp_cli.main.request_json")
     def test_config_get_table_falls_back_to_json_for_root_envelope(self, request_json):
         request_json.return_value = {
             "config": {
-                "controllers": {"main": {"type": "pico_scheduler"}},
-                "devices": {"pump": {"controller": "main", "pin": 3}},
+                "controllers": {
+                    "main": {
+                        "type": "pico_scheduler",
+                        "config": {},
+                        "settings": {"report_every": 10},
+                        "devices": {
+                            "pump": {
+                                "type": "scheduled_output",
+                                "config": {"pin": 3, "output_type": "gpio"},
+                                "settings": {"schedule": {"kind": "cycle"}},
+                            }
+                        },
+                    }
+                },
                 "cameras": {},
             },
             "detected": {"picos": [{"serial": "ABC"}], "cameras": []},
@@ -251,7 +209,7 @@ class PlampCliConfigTests(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
         self.assertEqual(
             stdout.getvalue(),
-            '{"config": {"cameras": {}, "controllers": {"main": {"type": "pico_scheduler"}}, "devices": {"pump": {"controller": "main", "pin": 3}}}, "detected": {"cameras": [], "picos": [{"serial": "ABC"}]}}\n',
+            '{"config": {"cameras": {}, "controllers": {"main": {"config": {}, "devices": {"pump": {"config": {"output_type": "gpio", "pin": 3}, "settings": {"schedule": {"kind": "cycle"}}, "type": "scheduled_output"}}, "settings": {"report_every": 10}, "type": "pico_scheduler"}}}, "detected": {"cameras": [], "picos": [{"serial": "ABC"}]}}\n',
         )
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
 
