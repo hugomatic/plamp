@@ -188,7 +188,19 @@ class HardwareConfigTests(unittest.TestCase):
                 "ctrl_a": {
                     "type": "pico_scheduler",
                     "payload": {"pico_serial": "PICO123", "report_every": 10, "devices": []},
-                    "settings": {"devices": {}},
+                    "settings": {"label": "Pump lights", "devices": {}},
+                }
+            },
+        )
+
+    def test_validate_controllers_allows_optional_settings_label(self):
+        self.assertEqual(
+            validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"label": "Pump lights"}}}),
+            {
+                "ctrl_a": {
+                    "type": "pico_scheduler",
+                    "payload": {"report_every": 10, "devices": []},
+                    "settings": {"label": "Pump lights", "devices": {}},
                 }
             },
         )
@@ -283,6 +295,8 @@ class HardwareConfigTests(unittest.TestCase):
     def test_validate_rejects_non_string_label(self):
         with self.assertRaisesRegex(ValueError, "label"):
             validate_controllers({"ctrl_a": {"config": {"label": 123}}})
+        with self.assertRaisesRegex(ValueError, "label"):
+            validate_controllers({"ctrl_a": {"settings": {"label": 123}}})
 
     def test_apply_config_section_rejects_devices_section(self):
         with self.assertRaisesRegex(ValueError, "unknown section"):

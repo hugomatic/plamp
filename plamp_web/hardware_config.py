@@ -108,13 +108,14 @@ def validate_controllers(value):
         extra_config = set(config) - {"pico_serial", "label"}
         if extra_config:
             raise ValueError(f"controller {controller_id} config has unknown keys: {sorted(extra_config)!r}")
-        extra_settings = set(settings) - {"report_every", "devices"}
+        extra_settings = set(settings) - {"report_every", "devices", "label"}
         if extra_settings:
             raise ValueError(f"controller {controller_id} settings has unknown keys: {sorted(extra_settings)!r}")
         pico_serial = payload.get("pico_serial", config.get("pico_serial"))
         if pico_serial is not None and (not isinstance(pico_serial, str) or not pico_serial):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
-        _optional_label(config, f"controller {controller_id}")
+        legacy_label = _optional_label(config, f"controller {controller_id}")
+        settings_label = _optional_label(settings, f"controller {controller_id}")
         if controller_type == "pico_scheduler":
             if "devices" in settings:
                 semantic_devices = _validate_semantic_devices(settings["devices"], controller_id)
@@ -137,12 +138,17 @@ def validate_controllers(value):
                 },
                 "settings": {"devices": semantic_devices},
             }
+            label = settings_label or legacy_label
+            if label:
+                controller["settings"]["label"] = label
             if pico_serial is not None:
                 controller["payload"]["pico_serial"] = pico_serial
         else:
             controller = {"type": controller_type, "config": {}, "settings": {}, "devices": {}}
             if payload:
                 raise ValueError(f"controller {controller_id} payload is only valid for pico_scheduler")
+            if settings_label:
+                raise ValueError(f"controller {controller_id} settings label is only valid for pico_scheduler")
             if "devices" in settings:
                 raise ValueError(f"controller {controller_id} settings devices are only valid for pico_scheduler")
             if controller_value.get("devices", {}):
@@ -153,9 +159,8 @@ def validate_controllers(value):
                 )
             if pico_serial is not None:
                 controller["config"]["pico_serial"] = pico_serial
-            label = _optional_label(config, f"controller {controller_id}")
-            if label:
-                controller["config"]["label"] = label
+            if legacy_label:
+                controller["config"]["label"] = legacy_label
         if controller_type != "pico_scheduler" and "report_every" in settings:
             raise ValueError(f"controller {controller_id} report_every is only valid for pico_scheduler")
         controllers[controller_id] = controller
@@ -233,10 +238,24 @@ def _scheduler_payload_devices(
     if value is not None:
         if not isinstance(value, list):
             raise ValueError(f"controller {controller_id} payload devices must be a list")
-        return [_validate_payload_device(device, controller_id) for device in value]
+        devices = [_validate_payload_device(device, controller_id) for device in value]
+        _validate_payload_pins_match_settings(devices, semantic_devices, controller_id)
+        return devices
     if legacy_devices is not None:
         return [_compile_legacy_payload_device(device) for device in legacy_devices.values()]
     return [_compile_payload_device(device) for device in semantic_devices.values()]
+
+
+def _validate_payload_pins_match_settings(payload_devices: list[dict], semantic_devices: Mapping, controller_id: str) -> None:
+    payload_pins = []
+    for device in payload_devices:
+        pin = device["pin"]
+        if pin in payload_pins:
+            raise ValueError(f"controller {controller_id} has duplicate payload pin {pin}")
+        payload_pins.append(pin)
+    semantic_pins = {device["pin"] for device in semantic_devices.values()}
+    if set(payload_pins) != semantic_pins:
+        raise ValueError(f"controller {controller_id} payload devices pins must match settings devices pins")
 
 
 def _validate_payload_device(value: object, controller_id: str) -> dict:

@@ -112,6 +112,7 @@ class ConfigApiTests(unittest.TestCase):
                 ],
             },
             "settings": {
+                "label": "Pump lights",
                 "devices": {
                     "pump": {
                         "pin": 3,
@@ -141,7 +142,7 @@ class ConfigApiTests(unittest.TestCase):
                 "controllers": {
                     "pump_lights": {
                         "type": "pico_scheduler",
-                        "config": {"pico_serial": "abc"},
+                        "config": {"pico_serial": "abc", "label": "Pump lights"},
                         "settings": {"report_every": 10},
                         "devices": {
                             "pump": {
@@ -184,6 +185,7 @@ class ConfigApiTests(unittest.TestCase):
                     ],
                 },
                 "settings": {
+                    "label": "Pump lights",
                     "devices": {
                         "pump": {
                             "pin": 3,
@@ -203,6 +205,80 @@ class ConfigApiTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_scheduler_controller_rejects_missing_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "payload devices pins"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {"report_every": 10, "devices": []},
+                            "settings": {
+                                "devices": {
+                                    "pump": {
+                                        "pin": 3,
+                                        "display_order": 0,
+                                        "visibility": "visible",
+                                        "programming": "enabled",
+                                        "editor": {"kind": "cycle"},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
+
+    def test_scheduler_controller_rejects_extra_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "payload devices pins"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {
+                                "report_every": 10,
+                                "devices": [{"pin": 3, "type": "gpio", "pattern": []}],
+                            },
+                            "settings": {"devices": {}},
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
+
+    def test_scheduler_controller_rejects_duplicate_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "duplicate payload pin"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {
+                                "report_every": 10,
+                                "devices": [
+                                    {"pin": 3, "type": "gpio", "pattern": []},
+                                    {"pin": 3, "type": "gpio", "pattern": []},
+                                ],
+                            },
+                            "settings": {
+                                "devices": {
+                                    "pump": {
+                                        "pin": 3,
+                                        "display_order": 0,
+                                        "visibility": "visible",
+                                        "programming": "enabled",
+                                        "editor": {"kind": "cycle"},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
 
     def test_get_controllers_returns_flat_discovery_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
