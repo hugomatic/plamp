@@ -25,7 +25,7 @@ This replaces the earlier assumption that Pico scheduler devices should be first
 - No parsed per-device telemetry tree in this slice.
 - No generic child-instance model for firmware-owned scheduler outputs.
 - No partial controller updates or separate firmware commands for settings versus config.
-- No compatibility promise for the current `/runtime` endpoint name.
+- No compatibility support for the current `/runtime` endpoint name.
 - No attempt to redesign the Pico scheduler protocol beyond aligning the persisted model with the protocol that already exists.
 
 ## API Boundaries
@@ -43,7 +43,7 @@ Rules:
 - `/api/config` must not include `detected`.
 - The current `detected` payload moves under `/api/system`.
 - `/api/status` replaces the user-facing role currently served by `/runtime`.
-- A short compatibility alias for `/runtime` is acceptable during implementation if it helps avoid breakage, but docs and UI should move to `/api/status`.
+- `/runtime` is removed rather than retained as an alias.
 
 ## Controller Shape
 
@@ -216,7 +216,6 @@ Required coverage:
 
 ## Follow-Up Questions Explicitly Deferred
 
-- Whether `/runtime` remains as a temporary alias and for how long.
 - Whether non-scheduler firmware families also use `payload/settings/telemetry`.
 - Whether controller telemetry should eventually persist to disk separately from live memory.
 - Whether future independently addressable devices should become real child instances again for other firmware types.
