@@ -89,9 +89,9 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIn("config", data)
         self.assertIn("detected", data)
-        self.assertEqual(data["config"]["controllers"]["pump_lights"]["config"]["pico_serial"], "abc")
+        self.assertEqual(data["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
         self.assertEqual(
-            data["config"]["controllers"]["pump_lights"]["devices"]["pump"]["settings"]["schedule"]["kind"],
+            data["config"]["controllers"]["pump_lights"]["settings"]["devices"]["pump"]["editor"]["kind"],
             "cycle",
         )
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
@@ -326,7 +326,8 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIn("config", summary)
         self.assertIn("detected", summary)
-        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["config"]["label"], "Pump lights")
+        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
+        self.assertNotIn("config", summary["config"]["controllers"]["pump_lights"])
 
     def test_get_settings_page_uses_combined_settings_payload(self):
         with patch.object(
@@ -517,8 +518,8 @@ class ConfigApiTests(unittest.TestCase):
 
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
-        self.assertIn("lights", data["config"]["controllers"]["grow_box"]["devices"])
-        self.assertIn("lights", saved["controllers"]["grow_box"]["devices"])
+        self.assertIn("lights", data["config"]["controllers"]["grow_box"]["settings"]["devices"])
+        self.assertIn("lights", saved["controllers"]["grow_box"]["settings"]["devices"])
         self.assertEqual(saved["time_format"], "24h")
 
     def test_put_config_devices_endpoint_is_removed(self):
