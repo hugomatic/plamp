@@ -97,6 +97,113 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
 
+    def test_scheduler_controller_normalizes_to_payload_and_settings(self):
+        controller = {
+            "type": "pico_scheduler",
+            "payload": {
+                "pico_serial": "abc",
+                "report_every": 10,
+                "devices": [
+                    {
+                        "pin": 3,
+                        "type": "gpio",
+                        "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
+                    }
+                ],
+            },
+            "settings": {
+                "devices": {
+                    "pump": {
+                        "pin": 3,
+                        "label": "Pump",
+                        "icon": "pump",
+                        "display_order": 0,
+                        "visibility": "visible",
+                        "programming": "enabled",
+                        "editor": {
+                            "kind": "cycle",
+                            "on_seconds": 90,
+                            "off_seconds": 810,
+                            "start_at_seconds": 0,
+                        },
+                    }
+                }
+            },
+        }
+
+        normalized = server.config_view({"controllers": {"pump_lights": controller}, "cameras": {}})
+
+        self.assertEqual(normalized["controllers"]["pump_lights"], controller)
+
+    def test_legacy_scheduler_controller_migrates_to_payload_and_settings(self):
+        normalized = server.config_view(
+            {
+                "controllers": {
+                    "pump_lights": {
+                        "type": "pico_scheduler",
+                        "config": {"pico_serial": "abc"},
+                        "settings": {"report_every": 10},
+                        "devices": {
+                            "pump": {
+                                "type": "scheduled_output",
+                                "config": {
+                                    "pin": 3,
+                                    "output_type": "gpio",
+                                    "label": "Pump",
+                                    "icon": "pump",
+                                },
+                                "settings": {
+                                    "schedule": {
+                                        "kind": "cycle",
+                                        "on_seconds": 90,
+                                        "off_seconds": 810,
+                                        "start_at_seconds": 0,
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+                "cameras": {},
+            }
+        )
+
+        self.assertEqual(
+            normalized["controllers"]["pump_lights"],
+            {
+                "type": "pico_scheduler",
+                "payload": {
+                    "pico_serial": "abc",
+                    "report_every": 10,
+                    "devices": [
+                        {
+                            "pin": 3,
+                            "type": "gpio",
+                            "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
+                        }
+                    ],
+                },
+                "settings": {
+                    "devices": {
+                        "pump": {
+                            "pin": 3,
+                            "label": "Pump",
+                            "icon": "pump",
+                            "display_order": 0,
+                            "visibility": "visible",
+                            "programming": "enabled",
+                            "editor": {
+                                "kind": "cycle",
+                                "on_seconds": 90,
+                                "off_seconds": 810,
+                                "start_at_seconds": 0,
+                            },
+                        }
+                    }
+                },
+            },
+        )
+
     def test_get_controllers_returns_flat_discovery_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

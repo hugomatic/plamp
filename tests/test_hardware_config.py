@@ -7,6 +7,7 @@ from plamp_web.hardware_config import (
     empty_config,
     hardware_view,
     runtime_controller_serials,
+    scheduler_devices_for_controller,
     validate_cameras,
     validate_controllers,
     validate_controller_devices,
@@ -33,21 +34,31 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(
             validate_controllers({"ctrl_a": {}, "ctrl_b": {"config": {"pico_serial": "PICO123"}}}),
             {
-                "ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 10}, "devices": {}},
-                "ctrl_b": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}},
+                "ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 10, "devices": []}, "settings": {"devices": {}}},
+                "ctrl_b": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "PICO123", "report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                },
             },
         )
 
     def test_validate_controllers_defaults_to_pico_scheduler_type_and_report_every(self):
         self.assertEqual(
             validate_controllers({"ctrl_a": {"config": {"pico_serial": "PICO123"}}}),
-            {"ctrl_a": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}}},
+            {
+                "ctrl_a": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "PICO123", "report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                }
+            },
         )
 
     def test_validate_controllers_accepts_pico_scheduler_report_every(self):
         self.assertEqual(
             validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"report_every": 30}}}),
-            {"ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 30}, "devices": {}}},
+            {"ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 30, "devices": []}, "settings": {"devices": {}}}},
         )
 
     def test_validate_controllers_accepts_pico_doser_type(self):
@@ -170,10 +181,16 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(validate_cameras({"cam_1": {}}), {"cam_1": {}})
 
 
-    def test_validate_controllers_allows_optional_label(self):
+    def test_validate_controllers_allows_optional_legacy_label(self):
         self.assertEqual(
             validate_controllers({"ctrl_a": {"config": {"pico_serial": "PICO123", "label": "Pump lights"}}}),
-            {"ctrl_a": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123", "label": "Pump lights"}, "settings": {"report_every": 10}, "devices": {}}},
+            {
+                "ctrl_a": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "PICO123", "report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                }
+            },
         )
 
     def test_validate_controller_devices_allows_optional_label(self):
@@ -284,8 +301,12 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(
             updated["controllers"],
             {
-                "ctrl_a": {"type": "pico_scheduler", "config": {}, "settings": {"report_every": 10}, "devices": {}},
-                "ctrl_b": {"type": "pico_scheduler", "config": {"pico_serial": "PICO123"}, "settings": {"report_every": 10}, "devices": {}},
+                "ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 10, "devices": []}, "settings": {"devices": {}}},
+                "ctrl_b": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "PICO123", "report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                },
             },
         )
         self.assertEqual(runtime_controller_serials(updated), {"ctrl_b": "PICO123"})
@@ -297,6 +318,44 @@ class HardwareConfigTests(unittest.TestCase):
             "timers": {"legacy": {}},
         }
         self.assertEqual(runtime_controller_serials(config), {"ctrl_b": "PICO123"})
+
+    def test_scheduler_devices_for_controller_returns_settings_devices(self):
+        config = {
+            "controllers": {
+                "ctrl_a": {
+                    "type": "pico_scheduler",
+                    "payload": {
+                        "report_every": 10,
+                        "devices": [{"pin": 3, "type": "gpio", "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                    },
+                    "settings": {
+                        "devices": {
+                            "pump": {
+                                "pin": 3,
+                                "display_order": 0,
+                                "visibility": "visible",
+                                "programming": "enabled",
+                                "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0},
+                            }
+                        }
+                    },
+                }
+            },
+            "cameras": {},
+        }
+
+        self.assertEqual(
+            scheduler_devices_for_controller(config, "ctrl_a"),
+            {
+                "pump": {
+                    "pin": 3,
+                    "display_order": 0,
+                    "visibility": "visible",
+                    "programming": "enabled",
+                    "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0},
+                }
+            },
+        )
 
     def test_compatibility_wrappers_resolve(self):
         config = empty_config()
