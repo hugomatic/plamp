@@ -1804,6 +1804,11 @@ def controller_state_payload(controller: str) -> dict[str, Any]:
     firmware = controller_firmware(controller)
     if firmware == "pico_scheduler":
         state = state_for_role(controller)
+        state = dict(state)
+        state["report_every"] = require_int(
+            timer_role(controller).get("settings", {}).get("report_every", 10),
+            "report_every must be an integer",
+        )
     else:
         path = controller_state_path(controller)
         try:

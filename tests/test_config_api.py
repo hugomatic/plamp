@@ -621,6 +621,16 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(payload, {"report_every": 10, "devices": []})
 
+    def test_get_controller_uses_scheduler_report_interval_from_config(self):
+        with (
+            patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+            patch.object(server, "state_for_role", return_value={"report_every": 1, "devices": []}),
+            patch.object(server, "timer_role", return_value={"settings": {"report_every": 10}}),
+        ):
+            payload = server.controller_state_payload("pump_n_lights")
+
+        self.assertEqual(payload["report_every"], 10)
+
     def test_post_timer_channel_schedule_uses_live_devices_helper(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
