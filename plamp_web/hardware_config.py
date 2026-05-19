@@ -427,6 +427,63 @@ def validate_devices(value, controllers):
     raise ValueError("top-level devices are no longer supported; nest devices under controllers")
 
 
+def _migrate_legacy_config(config: Mapping) -> dict:
+    """Normalize older persisted config shapes before strict validation."""
+    controllers = {}
+    for controller_id, controller_value in _as_mapping(config.get("controllers", {}), "controllers").items():
+        controller_value = dict(_as_mapping(controller_value, f"controller {controller_id}"))
+        controller_config = dict(_as_mapping(controller_value.get("config", {}), f"controller {controller_id} config"))
+        controller_settings = dict(_as_mapping(controller_value.get("settings", {}), f"controller {controller_id} settings"))
+        if "pico_serial" in controller_value:
+            controller_config.setdefault("pico_serial", controller_value.pop("pico_serial"))
+        if "label" in controller_value:
+            controller_config.setdefault("label", controller_value.pop("label"))
+        if "report_every" in controller_value:
+            controller_settings.setdefault("report_every", controller_value.pop("report_every"))
+        if controller_config:
+            controller_value["config"] = controller_config
+        if controller_settings:
+            controller_value["settings"] = controller_settings
+        controllers[controller_id] = controller_value
+
+    for device_id, device_value in _as_mapping(config.get("devices", {}), "devices").items():
+        device_value = _as_mapping(device_value, f"device {device_id}")
+        controller_id = device_value.get("controller")
+        if not _is_valid_id(controller_id) or controller_id not in controllers:
+            raise ValueError(f"legacy device {device_id} references unknown controller {controller_id!r}")
+        controller = controllers[controller_id]
+        controller_devices = dict(_as_mapping(controller.get("devices", {}), f"controller {controller_id} devices"))
+        if device_id in controller_devices:
+            raise ValueError(f"legacy device {device_id} duplicates controller device")
+        editor = device_value.get("editor", "cycle")
+        visibility = "hidden" if editor == "hidden" else "visible"
+        programming = "disabled" if editor in {"disabled", "hidden"} else "enabled"
+        schedule = {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"} if editor == "clock_window" else {"kind": "cycle"}
+        device_config = {
+            "pin": device_value.get("pin"),
+            "output_type": device_value.get("type", "gpio"),
+            "display_order": len(controller_devices),
+            "visibility": visibility,
+        }
+        label = _optional_label(device_value, f"device {device_id}")
+        if label:
+            device_config["label"] = label
+        icon = device_value.get("icon")
+        if icon is not None:
+            device_config["icon"] = icon
+        controller_devices[device_id] = {
+            "type": "scheduled_output",
+            "config": device_config,
+            "settings": {"programming": programming, "schedule": schedule},
+        }
+        controller["devices"] = controller_devices
+
+    return {
+        "controllers": controllers,
+        "cameras": config.get("cameras", {}),
+    }
+
+
 def validate_cameras(value):
     value = _as_mapping(value, "cameras")
     cameras = {}
@@ -513,8 +570,7 @@ def validate_cameras(value):
 
 def config_view(config):
     config = _as_mapping(config, "config")
-    if "devices" in config:
-        raise ValueError("top-level devices are no longer supported; nest devices under controllers")
+    config = _migrate_legacy_config(config)
     controllers = validate_controllers(config.get("controllers", {}))
     return {
         "controllers": controllers,

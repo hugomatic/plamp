@@ -21,13 +21,44 @@ class HardwareConfigTests(unittest.TestCase):
             {"controllers": {}, "cameras": {}},
         )
 
-    def test_config_view_rejects_legacy_top_level_devices(self):
+    def test_config_view_migrates_legacy_flat_controller_and_top_level_devices(self):
+        config = {
+            "controllers": {
+                "protocon": {
+                    "type": "pico_scheduler",
+                    "report_every": 2,
+                    "pico_serial": "9d480174e373e801",
+                }
+            },
+            "devices": {
+                "ch1": {"controller": "protocon", "pin": 21, "type": "gpio", "editor": "hidden", "label": "CH1"},
+                "ch2": {"controller": "protocon", "pin": 20, "type": "gpio", "editor": "disabled", "label": "CH2"},
+                "ch8": {"controller": "protocon", "pin": 14, "type": "gpio", "editor": "cycle", "label": "CH8"},
+            },
+            "cameras": {},
+        }
+
+        migrated = config_view(config)
+        controller = migrated["controllers"]["protocon"]
+        devices = controller["settings"]["devices"]
+
+        self.assertEqual(controller["payload"]["pico_serial"], "9d480174e373e801")
+        self.assertEqual(controller["payload"]["report_every"], 2)
+        self.assertEqual([device["pin"] for device in controller["payload"]["devices"]], [21, 20, 14])
+        self.assertEqual(devices["ch1"]["visibility"], "hidden")
+        self.assertEqual(devices["ch1"]["programming"], "disabled")
+        self.assertEqual(devices["ch2"]["visibility"], "visible")
+        self.assertEqual(devices["ch2"]["programming"], "disabled")
+        self.assertEqual(devices["ch8"]["label"], "CH8")
+        self.assertEqual(devices["ch8"]["editor"], {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0})
+
+    def test_config_view_rejects_legacy_top_level_device_unknown_controller(self):
         config = {
             "controllers": {},
             "devices": {"dev_1": {"controller": "ctrl_a", "pin": 3, "type": "gpio", "editor": "cycle"}},
             "cameras": {},
         }
-        with self.assertRaisesRegex(ValueError, "top-level devices"):
+        with self.assertRaisesRegex(ValueError, "unknown controller"):
             config_view(config)
 
     def test_validate_controllers(self):
