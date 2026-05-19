@@ -124,9 +124,9 @@ class CameraApiTests(unittest.TestCase):
         self.assertEqual(data["camera_id"], "rpicam_cam0")
         self.assertEqual(data["capture_kind"], "manual")
 
-    def test_get_runtime_includes_camera_worker_summary(self):
+    def test_get_status_includes_camera_worker_summary(self):
         with patch.object(server, "camera_worker_summary", return_value={"state": "idle", "queue_depth": 0}):
-            data = server.get_runtime()
+            data = server.get_status()
 
         self.assertEqual(data["camera_worker"]["state"], "idle")
         self.assertEqual(data["camera_worker"]["queue_depth"], 0)

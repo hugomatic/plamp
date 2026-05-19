@@ -85,19 +85,21 @@ Expected shape:
     "controllers": {
       "pump_lights": {
         "type": "pico_scheduler",
-        "config": { "pico_serial": "..." },
-        "settings": { "report_every": 10 },
-        "devices": { "...": {} }
+        "payload": {
+          "pico_serial": "...",
+          "report_every": 10,
+          "devices": []
+        },
+        "settings": { "devices": {} }
       }
     },
     "cameras": { "...": {} }
-  },
-  "detected": {
-    "picos": [],
-    "cameras": []
   }
 }
 ```
+
+Use `/api/system` for detected Picos/cameras and `/api/status` for live
+controller telemetry.
 
 2. List controller families:
 

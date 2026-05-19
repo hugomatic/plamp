@@ -57,7 +57,7 @@ class ConfigApiTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
 
-    def test_get_config_returns_config_and_detected_hardware_separately(self):
+    def test_get_config_returns_config_without_detected_hardware(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -82,20 +82,235 @@ class ConfigApiTests(unittest.TestCase):
             )
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
-                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
             ):
                 data = server.get_config()
 
         self.assertIn("config", data)
-        self.assertIn("detected", data)
-        self.assertEqual(data["config"]["controllers"]["pump_lights"]["config"]["pico_serial"], "abc")
+        self.assertNotIn("detected", data)
+        self.assertEqual(data["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
         self.assertEqual(
-            data["config"]["controllers"]["pump_lights"]["devices"]["pump"]["settings"]["schedule"]["kind"],
+            data["config"]["controllers"]["pump_lights"]["settings"]["devices"]["pump"]["editor"]["kind"],
             "cycle",
         )
+
+    def test_system_response_contains_detected_hardware(self):
+        with (
+            patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
+            patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+        ):
+            data = server.get_system()
+
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
+
+    def test_status_response_contains_controller_telemetry(self):
+        config = {
+            "controllers": {
+                "pump_lights": {
+                    "type": "pico_scheduler",
+                    "payload": {"report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                }
+            },
+            "cameras": {},
+        }
+        monitor = DummyMonitor("abc")
+        report = {"type": "report", "content": {"devices": [{"pin": 3, "type": "gpio"}]}}
+        monitor.snapshot = lambda: {"last_report": report}
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "monitors", {"pump_lights": monitor}),
+        ):
+            data = server.get_status()
+
+        self.assertEqual(data["controllers"]["pump_lights"]["telemetry"], report)
+
+    def test_runtime_route_is_removed(self):
+        routes = {route.path for route in server.app.routes}
+        self.assertNotIn("/runtime", routes)
+
+    def test_scheduler_controller_normalizes_to_payload_and_settings(self):
+        controller = {
+            "type": "pico_scheduler",
+            "payload": {
+                "pico_serial": "abc",
+                "report_every": 10,
+                "devices": [
+                    {
+                        "pin": 3,
+                        "type": "gpio",
+                        "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
+                    }
+                ],
+            },
+            "settings": {
+                "label": "Pump lights",
+                "devices": {
+                    "pump": {
+                        "pin": 3,
+                        "label": "Pump",
+                        "icon": "pump",
+                        "display_order": 0,
+                        "visibility": "visible",
+                        "programming": "enabled",
+                        "editor": {
+                            "kind": "cycle",
+                            "on_seconds": 90,
+                            "off_seconds": 810,
+                            "start_at_seconds": 0,
+                        },
+                    }
+                }
+            },
+        }
+
+        normalized = server.config_view({"controllers": {"pump_lights": controller}, "cameras": {}})
+
+        self.assertEqual(normalized["controllers"]["pump_lights"], controller)
+
+    def test_legacy_scheduler_controller_migrates_to_payload_and_settings(self):
+        normalized = server.config_view(
+            {
+                "controllers": {
+                    "pump_lights": {
+                        "type": "pico_scheduler",
+                        "config": {"pico_serial": "abc", "label": "Pump lights"},
+                        "settings": {"report_every": 10},
+                        "devices": {
+                            "pump": {
+                                "type": "scheduled_output",
+                                "config": {
+                                    "pin": 3,
+                                    "output_type": "gpio",
+                                    "label": "Pump",
+                                    "icon": "pump",
+                                },
+                                "settings": {
+                                    "schedule": {
+                                        "kind": "cycle",
+                                        "on_seconds": 90,
+                                        "off_seconds": 810,
+                                        "start_at_seconds": 0,
+                                    }
+                                },
+                            }
+                        },
+                    }
+                },
+                "cameras": {},
+            }
+        )
+
+        self.assertEqual(
+            normalized["controllers"]["pump_lights"],
+            {
+                "type": "pico_scheduler",
+                "payload": {
+                    "pico_serial": "abc",
+                    "report_every": 10,
+                    "devices": [
+                        {
+                            "pin": 3,
+                            "type": "gpio",
+                            "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
+                        }
+                    ],
+                },
+                "settings": {
+                    "label": "Pump lights",
+                    "devices": {
+                        "pump": {
+                            "pin": 3,
+                            "label": "Pump",
+                            "icon": "pump",
+                            "display_order": 0,
+                            "visibility": "visible",
+                            "programming": "enabled",
+                            "editor": {
+                                "kind": "cycle",
+                                "on_seconds": 90,
+                                "off_seconds": 810,
+                                "start_at_seconds": 0,
+                            },
+                        }
+                    }
+                },
+            },
+        )
+
+    def test_scheduler_controller_rejects_missing_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "payload devices pins"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {"report_every": 10, "devices": []},
+                            "settings": {
+                                "devices": {
+                                    "pump": {
+                                        "pin": 3,
+                                        "display_order": 0,
+                                        "visibility": "visible",
+                                        "programming": "enabled",
+                                        "editor": {"kind": "cycle"},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
+
+    def test_scheduler_controller_rejects_extra_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "payload devices pins"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {
+                                "report_every": 10,
+                                "devices": [{"pin": 3, "type": "gpio", "pattern": []}],
+                            },
+                            "settings": {"devices": {}},
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
+
+    def test_scheduler_controller_rejects_duplicate_payload_pin(self):
+        with self.assertRaisesRegex(ValueError, "duplicate payload pin"):
+            server.config_view(
+                {
+                    "controllers": {
+                        "pump_lights": {
+                            "type": "pico_scheduler",
+                            "payload": {
+                                "report_every": 10,
+                                "devices": [
+                                    {"pin": 3, "type": "gpio", "pattern": []},
+                                    {"pin": 3, "type": "gpio", "pattern": []},
+                                ],
+                            },
+                            "settings": {
+                                "devices": {
+                                    "pump": {
+                                        "pin": 3,
+                                        "display_order": 0,
+                                        "visibility": "visible",
+                                        "programming": "enabled",
+                                        "editor": {"kind": "cycle"},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    "cameras": {},
+                }
+            )
 
     def test_get_controllers_returns_flat_discovery_payload(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,7 +434,8 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIn("config", summary)
         self.assertIn("detected", summary)
-        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["config"]["label"], "Pump lights")
+        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
+        self.assertNotIn("config", summary["config"]["controllers"]["pump_lights"])
 
     def test_get_settings_page_uses_combined_settings_payload(self):
         with patch.object(
@@ -410,8 +626,8 @@ class ConfigApiTests(unittest.TestCase):
 
             saved = json.loads(config_file.read_text(encoding="utf-8"))
 
-        self.assertIn("lights", data["config"]["controllers"]["grow_box"]["devices"])
-        self.assertIn("lights", saved["controllers"]["grow_box"]["devices"])
+        self.assertIn("lights", data["config"]["controllers"]["grow_box"]["settings"]["devices"])
+        self.assertIn("lights", saved["controllers"]["grow_box"]["settings"]["devices"])
         self.assertEqual(saved["time_format"], "24h")
 
     def test_put_config_devices_endpoint_is_removed(self):
@@ -556,7 +772,7 @@ class ConfigApiTests(unittest.TestCase):
             ],
         }
 
-        with patch.object(server, "timer_role", return_value={"settings": {"report_every": 7}}):
+        with patch.object(server, "timer_role", return_value={"payload": {"report_every": 7}}):
             timer_state = server.timer_state_for_pico("timer", state)
 
         self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
@@ -774,13 +990,13 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
 
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
-        config = {
+        config = server.config_view({
             "controllers": {
                 "timer": self.scheduler_controller(serial="TIMER"),
-                "future": {"type": "future_controller", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
+                "future": {"type": "pico_doser", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
             },
             "cameras": {},
-        }
+        })
         with patch.object(server, "load_config", return_value=config):
             roles = server.configured_timer_roles()
             serials = server.configured_monitor_serials()

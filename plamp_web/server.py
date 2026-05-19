@@ -211,7 +211,7 @@ def configured_monitor_serials() -> dict[str, str]:
             raise HTTPException(status_code=500, detail=f"invalid controller role: {role}")
         if not isinstance(item, dict):
             raise HTTPException(status_code=500, detail=f"controller {role} must be an object")
-        serial = item.get("config", {}).get("pico_serial")
+        serial = item.get("payload", {}).get("pico_serial")
         if isinstance(serial, str) and serial:
             result[role] = serial
     return result
@@ -245,7 +245,7 @@ def controller_item(controller: str) -> dict[str, Any]:
 
 
 def pico_serial_for_role(role: str) -> str:
-    serial = timer_role(role).get("config", {}).get("pico_serial")
+    serial = timer_role(role).get("payload", {}).get("pico_serial")
     if not isinstance(serial, str) or not serial:
         raise HTTPException(status_code=409, detail=f"timer role {role} has no configured pico_serial")
     return serial
@@ -384,7 +384,7 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
 def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
     state = validate_timer_state(raw_state)
     role_config = timer_role(role)
-    report_every = require_int(role_config.get("settings", {}).get("report_every", 10), "report_every must be an integer")
+    report_every = require_int(role_config.get("payload", {}).get("report_every", 10), "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
     disabled = disabled_timer_device_keys(role)
@@ -404,12 +404,10 @@ def disabled_timer_device_keys(role: str) -> set[tuple[str | None, int]]:
     for device_id, device in devices.items():
         if not isinstance(device_id, str) or not isinstance(device, dict):
             continue
-        settings = device.get("settings", {})
-        config_value = device.get("config", {})
-        if settings.get("programming") != "disabled" and config_value.get("visibility") != "hidden":
+        if device.get("programming") != "disabled" and device.get("visibility") != "hidden":
             continue
         try:
-            pin = int(config_value.get("pin"))
+            pin = int(device.get("pin"))
         except (TypeError, ValueError):
             continue
         disabled.add((device_id, pin))
@@ -1593,11 +1591,12 @@ def software_summary(*, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
     }
 
 
-def settings_summary() -> dict[str, Any]:
-    config_data = config_response()
+def system_response() -> dict[str, Any]:
     return {
-        "config": config_data["config"],
-        "detected": config_data["detected"],
+        "detected": {
+            "picos": enumerate_picos(),
+            "cameras": normalized_detected_cameras(hardware_inventory.detect_rpicam_cameras()),
+        },
         "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
@@ -1630,6 +1629,53 @@ def settings_summary() -> dict[str, Any]:
             "exists": LOG_FILE.exists(),
         },
     }
+
+
+def controller_telemetry(controller: str) -> dict[str, Any]:
+    if controller_firmware(controller) == "pico_scheduler":
+        with monitors_lock:
+            monitor = monitors.get(controller)
+        if monitor is None:
+            return {}
+        snapshot = monitor.snapshot()
+        report = snapshot.get("last_report")
+        return report if isinstance(report, dict) else {}
+    path = controller_state_path(controller)
+    try:
+        state = load_json_file(path)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {}
+        raise
+    return state if isinstance(state, dict) else {}
+
+
+def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
+    controllers = config.get("controllers", {})
+    if not isinstance(controllers, dict):
+        return {}
+    status = {}
+    for controller_id, controller in controllers.items():
+        if not isinstance(controller_id, str) or not isinstance(controller, dict):
+            continue
+        item = dict(controller)
+        item["telemetry"] = controller_telemetry(controller_id)
+        status[controller_id] = item
+    return status
+
+
+def status_response() -> dict[str, Any]:
+    config = load_config()
+    return {
+        "config": config,
+        "controllers": controller_status_tree(config),
+        "monitors": monitor_summaries(),
+        "camera_worker": camera_worker_summary(),
+    }
+
+
+def settings_summary() -> dict[str, Any]:
+    return {"config": load_config(), **system_response(), **status_response()}
 
 
 def validate_hostname(value: object) -> str:
@@ -1730,18 +1776,22 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
 
 
 def config_response() -> dict[str, Any]:
-    return {
-        "config": load_config(),
-        "detected": {
-            "picos": enumerate_picos(),
-            "cameras": normalized_detected_cameras(hardware_inventory.detect_rpicam_cameras()),
-        },
-    }
+    return {"config": load_config()}
 
 
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
     return config_response()
+
+
+@app.get("/api/system")
+def get_system() -> dict[str, Any]:
+    return system_response()
+
+
+@app.get("/api/status")
+def get_status() -> dict[str, Any]:
+    return status_response()
 
 
 @app.put("/api/config")
@@ -1806,7 +1856,7 @@ def controller_state_payload(controller: str) -> dict[str, Any]:
         state = state_for_role(controller)
         state = dict(state)
         state["report_every"] = require_int(
-            timer_role(controller).get("settings", {}).get("report_every", 10),
+            timer_role(controller).get("payload", {}).get("report_every", 10),
             "report_every must be an integer",
         )
     else:
@@ -2050,11 +2100,6 @@ def timer_test_page() -> HTMLResponse:
 
 @app.get("/settings.json")
 def get_settings_json() -> dict[str, Any]:
-    return settings_summary()
-
-
-@app.get("/runtime")
-def get_runtime() -> dict[str, Any]:
     return settings_summary()
 
 

@@ -185,20 +185,12 @@ class PlampCliConfigTests(unittest.TestCase):
                 "controllers": {
                     "main": {
                         "type": "pico_scheduler",
-                        "config": {},
-                        "settings": {"report_every": 10},
-                        "devices": {
-                            "pump": {
-                                "type": "scheduled_output",
-                                "config": {"pin": 3, "output_type": "gpio"},
-                                "settings": {"schedule": {"kind": "cycle"}},
-                            }
-                        },
+                        "payload": {"report_every": 10, "devices": [{"pin": 3, "type": "gpio", "pattern": []}]},
+                        "settings": {"devices": {"pump": {"pin": 3, "editor": {"kind": "cycle"}}}},
                     }
                 },
                 "cameras": {},
-            },
-            "detected": {"picos": [{"serial": "ABC"}], "cameras": []},
+            }
         }
         stdout = StringIO()
         stderr = StringIO()
@@ -209,7 +201,7 @@ class PlampCliConfigTests(unittest.TestCase):
         self.assertEqual(stderr.getvalue(), "")
         self.assertEqual(
             stdout.getvalue(),
-            '{"config": {"cameras": {}, "controllers": {"main": {"config": {}, "devices": {"pump": {"config": {"output_type": "gpio", "pin": 3}, "settings": {"schedule": {"kind": "cycle"}}, "type": "scheduled_output"}}, "settings": {"report_every": 10}, "type": "pico_scheduler"}}}, "detected": {"cameras": [], "picos": [{"serial": "ABC"}]}}\n',
+            '{"config": {"cameras": {}, "controllers": {"main": {"payload": {"devices": [{"pattern": [], "pin": 3, "type": "gpio"}], "report_every": 10}, "settings": {"devices": {"pump": {"editor": {"kind": "cycle"}, "pin": 3}}}, "type": "pico_scheduler"}}}}\n',
         )
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
 

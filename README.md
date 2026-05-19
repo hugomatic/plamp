@@ -203,21 +203,26 @@ Controller config includes the scheduler firmware type and reporting interval:
   "controllers": {
     "pump_lights": {
       "type": "pico_scheduler",
-      "config": {
-        "pico_serial": "e66038b71387a039"
+      "payload": {
+        "pico_serial": "e66038b71387a039",
+        "report_every": 10,
+        "devices": [
+          {
+            "pin": 15,
+            "type": "gpio",
+            "pattern": [
+              {"val": 1, "dur": 300},
+              {"val": 0, "dur": 1800}
+            ]
+          }
+        ]
       },
       "settings": {
-        "report_every": 10
-      },
-      "devices": {
-        "pump": {
-          "type": "scheduled_output",
-          "config": {
+        "devices": {
+          "pump": {
             "pin": 15,
-            "output_type": "gpio"
-          },
-          "settings": {
-            "schedule": {
+            "label": "Pump",
+            "editor": {
               "kind": "cycle"
             }
           }
@@ -228,10 +233,16 @@ Controller config includes the scheduler firmware type and reporting interval:
 }
 ```
 
-`report_every` is configured at `controllers.<id>.settings.report_every` in
+`report_every` is configured at `controllers.<id>.payload.report_every` in
 `data/config.json`. Pico
 scheduler state files keep device state; any older `report_every` value in
 legacy Pico scheduler state is not the source of truth for reporting cadence.
+
+API split:
+
+- `/api/config`: persisted desired config only.
+- `/api/system`: host facts and detected hardware.
+- `/api/status`: live resolved state and controller telemetry.
 
 `data/` is local runtime data and is ignored by git.
 

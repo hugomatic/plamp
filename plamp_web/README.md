@@ -147,11 +147,17 @@ Pico scheduler devices use `pin`:
 }
 ```
 
-`report_every` is configured at `controllers.<id>.settings.report_every` in
+`report_every` is configured at `controllers.<id>.payload.report_every` in
 `data/config.json`. Pico
 scheduler state files keep device state; any older `report_every` value in
 `data/timers/<controller>.json` is legacy and is not the source of truth for
 Pico scheduler reporting cadence.
+
+API split:
+
+- `/api/config`: persisted desired config only.
+- `/api/system`: host facts and detected hardware.
+- `/api/status`: live resolved state and controller telemetry.
 
 ## Logs
 
