@@ -124,6 +124,7 @@ class ConfigApiTests(unittest.TestCase):
             data = server.get_status()
 
         self.assertEqual(data["controllers"]["pump_lights"]["telemetry"], report)
+        self.assertNotIn("config", data)
 
     def test_runtime_route_is_removed(self):
         routes = {route.path for route in server.app.routes}

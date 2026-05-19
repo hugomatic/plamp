@@ -207,6 +207,12 @@ def scheduler_devices_by_controller(controllers: dict[str, Any]) -> list[tuple[s
             if isinstance(payload_device, dict) and "output_type" not in enriched:
                 enriched["output_type"] = payload_device.get("type", "gpio")
             controller_devices.append((device_id, enriched))
+        controller_devices.sort(
+            key=lambda item: (
+                item[1].get("display_order") if isinstance(item[1].get("display_order"), int) else len(controller_devices),
+                item[0],
+            )
+        )
         if controller_devices:
             groups.append((controller_id, controller, controller_devices))
     return groups

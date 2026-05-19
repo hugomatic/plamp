@@ -1667,7 +1667,6 @@ def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
 def status_response() -> dict[str, Any]:
     config = load_config()
     return {
-        "config": config,
         "controllers": controller_status_tree(config),
         "monitors": monitor_summaries(),
         "camera_worker": camera_worker_summary(),
