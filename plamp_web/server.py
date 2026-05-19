@@ -1637,9 +1637,7 @@ def controller_telemetry(controller: str) -> dict[str, Any]:
             monitor = monitors.get(controller)
         if monitor is None:
             return {}
-        snapshot = monitor.snapshot()
-        report = snapshot.get("last_report")
-        return report if isinstance(report, dict) else {}
+        return monitor.snapshot()
     path = controller_state_path(controller)
     try:
         state = load_json_file(path)

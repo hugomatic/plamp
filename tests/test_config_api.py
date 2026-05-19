@@ -116,14 +116,17 @@ class ConfigApiTests(unittest.TestCase):
         }
         monitor = DummyMonitor("abc")
         report = {"type": "report", "content": {"devices": [{"pin": 3, "type": "gpio"}]}}
-        monitor.snapshot = lambda: {"last_report": report}
+        monitor.snapshot = lambda: {"connected": True, "port": "/dev/ttyACM0", "last_report": report}
         with (
             patch.object(server, "load_config", return_value=config),
             patch.object(server, "monitors", {"pump_lights": monitor}),
         ):
             data = server.get_status()
 
-        self.assertEqual(data["controllers"]["pump_lights"]["telemetry"], report)
+        self.assertEqual(
+            data["controllers"]["pump_lights"]["telemetry"],
+            {"connected": True, "port": "/dev/ttyACM0", "last_report": report},
+        )
         self.assertNotIn("config", data)
 
     def test_runtime_route_is_removed(self):
