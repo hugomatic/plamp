@@ -776,7 +776,7 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {};', html)
+        self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {});', html)
         self.assertIn('const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;', html)
         self.assertIn('const payload = isHiddenReuse ? existingController : {type, payload: {}, settings: {}};', html)
         self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;', html)
@@ -806,6 +806,28 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
         self.assertIn('const controller = blockController || row.dataset.deviceController || "";', html)
         self.assertNotIn('controller: row.querySelector(".device-controller").value || blockController', html)
+
+    def test_settings_page_removes_old_controller_key_after_rename(self):
+        html = render_settings_page(
+            {
+                "config": {
+                    "controllers": {
+                        "protocon": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Proto"},
+                    },
+                    "devices": {},
+                    "cameras": {},
+                },
+                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
+                "host": {"hostname": "plamp", "network": []},
+                "picos": [],
+                "software": {},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn('const oldKey = row.dataset.controllerKey || "";', html)
+        self.assertIn('oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {}', html)
+        self.assertIn("if (oldKey && oldKey !== key) delete result[oldKey];", html)
 
     def test_settings_page_renders_create_block_even_when_scheduler_exists(self):
         html = render_settings_page(

@@ -853,6 +853,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       for (const row of document.querySelectorAll(".controller-row")) {{
         const key = row.querySelector(".controller-id").value.trim();
         if (!key) continue;
+        const oldKey = row.dataset.controllerKey || "";
         const picoSerialSelect = row.querySelector(".controller-pico-serial");
         const picoSerial = picoSerialSelect.value;
         const picoSerialDefault = picoSerialSelect.dataset.defaultValue || "";
@@ -861,9 +862,10 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         const type = row.querySelector(".controller-type").value;
         const reportEveryInput = row.querySelector(".controller-report-every");
         const reportEvery = reportEveryInput.value;
-        const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {{}};
+        const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {{}});
         const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
         const payload = isHiddenReuse ? existingController : {{type, payload: {{}}, settings: {{}}}};
+        if (oldKey && oldKey !== key) delete result[oldKey];
         payload.type = type;
         payload.payload = payload.payload || {{}};
         payload.settings = payload.settings || {{}};
