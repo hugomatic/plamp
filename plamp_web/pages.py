@@ -1816,12 +1816,30 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <h2>Config</h2>
   <fieldset>
     <legend>GET /api/config</legend>
-    <p>Reads configured meaning plus detected local hardware choices.</p>
+    <p>Reads persisted desired config only.</p>
     <pre id="get-config-curl-command">curl http://localhost:8000/api/config</pre>
     <button class="copy-curl" type="button" data-copy-target="get-config-curl-command">Copy curl</button>
     <button id="get-config" type="button">Run request</button>
     <div><span id="get-config-status">Ready.</span></div>
     <pre id="get-config-result">GET response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>GET /api/system</legend>
+    <p>Reads host facts and detected local hardware choices.</p>
+    <pre id="get-system-curl-command">curl http://localhost:8000/api/system</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-system-curl-command">Copy curl</button>
+    <button id="get-system" type="button">Run request</button>
+    <div><span id="get-system-status">Ready.</span></div>
+    <pre id="get-system-result">GET response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>GET /api/status</legend>
+    <p>Reads live resolved state, including controller telemetry.</p>
+    <pre id="get-status-curl-command">curl http://localhost:8000/api/status</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-status-curl-command">Copy curl</button>
+    <button id="get-status" type="button">Run request</button>
+    <div><span id="get-status-status">Ready.</span></div>
+    <pre id="get-status-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config</legend>
@@ -2049,6 +2067,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     async function runConfigRequest(kind) {{
       const specs = {{
         get: {{method: "GET", url: "/api/config", statusId: "get-config-status", resultId: "get-config-result"}},
+        system: {{method: "GET", url: "/api/system", statusId: "get-system-status", resultId: "get-system-result"}},
+        status: {{method: "GET", url: "/api/status", statusId: "get-status-status", resultId: "get-status-result"}},
         full: {{method: "PUT", url: "/api/config", statusId: "put-config-status", resultId: "put-config-result", section: null}},
         controllers: {{method: "PUT", url: "/api/config/controllers", statusId: "put-config-controllers-status", resultId: "put-config-controllers-result", section: "controllers"}},
         cameras: {{method: "PUT", url: "/api/config/cameras", statusId: "put-config-cameras-status", resultId: "put-config-cameras-result", section: "cameras"}},
@@ -2392,6 +2412,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }});
 
     document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
+    document.getElementById("get-system").addEventListener("click", () => runConfigRequest("system"));
+    document.getElementById("get-status").addEventListener("click", () => runConfigRequest("status"));
     document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
     document.getElementById("put-config-controllers").addEventListener("click", () => runConfigRequest("controllers"));
     document.getElementById("put-config-cameras").addEventListener("click", () => runConfigRequest("cameras"));
