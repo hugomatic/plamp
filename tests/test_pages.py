@@ -552,7 +552,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<th>Report every seconds</th>", html)
         self.assertIn('class="controller-report-every"', html)
         self.assertIn('value="15"', html)
-        self.assertIn("payload.settings.report_every = Number(reportEvery);", html)
+        self.assertIn("payload.payload.report_every = Number(reportEvery);", html)
 
     def test_settings_page_groups_scheduler_settings_by_controller(self):
         html = render_settings_page(
@@ -778,10 +778,10 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : {};', html)
         self.assertIn('const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;', html)
-        self.assertIn('const payload = isHiddenReuse ? existingController : {type, config: {}, settings: {}, devices: {}};', html)
-        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.config.label = label;', html)
-        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.config.pico_serial = picoSerial;', html)
-        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.settings.report_every = Number(reportEvery);', html)
+        self.assertIn('const payload = isHiddenReuse ? existingController : {type, payload: {}, settings: {}};', html)
+        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;', html)
+        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;', html)
+        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.payload.report_every = Number(reportEvery);', html)
 
     def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
         html = render_settings_page(
@@ -900,10 +900,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('function hydrateControllerRowFromHidden(row) {', html)
         self.assertIn('const hiddenController = hiddenControllers[key];', html)
         self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
-        self.assertIn('labelInput.defaultValue = hiddenConfig.label || "";', html)
+        self.assertIn('labelInput.defaultValue = hiddenSettings.label || "";', html)
         self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
-        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenConfig.pico_serial || "";', html)
-        self.assertIn('reportEveryInput.defaultValue = String((hiddenSettings.report_every ?? reportEveryInput.defaultValue) || "");', html)
+        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";', html)
+        self.assertIn('reportEveryInput.defaultValue = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");', html)
         self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_includes_hostname_confirm_apply_controls(self):
