@@ -57,7 +57,7 @@ class ConfigApiTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
 
-    def test_get_config_returns_config_and_detected_hardware_separately(self):
+    def test_get_config_returns_config_without_detected_hardware(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -82,20 +82,52 @@ class ConfigApiTests(unittest.TestCase):
             )
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
-                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
             ):
                 data = server.get_config()
 
         self.assertIn("config", data)
-        self.assertIn("detected", data)
+        self.assertNotIn("detected", data)
         self.assertEqual(data["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
         self.assertEqual(
             data["config"]["controllers"]["pump_lights"]["settings"]["devices"]["pump"]["editor"]["kind"],
             "cycle",
         )
+
+    def test_system_response_contains_detected_hardware(self):
+        with (
+            patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
+            patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+        ):
+            data = server.get_system()
+
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
+
+    def test_status_response_contains_controller_telemetry(self):
+        config = {
+            "controllers": {
+                "pump_lights": {
+                    "type": "pico_scheduler",
+                    "payload": {"report_every": 10, "devices": []},
+                    "settings": {"devices": {}},
+                }
+            },
+            "cameras": {},
+        }
+        monitor = DummyMonitor("abc")
+        report = {"type": "report", "content": {"devices": [{"pin": 3, "type": "gpio"}]}}
+        monitor.snapshot = lambda: {"last_report": report}
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "monitors", {"pump_lights": monitor}),
+        ):
+            data = server.get_status()
+
+        self.assertEqual(data["controllers"]["pump_lights"]["telemetry"], report)
+
+    def test_runtime_route_is_removed(self):
+        routes = {route.path for route in server.app.routes}
+        self.assertNotIn("/runtime", routes)
 
     def test_scheduler_controller_normalizes_to_payload_and_settings(self):
         controller = {
@@ -740,7 +772,7 @@ class ConfigApiTests(unittest.TestCase):
             ],
         }
 
-        with patch.object(server, "timer_role", return_value={"settings": {"report_every": 7}}):
+        with patch.object(server, "timer_role", return_value={"payload": {"report_every": 7}}):
             timer_state = server.timer_state_for_pico("timer", state)
 
         self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
@@ -958,13 +990,13 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
 
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
-        config = {
+        config = server.config_view({
             "controllers": {
                 "timer": self.scheduler_controller(serial="TIMER"),
-                "future": {"type": "future_controller", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
+                "future": {"type": "pico_doser", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
             },
             "cameras": {},
-        }
+        })
         with patch.object(server, "load_config", return_value=config):
             roles = server.configured_timer_roles()
             serials = server.configured_monitor_serials()
