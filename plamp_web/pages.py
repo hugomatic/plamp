@@ -529,7 +529,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 
     def render_scheduler_device_row(device_id: str, device: dict[str, Any], controller_id: str, *, new_row: bool = False) -> str:
         return (
-            '<tr class="device-row{new_row_class}" data-device-id="{device_id}" data-device-controller="{controller_id}">'
+            '<tr class="device-row{new_row_class}" data-device-id="{device_id}" data-device-controller="{controller_id}" data-device-editor-json="{editor_json}">'
             '<td><input class="device-id" placeholder="pump" value="{device_id}"></td>'
             '<td><input class="device-label" placeholder="Water pump" value="{label}"></td>'
             '<td><input class="device-pin" type="number" min="0" max="29" value="{pin}"></td>'
@@ -540,6 +540,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
                 device_id=html.escape(device_id, quote=True),
                 label=html.escape(str(device.get("label") or ""), quote=True),
                 controller_id=html.escape(controller_id, quote=True),
+                editor_json=html.escape(json.dumps(device.get("editor") or {}, separators=(",", ":")), quote=True),
                 pin=html.escape(str(device.get("pin") if device.get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("output_type") or "gpio")),
                 editor_options="".join(option_tag(value, value, "disabled" if device.get("programming") == "disabled" else ("hidden" if device.get("visibility") == "hidden" else ("clock_window" if device.get("editor", {}).get("kind") == "daily_window" else "cycle"))) for value in ["cycle", "clock_window", "disabled", "hidden"]),
@@ -894,23 +895,22 @@ def render_settings_page(summary: dict[str, Any]) -> str:
             const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";
             const controller = blockController || row.dataset.deviceController || "";
             if (!controller) throw new Error(`Controller required for device ${{key}}.`);
+            result[controller] = result[controller] || {{settings: {{}}, payload: null}};
             const editor = row.querySelector(".device-editor").value;
+            const existingEditor = JSON.parse(row.dataset.deviceEditorJson || "{{}}");
+            const editorPayload = editor === "clock_window"
+              ? (existingEditor.kind === "daily_window" && existingEditor.on_time && existingEditor.off_time ? existingEditor : {{kind: "daily_window", on_time: "06:00", off_time: "18:00"}})
+              : (editor === "cycle" && existingEditor.kind === "cycle" ? existingEditor : (editor === "disabled" || editor === "hidden") && existingEditor.kind ? existingEditor : {{kind: "cycle"}});
             const semantic = cleanObject({{
               pin: Number(pinValue),
               label: row.querySelector(".device-label").value.trim(),
-              display_order: 0,
+              display_order: Object.keys(result[controller].settings).length,
               visibility: editor === "hidden" ? "hidden" : "visible",
               programming: editor === "disabled" ? "disabled" : "enabled",
-              editor: {{kind: editor === "clock_window" ? "daily_window" : "cycle"}},
+              editor: editorPayload,
+              output_type: row.querySelector(".device-type").value,
             }});
-            const payloadDevice = {{
-              pin: Number(pinValue),
-              type: row.querySelector(".device-type").value,
-              pattern: [{{val: 1, dur: 1}}, {{val: 0, dur: 1}}],
-            }};
-            result[controller] = result[controller] || {{settings: {{}}, payload: []}};
             result[controller].settings[key] = semantic;
-            result[controller].payload.push(payloadDevice);
         }}
         return result;
     }}
@@ -956,7 +956,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
         controllers[controller].settings = controllers[controller].settings || {{}};
         controllers[controller].payload = controllers[controller].payload || {{}};
         controllers[controller].settings.devices = devices.settings;
-        controllers[controller].payload.devices = devices.payload;
+        delete controllers[controller].payload.devices;
       }}
       return {{controllers, cameras: collectCameras()}};
     }}

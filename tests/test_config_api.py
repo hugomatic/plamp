@@ -148,6 +148,7 @@ class ConfigApiTests(unittest.TestCase):
                 "devices": {
                     "pump": {
                         "pin": 3,
+                        "output_type": "gpio",
                         "label": "Pump",
                         "icon": "pump",
                         "display_order": 0,
@@ -221,6 +222,7 @@ class ConfigApiTests(unittest.TestCase):
                     "devices": {
                         "pump": {
                             "pin": 3,
+                            "output_type": "gpio",
                             "label": "Pump",
                             "icon": "pump",
                             "display_order": 0,

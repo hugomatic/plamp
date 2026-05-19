@@ -377,6 +377,7 @@ class HardwareConfigTests(unittest.TestCase):
                         "devices": {
                             "pump": {
                                 "pin": 3,
+                                "output_type": "gpio",
                                 "display_order": 0,
                                 "visibility": "visible",
                                 "programming": "enabled",
@@ -394,6 +395,7 @@ class HardwareConfigTests(unittest.TestCase):
             {
                 "pump": {
                     "pin": 3,
+                    "output_type": "gpio",
                     "display_order": 0,
                     "visibility": "visible",
                     "programming": "enabled",

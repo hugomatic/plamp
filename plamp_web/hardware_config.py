@@ -174,6 +174,7 @@ def _semantic_devices_from_legacy(legacy_devices: Mapping) -> dict:
         settings = device["settings"]
         devices[device_id] = {
             "pin": config["pin"],
+            "output_type": config["output_type"],
             "display_order": config["display_order"],
             "visibility": config["visibility"],
             "programming": settings["programming"],
@@ -193,7 +194,7 @@ def _validate_semantic_devices(value: object, controller_id: str) -> dict:
         if not _is_valid_id(device_id):
             raise ValueError(f"invalid device id: {device_id!r}")
         device_value = _as_mapping(device_value, f"device {device_id}")
-        extra_keys = set(device_value) - {"pin", "label", "icon", "display_order", "visibility", "programming", "editor"}
+        extra_keys = set(device_value) - {"pin", "label", "icon", "display_order", "visibility", "programming", "editor", "output_type"}
         if extra_keys:
             raise ValueError(f"device {device_id} has unknown keys: {sorted(extra_keys)!r}")
         pin = device_value.get("pin")
@@ -204,12 +205,16 @@ def _validate_semantic_devices(value: object, controller_id: str) -> dict:
         used_pins.add(pin)
         visibility = device_value.get("visibility", "visible")
         programming = device_value.get("programming", "enabled")
+        output_type = device_value.get("output_type", "gpio")
         if visibility not in {"visible", "hidden"}:
             raise ValueError(f"device {device_id} visibility must be visible or hidden")
         if programming not in {"enabled", "disabled"}:
             raise ValueError(f"device {device_id} programming must be enabled or disabled")
+        if output_type not in _PIN_TYPES:
+            raise ValueError(f"device {device_id} output_type must be one of {sorted(_PIN_TYPES)!r}")
         devices[device_id] = {
             "pin": pin,
+            "output_type": output_type,
             "display_order": _required_non_negative_int(
                 device_value.get("display_order", len(devices)),
                 f"device {device_id} display_order",
