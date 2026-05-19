@@ -1032,7 +1032,12 @@ def render_timer_dashboard_page(
     button { -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }
     input, select { box-sizing: border-box; padding: .35rem; }
     .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
-    .status-board { display: grid; gap: .75rem; margin: 1rem 0; max-width: 980px; }
+    .status-board { display: grid; gap: 1rem; margin: 1rem 0; max-width: 980px; }
+    .controller-card { border: 1px solid #bbb; border-radius: 8px; display: grid; gap: .75rem; padding: .9rem; }
+    .controller-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
+    .controller-name { font-size: 1.1rem; font-weight: 700; }
+    .controller-devices { display: grid; gap: .75rem; }
+    .controller-actions { border-top: 1px solid #ddd; margin-top: .25rem; padding-top: .65rem; }
     .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
     .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .timer-name { font-weight: 700; }
@@ -1043,8 +1048,8 @@ def render_timer_dashboard_page(
     .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
     .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
     .timer-fill.off { background: #888; }
-    .timer-actions { margin-top: .65rem; }
     .timer-editor { border: 1px solid #ccc; border-radius: 6px; display: grid; gap: .65rem; margin: 1rem 0; max-width: 980px; padding: .75rem; }
+    .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
     .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
     .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
     .camera-viewer { max-width: min(100%, 820px); }
@@ -1069,7 +1074,7 @@ def render_timer_dashboard_page(
 <body>
   __MAIN_NAV__
   <h1>__PAGE_NAME__</h1>
-  <h2>Timers</h2>
+  <h2>Controllers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
@@ -1353,40 +1358,49 @@ def render_timer_dashboard_page(
       renderTimerStatus();
     }
 
-    function openScheduleEditor(role, channel, event) {
+    function scheduleEditorBlock(role, channel, event) {
       const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
       const onUnit = chooseUnit(durations.on);
       const offUnit = chooseUnit(durations.off);
       const clock = clockValuesForEvent(event);
-      stopPageAutoRefresh();
-      activeEditor = {role, channelId: channel.id};
-      timerEditorPanel.hidden = false;
-      timerEditorPanel.dataset.role = role;
-      timerEditorPanel.dataset.channelId = channel.id;
-      timerEditorPanel.innerHTML = `
-        <form id="timer-schedule-form">
-          <div class="timer-top"><strong>Edit ${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
+      const mode = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
+      return `
+        <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}">
+          <div class="timer-top"><strong>${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
           <div class="editor-row">
             <label>Set as
-              <select name="mode">
-                <option value="cycle">Cycle set</option>
-                <option value="clock_window">24h set</option>
+              <select class="editor-mode" name="mode-${escapeHtml(channel.id)}">
+                <option value="cycle"${mode === "cycle" ? " selected" : ""}>Cycle set</option>
+                <option value="clock_window"${mode === "clock_window" ? " selected" : ""}>24h set</option>
               </select>
             </label>
           </div>
           <div class="editor-row cycle-fields">
-            <label>On for <input name="onValue" type="number" min="1" step="1" value="${onUnit.value}"></label>
-            <label>Unit <select name="onUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
-            <label>Off for <input name="offValue" type="number" min="1" step="1" value="${offUnit.value}"></label>
-            <label>Unit <select name="offUnit"><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option></select></label>
-            <label>Start at <input name="startAtSeconds" type="number" min="0" step="1" value="0"></label>
-            <span class="editor-note">Seconds into the cycle. Use a value near the end of a step to test the next change.</span>
+            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${onUnit.value}"></label>
+            <label>Unit <select class="editor-on-unit" name="onUnit-${escapeHtml(channel.id)}"><option value="seconds"${onUnit.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${onUnit.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${onUnit.unit === "hours" ? " selected" : ""}>hours</option></select></label>
+            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${offUnit.value}"></label>
+            <label>Unit <select class="editor-off-unit" name="offUnit-${escapeHtml(channel.id)}"><option value="seconds"${offUnit.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${offUnit.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${offUnit.unit === "hours" ? " selected" : ""}>hours</option></select></label>
+            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="0"></label>
           </div>
           <div class="editor-row clock-fields">
-            <label>On at <input name="onTime" type="time" value="${clock.on}"></label>
-            <label>Off at <input name="offTime" type="time" value="${clock.off}"></label>
+            <label>On at <input class="editor-on-time" name="onTime-${escapeHtml(channel.id)}" type="time" value="${clock.on}"></label>
+            <label>Off at <input class="editor-off-time" name="offTime-${escapeHtml(channel.id)}" type="time" value="${clock.off}"></label>
             <span class="editor-note">Applies using the host clock.</span>
           </div>
+        </section>
+      `;
+    }
+
+    function openControllerScheduleEditor(role, items) {
+      stopPageAutoRefresh();
+      activeEditor = {role};
+      timerEditorPanel.hidden = false;
+      timerEditorPanel.dataset.role = role;
+      const editableItems = items.filter((item) => item.channel.default_editor !== "disabled");
+      timerEditorPanel.innerHTML = `
+        <form id="timer-schedule-form">
+          <div class="timer-top"><strong>Edit ${escapeHtml(role)} schedule</strong><span class="editor-note">Updating any device schedule reprograms the controller.</span></div>
+          ${editableItems.map((item) => scheduleEditorBlock(role, item.channel, item.event || {id: item.channel.id, pin: item.channel.pin, type: item.channel.type || "gpio"})).join("")}
           <div class="editor-row">
             <button type="submit">Apply schedule</button>
             <button type="button" name="cancel">Close</button>
@@ -1395,21 +1409,20 @@ def render_timer_dashboard_page(
         </form>
       `;
       const form = document.getElementById("timer-schedule-form");
-      form.elements.mode.value = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
-      form.elements.onUnit.value = onUnit.unit;
-      form.elements.offUnit.value = offUnit.unit;
-      syncEditorMode(form);
-      form.elements.mode.addEventListener("change", () => syncEditorMode(form));
+      for (const block of form.querySelectorAll(".device-schedule-editor")) {
+        syncEditorMode(block);
+        block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
+      }
       form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
       form.elements.cancel.addEventListener("click", () => { activeEditor = null; timerEditorPanel.hidden = true; renderTimerStatus(); });
       renderTimerStatus();
       form.addEventListener("submit", submitScheduleEditor);
     }
 
-    function syncEditorMode(form) {
-      const clock = form.elements.mode.value === "clock_window";
-      form.querySelector(".cycle-fields").hidden = clock;
-      form.querySelector(".clock-fields").hidden = !clock;
+    function syncEditorMode(block) {
+      const clock = block.querySelector(".editor-mode").value === "clock_window";
+      block.querySelector(".cycle-fields").hidden = clock;
+      block.querySelector(".clock-fields").hidden = !clock;
     }
 
     async function submitScheduleEditor(event) {
@@ -1417,29 +1430,34 @@ def render_timer_dashboard_page(
       const form = event.currentTarget;
       const message = form.querySelector(".editor-message");
       showEditorMessage(message, "", "Saving...");
-      const mode = form.elements.mode.value;
-      const body = {mode};
-      if (mode === "cycle") {
-        body.on_seconds = Number(form.elements.onValue.value) * unitMultiplier(form.elements.onUnit.value);
-        body.off_seconds = Number(form.elements.offValue.value) * unitMultiplier(form.elements.offUnit.value);
-        body.start_at_seconds = Number(form.elements.startAtSeconds.value);
-      } else {
-        body.on_time = form.elements.onTime.value;
-        body.off_time = form.elements.offTime.value;
-      }
       try {
-        const response = await fetch(`/api/controllers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(timerEditorPanel.dataset.channelId)}/schedule`, {
-          method: "POST",
-          headers: {"content-type": "application/json"},
-          body: JSON.stringify(body),
-        });
-        const text = await response.text();
-        let parsed = null;
-        try { parsed = JSON.parse(text); } catch (error) {}
-        if (!response.ok) {
-          throw new Error(parsed?.detail || text || `${response.status} ${response.statusText}`);
+        let lastMessage = "";
+        for (const block of form.querySelectorAll(".device-schedule-editor")) {
+          const channelId = block.dataset.channelId;
+          const mode = block.querySelector(".editor-mode").value;
+          const body = {mode};
+          if (mode === "cycle") {
+            body.on_seconds = Number(block.querySelector(".editor-on-value").value) * unitMultiplier(block.querySelector(".editor-on-unit").value);
+            body.off_seconds = Number(block.querySelector(".editor-off-value").value) * unitMultiplier(block.querySelector(".editor-off-unit").value);
+            body.start_at_seconds = Number(block.querySelector(".editor-start-at").value);
+          } else {
+            body.on_time = block.querySelector(".editor-on-time").value;
+            body.off_time = block.querySelector(".editor-off-time").value;
+          }
+          const response = await fetch(`/api/controllers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(channelId)}/schedule`, {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify(body),
+          });
+          const text = await response.text();
+          let parsed = null;
+          try { parsed = JSON.parse(text); } catch (error) {}
+          if (!response.ok) {
+            throw new Error(`${channelId}: ${parsed?.detail || text || `${response.status} ${response.statusText}`}`);
+          }
+          lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
         }
-        showEditorMessage(message, "editor-success", parsed?.message || "Schedule applied. Waiting for report...");
+        showEditorMessage(message, "editor-success", lastMessage || "Schedule applied. Waiting for report...");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }
@@ -1467,9 +1485,24 @@ def render_timer_dashboard_page(
         const items = channels.length
           ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
           : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
+        const controllerCard = document.createElement("section");
+        controllerCard.className = "controller-card";
+        const controllerTop = document.createElement("div");
+        controllerTop.className = "controller-top";
+        const controllerName = document.createElement("span");
+        controllerName.className = "controller-name";
+        controllerName.textContent = role;
+        const controllerMeta = document.createElement("span");
+        controllerMeta.className = "editor-note";
+        controllerMeta.textContent = items.length + " device" + (items.length === 1 ? "" : "s");
+        controllerTop.append(controllerName, controllerMeta);
+        const devicesGrid = document.createElement("div");
+        devicesGrid.className = "controller-devices";
+        let editableCount = 0;
         for (const item of items) {
           const channel = item.channel;
           const disabled = channel.default_editor === "disabled";
+          if (!disabled) editableCount += 1;
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
@@ -1481,7 +1514,7 @@ def render_timer_dashboard_page(
           top.className = "timer-top";
           const name = document.createElement("span");
           name.className = "timer-name";
-          name.textContent = role + " / " + channel.name;
+          name.textContent = channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
           badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");
@@ -1495,24 +1528,29 @@ def render_timer_dashboard_page(
           fill.className = "timer-fill" + (isOn ? "" : " off");
           fill.style.width = percent + "%";
           bar.append(fill);
-          const actions = document.createElement("div");
-          actions.className = "timer-actions";
-          if (!disabled) {
-            const edit = document.createElement("button");
-            edit.type = "button";
-            edit.textContent = "Edit schedule";
-            edit.addEventListener("click", () => openScheduleEditor(role, channel, event));
-            actions.append(edit);
-          }
-          card.append(top, meta, bar, actions);
-          timerBoard.append(card);
-          if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {
-            timerBoard.append(timerEditorPanel);
-            timerEditorPanel.hidden = false;
-            editorPlaced = true;
-          }
+          card.append(top, meta, bar);
+          devicesGrid.append(card);
           rendered += 1;
         }
+        controllerCard.append(controllerTop, devicesGrid);
+        const actions = document.createElement("div");
+        actions.className = "controller-actions";
+        if (editableCount > 0) {
+          const edit = document.createElement("button");
+          edit.type = "button";
+          edit.textContent = "Edit schedule";
+          edit.addEventListener("click", () => openControllerScheduleEditor(role, items));
+          actions.append(edit);
+        } else {
+          actions.textContent = "No editable device schedules.";
+        }
+        controllerCard.append(actions);
+        if (activeEditor && activeEditor.role === role) {
+          controllerCard.append(timerEditorPanel);
+          timerEditorPanel.hidden = false;
+          editorPlaced = true;
+        }
+        timerBoard.append(controllerCard);
       }
       if (!editorPlaced) {
         timerEditorPanel.hidden = true;

@@ -71,19 +71,26 @@ class PageRenderTests(unittest.TestCase):
     def test_timer_dashboard_page_uses_server_schedule_success_message(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('showEditorMessage(message, "editor-success", parsed?.message || "Schedule applied. Waiting for report...");', html)
+        self.assertIn('lastMessage = parsed?.message || "Schedule applied. Waiting for report...";', html)
+        self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule applied. Waiting for report...");', html)
 
-    def test_timer_dashboard_page_places_editor_under_active_timer_and_pauses_refresh(self):
+    def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
+        self.assertIn("<h2>Controllers</h2>", html)
+        self.assertNotIn("<h2>Timers</h2>", html)
         self.assertIn("let activeEditor = null;", html)
-        self.assertIn("function openScheduleEditor(role, channel, event) {", html)
-        self.assertIn("activeEditor = {role, channelId: channel.id};", html)
+        self.assertIn("function openControllerScheduleEditor(role, items) {", html)
+        self.assertIn("activeEditor = {role};", html)
         self.assertIn("stopPageAutoRefresh();", html)
         self.assertIn("activeEditor = null;", html)
-        self.assertIn('edit.addEventListener("click", () => openScheduleEditor(role, channel, event));', html)
-        self.assertIn("if (activeEditor && activeEditor.role === role && activeEditor.channelId === channel.id) {", html)
-        self.assertIn("timerBoard.append(timerEditorPanel);", html)
+        self.assertIn('edit.textContent = "Edit schedule";', html)
+        self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role, items));', html)
+        self.assertIn('button type="submit">Apply schedule</button>', html)
+        self.assertIn('button type="button" name="cancel">Close</button>', html)
+        self.assertIn("for (const block of form.querySelectorAll(\".device-schedule-editor\")) {", html)
+        self.assertIn("controllerCard.append(timerEditorPanel);", html)
+        self.assertNotIn("function openScheduleEditor(role, channel, event) {", html)
 
     def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -183,7 +190,9 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('const disabled = channel.default_editor === "disabled";', html)
         self.assertIn('badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");', html)
-        self.assertIn("if (!disabled) {", html)
+        self.assertIn("if (!disabled) editableCount += 1;", html)
+        self.assertIn('if (editableCount > 0) {', html)
+        self.assertIn('actions.textContent = "No editable device schedules.";', html)
 
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
