@@ -454,9 +454,12 @@ def total_duration(pattern: Any) -> int | None:
 
 
 def event_elapsed_t(event: dict[str, Any]) -> int | None:
+    raw = event.get("elapsed_t")
+    if raw is None:
+        raw = event.get("current_t")
     try:
-        return int(event.get("elapsed_t", event["current_t"]))
-    except (KeyError, TypeError, ValueError):
+        return int(raw)
+    except (TypeError, ValueError):
         return None
 
 
@@ -593,7 +596,18 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
     items = content.get("devices")
     if not isinstance(items, list):
         return None
-    state: dict[str, Any] = {"devices": items}
+    normalized_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            normalized_items.append(item)
+            continue
+        normalized = dict(item)
+        if "current_t" not in normalized:
+            elapsed_t = event_elapsed_t(normalized)
+            if elapsed_t is not None:
+                normalized["current_t"] = elapsed_t
+        normalized_items.append(normalized)
+    state: dict[str, Any] = {"devices": normalized_items}
     if "report_every" in content:
         state["report_every"] = content["report_every"]
     else:
