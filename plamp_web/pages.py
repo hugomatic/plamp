@@ -1399,20 +1399,6 @@ def render_timer_dashboard_page(
       `;
     }
 
-    function controllerScheduleForm(role, items) {
-      return `
-        <form id="timer-schedule-form" data-role="${escapeHtml(role)}">
-          <div class="timer-top"><strong>Edit ${escapeHtml(role)} schedule</strong><span class="editor-note">Updating any device schedule reprograms the controller.</span></div>
-          ${items.map((item) => scheduleEditorBlock(role, item.channel, item.event || {id: item.channel.id, pin: item.channel.pin, type: item.channel.type || "gpio"})).join("")}
-          <div class="controller-actions controller-actions-editing">
-            <button type="submit">Apply schedule</button>
-            <button type="button" name="cancel">Close</button>
-            <span class="editor-message" aria-live="polite"></span>
-          </div>
-        </form>
-      `;
-    }
-
     function openControllerScheduleEditor(role) {
       stopPageAutoRefresh();
       activeEditor = {role};
@@ -1547,7 +1533,12 @@ def render_timer_dashboard_page(
         const items = channels.length
           ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
           : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
-        const controllerCard = document.createElement("section");
+        const isEditing = activeEditor && activeEditor.role === role;
+        const controllerCard = document.createElement(isEditing ? "form" : "section");
+        if (isEditing) {
+          controllerCard.id = "timer-schedule-form";
+          controllerCard.dataset.role = role;
+        }
         controllerCard.className = "controller-card";
         const controllerTop = document.createElement("div");
         controllerTop.className = "controller-top";
@@ -1591,27 +1582,35 @@ def render_timer_dashboard_page(
           fill.style.width = percent + "%";
           bar.append(fill);
           card.append(top, meta, bar);
-          const isEditing = activeEditor && activeEditor.role === role;
           if (!hidden || isEditing) {
             devicesGrid.append(card);
+            if (isEditing) {
+              const editor = document.createElement("div");
+              editor.innerHTML = scheduleEditorBlock(role, channel, event);
+              const block = editor.firstElementChild;
+              if (block) {
+                card.append(block);
+              }
+            }
             rendered += 1;
           }
         }
         controllerCard.append(controllerTop, devicesGrid);
-        if (activeEditor && activeEditor.role === role) {
+        if (isEditing) {
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
-          actions.innerHTML = controllerScheduleForm(role, items);
-          const form = actions.querySelector("#timer-schedule-form");
-          if (form) {
-            for (const block of form.querySelectorAll(".device-schedule-editor")) {
-              syncEditorMode(block);
-              block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
-            }
-            form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
-            form.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
-            form.addEventListener("submit", submitScheduleEditor);
+          actions.innerHTML = `
+            <button type="submit">Apply schedule</button>
+            <button type="button" name="cancel">Close</button>
+            <span class="editor-message" aria-live="polite"></span>
+          `;
+          for (const block of controllerCard.querySelectorAll(".device-schedule-editor")) {
+            syncEditorMode(block);
+            block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
           }
+          controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
+          controllerCard.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
+          controllerCard.addEventListener("submit", submitScheduleEditor);
           controllerCard.append(actions);
         } else {
           const actions = document.createElement("div");
@@ -1627,7 +1626,7 @@ def render_timer_dashboard_page(
           }
           controllerCard.append(actions);
         }
-        if (activeEditor && activeEditor.role === role) {
+        if (isEditing) {
           controllerCard.classList.add("controller-card-editing");
         }
         timerBoard.append(controllerCard);
