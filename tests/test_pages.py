@@ -72,7 +72,7 @@ class PageRenderTests(unittest.TestCase):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('lastMessage = parsed?.message || "Schedule applied. Waiting for report...";', html)
-        self.assertIn('showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");', html)
+        self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -102,10 +102,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('controller.settings.devices[channelId] = device;', html)
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
-        self.assertIn('const applyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`);', html)
+        self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
         self.assertIn('if (channel) channel.default_editor = block.querySelector(".editor-mode").value;', html)
         self.assertIn('renderTimerStatus();', html)
-        self.assertIn('const reapplyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`, {', html)
+        self.assertNotIn('/api/timers', html)
         self.assertNotIn('class="editor-on-unit"', html)
         self.assertNotIn('class="editor-off-unit"', html)
         self.assertNotIn("function openScheduleEditor(role, channel, event) {", html)

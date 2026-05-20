@@ -1485,6 +1485,14 @@ def render_timer_dashboard_page(
         if (!saveConfigResponse.ok) {
           throw new Error(saveConfigParsed?.detail || saveConfigText || `config save: ${saveConfigResponse.status} ${saveConfigResponse.statusText}`);
         }
+        const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});
+        const applyConfigText = await applyConfigResponse.text();
+        let applyConfigParsed = null;
+        try { applyConfigParsed = JSON.parse(applyConfigText); } catch (error) {}
+        if (!applyConfigResponse.ok) {
+          throw new Error(applyConfigParsed?.detail || applyConfigText || `apply config: ${applyConfigResponse.status} ${applyConfigResponse.statusText}`);
+        }
+        lastMessage = applyConfigParsed?.message || "Schedule settings saved.";
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           const mode = block.querySelector(".editor-mode").value;
@@ -1513,29 +1521,13 @@ def render_timer_dashboard_page(
           }
           lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
         }
-        const applyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`);
-        const applyPayload = await applyResponse.json();
-        if (!applyResponse.ok) {
-          throw new Error(applyPayload?.detail || `timer: ${applyResponse.status} ${applyResponse.statusText}`);
-        }
-        const reapplyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`, {
-          method: "PUT",
-          headers: {"content-type": "application/json"},
-          body: JSON.stringify(applyPayload),
-        });
-        const reapplyText = await reapplyResponse.text();
-        let reapplyParsed = null;
-        try { reapplyParsed = JSON.parse(reapplyText); } catch (error) {}
-        if (!reapplyResponse.ok) {
-          throw new Error(reapplyParsed?.detail || reapplyText || `timer apply: ${reapplyResponse.status} ${reapplyResponse.statusText}`);
-        }
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
           if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
         }
         renderTimerStatus();
-        showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");
+        showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }

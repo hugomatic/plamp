@@ -327,7 +327,7 @@ class PlampCliTimerTests(unittest.TestCase):
         request_json.assert_called_once_with(
             "POST",
             "http://127.0.0.1:8000",
-            "/api/timers/pump_lights/channels/main/schedule",
+            "/api/controllers/pump_lights/channels/main/schedule",
             {"minutes": [0, 15, 30, 45]},
         )
 

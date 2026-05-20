@@ -283,7 +283,7 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
         response = request_json(
             "POST",
             base_url,
-            f"/api/timers/{args.controller}/channels/{args.channel_id}/schedule",
+            f"/api/controllers/{args.controller}/channels/{args.channel_id}/schedule",
             payload,
         )
         return _normalize_pico_scheduler_response(response)

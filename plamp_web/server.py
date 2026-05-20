@@ -2016,7 +2016,6 @@ def get_camera_capture_image(capture_id: str) -> FileResponse:
     return FileResponse(image_path, media_type="image/jpeg")
 
 
-@app.post("/api/timers/{role}/channels/{channel_id}/schedule")
 def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
     config = load_config()
     timer_role(role)
@@ -2077,21 +2076,29 @@ def post_controller_channel_schedule(controller: str, channel_id: str, schedule:
     return response
 
 
-@app.get("/api/timers/{role}", response_model=None)
-def get_timer(role: str, stream: bool = False) -> Any:
-    if stream:
-        return stream_timer_events(role)
-    return state_for_role(role)
-
-
-@app.put("/api/timers/{role}")
-def put_timer(role: str, state: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    path = timer_state_path(role)
-    validated = validate_timer_state(state)
-    with lock_for(role_locks, role):
+@app.post("/api/controllers/{controller}/apply")
+def post_controller_apply(controller: str) -> dict[str, Any]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="apply is only supported for pico_scheduler controllers")
+    path = timer_state_path(controller)
+    validated = load_timer_state_for_schedule_edit(path)
+    sent = None
+    message = "state sent to Pico"
+    with lock_for(role_locks, controller):
         atomic_write_json(path, validated)
-        sent = apply_timer_state(role, path)
-    return {"role": role, "success": True, "message": "state saved and sent to Pico", "pico": sent}
+        try:
+            sent = apply_timer_state(controller, path)
+        except HTTPException as exc:
+            detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
+            message = f"state saved; {detail}"
+    return {
+        "controller": controller,
+        "firmware": "pico_scheduler",
+        "success": True,
+        "message": message,
+        "pico": sent,
+        "state": state_with_current_values(validated),
+    }
 
 
 def default_timer_payload_for_api_test(default_role: str | None) -> str:

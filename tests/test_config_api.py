@@ -838,12 +838,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(latest["devices"][0]["cycle_t"], 5)
         self.assertEqual(latest["devices"][0]["current_value"], 1)
 
-    def test_get_timer_returns_devices_not_events(self):
-        with patch.object(server, "state_for_role", return_value={"report_every": 10, "devices": []}):
-            payload = server.get_timer("pump_lights", stream=False)
-
-        self.assertEqual(payload, {"report_every": 10, "devices": []})
-
     def test_get_controller_uses_scheduler_report_interval_from_config(self):
         with (
             patch.object(server, "controller_firmware", return_value="pico_scheduler"),
@@ -1035,6 +1029,42 @@ class ConfigApiTests(unittest.TestCase):
             state = server.timer_state_for_pico("sprouter", raw_state)
 
         self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
+
+    def test_post_controller_apply_reapplies_saved_scheduler_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"sprouter": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2, programming="disabled")})},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            timer_path = timers_dir / "sprouter.json"
+            timer_path.write_text(
+                json.dumps(
+                    {
+                        "report_every": 1,
+                        "devices": [
+                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "apply_timer_state", return_value={"ok": True}) as apply_timer_state,
+            ):
+                response = server.post_controller_apply("sprouter")
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["message"], "state sent to Pico")
+        apply_timer_state.assert_called_once_with("sprouter", timer_path)
 
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
         config = server.config_view({
