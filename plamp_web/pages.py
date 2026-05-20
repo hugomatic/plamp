@@ -1048,7 +1048,6 @@ def render_timer_dashboard_page(
     .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
     .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
     .timer-fill.off { background: #888; }
-    .timer-editor { border: 1px solid #ccc; border-radius: 6px; display: grid; gap: .65rem; margin: 1rem 0; max-width: 980px; padding: .75rem; }
     .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
     .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
     .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
@@ -1078,7 +1077,6 @@ def render_timer_dashboard_page(
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
-  <div id="timer-editor-panel" class="timer-editor" hidden></div>
 
   <h2>Camera</h2>
   <section class="camera-panel" aria-label="Camera captures">
@@ -1519,6 +1517,7 @@ def render_timer_dashboard_page(
           const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
           if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
         }
+        activeEditor = null;
         renderTimerStatus(true);
         showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");
       } catch (error) {
@@ -1600,10 +1599,10 @@ def render_timer_dashboard_page(
         }
         controllerCard.append(controllerTop, devicesGrid);
         if (activeEditor && activeEditor.role === role) {
-          const editor = document.createElement("div");
-          editor.className = "controller-editor";
-          editor.innerHTML = controllerScheduleForm(role, items);
-          const form = editor.querySelector("#timer-schedule-form");
+          const actions = document.createElement("div");
+          actions.className = "controller-actions controller-actions-editing";
+          actions.innerHTML = controllerScheduleForm(role, items);
+          const form = actions.querySelector("#timer-schedule-form");
           if (form) {
             for (const block of form.querySelectorAll(".device-schedule-editor")) {
               syncEditorMode(block);
@@ -1613,7 +1612,7 @@ def render_timer_dashboard_page(
             form.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
             form.addEventListener("submit", submitScheduleEditor);
           }
-          controllerCard.append(editor);
+          controllerCard.append(actions);
         } else {
           const actions = document.createElement("div");
           actions.className = "controller-actions";
