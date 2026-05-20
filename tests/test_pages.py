@@ -72,7 +72,7 @@ class PageRenderTests(unittest.TestCase):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('lastMessage = parsed?.message || "Schedule applied. Waiting for report...";', html)
-        self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule applied. Waiting for report...");', html)
+        self.assertIn('showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");', html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -93,8 +93,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("for (const block of form.querySelectorAll(\".device-schedule-editor\")) {", html)
         self.assertIn("controllerCard.append(timerEditorPanel);", html)
         self.assertIn('class="editor-cycle-unit"', html)
+        self.assertIn('<option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>', html)
+        self.assertIn('<option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>', html)
         self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
         self.assertIn('body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;', html)
+        self.assertIn('const configResponse = await fetch("/api/config");', html)
+        self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
+        self.assertIn('const applyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`);', html)
+        self.assertIn('const reapplyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`, {', html)
         self.assertNotIn('class="editor-on-unit"', html)
         self.assertNotIn('class="editor-off-unit"', html)
         self.assertNotIn("function openScheduleEditor(role, channel, event) {", html)
@@ -192,14 +198,16 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<option value="disabled" selected>disabled</option>', html)
         self.assertIn('<option value="hidden">hidden</option>', html)
 
-    def test_timer_dashboard_renders_disabled_channels_without_editor_button(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}]}, 0)
+    def test_timer_dashboard_renders_disabled_and_hidden_channels_in_editor_flow(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
         self.assertIn('const disabled = channel.default_editor === "disabled";', html)
-        self.assertIn('badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");', html)
-        self.assertIn("if (!disabled) editableCount += 1;", html)
-        self.assertIn('if (editableCount > 0) {', html)
-        self.assertIn('actions.textContent = "No editable device schedules.";', html)
+        self.assertIn('const hidden = channel.default_editor === "hidden";', html)
+        self.assertIn('badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));', html)
+        self.assertIn('if (!hidden) {', html)
+        self.assertIn('if (configurableCount > 0) {', html)
+        self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role, items));', html)
+        self.assertIn('actions.textContent = "No configured device schedules.";', html)
 
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)

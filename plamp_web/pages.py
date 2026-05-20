@@ -1371,7 +1371,7 @@ def render_timer_dashboard_page(
       const sharedUnit = chooseSharedUnit([durations.on, durations.off, safeStartAt]);
       const divisor = unitMultiplier(sharedUnit);
       const clock = clockValuesForEvent(event);
-      const mode = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
+      const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
       return `
         <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}">
           <div class="timer-top"><strong>${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
@@ -1380,6 +1380,8 @@ def render_timer_dashboard_page(
               <select class="editor-mode" name="mode-${escapeHtml(channel.id)}">
                 <option value="cycle"${mode === "cycle" ? " selected" : ""}>Cycle set</option>
                 <option value="clock_window"${mode === "clock_window" ? " selected" : ""}>24h set</option>
+                <option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>
+                <option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>
               </select>
             </label>
           </div>
@@ -1403,11 +1405,10 @@ def render_timer_dashboard_page(
       activeEditor = {role};
       timerEditorPanel.hidden = false;
       timerEditorPanel.dataset.role = role;
-      const editableItems = items.filter((item) => item.channel.default_editor !== "disabled");
       timerEditorPanel.innerHTML = `
         <form id="timer-schedule-form">
           <div class="timer-top"><strong>Edit ${escapeHtml(role)} schedule</strong><span class="editor-note">Updating any device schedule reprograms the controller.</span></div>
-          ${editableItems.map((item) => scheduleEditorBlock(role, item.channel, item.event || {id: item.channel.id, pin: item.channel.pin, type: item.channel.type || "gpio"})).join("")}
+          ${items.map((item) => scheduleEditorBlock(role, item.channel, item.event || {id: item.channel.id, pin: item.channel.pin, type: item.channel.type || "gpio"})).join("")}
           <div class="editor-row">
             <button type="submit">Apply schedule</button>
             <button type="button" name="cancel">Close</button>
@@ -1428,8 +1429,10 @@ def render_timer_dashboard_page(
     }
 
     function syncEditorMode(block) {
-      const clock = block.querySelector(".editor-mode").value === "clock_window";
-      block.querySelector(".cycle-fields").hidden = clock;
+      const mode = block.querySelector(".editor-mode").value;
+      const clock = mode === "clock_window";
+      const scheduled = mode === "cycle" || clock;
+      block.querySelector(".cycle-fields").hidden = !scheduled || clock;
       block.querySelector(".clock-fields").hidden = !clock;
     }
 
@@ -1440,9 +1443,51 @@ def render_timer_dashboard_page(
       showEditorMessage(message, "", "Saving...");
       try {
         let lastMessage = "";
-        for (const block of form.querySelectorAll(".device-schedule-editor")) {
+        const role = timerEditorPanel.dataset.role;
+        const blocks = Array.from(form.querySelectorAll(".device-schedule-editor"));
+        const configResponse = await fetch("/api/config");
+        const configPayload = await configResponse.json();
+        if (!configResponse.ok) {
+          throw new Error(configPayload?.detail || `config: ${configResponse.status} ${configResponse.statusText}`);
+        }
+        const controllers = structuredClone(configPayload?.config?.controllers || {});
+        const controller = structuredClone(controllers[role] || {});
+        controller.devices = structuredClone(controller.devices || {});
+        for (const block of blocks) {
           const channelId = block.dataset.channelId;
           const mode = block.querySelector(".editor-mode").value;
+          const device = structuredClone(controller.devices[channelId] || {});
+          device.type = device.type || "scheduled_output";
+          device.config = structuredClone(device.config || {});
+          device.settings = structuredClone(device.settings || {});
+          device.settings.programming = mode === "disabled" ? "disabled" : "enabled";
+          device.config.visibility = mode === "hidden" ? "hidden" : "visible";
+          const existingSchedule = structuredClone(device.settings.schedule || {});
+          device.settings.schedule = mode === "clock_window"
+            ? (existingSchedule.kind === "daily_window" && existingSchedule.on_time && existingSchedule.off_time
+                ? existingSchedule
+                : {kind: "daily_window", on_time: "06:00", off_time: "18:00"})
+            : (mode === "cycle" || mode === "disabled" || mode === "hidden")
+              ? (existingSchedule.kind ? existingSchedule : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0})
+              : existingSchedule;
+          controller.devices[channelId] = device;
+        }
+        controllers[role] = controller;
+        const saveConfigResponse = await fetch("/api/config/controllers", {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(controllers),
+        });
+        const saveConfigText = await saveConfigResponse.text();
+        let saveConfigParsed = null;
+        try { saveConfigParsed = JSON.parse(saveConfigText); } catch (error) {}
+        if (!saveConfigResponse.ok) {
+          throw new Error(saveConfigParsed?.detail || saveConfigText || `config save: ${saveConfigResponse.status} ${saveConfigResponse.statusText}`);
+        }
+        for (const block of blocks) {
+          const channelId = block.dataset.channelId;
+          const mode = block.querySelector(".editor-mode").value;
+          if (mode !== "cycle" && mode !== "clock_window") continue;
           const body = {mode};
           if (mode === "cycle") {
             const cycleUnit = block.querySelector(".editor-cycle-unit").value;
@@ -1454,7 +1499,7 @@ def render_timer_dashboard_page(
             body.on_time = block.querySelector(".editor-on-time").value;
             body.off_time = block.querySelector(".editor-off-time").value;
           }
-          const response = await fetch(`/api/controllers/${encodeURIComponent(timerEditorPanel.dataset.role)}/channels/${encodeURIComponent(channelId)}/schedule`, {
+          const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/schedule`, {
             method: "POST",
             headers: {"content-type": "application/json"},
             body: JSON.stringify(body),
@@ -1467,7 +1512,23 @@ def render_timer_dashboard_page(
           }
           lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
         }
-        showEditorMessage(message, "editor-success", lastMessage || "Schedule applied. Waiting for report...");
+        const applyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`);
+        const applyPayload = await applyResponse.json();
+        if (!applyResponse.ok) {
+          throw new Error(applyPayload?.detail || `controller: ${applyResponse.status} ${applyResponse.statusText}`);
+        }
+        const reapplyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`, {
+          method: "PUT",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(applyPayload),
+        });
+        const reapplyText = await reapplyResponse.text();
+        let reapplyParsed = null;
+        try { reapplyParsed = JSON.parse(reapplyText); } catch (error) {}
+        if (!reapplyResponse.ok) {
+          throw new Error(reapplyParsed?.detail || reapplyText || `controller apply: ${reapplyResponse.status} ${reapplyResponse.statusText}`);
+        }
+        showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }
@@ -1508,11 +1569,11 @@ def render_timer_dashboard_page(
         controllerTop.append(controllerName, controllerMeta);
         const devicesGrid = document.createElement("div");
         devicesGrid.className = "controller-devices";
-        let editableCount = 0;
+        let configurableCount = items.length;
         for (const item of items) {
           const channel = item.channel;
           const disabled = channel.default_editor === "disabled";
-          if (!disabled) editableCount += 1;
+          const hidden = channel.default_editor === "hidden";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const step = currentTimerStep(event);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
@@ -1527,7 +1588,7 @@ def render_timer_dashboard_page(
           name.textContent = channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
-          badge.textContent = disabled ? "DISABLED" : (isOn ? "ON" : "OFF");
+          badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
@@ -1539,20 +1600,22 @@ def render_timer_dashboard_page(
           fill.style.width = percent + "%";
           bar.append(fill);
           card.append(top, meta, bar);
-          devicesGrid.append(card);
-          rendered += 1;
+          if (!hidden) {
+            devicesGrid.append(card);
+            rendered += 1;
+          }
         }
         controllerCard.append(controllerTop, devicesGrid);
         const actions = document.createElement("div");
         actions.className = "controller-actions";
-        if (editableCount > 0) {
+        if (configurableCount > 0) {
           const edit = document.createElement("button");
           edit.type = "button";
           edit.textContent = "Edit schedule";
           edit.addEventListener("click", () => openControllerScheduleEditor(role, items));
           actions.append(edit);
         } else {
-          actions.textContent = "No editable device schedules.";
+          actions.textContent = "No configured device schedules.";
         }
         controllerCard.append(actions);
         if (activeEditor && activeEditor.role === role) {
