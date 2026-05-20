@@ -1529,6 +1529,12 @@ def render_timer_dashboard_page(
         if (!reapplyResponse.ok) {
           throw new Error(reapplyParsed?.detail || reapplyText || `timer apply: ${reapplyResponse.status} ${reapplyResponse.statusText}`);
         }
+        for (const block of blocks) {
+          const channelId = block.dataset.channelId;
+          const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
+          if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
+        }
+        renderTimerStatus();
         showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));

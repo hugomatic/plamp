@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+import time as pytime
 from pathlib import Path
 from typing import Any
 
@@ -2044,7 +2045,19 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
             sent = apply_timer_state(role, path)
         except HTTPException as exc:
             detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
-            message = f"schedule saved; {detail}"
+            if detail.startswith(f"Pico for role {role} is not connected:"):
+                reconnected = False
+                for _ in range(6):
+                    pytime.sleep(0.5)
+                    try:
+                        pico_for_role(role)
+                    except HTTPException:
+                        continue
+                    reconnected = True
+                    break
+                message = "schedule saved; Pico briefly reconnected while applying." if reconnected else f"schedule saved; {detail}"
+            else:
+                message = f"schedule saved; {detail}"
     return {
         "role": role,
         "channel": channel_id,

@@ -103,6 +103,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
         self.assertIn('const applyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`);', html)
+        self.assertIn('if (channel) channel.default_editor = block.querySelector(".editor-mode").value;', html)
+        self.assertIn('renderTimerStatus();', html)
         self.assertIn('const reapplyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`, {', html)
         self.assertNotIn('class="editor-on-unit"', html)
         self.assertNotIn('class="editor-off-unit"', html)

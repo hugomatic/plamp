@@ -969,6 +969,46 @@ class ConfigApiTests(unittest.TestCase):
             },
         )
 
+    def test_post_timer_channel_schedule_softens_transient_reconnect_message(self):
+        state = {
+            "report_every": 1,
+            "devices": [
+                {"id": "ch1", "type": "gpio", "pin": 21, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+            ],
+        }
+        channels = [{"id": "ch1", "pin": 21, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0}]
+        config = {"controllers": {"octo_relay": self.scheduler_controller(serial="abc", devices={"ch1": self.scheduled_output(21)})}, "cameras": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(root, config)
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True, exist_ok=True)
+            (timers_dir / "octo_relay.json").write_text(json.dumps(state), encoding="utf-8")
+            class ReconnectOnce:
+                def __init__(self):
+                    self.calls = 0
+                def __call__(self, role):
+                    self.calls += 1
+                    if self.calls == 1:
+                        raise HTTPException(status_code=409, detail="Pico for role octo_relay is not connected: abc")
+                    return {"serial": "abc"}
+            reconnect_once = ReconnectOnce()
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "channel_metadata_for_role", return_value=channels),
+                patch.object(server, "load_timer_state_for_schedule_edit", return_value=state),
+                patch.object(server, "latest_timer_state", return_value=state),
+                patch.object(server, "live_devices_for_role", return_value=state["devices"]),
+                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="Pico for role octo_relay is not connected: abc")),
+                patch.object(server, "pico_for_role", side_effect=reconnect_once),
+                patch.object(server.pytime, "sleep", return_value=None),
+            ):
+                response = server.post_timer_channel_schedule("octo_relay", "ch1", {"mode": "cycle", "on_seconds": 5, "off_seconds": 10, "start_at_seconds": 0})
+
+        self.assertEqual(response["message"], "schedule saved; Pico briefly reconnected while applying.")
+
     def test_timer_state_for_pico_excludes_disabled_and_hidden_devices(self):
         raw_state = {
             "report_every": 1,
