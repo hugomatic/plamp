@@ -1512,12 +1512,12 @@ def render_timer_dashboard_page(
           }
           lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
         }
-        const applyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`);
+        const applyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`);
         const applyPayload = await applyResponse.json();
         if (!applyResponse.ok) {
-          throw new Error(applyPayload?.detail || `controller: ${applyResponse.status} ${applyResponse.statusText}`);
+          throw new Error(applyPayload?.detail || `timer: ${applyResponse.status} ${applyResponse.statusText}`);
         }
-        const reapplyResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}`, {
+        const reapplyResponse = await fetch(`/api/timers/${encodeURIComponent(role)}`, {
           method: "PUT",
           headers: {"content-type": "application/json"},
           body: JSON.stringify(applyPayload),
@@ -1526,7 +1526,7 @@ def render_timer_dashboard_page(
         let reapplyParsed = null;
         try { reapplyParsed = JSON.parse(reapplyText); } catch (error) {}
         if (!reapplyResponse.ok) {
-          throw new Error(reapplyParsed?.detail || reapplyText || `controller apply: ${reapplyResponse.status} ${reapplyResponse.statusText}`);
+          throw new Error(reapplyParsed?.detail || reapplyText || `timer apply: ${reapplyResponse.status} ${reapplyResponse.statusText}`);
         }
         showEditorMessage(message, "editor-success", lastMessage || reapplyParsed?.message || "Schedule settings saved.");
       } catch (error) {
