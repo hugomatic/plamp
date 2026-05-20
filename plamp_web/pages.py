@@ -1801,7 +1801,11 @@ def render_timer_dashboard_page(
             renderTimerStatus();
           });
         }
-        source.onerror = () => { timerStatus.textContent = "Stream error or reconnecting..."; };
+        source.onerror = () => {
+          if (source.readyState === EventSource.CLOSED) {
+            timerStatus.textContent = "Stream disconnected.";
+          }
+        };
       }
     }
 
@@ -2375,7 +2379,9 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
       }}
       timerEventSource.onerror = () => {{
-        streamStatus.textContent = "Stream error or reconnecting...";
+        if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {{
+          streamStatus.textContent = "Stream disconnected.";
+        }}
       }};
     }}
 
