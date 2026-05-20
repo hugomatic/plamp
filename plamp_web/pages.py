@@ -1609,9 +1609,9 @@ def render_timer_dashboard_page(
             block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
           }
           controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
-          controllerCard.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
           controllerCard.addEventListener("submit", submitScheduleEditor);
           controllerCard.append(actions);
+          actions.querySelector('[name="cancel"]').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
         } else {
           const actions = document.createElement("div");
           actions.className = "controller-actions";

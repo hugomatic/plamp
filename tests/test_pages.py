@@ -99,7 +99,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const actions = document.createElement("div");', html)
         self.assertIn('actions.className = "controller-actions controller-actions-editing";', html)
         self.assertIn('for (const block of controllerCard.querySelectorAll(".device-schedule-editor")) {', html)
-        self.assertIn('controllerCard.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });', html)
+        self.assertIn('actions.querySelector(\'[name="cancel"]\').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });', html)
         self.assertIn('controllerCard.classList.add("controller-card-editing");', html)
         self.assertIn('class="editor-cycle-unit"', html)
         self.assertIn('<option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>', html)
