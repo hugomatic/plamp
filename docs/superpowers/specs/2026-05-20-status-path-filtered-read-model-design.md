@@ -19,7 +19,7 @@ This removes the need for public consumers to call `/api/controllers/{role}` for
 - Support one or more `path=` filters per request.
 - Support nested paths such as `controllers.octo_relay`.
 - Return filtered results in request order.
-- Return all leaves under each matched path.
+- Return the complete matched node, including its descendants.
 - Make streaming per-client, with each SSE connection using its own filter list.
 - Emit stream updates only when a changed node intersects the client’s filtered paths.
 - Update the test API page so the filtering and streaming behavior is visible and easy to exercise.
@@ -51,7 +51,7 @@ Rules:
 
 - Each `path=` value is a dotted path into the status tree.
 - A path may match a subtree.
-- The response should contain the leaves under the matched subtree.
+- The response should contain the complete matched node, including all descendants under that path.
 - Any request with one or more `path=` filters should return an array of `{path, node}` objects in request order.
 - The `path` field should echo the requested path, so the caller can map results back to filters without guessing.
 
@@ -74,7 +74,7 @@ Rules:
 
 - Filters are per connection.
 - Each SSE client receives only the filtered portion of the status tree.
-- The server should emit an update only when a change intersects one of the filtered paths.
+- The server should emit an update only when a change occurs inside one of the requested matched nodes.
 - The initial event should provide the filtered snapshot for that connection.
 - Subsequent events should carry the same filtered array-of-paths shape, not an unrelated global tree.
 
@@ -142,7 +142,7 @@ Rules:
 Required coverage:
 
 - `/api/status` returns the full read model.
-- filtered `/api/status` reads return the expected subtree leaves.
+- filtered `/api/status` reads return the expected matched nodes and descendants.
 - multiple `path=` filters return an ordered array of `{path, node}` objects.
 - filtered SSE streams emit only when matching nodes change.
 - the system page reads from filtered `/api/status`.
