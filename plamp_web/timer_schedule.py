@@ -52,12 +52,12 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
             raise ValueError(f"device {device_id} pin must be in range 0..29")
         visibility = device.get("visibility", "visible")
         programming = device.get("programming", "enabled")
-        if visibility == "hidden":
-            continue
         schedule = device.get("editor", {})
         kind = schedule.get("kind", "cycle") if isinstance(schedule, dict) else "cycle"
         default_editor = "clock_window" if kind == "daily_window" else "cycle"
-        if programming == "disabled":
+        if visibility == "hidden":
+            default_editor = "hidden"
+        elif programming == "disabled":
             default_editor = "disabled"
         live_device = live_by_pin.get(pin)
         payload_device = payload_by_pin.get(pin)
@@ -88,6 +88,8 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
                 "pin": live_pin,
                 "type": event_type,
                 "default_editor": default_editor,
+                "visibility": visibility,
+                "programming": programming,
             }
         )
     return result

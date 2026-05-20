@@ -34,8 +34,8 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
-                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled"},
+                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled"},
             ],
         )
 
@@ -49,7 +49,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled"},
             ],
         )
 
@@ -64,11 +64,11 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled"},
             ],
         )
 
-    def test_channel_metadata_shows_disabled_and_hides_hidden_devices(self):
+    def test_channel_metadata_shows_disabled_and_hidden_devices(self):
         config = {
             "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
                 "pump": {"type": "scheduled_output", "config": {"pin": 2}, "settings": {"programming": "disabled"}},
@@ -79,7 +79,8 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
-                {"role": "sprouter", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "disabled"},
+                {"role": "sprouter", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "disabled", "visibility": "visible", "programming": "disabled"},
+                {"role": "sprouter", "id": "lights", "name": "lights", "pin": 3, "type": "gpio", "default_editor": "hidden", "visibility": "hidden", "programming": "disabled"},
             ],
         )
 
