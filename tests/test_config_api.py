@@ -950,7 +950,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled"}
+                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0}
                     ]
                 },
                 "time_format": "12h",
@@ -962,7 +962,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled"}
+                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0}
                     ]
                 },
                 "time_format": "12h",

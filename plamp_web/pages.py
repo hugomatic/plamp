@@ -1373,7 +1373,7 @@ def render_timer_dashboard_page(
       const clock = clockValuesForEvent(event);
       const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
       return `
-        <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}">
+        <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}" data-channel-pin="${escapeHtml(channel.pin ?? "")}" data-channel-type="${escapeHtml(channel.type || "gpio")}" data-channel-order="${escapeHtml(channel.display_order ?? 0)}">
           <div class="timer-top"><strong>${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
           <div class="editor-row">
             <label>Set as
@@ -1452,25 +1452,26 @@ def render_timer_dashboard_page(
         }
         const controllers = structuredClone(configPayload?.config?.controllers || {});
         const controller = structuredClone(controllers[role] || {});
-        controller.devices = structuredClone(controller.devices || {});
+        controller.settings = structuredClone(controller.settings || {});
+        controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           const mode = block.querySelector(".editor-mode").value;
-          const device = structuredClone(controller.devices[channelId] || {});
-          device.type = device.type || "scheduled_output";
-          device.config = structuredClone(device.config || {});
-          device.settings = structuredClone(device.settings || {});
-          device.settings.programming = mode === "disabled" ? "disabled" : "enabled";
-          device.config.visibility = mode === "hidden" ? "hidden" : "visible";
-          const existingSchedule = structuredClone(device.settings.schedule || {});
-          device.settings.schedule = mode === "clock_window"
-            ? (existingSchedule.kind === "daily_window" && existingSchedule.on_time && existingSchedule.off_time
-                ? existingSchedule
+          const device = structuredClone(controller.settings.devices[channelId] || {});
+          device.pin = Number(block.dataset.channelPin);
+          device.output_type = block.dataset.channelType || "gpio";
+          device.display_order = Number(block.dataset.channelOrder || 0);
+          device.visibility = mode === "hidden" ? "hidden" : "visible";
+          device.programming = mode === "disabled" ? "disabled" : "enabled";
+          const existingEditor = structuredClone(device.editor || {});
+          device.editor = mode === "clock_window"
+            ? (existingEditor.kind === "daily_window" && existingEditor.on_time && existingEditor.off_time
+                ? existingEditor
                 : {kind: "daily_window", on_time: "06:00", off_time: "18:00"})
             : (mode === "cycle" || mode === "disabled" || mode === "hidden")
-              ? (existingSchedule.kind ? existingSchedule : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0})
-              : existingSchedule;
-          controller.devices[channelId] = device;
+              ? (existingEditor.kind ? existingEditor : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0})
+              : existingEditor;
+          controller.settings.devices[channelId] = device;
         }
         controllers[role] = controller;
         const saveConfigResponse = await fetch("/api/config/controllers", {

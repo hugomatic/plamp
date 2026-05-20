@@ -90,6 +90,7 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
                 "default_editor": default_editor,
                 "visibility": visibility,
                 "programming": programming,
+                "display_order": device.get("display_order", len(result)),
             }
         )
     return result
