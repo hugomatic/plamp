@@ -2,9 +2,9 @@
 
 ## Overview
 
-Make `/api/status` the single read surface for live and snapshot data.
+Make `/api/status` the single read surface for the config tree plus live status.
 
-All public GET-style reads in the UI and CLI should move to `/api/status`, with optional path filtering and streaming:
+All public GET-style reads for config and live status in the UI and CLI should move to `/api/status`, with optional path filtering and streaming:
 
 - `GET /api/status` for the full snapshot
 - `GET /api/status?stream=true` for the full live stream
@@ -12,10 +12,11 @@ All public GET-style reads in the UI and CLI should move to `/api/status`, with 
 - `GET /api/status?stream=true&path=...` for filtered live streams
 
 This removes the need for public consumers to call `/api/controllers/{role}` for reads.
+Host/system identity stays on `/api/system`.
 
 ## Goals
 
-- Keep `/api/status` as the canonical read model.
+- Keep `/api/status` as the canonical config-plus-status read model.
 - Support one or more `path=` filters per request.
 - Support nested paths such as `controllers.octo_relay`.
 - Return filtered results in request order.
@@ -23,7 +24,7 @@ This removes the need for public consumers to call `/api/controllers/{role}` for
 - Make streaming per-client, with each SSE connection using its own filter list.
 - Emit stream updates only when a changed node intersects the client’s filtered paths.
 - Update the test API page so the filtering and streaming behavior is visible and easy to exercise.
-- Update the system info page so it reads from `/api/status` instead of a separate system GET path.
+- Keep the system info page on `/api/system` and out of the status tree.
 
 ## Non-Goals
 
@@ -37,7 +38,7 @@ This removes the need for public consumers to call `/api/controllers/{role}` for
 
 ### Full Snapshot
 
-`GET /api/status` returns the current full read model.
+`GET /api/status` returns the current full config tree plus live status model.
 
 ### Filtered Snapshot
 
@@ -61,8 +62,8 @@ Nested paths are allowed anywhere the status tree exposes them.
 
 Examples:
 
-- `system.host`
-- `system.software`
+- `config.controllers.octo_relay`
+- `status.controllers.octo_relay.telemetry`
 - `controllers.octo_relay`
 - `controllers.octo_relay.telemetry`
 
@@ -84,11 +85,11 @@ The client should not need to interpret a patch language to use this stream.
 
 ### System Page
 
-The system page should keep its top menu and operational actions, but its data should come from filtered `/api/status` reads.
+The system page should keep its top menu and operational actions, but its data should come from `/api/system`.
 
 Expected behavior:
 
-- load the system page from `/api/status?path=system`
+- load the system page from `/api/system`
 - keep `Restart`, `Reinstall`, `Upgrade`, and `Logs`
 - do not reintroduce a hostname editor
 - keep the top navigation visible
@@ -126,7 +127,7 @@ Recommended shape:
 
 Rules:
 
-- `system info` must read from `/api/status` with a system filter, not from a separate system read path.
+- `system info` must read from `/api/system`, not from `/api/status`.
 - CLI output should preserve the filtered path labels when multiple paths are requested.
 - The old controller GET commands should stop being used as read surfaces in normal flows.
 
@@ -135,7 +136,7 @@ Rules:
 - An invalid path should fail clearly and report the bad path.
 - An empty filter result should be distinguishable from a transport failure.
 - Stream disconnects should be reported as stream errors, not as normal status data.
-- If the user asks for multiple paths and one matches nothing, the response should still preserve the valid matches.
+- If any requested path is invalid, fail the request clearly and report the bad path.
 
 ## Testing
 
@@ -145,7 +146,7 @@ Required coverage:
 - filtered `/api/status` reads return the expected matched nodes and descendants.
 - multiple `path=` filters return an ordered array of `{path, node}` objects.
 - filtered SSE streams emit only when matching nodes change.
-- the system page reads from filtered `/api/status`.
+- the system page reads from `/api/system`.
 - the test API page can add multiple paths and show both snapshot and streaming results.
 - public UI and CLI no longer rely on `/api/controllers/{role}` for reads.
 
