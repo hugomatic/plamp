@@ -1991,11 +1991,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="put-config-cameras-result">PUT response will appear here.</pre>
   </fieldset>
 
-  <h2>Timers</h2>
+  <h2>Controllers</h2>
 
   <fieldset>
     <legend>GET /api/controllers/{{role}}</legend>
-    <p>Reads the current timer state for one role.</p>
+    <p>Reads the current controller state for one role.</p>
     <label>Role
       <input id="get-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
@@ -2009,7 +2009,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <fieldset>
     <legend>GET /api/controllers/{{role}}?stream=true</legend>
-    <p>Streams timer device updates with server-sent events.</p>
+    <p>Streams controller device updates with server-sent events.</p>
     <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
     <button class="copy-curl" type="button" data-copy-target="stream-curl-command">Copy curl</button>
     <button id="start-stream" type="button">Start stream</button>
@@ -2021,7 +2021,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <fieldset>
     <legend>PUT /api/controllers/{{role}}</legend>
-    <p>Writes timer state JSON and sends it to the Pico.</p>
+    <p>Writes controller state JSON and sends it to the Pico.</p>
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>

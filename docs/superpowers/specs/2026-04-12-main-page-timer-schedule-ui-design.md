@@ -15,7 +15,7 @@ In scope:
 - Keep the existing main-page live visualization for timer status.
 - Add an edit action for each configured channel on the main page.
 - Let a channel schedule be edited in either a cycle representation or a 24-hour clock-window representation.
-- Save edited schedules through the existing board-level timer PUT flow.
+- Save edited schedules through controller config save plus controller apply.
 - Recompute timing fields so a Pico reset applies the new board state correctly.
 
 Out of scope for this slice:
@@ -80,11 +80,11 @@ The main page keeps the current status-card visualization:
 - Host/server time at minute accuracy, refreshed in the page, so clock-based schedule edits have an obvious time reference.
 - Settings page host/server time at minute accuracy; the existing 30-second page reload is enough to refresh it there.
 
-Each timer card gets an edit action. Editing opens an inline panel or compact dialog for that channel. The editor changes schedule behavior only; it does not change board role, Pico serial, channel name, pin, or output type.
+Each controller card gets one edit action that opens an inline schedule editor for all configured channels on that controller. The editor changes schedule behavior only; it does not change board role, Pico serial, channel name, pin, or output type.
 
-The editor should load from the current board state fetched from `/api/timers/{role}`. Saving one channel should produce a full updated board state and PUT it to `/api/timers/{role}` because the current API and firmware apply scheduler state at board scope.
+The editor should load from the current controller state fetched from `/api/controllers/{controller}`. Saving should first update controller config, then apply the saved controller state through `/api/controllers/{controller}/apply`.
 
-After save, the UI should wait for stream data to reconnect or update, then show the current status. If saving fails, show the API error near the editor and keep the user's inputs available.
+After save, the UI should force a board rerender so the updated controller mode shows immediately. If saving fails, show the API error near the editor and keep the user's inputs available.
 
 ## Schedule Editors
 
@@ -115,12 +115,12 @@ When saving, it generates a 24-hour repeating pattern with ON and OFF durations 
 
 ## Board-Level Reset Handling
 
-The UI should feel like it edits one timer at a time, but the implementation must respect board-level state application:
+The UI should feel like it edits one controller at a time, but the implementation must respect controller-level state application:
 
-- Fetch the full state for the selected role.
-- Replace only the edited event in the full `events` list.
-- Recompute phase for all events on that board before PUT when enough metadata is available.
-- PUT the full state to `/api/timers/{role}`.
+- Save controller config first so disabled and hidden device intent is persisted.
+- Apply the saved controller state through `/api/controllers/{controller}/apply`.
+- Let the server derive the Pico payload and filter disabled or hidden devices when appropriate.
+- Refresh the live board after the apply succeeds.
 
 For unedited events:
 
@@ -139,7 +139,7 @@ The editor should validate before PUT:
 - A channel must map to an event by `id`; missing events should produce a clear message.
 - 24-hour ON/OFF times must create positive ON and OFF durations. If ON and OFF are identical, reject the schedule with a clear message.
 
-API errors from PUT should be shown without discarding user edits. Stream reconnect or status errors should remain visible in the existing stream status area.
+API errors from config save or controller apply should be shown without discarding user edits. Stream disconnect state should remain visible in the existing stream status area without treating reconnect attempts as failures.
 
 ## Testing
 
@@ -153,7 +153,7 @@ Manual test paths:
 - 24h set saves ON/OFF clock times and reports a phase aligned with host time after reset.
 - Host/server time appears on the main page with minute accuracy and refreshes while the page is open.
 - Host/server time appears on the settings page with minute accuracy and refreshes through the existing 30-second reload.
-- Saving one channel PUTs a full board state and keeps unedited channels in sensible phases.
+- Saving one controller updates config, reapplies the controller, and keeps unedited channels in sensible phases.
 - PUT failure leaves the edit form intact and shows the error.
 
 Automated tests should cover pure conversion helpers for:

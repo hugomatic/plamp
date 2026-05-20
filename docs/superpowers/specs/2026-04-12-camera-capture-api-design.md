@@ -111,7 +111,7 @@ The design preference is to avoid hardcoding the wrapper path in Python code.
 
 ## API Test Page
 
-Use one shared API test page for debugging and API documentation instead of creating a separate camera-only test page. The existing `/timers/test` page is timer-specific in name and content; evolve it into a general API test surface.
+Use one shared API test page for debugging and API documentation instead of creating a separate camera-only test page. The existing `/api/test` page is the shared API surface; keep it as the single place for request debugging and examples.
 
 Preferred route:
 
@@ -121,7 +121,7 @@ GET /api/test
 
 Compatibility:
 
-- keep `GET /timers/test` working as an alias or redirect so existing links do not break
+- keep `GET /api/test` as the canonical shared API test page
 - update navigation links to point to `/api/test` when touching the relevant page templates
 
 The page should include separate panels for timer APIs and camera APIs. The camera panel should:

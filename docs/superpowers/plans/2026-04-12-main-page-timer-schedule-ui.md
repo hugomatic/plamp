@@ -4,7 +4,7 @@
 
 **Goal:** Build a polished main-page schedule editor for arbitrary configured Pico timer channels while keeping board/channel setup in JSON config for now.
 
-**Architecture:** Add focused server-side timer config and schedule helper code, then expose read-only channel metadata, a host-time endpoint, and a channel schedule update endpoint that uses the existing board-level apply path. Keep the existing main-page live status visualization and add a schedule edit panel per channel that posts schedule changes instead of raw JSON.
+**Architecture:** Add focused server-side timer config and schedule helper code, then expose read-only channel metadata, a host-time endpoint, a controller schedule update endpoint, and a controller apply endpoint. Keep the existing main-page live status visualization and add a schedule edit panel per controller that saves config, reapplies the controller, and refreshes the board state.
 
 **Tech Stack:** Python 3.11, FastAPI, plain server-rendered HTML, vanilla browser JavaScript, MicroPython-compatible scheduler state JSON, stdlib `unittest`.
 
@@ -13,8 +13,8 @@
 ## File Structure
 
 - Create `plamp_web/timer_schedule.py`: Pure helper functions for channel config normalization, two-step pattern inspection, cycle schedule generation, 24-hour clock schedule generation, and board state patching.
-- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose host time via `/api/host-time`, expose server-side schedule updates via `/api/timers/{role}/channels/{channel_id}/schedule`, pass channel metadata plus initial host time to the main page renderer, and include host time in the settings summary.
-- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy on the main page and settings page, add channel metadata and initial host seconds-since-midnight into the main page bootstrap JSON, refresh main-page host time through `/api/host-time`, add edit controls and the schedule editor JavaScript.
+- Modify `plamp_web/server.py`: Import helpers, expose config metadata via `/api/timer-config`, expose host time via `/api/host-time`, expose server-side schedule updates via `/api/controllers/{controller}/channels/{channel_id}/schedule`, expose controller apply via `/api/controllers/{controller}/apply`, pass channel metadata plus initial host time to the main page renderer, and include host time in the settings summary.
+- Modify `plamp_web/pages.py`: Keep the current status-card visualization, display host/server time at minute accuracy on the main page and settings page, add channel metadata and initial host seconds-since-midnight into the main page bootstrap JSON, refresh main-page host time through `/api/host-time`, add edit controls and the schedule editor JavaScript, and force a board rerender after a successful apply.
 - Create `tests/test_timer_schedule.py`: Unit tests for pure helper behavior.
 - Modify `plamp_web/README.md`: Document the optional `channels` config shape and the main-page schedule editor.
 

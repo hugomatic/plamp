@@ -2124,11 +2124,6 @@ def api_test_page() -> HTMLResponse:
     return api_test_page_response()
 
 
-@app.get("/timers/test", response_class=HTMLResponse)
-def timer_test_page() -> HTMLResponse:
-    return api_test_page_response()
-
-
 @app.get("/settings.json")
 def get_settings_json() -> dict[str, Any]:
     return settings_summary()
