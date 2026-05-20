@@ -1705,14 +1705,55 @@ def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
 def status_response() -> dict[str, Any]:
     config = load_config()
     return {
+        "config": config,
         "controllers": controller_status_tree(config),
         "monitors": monitor_summaries(),
         "camera_worker": camera_worker_summary(),
     }
 
 
+def resolve_status_path(node: Any, path: str) -> Any:
+    current = node
+    if not path:
+        raise HTTPException(status_code=404, detail=f"unknown status path: {path}")
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise HTTPException(status_code=404, detail=f"unknown status path: {path}")
+        current = current[part]
+    return current
+
+
+def filtered_status_response(paths: list[str] | None = None, *, status: dict[str, Any] | None = None) -> Any:
+    status = status if status is not None else status_response()
+    if not paths:
+        return status
+    result = []
+    for path in paths:
+        result.append({"path": path, "node": resolve_status_path(status, path)})
+    return result
+
+
+def iter_status_events(paths: list[str] | None = None, *, poll_interval: float = 1.0):
+    last_payload: Any = object()
+    first = True
+    while True:
+        payload = filtered_status_response(paths, status=status_response())
+        if first:
+            yield sse_message("snapshot", payload)
+            last_payload = payload
+            first = False
+        elif payload != last_payload:
+            yield sse_message("update", payload)
+            last_payload = payload
+        time.sleep(poll_interval)
+
+
+def stream_status(paths: list[str] | None = None) -> StreamingResponse:
+    return StreamingResponse(iter_status_events(paths), media_type="text/event-stream")
+
+
 def settings_summary() -> dict[str, Any]:
-    return {"config": load_config(), **system_response(), **status_response()}
+    return status_response()
 
 
 def validate_hostname(value: object) -> str:
@@ -1847,10 +1888,10 @@ def get_system_page() -> str:
 
 
 @app.get("/api/status")
-def get_status(stream: bool = False) -> Any:
+def get_status(path: list[str] | None = None, stream: bool = False) -> Any:
     if stream:
-        return stream_status()
-    return status_response()
+        return stream_status(path)
+    return filtered_status_response(path)
 
 
 @app.put("/api/config")
