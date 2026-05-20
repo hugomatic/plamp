@@ -808,6 +808,7 @@ class ConfigApiTests(unittest.TestCase):
             latest = server.latest_timer_state("pump_lights")
 
         self.assertEqual(latest["devices"][0]["pin"], 2)
+        self.assertEqual(latest["devices"][0]["current_t"], 5)
 
     def test_latest_timer_state_normalizes_events_from_last_report(self):
         monitor = DummyMonitor("abc")
@@ -949,7 +950,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window"}
+                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled"}
                     ]
                 },
                 "time_format": "12h",
@@ -961,7 +962,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle"}
+                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled"}
                     ]
                 },
                 "time_format": "12h",
