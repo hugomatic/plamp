@@ -2,7 +2,7 @@ import json
 import re
 import unittest
 
-from plamp_web.pages import json_script_text, render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, render_api_test_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
@@ -41,7 +41,7 @@ class PageRenderTests(unittest.TestCase):
 
 
     def test_pages_use_same_nav_with_github_link(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
         settings_summary = {
             "config": {"controllers": {}, "devices": {}, "cameras": {}},
             "detected": {"picos": [], "cameras": []},
@@ -59,7 +59,12 @@ class PageRenderTests(unittest.TestCase):
 
         for html in pages:
             self.assertIn(expected, html)
-            self.assertEqual(html.count("<nav>"), 1)
+
+    def test_pages_use_same_nav_with_system_link(self):
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
+        html = render_system_info_page({"host": {"hostname": "sprout"}})
+        self.assertIn(expected, html)
+        self.assertEqual(html.count("<nav>"), 1)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -73,6 +78,27 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('lastMessage = parsed?.message || "Schedule applied. Waiting for report...";', html)
         self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
+
+    def test_system_info_page_shows_actions_and_no_hostname_editor(self):
+        html = render_system_info_page(
+            {
+                "host": {"hostname": "sprout", "fqdn": "sprout.local"},
+                "host_time": {"display": "10:15 AM"},
+                "software": {"git_branch": "main", "git_short_commit": "6e2cf82"},
+                "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
+                "storage": {"total": "2.0 GB"},
+                "log": {"path": "/var/log/plamp-web.log"},
+                "detected": {"picos": [], "cameras": []},
+            }
+        , "plamp-web started")
+
+        self.assertIn("<h2>System info</h2>", html)
+        self.assertIn("Restart", html)
+        self.assertIn("Reinstall", html)
+        self.assertIn("Upgrade", html)
+        self.assertIn("Logs", html)
+        self.assertIn("plamp-web started", html)
+        self.assertNotIn('id="hostname-input"', html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)

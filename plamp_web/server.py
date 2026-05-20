@@ -27,7 +27,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_settings_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -118,6 +118,21 @@ def read_log_tail(max_lines: int = 200) -> str:
         return ""
     lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
     return "\n".join(lines[-max_lines:]) + ("\n" if lines else "")
+
+
+def run_plampctl_action(*args: str) -> dict[str, Any]:
+    completed = subprocess.run(
+        [str(REPO_ROOT / "plampctl"), *args],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    output = (completed.stdout or completed.stderr or "").strip()
+    if completed.returncode != 0:
+        raise HTTPException(status_code=500, detail=output or f"plampctl {' '.join(args)} failed")
+    return {"message": output or f"{args[0]} complete"}
 
 
 def load_json_file(path: Path) -> Any:
@@ -1141,6 +1156,16 @@ def sse_message(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
 
 
+def stream_status() -> StreamingResponse:
+    def events():
+        yield sse_message("snapshot", status_response())
+        while True:
+            time.sleep(15)
+            yield sse_message("snapshot", status_response())
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
 def stream_timer_events(role: str) -> StreamingResponse:
     monitor = get_or_start_monitor(role)
 
@@ -1787,6 +1812,21 @@ def get_logs(lines: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
     return {"path": str(LOG_FILE), "content": read_log_tail(lines)}
 
 
+@app.post("/api/system/restart")
+def post_system_restart() -> dict[str, Any]:
+    return run_plampctl_action("restart")
+
+
+@app.post("/api/system/reinstall")
+def post_system_reinstall() -> dict[str, Any]:
+    return run_plampctl_action("reinstall")
+
+
+@app.post("/api/system/upgrade")
+def post_system_upgrade() -> dict[str, Any]:
+    return run_plampctl_action("upgrade")
+
+
 def config_response() -> dict[str, Any]:
     return {"config": load_config()}
 
@@ -1801,8 +1841,15 @@ def get_system() -> dict[str, Any]:
     return system_response()
 
 
+@app.get("/system", response_class=HTMLResponse)
+def get_system_page() -> str:
+    return render_system_info_page(system_response(), read_log_tail(200))
+
+
 @app.get("/api/status")
-def get_status() -> dict[str, Any]:
+def get_status(stream: bool = False) -> Any:
+    if stream:
+        return stream_status()
     return status_response()
 
 

@@ -8,7 +8,7 @@ from typing import Any
 
 GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
 GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
-MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
+MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
 FAVICON_LINK = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
 
 
@@ -999,6 +999,121 @@ def render_settings_page(summary: dict[str, Any]) -> str:
       try {{ parsed = JSON.parse(text); }} catch (error) {{}}
       status.textContent = response.ok ? (parsed?.message || "Hostname updated; reconnect or reboot may be required.") : `${{response.status}} ${{parsed?.detail || text}}`;
     }});
+  </script>
+</body>
+</html>"""
+
+
+def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
+    host = system.get("host") if isinstance(system.get("host"), dict) else {}
+    host_time = system.get("host_time") if isinstance(system.get("host_time"), dict) else {}
+    software = system.get("software") if isinstance(system.get("software"), dict) else {}
+    paths = system.get("paths") if isinstance(system.get("paths"), dict) else {}
+    storage = system.get("storage") if isinstance(system.get("storage"), dict) else {}
+    log_info = system.get("log") if isinstance(system.get("log"), dict) else {}
+    detected = system.get("detected") if isinstance(system.get("detected"), dict) else {}
+    picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
+    cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
+    page_name = f"{host.get('hostname') or 'Plamp'} System"
+
+    rows = [
+        ("Hostname", host.get("hostname") or ""),
+        ("FQDN", host.get("fqdn") or ""),
+        ("Host time", host_time.get("display") or ""),
+        ("Git branch", software.get("git_branch") or ""),
+        ("Git commit", software.get("git_short_commit") or software.get("git_commit") or ""),
+        ("Git dirty", software.get("git_dirty")),
+        ("Detected picos", len(picos)),
+        ("Detected cameras", len(cameras)),
+        ("Repo root", paths.get("repo_root") or ""),
+        ("Data dir", paths.get("data_dir") or ""),
+        ("Log file", log_info.get("path") or ""),
+        ("Storage", storage.get("total") or ""),
+    ]
+    rows_html = "".join(
+        f"<tr><th scope=\"row\">{html.escape(str(label))}</th><td>{html.escape(str(value))}</td></tr>"
+        for label, value in rows
+    )
+    logs_value = html.escape(logs_text or "", quote=False)
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(page_name)}</title>
+  {FAVICON_LINK}
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    a {{ color: #174ea6; }}
+    button {{ -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }}
+    .system-page {{ display: grid; gap: 1rem; max-width: 980px; }}
+    .system-actions {{ display: flex; flex-wrap: wrap; gap: .5rem; }}
+    .system-status {{ color: #555; min-height: 1.25rem; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    th, td {{ border-bottom: 1px solid #ddd; padding: .4rem .5rem; text-align: left; vertical-align: top; }}
+    th {{ width: 12rem; }}
+    pre {{ background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; white-space: pre-wrap; }}
+    .logs-actions {{ align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }}
+  </style>
+</head>
+<body>
+  {MAIN_NAV}
+  <h1>{html.escape(page_name)}</h1>
+  <div class="system-page">
+    <section aria-label="System summary">
+      <h2>System info</h2>
+      <table>
+        <tbody>{rows_html}</tbody>
+      </table>
+    </section>
+    <section aria-label="System actions">
+      <h2>Actions</h2>
+      <div class="system-actions">
+        <button id="system-restart" type="button">Restart</button>
+        <button id="system-reinstall" type="button">Reinstall</button>
+        <button id="system-upgrade" type="button">Upgrade</button>
+      </div>
+      <div class="system-status" id="system-action-status">Ready.</div>
+    </section>
+    <section aria-label="System logs">
+      <h2>Logs</h2>
+      <div class="logs-actions">
+        <button id="system-load-logs" type="button">Load logs</button>
+      </div>
+      <pre id="system-logs">{logs_value}</pre>
+    </section>
+  </div>
+  <script>
+    async function runAction(path, label) {{
+      const status = document.getElementById("system-action-status");
+      status.textContent = `${{label}}...`;
+      const response = await fetch(path, {{method: "POST"}});
+      const text = await response.text();
+      let parsed = null;
+      try {{ parsed = JSON.parse(text); }} catch (error) {{}}
+      status.textContent = response.ok ? (parsed?.message || `${{label}} complete.`) : `${{response.status}} ${{parsed?.detail || text}}`;
+    }}
+
+    async function loadLogs() {{
+      const logs = document.getElementById("system-logs");
+      logs.textContent = "Loading...";
+      const response = await fetch("/api/logs?lines=200");
+      const text = await response.text();
+      if (!response.ok) {{
+        logs.textContent = `${{response.status}} ${{text}}`;
+        return;
+      }}
+      let parsed = null;
+      try {{ parsed = JSON.parse(text); }} catch (error) {{}}
+      logs.textContent = parsed?.content || text;
+    }}
+
+    document.getElementById("system-restart").addEventListener("click", () => runAction("/api/system/restart", "Restarting"));
+    document.getElementById("system-reinstall").addEventListener("click", () => runAction("/api/system/reinstall", "Reinstalling"));
+    document.getElementById("system-upgrade").addEventListener("click", () => runAction("/api/system/upgrade", "Upgrading"));
+    document.getElementById("system-load-logs").addEventListener("click", loadLogs);
   </script>
 </body>
 </html>"""
