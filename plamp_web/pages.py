@@ -1526,15 +1526,15 @@ def render_timer_dashboard_page(
           const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
           if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
         }
-        renderTimerStatus();
+        renderTimerStatus(true);
         showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");
       } catch (error) {
         showEditorMessage(message, "editor-error", String(error.message || error));
       }
     }
 
-    function renderTimerStatus() {
-      if (activeEditor && timerEditorPanel.contains(document.activeElement)) {
+    function renderTimerStatus(force = false) {
+      if (!force && activeEditor && timerEditorPanel.contains(document.activeElement)) {
         pendingTimerRender = true;
         return;
       }

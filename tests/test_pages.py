@@ -104,7 +104,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
         self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
         self.assertIn('if (channel) channel.default_editor = block.querySelector(".editor-mode").value;', html)
-        self.assertIn('renderTimerStatus();', html)
+        self.assertIn('renderTimerStatus(true);', html)
         self.assertNotIn('/api/timers', html)
         self.assertNotIn("Stream error or reconnecting...", html)
         self.assertNotIn('class="editor-on-unit"', html)
@@ -116,7 +116,9 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn("let pendingTimerRender = false;", html)
         self.assertIn("function flushPendingTimerRender() {", html)
-        self.assertIn("if (activeEditor && timerEditorPanel.contains(document.activeElement)) {", html)
+        self.assertIn("function renderTimerStatus(force = false) {", html)
+        self.assertIn("if (!force && activeEditor && timerEditorPanel.contains(document.activeElement)) {", html)
+        self.assertIn("renderTimerStatus(true);", html)
         self.assertIn("pendingTimerRender = true;", html)
         self.assertIn('form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));', html)
 
