@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
 
 import plamp_web.server as server
 
@@ -128,6 +129,39 @@ class ConfigApiTests(unittest.TestCase):
             {"connected": True, "port": "/dev/ttyACM0", "last_report": report},
         )
         self.assertNotIn("config", data)
+
+    def test_get_status_stream_returns_streaming_response(self):
+        response = server.get_status(stream=True)
+
+        self.assertIsInstance(response, StreamingResponse)
+        self.assertEqual(response.media_type, "text/event-stream")
+
+    @patch.object(server, "run_plampctl_action")
+    def test_post_system_restart_invokes_plampctl_restart(self, run_plampctl_action):
+        run_plampctl_action.return_value = {"message": "restarted"}
+
+        result = server.post_system_restart()
+
+        self.assertEqual(result["message"], "restarted")
+        run_plampctl_action.assert_called_once_with("restart")
+
+    @patch.object(server, "run_plampctl_action")
+    def test_post_system_reinstall_invokes_plampctl_reinstall(self, run_plampctl_action):
+        run_plampctl_action.return_value = {"message": "reinstalled"}
+
+        result = server.post_system_reinstall()
+
+        self.assertEqual(result["message"], "reinstalled")
+        run_plampctl_action.assert_called_once_with("reinstall")
+
+    @patch.object(server, "run_plampctl_action")
+    def test_post_system_upgrade_invokes_plampctl_upgrade(self, run_plampctl_action):
+        run_plampctl_action.return_value = {"message": "upgraded"}
+
+        result = server.post_system_upgrade()
+
+        self.assertEqual(result["message"], "upgraded")
+        run_plampctl_action.assert_called_once_with("upgrade")
 
     def test_runtime_route_is_removed(self):
         routes = {route.path for route in server.app.routes}

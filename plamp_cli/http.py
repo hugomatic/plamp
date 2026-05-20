@@ -88,6 +88,31 @@ def request_json(
         raise NetworkError(str(exc.reason)) from exc
 
 
+def stream_json_events(base_url: str, path: str):
+    request = Request(f"{base_url}{path}", method="GET", headers={"Accept": "text/event-stream"})
+    try:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            data_lines: list[str] = []
+            while True:
+                raw_line = response.readline()
+                if not raw_line:
+                    if data_lines:
+                        yield json.loads("\n".join(data_lines))
+                    return
+
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not line:
+                    if data_lines:
+                        yield json.loads("\n".join(data_lines))
+                        data_lines = []
+                    continue
+                if line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip())
+    except HTTPError as exc:
+        detail = _clean_error_detail(exc.read(), str(exc.reason))
+        raise ApiError(exc.code, detail) from exc
+    except URLError as exc:
+        raise NetworkError(str(exc.reason)) from exc
 def download_bytes(base_url: str, path: str) -> bytes:
     request = Request(f"{base_url}{path}", method="GET")
     try:

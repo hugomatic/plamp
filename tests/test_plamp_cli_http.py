@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from unittest.mock import patch
 
-from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
+from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json, stream_json_events
 
 
 class PlampCliHttpTests(unittest.TestCase):
@@ -118,3 +118,29 @@ class PlampCliHttpTests(unittest.TestCase):
         urlopen.assert_called_once()
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "http://127.0.0.1:8000/api/camera/images/grow:latest")
+
+    @patch("plamp_cli.http.urlopen")
+    def test_stream_json_events_yields_payloads(self, urlopen):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.readline.side_effect = [
+            b'event: snapshot\n',
+            b'data: {"controllers": {}}\n',
+            b"\n",
+            b'event: status\n',
+            b'data: {"controllers": {"octo_relay": {"state": "connected"}}}\n',
+            b"\n",
+            b"",
+        ]
+        urlopen.return_value = response
+
+        events = list(stream_json_events("http://127.0.0.1:8000", "/api/status?stream=true"))
+
+        self.assertEqual(
+            events,
+            [
+                {"controllers": {}},
+                {"controllers": {"octo_relay": {"state": "connected"}}},
+            ],
+        )
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:8000/api/status?stream=true")

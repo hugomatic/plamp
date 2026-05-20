@@ -14,11 +14,11 @@ if __package__ in {None, ""}:
     else:
         sys.path.insert(0, repo_root)
 
-from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json
+from plamp_cli.http import ApiError, NetworkError, build_base_url, download_bytes, request_json, stream_json_events
 from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
 _CONFIG_SECTIONS = ("controllers", "cameras")
-_AREAS = ("config", "controllers", "system", "pico-scheduler", "pics", "firmware")
+_AREAS = ("config", "controllers", "system", "status", "pico-scheduler", "pics", "firmware")
 
 
 def _usage_hint(argv: Sequence[str]) -> str | None:
@@ -50,8 +50,8 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
     if args == ["system"]:
         return (
             "Command error: missing system action.\n"
-            "Choices: status\n"
-            "Example: plamp system status\n"
+            "Choices: info\n"
+            "Example: plamp system info\n"
         )
 
     if args == ["firmware"]:
@@ -193,8 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     system = subparsers.add_parser("system")
     system_subparsers = system.add_subparsers(dest="system_action", required=True)
-    system_status = system_subparsers.add_parser("status")
-    system_status.set_defaults(system_action="status")
+    system_info = system_subparsers.add_parser("info")
+    system_info.set_defaults(system_action="info")
+
+    status = subparsers.add_parser("status")
+    status.add_argument("--pretty", action="store_true")
+    status.set_defaults(area="status")
 
     firmware = subparsers.add_parser("firmware")
     firmware_subparsers = firmware.add_subparsers(dest="firmware_action", required=True)
@@ -403,10 +407,14 @@ def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
 
 
 def _handle_system(args: argparse.Namespace, base_url: str) -> object:
-    if args.system_action == "status":
-        return request_json("GET", base_url, "/api/status")
+    if args.system_action == "info":
+        return request_json("GET", base_url, "/api/system")
 
     raise ValueError(f"unsupported system action: {args.system_action}")
+
+
+def _handle_status(args: argparse.Namespace, base_url: str):
+    return stream_json_events(base_url, "/api/status?stream=true")
 
 
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:
@@ -492,6 +500,9 @@ def main(
             result = _handle_controllers(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "status":
+            for event in _handle_status(args, base_url):
+                stdout.write(format_json_output(event, pretty=args.pretty))
         elif args.area == "pico-scheduler":
             result = _handle_timers(args, base_url)
             if result is not None:
