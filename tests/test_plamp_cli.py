@@ -19,6 +19,13 @@ class PlampCliBootstrapTests(unittest.TestCase):
         self.assertEqual(args.area, "config")
         self.assertEqual(args.action, "get")
 
+    def test_build_parser_accepts_system_status_shape(self):
+        parser = build_parser()
+        args = parser.parse_args(["system", "status"])
+
+        self.assertEqual(args.area, "system")
+        self.assertEqual(args.system_action, "status")
+
     def test_main_returns_zero_for_help(self):
         code = main(["--help"])
         self.assertEqual(code, 0)
@@ -41,7 +48,7 @@ class PlampCliBootstrapTests(unittest.TestCase):
             code = main(["--pretty"], stdout=stdout, stderr=stderr)
         self.assertNotEqual(code, 0)
         self.assertIn("missing top-level command section", stderr.getvalue())
-        self.assertIn("Choices: config, controllers, pico-scheduler, pics, firmware", stderr.getvalue())
+        self.assertIn("Choices: config, controllers, system, pico-scheduler, pics, firmware", stderr.getvalue())
 
     def test_pico_scheduler_get_missing_controller_prints_example(self):
         stdout = StringIO()
@@ -111,7 +118,7 @@ class PlampCliBootstrapTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, msg=f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}")
-        self.assertIn("{config,controllers,pico-scheduler,pics,firmware}", result.stdout)
+        self.assertIn("{config,controllers,pico-scheduler,pics,system,firmware}", result.stdout)
         self.assertNotIn("timers", result.stdout)
 
 
@@ -204,6 +211,54 @@ class PlampCliConfigTests(unittest.TestCase):
             '{"config": {"cameras": {}, "controllers": {"main": {"payload": {"devices": [{"pattern": [], "pin": 3, "type": "gpio"}], "report_every": 10}, "settings": {"devices": {"pump": {"editor": {"kind": "cycle"}, "pin": 3}}}, "type": "pico_scheduler"}}}}\n',
         )
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/config")
+
+
+class PlampCliSystemTests(unittest.TestCase):
+    @patch("plamp_cli.main.request_json")
+    def test_system_status_reads_api_status(self, request_json):
+        request_json.return_value = {
+            "software": {
+                "git_branch": "main",
+                "git_commit": "8d92806abcdef",
+                "git_short_commit": "8d92806",
+                "git_dirty": False,
+            }
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["system", "status"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            stdout.getvalue(),
+            '{"software": {"git_branch": "main", "git_commit": "8d92806abcdef", "git_dirty": false, "git_short_commit": "8d92806"}}\n',
+        )
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/status")
+
+    @patch("plamp_cli.main.request_json")
+    def test_system_status_table_shows_branch_and_commit(self, request_json):
+        request_json.return_value = {
+            "hostname": "sprout",
+            "software": {
+                "git_branch": "main",
+                "git_commit": "8d92806abcdef",
+                "git_short_commit": "8d92806",
+                "git_dirty": False,
+            },
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["--table", "system", "status"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertIn("git_branch | main", stdout.getvalue())
+        self.assertIn("git_commit | 8d92806", stdout.getvalue())
+        self.assertIn("hostname   | sprout", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/status")
 
 
 class PlampCliTimerTests(unittest.TestCase):

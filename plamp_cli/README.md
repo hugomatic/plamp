@@ -56,6 +56,7 @@ Use:
 uv run python -m plamp_cli --help
 uv run python -m plamp_cli config --help
 uv run python -m plamp_cli controllers --help
+uv run python -m plamp_cli system --help
 uv run python -m plamp_cli pico-scheduler --help
 uv run python -m plamp_cli pics --help
 ```
@@ -65,6 +66,7 @@ uv run python -m plamp_cli pics --help
 ```bash
 uv run python -m plamp_cli config get
 uv run python -m plamp_cli controllers list
+uv run python -m plamp_cli system status
 uv run python -m plamp_cli pico-scheduler list
 uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
 ```
@@ -99,7 +101,8 @@ Expected shape:
 ```
 
 Use `/api/system` for detected Picos/cameras and `/api/status` for live
-controller telemetry.
+controller telemetry. `system status` reads `/api/status` and exposes the git
+branch and commit in the `software` section.
 
 2. List controller families:
 
@@ -133,7 +136,26 @@ Expected shape:
 }
 ```
 
-4. Read one Pico scheduler state:
+4. Read system status:
+
+```bash
+uv run python -m plamp_cli --pretty system status
+```
+
+Expected shape:
+
+```json
+{
+  "software": {
+    "git_branch": "main",
+    "git_commit": "8d92806abcdef",
+    "git_dirty": false,
+    "git_short_commit": "8d92806"
+  }
+}
+```
+
+5. Read one Pico scheduler state:
 
 ```bash
 uv run python -m plamp_cli --pretty pico-scheduler get pump_lights
@@ -148,7 +170,7 @@ Expected shape:
 }
 ```
 
-5. List a few pictures and copy one `image_key`:
+6. List a few pictures and copy one `image_key`:
 
 ```bash
 uv run python -m plamp_cli --pretty pics list --camera-id rpicam_cam0 --limit 3
@@ -171,7 +193,7 @@ Expected shape:
 }
 ```
 
-6. Trigger one capture:
+7. Trigger one capture:
 
 ```bash
 uv run python -m plamp_cli --pretty pics take --camera-id rpicam_cam0
@@ -186,7 +208,7 @@ Expected shape:
 }
 ```
 
-7. Download one real image using the `image_key` from step 5:
+8. Download one real image using the `image_key` from step 6:
 
 ```bash
 uv run python -m plamp_cli pics get <image_key> --out /tmp/latest.jpg
@@ -243,6 +265,22 @@ Examples:
 ```bash
 uv run python -m plamp_cli controllers list
 uv run python -m plamp_cli --pretty controllers list
+```
+
+### System
+
+Commands:
+
+```bash
+uv run python -m plamp_cli system status
+```
+
+Examples:
+
+```bash
+uv run python -m plamp_cli system status
+uv run python -m plamp_cli --table system status
+uv run python -m plamp_cli --pretty system status
 ```
 
 ### Pico Scheduler

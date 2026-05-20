@@ -18,7 +18,7 @@ from plamp_cli.http import ApiError, NetworkError, build_base_url, download_byte
 from plamp_cli.io import InputError, format_json_output, load_json_input, render_table, write_binary_output
 
 _CONFIG_SECTIONS = ("controllers", "cameras")
-_AREAS = ("config", "controllers", "pico-scheduler", "pics", "firmware")
+_AREAS = ("config", "controllers", "system", "pico-scheduler", "pics", "firmware")
 
 
 def _usage_hint(argv: Sequence[str]) -> str | None:
@@ -45,6 +45,13 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
             "Command error: missing pics action.\n"
             "Choices: list, take, get\n"
             "Example: plamp pics list\n"
+        )
+
+    if args == ["system"]:
+        return (
+            "Command error: missing system action.\n"
+            "Choices: status\n"
+            "Example: plamp system status\n"
         )
 
     if args == ["firmware"]:
@@ -183,6 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     pic_get.add_argument("--out")
     pic_get.add_argument("--stdout", action="store_true")
     pic_get.set_defaults(pics_action="get")
+
+    system = subparsers.add_parser("system")
+    system_subparsers = system.add_subparsers(dest="system_action", required=True)
+    system_status = system_subparsers.add_parser("status")
+    system_status.set_defaults(system_action="status")
 
     firmware = subparsers.add_parser("firmware")
     firmware_subparsers = firmware.add_subparsers(dest="firmware_action", required=True)
@@ -390,6 +402,13 @@ def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
     raise ValueError(f"unsupported pics action: {args.pics_action}")
 
 
+def _handle_system(args: argparse.Namespace, base_url: str) -> object:
+    if args.system_action == "status":
+        return request_json("GET", base_url, "/api/status")
+
+    raise ValueError(f"unsupported system action: {args.system_action}")
+
+
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:
     if not table:
         return format_json_output(value, pretty=pretty)
@@ -421,6 +440,23 @@ def _format_config_output(value: object, table: bool, pretty: bool) -> str:
         return render_table(rows)
 
     return format_json_output(value, pretty=pretty)
+
+
+def _format_system_output(value: object, table: bool, pretty: bool) -> str:
+    if not table:
+        return format_json_output(value, pretty=pretty)
+
+    if not isinstance(value, dict):
+        return format_json_output(value, pretty=pretty)
+
+    software = value.get("software") if isinstance(value.get("software"), dict) else {}
+    rows = [
+        {"key": "git_branch", "value": software.get("git_branch") or ""},
+        {"key": "git_commit", "value": software.get("git_short_commit") or software.get("git_commit") or ""},
+        {"key": "git_dirty", "value": software.get("git_dirty")},
+        {"key": "hostname", "value": value.get("hostname") or ""},
+    ]
+    return render_table(rows)
 
 
 def main(
@@ -467,6 +503,10 @@ def main(
                 write_binary_output(result, args.out, stdout_buffer)
             elif result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "system":
+            result = _handle_system(args, base_url)
+            if result is not None:
+                stdout.write(_format_system_output(result, table=args.table, pretty=args.pretty))
         elif args.area == "firmware":
             result = _handle_firmware(args, stderr)
             if args.firmware_action in {"generate", "pull", "show"} and isinstance(result, bytes):
