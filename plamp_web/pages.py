@@ -1292,6 +1292,12 @@ def render_timer_dashboard_page(
       return {value: seconds, unit: "seconds"};
     }
 
+    function chooseSharedUnit(values) {
+      if (values.every((value) => value % 3600 === 0)) return "hours";
+      if (values.every((value) => value % 60 === 0)) return "minutes";
+      return "seconds";
+    }
+
     function unitMultiplier(unit) {
       if (unit === "hours") return 3600;
       if (unit === "minutes") return 60;
@@ -1360,8 +1366,10 @@ def render_timer_dashboard_page(
 
     function scheduleEditorBlock(role, channel, event) {
       const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
-      const onUnit = chooseUnit(durations.on);
-      const offUnit = chooseUnit(durations.off);
+      const startAtSeconds = Number(event?.cycle_t);
+      const safeStartAt = Number.isFinite(startAtSeconds) && startAtSeconds >= 0 ? startAtSeconds : 0;
+      const sharedUnit = chooseSharedUnit([durations.on, durations.off, safeStartAt]);
+      const divisor = unitMultiplier(sharedUnit);
       const clock = clockValuesForEvent(event);
       const mode = channel.default_editor === "clock_window" ? "clock_window" : "cycle";
       return `
@@ -1376,11 +1384,10 @@ def render_timer_dashboard_page(
             </label>
           </div>
           <div class="editor-row cycle-fields">
-            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${onUnit.value}"></label>
-            <label>Unit <select class="editor-on-unit" name="onUnit-${escapeHtml(channel.id)}"><option value="seconds"${onUnit.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${onUnit.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${onUnit.unit === "hours" ? " selected" : ""}>hours</option></select></label>
-            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${offUnit.value}"></label>
-            <label>Unit <select class="editor-off-unit" name="offUnit-${escapeHtml(channel.id)}"><option value="seconds"${offUnit.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${offUnit.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${offUnit.unit === "hours" ? " selected" : ""}>hours</option></select></label>
-            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="0"></label>
+            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${durations.on / divisor}"></label>
+            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${durations.off / divisor}"></label>
+            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="${safeStartAt / divisor}"></label>
+            <label>Unit <select class="editor-cycle-unit" name="cycleUnit-${escapeHtml(channel.id)}"><option value="seconds"${sharedUnit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${sharedUnit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${sharedUnit === "hours" ? " selected" : ""}>hours</option></select></label>
           </div>
           <div class="editor-row clock-fields">
             <label>On at <input class="editor-on-time" name="onTime-${escapeHtml(channel.id)}" type="time" value="${clock.on}"></label>
@@ -1408,7 +1415,8 @@ def render_timer_dashboard_page(
           </div>
         </form>
       `;
-      const form = document.getElementById("timer-schedule-form");
+      const form = timerEditorPanel.querySelector("#timer-schedule-form");
+      if (!form) return;
       for (const block of form.querySelectorAll(".device-schedule-editor")) {
         syncEditorMode(block);
         block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
@@ -1437,9 +1445,11 @@ def render_timer_dashboard_page(
           const mode = block.querySelector(".editor-mode").value;
           const body = {mode};
           if (mode === "cycle") {
-            body.on_seconds = Number(block.querySelector(".editor-on-value").value) * unitMultiplier(block.querySelector(".editor-on-unit").value);
-            body.off_seconds = Number(block.querySelector(".editor-off-value").value) * unitMultiplier(block.querySelector(".editor-off-unit").value);
-            body.start_at_seconds = Number(block.querySelector(".editor-start-at").value);
+            const cycleUnit = block.querySelector(".editor-cycle-unit").value;
+            const multiplier = unitMultiplier(cycleUnit);
+            body.on_seconds = Number(block.querySelector(".editor-on-value").value) * multiplier;
+            body.off_seconds = Number(block.querySelector(".editor-off-value").value) * multiplier;
+            body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;
           } else {
             body.on_time = block.querySelector(".editor-on-time").value;
             body.off_time = block.querySelector(".editor-off-time").value;

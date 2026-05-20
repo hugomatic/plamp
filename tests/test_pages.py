@@ -88,8 +88,15 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role, items));', html)
         self.assertIn('button type="submit">Apply schedule</button>', html)
         self.assertIn('button type="button" name="cancel">Close</button>', html)
+        self.assertIn('const form = timerEditorPanel.querySelector("#timer-schedule-form");', html)
+        self.assertIn("if (!form) return;", html)
         self.assertIn("for (const block of form.querySelectorAll(\".device-schedule-editor\")) {", html)
         self.assertIn("controllerCard.append(timerEditorPanel);", html)
+        self.assertIn('class="editor-cycle-unit"', html)
+        self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
+        self.assertIn('body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;', html)
+        self.assertNotIn('class="editor-on-unit"', html)
+        self.assertNotIn('class="editor-off-unit"', html)
         self.assertNotIn("function openScheduleEditor(role, channel, event) {", html)
 
     def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
