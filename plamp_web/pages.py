@@ -1116,7 +1116,6 @@ def render_timer_dashboard_page(
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
     const timerBoard = document.getElementById("timer-status-board");
-    const timerEditorPanel = document.getElementById("timer-editor-panel");
     const hostClock = document.getElementById("host-clock");
     const refreshCountdown = document.getElementById("refresh-countdown");
     const refreshStatus = document.getElementById("refresh-status");
@@ -1335,7 +1334,8 @@ def render_timer_dashboard_page(
     }
 
     function captureEditorFocus() {
-      if (!activeEditor || !timerEditorPanel.contains(document.activeElement)) return null;
+      const form = timerBoard.querySelector("#timer-schedule-form");
+      if (!activeEditor || !form || !form.contains(document.activeElement)) return null;
       const field = document.activeElement;
       const fieldName = field?.name;
       if (!fieldName) return null;
@@ -1348,7 +1348,7 @@ def render_timer_dashboard_page(
 
     function restoreEditorFocus(focusState) {
       if (!focusState) return;
-      const form = timerEditorPanel.querySelector("#timer-schedule-form");
+      const form = timerBoard.querySelector("#timer-schedule-form");
       const field = form?.elements?.[focusState.name];
       if (!field || typeof field.focus !== "function") return;
       field.focus();
@@ -1359,7 +1359,8 @@ def render_timer_dashboard_page(
 
     function flushPendingTimerRender() {
       if (!pendingTimerRender) return;
-      if (activeEditor && timerEditorPanel.contains(document.activeElement)) return;
+      const form = timerBoard.querySelector("#timer-schedule-form");
+      if (activeEditor && form && form.contains(document.activeElement)) return;
       pendingTimerRender = false;
       renderTimerStatus();
     }
@@ -1400,32 +1401,24 @@ def render_timer_dashboard_page(
       `;
     }
 
-    function openControllerScheduleEditor(role, items) {
-      stopPageAutoRefresh();
-      activeEditor = {role};
-      timerEditorPanel.hidden = false;
-      timerEditorPanel.dataset.role = role;
-      timerEditorPanel.innerHTML = `
-        <form id="timer-schedule-form">
+    function controllerScheduleForm(role, items) {
+      return `
+        <form id="timer-schedule-form" data-role="${escapeHtml(role)}">
           <div class="timer-top"><strong>Edit ${escapeHtml(role)} schedule</strong><span class="editor-note">Updating any device schedule reprograms the controller.</span></div>
           ${items.map((item) => scheduleEditorBlock(role, item.channel, item.event || {id: item.channel.id, pin: item.channel.pin, type: item.channel.type || "gpio"})).join("")}
-          <div class="editor-row">
+          <div class="controller-actions controller-actions-editing">
             <button type="submit">Apply schedule</button>
             <button type="button" name="cancel">Close</button>
             <span class="editor-message" aria-live="polite"></span>
           </div>
         </form>
       `;
-      const form = timerEditorPanel.querySelector("#timer-schedule-form");
-      if (!form) return;
-      for (const block of form.querySelectorAll(".device-schedule-editor")) {
-        syncEditorMode(block);
-        block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
-      }
-      form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
-      form.elements.cancel.addEventListener("click", () => { activeEditor = null; timerEditorPanel.hidden = true; renderTimerStatus(); });
-      renderTimerStatus();
-      form.addEventListener("submit", submitScheduleEditor);
+    }
+
+    function openControllerScheduleEditor(role) {
+      stopPageAutoRefresh();
+      activeEditor = {role};
+      renderTimerStatus(true);
     }
 
     function syncEditorMode(block) {
@@ -1443,7 +1436,7 @@ def render_timer_dashboard_page(
       showEditorMessage(message, "", "Saving...");
       try {
         let lastMessage = "";
-        const role = timerEditorPanel.dataset.role;
+        const role = form.dataset.role;
         const blocks = Array.from(form.querySelectorAll(".device-schedule-editor"));
         const configResponse = await fetch("/api/config");
         const configPayload = await configResponse.json();
@@ -1534,7 +1527,8 @@ def render_timer_dashboard_page(
     }
 
     function renderTimerStatus(force = false) {
-      if (!force && activeEditor && timerEditorPanel.contains(document.activeElement)) {
+      const activeForm = timerBoard.querySelector("#timer-schedule-form");
+      if (!force && activeEditor && activeForm && activeForm.contains(document.activeElement)) {
         pendingTimerRender = true;
         return;
       }
@@ -1542,7 +1536,6 @@ def render_timer_dashboard_page(
       const focusState = captureEditorFocus();
       timerBoard.replaceChildren();
       let rendered = 0;
-      let editorPlaced = false;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
         const devices = timerDevicesFromMessage(message);
@@ -1599,33 +1592,46 @@ def render_timer_dashboard_page(
           fill.style.width = percent + "%";
           bar.append(fill);
           card.append(top, meta, bar);
-          if (!hidden) {
+          const isEditing = activeEditor && activeEditor.role === role;
+          if (!hidden || isEditing) {
             devicesGrid.append(card);
             rendered += 1;
           }
         }
         controllerCard.append(controllerTop, devicesGrid);
-        const actions = document.createElement("div");
-        actions.className = "controller-actions";
-        if (configurableCount > 0) {
-          const edit = document.createElement("button");
-          edit.type = "button";
-          edit.textContent = "Edit schedule";
-          edit.addEventListener("click", () => openControllerScheduleEditor(role, items));
-          actions.append(edit);
-        } else {
-          actions.textContent = "No configured device schedules.";
-        }
-        controllerCard.append(actions);
         if (activeEditor && activeEditor.role === role) {
-          controllerCard.append(timerEditorPanel);
-          timerEditorPanel.hidden = false;
-          editorPlaced = true;
+          const editor = document.createElement("div");
+          editor.className = "controller-editor";
+          editor.innerHTML = controllerScheduleForm(role, items);
+          const form = editor.querySelector("#timer-schedule-form");
+          if (form) {
+            for (const block of form.querySelectorAll(".device-schedule-editor")) {
+              syncEditorMode(block);
+              block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
+            }
+            form.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
+            form.elements.cancel.addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
+            form.addEventListener("submit", submitScheduleEditor);
+          }
+          controllerCard.append(editor);
+        } else {
+          const actions = document.createElement("div");
+          actions.className = "controller-actions";
+          if (configurableCount > 0) {
+            const edit = document.createElement("button");
+            edit.type = "button";
+            edit.textContent = "Edit schedule";
+            edit.addEventListener("click", () => openControllerScheduleEditor(role));
+            actions.append(edit);
+          } else {
+            actions.textContent = "No configured device schedules.";
+          }
+          controllerCard.append(actions);
+        }
+        if (activeEditor && activeEditor.role === role) {
+          controllerCard.classList.add("controller-card-editing");
         }
         timerBoard.append(controllerCard);
-      }
-      if (!editorPlaced) {
-        timerEditorPanel.hidden = true;
       }
       restoreEditorFocus(focusState);
       if (!rendered) {
