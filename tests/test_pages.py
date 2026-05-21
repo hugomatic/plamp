@@ -84,7 +84,12 @@ class PageRenderTests(unittest.TestCase):
             {
                 "host": {"hostname": "sprout"},
                 "host_time": {"display": "10:15 AM"},
-                "software": {"git_branch": "main", "git_short_commit": "6e2cf82", "git_dirty": False},
+                "software": {
+                    "git_branch": "main",
+                    "git_short_commit": "6e2cf82",
+                    "git_dirty": False,
+                    "git_commit_timestamp": "2026-05-20T10:15:00-07:00",
+                },
                 "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
                 "storage": {"path": "/home/hugo/plamp", "free": "2.0 GB", "used": "1.0 GB", "total": "3.0 GB"},
                 "log": {"path": "/var/log/plamp-web.log"},
@@ -98,6 +103,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Storage</h2>", html)
         self.assertIn("<h2>Camera worker</h2>", html)
         self.assertIn("<h2>Controller workers</h2>", html)
+        self.assertIn('class="host-clock"', html)
+        self.assertIn("<strong>Host time:</strong> 10:15 AM", html)
+        self.assertEqual(html.count("Git commit</td>"), 1)
         self.assertIn("Restart", html)
         self.assertIn("Reinstall", html)
         self.assertIn("Upgrade", html)
@@ -394,6 +402,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Git commit", html)
         self.assertIn("d5883da", html)
         self.assertIn("main", html)
+        self.assertIn("Git commit time", html)
+        self.assertIn("ago", html)
         self.assertIn("Git dirty", html)
 
     def test_settings_page_includes_detected_raspberry_pi_cameras(self):

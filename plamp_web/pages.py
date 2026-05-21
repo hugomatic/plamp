@@ -980,6 +980,13 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
     page_name = f"{host.get('hostname') or 'Plamp'} System"
+    git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
+    git_branch = software.get("git_branch") or "unknown"
+    git_commit_timestamp = software.get("git_commit_timestamp") or "unknown"
+    git_commit_relative = relative_time_label(software.get("git_commit_timestamp"))
+    git_commit_timestamp_display = (
+        f"{git_commit_timestamp} ({git_commit_relative})" if git_commit_relative else str(git_commit_timestamp)
+    )
 
     git_dirty = software.get("git_dirty")
     git_dirty_files = software.get("git_dirty_files") if isinstance(software.get("git_dirty_files"), list) else []
@@ -1040,11 +1047,13 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         for item in cameras
     ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
     software_rows = (
+        "<tr><td>Plamp root</td>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
+        "<tr><td>Plamp data</td>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
         "<tr><td>Operating system</td>" f"<td><code>{html.escape(os_display)}</code></td></tr>"
         "<tr><td>User name</td>" f"<td><code>{html.escape(user_display)}</code></td></tr>"
-        "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(software.get('git_short_commit') or software.get('git_commit') or ''))}</code></td></tr>"
-        "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(software.get('git_branch') or ''))}</code></td></tr>"
-        "<tr><td>Git commit time</td>" f"<td><code>{html.escape(str(software.get('git_commit_timestamp') or ''))}</code></td></tr>"
+        "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
+        "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
+        "<tr><td>Git commit time</td>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
         "<tr><td>Git dirty</td>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
         "<tr><td>mpremote</td>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
         "<tr><td>pyserial</td>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
@@ -1052,9 +1061,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     rows = [
         ("Hostname", host.get("hostname") or ""),
         ("Host time", host_time.get("display") or ""),
-        ("Git branch", software.get("git_branch") or ""),
-        ("Git commit", software.get("git_short_commit") or software.get("git_commit") or ""),
-        ("Git dirty", git_dirty_display),
         ("Detected picos", len(picos)),
         ("Detected cameras", len(cameras)),
         ("Repo root", paths.get("repo_root") or ""),
@@ -1077,14 +1083,18 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     nav {{ margin-bottom: 1.5rem; }}
+    section {{ border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 1rem; }}
     a {{ color: #174ea6; }}
     button {{ -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }}
-    .system-page {{ display: grid; gap: 1rem; max-width: 980px; }}
+    .system-page {{ max-width: 1100px; }}
     .system-actions {{ display: flex; flex-wrap: wrap; gap: .5rem; }}
     .system-status {{ color: #555; min-height: 1.25rem; }}
-    table {{ border-collapse: collapse; width: 100%; }}
-    th, td {{ border-bottom: 1px solid #ddd; padding: .4rem .5rem; text-align: left; vertical-align: top; }}
-    th {{ width: 12rem; }}
+    table {{ border-collapse: collapse; margin: 1rem 0 1.5rem; width: 100%; max-width: 1100px; }}
+    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f4f4f4; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .muted, .system-status {{ color: #555; font-size: .9rem; }}
+    .host-clock {{ color: #555; font-size: .95rem; }}
     pre {{ background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; white-space: pre-wrap; }}
     .logs-actions {{ align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }}
   </style>
@@ -1092,6 +1102,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
 <body>
   {MAIN_NAV}
   <h1>{html.escape(page_name)}</h1>
+  <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <div class="system-page">
     <section aria-label="System summary">
       <h2>System info</h2>

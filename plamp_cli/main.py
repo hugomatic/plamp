@@ -436,7 +436,10 @@ def _handle_status(args: argparse.Namespace, base_url: str, stdout: TextIO) -> N
         query["path"] = args.path
     query_string = f"?{urlencode(query, doseq=True)}"
     for chunk in stream_json_events(base_url, f"/api/status{query_string}"):
-        stdout.write(chunk)
+        if isinstance(chunk, str):
+            stdout.write(chunk)
+        else:
+            stdout.write(format_json_output(chunk, pretty=args.pretty))
 
 
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:

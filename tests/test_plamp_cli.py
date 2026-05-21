@@ -271,7 +271,7 @@ class PlampCliSystemTests(unittest.TestCase):
 class PlampCliStatusTests(unittest.TestCase):
     @patch("plamp_cli.main.stream_json_events")
     def test_status_streams_status_endpoint_with_path_filters(self, stream_json_events):
-        stream_json_events.return_value = iter(["event: snapshot\n", "data: {\"ok\": true}\n\n"])
+        stream_json_events.return_value = iter([{"ok": True}])
         stdout = StringIO()
         stderr = StringIO()
 
@@ -282,7 +282,7 @@ class PlampCliStatusTests(unittest.TestCase):
         )
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), "event: snapshot\ndata: {\"ok\": true}\n\n")
+        self.assertEqual(stdout.getvalue(), '{"ok": true}\n')
         self.assertEqual(stderr.getvalue(), "")
         stream_json_events.assert_called_once_with(
             "http://127.0.0.1:8000",
