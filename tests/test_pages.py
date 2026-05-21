@@ -84,21 +84,30 @@ class PageRenderTests(unittest.TestCase):
             {
                 "host": {"hostname": "sprout", "fqdn": "sprout.local"},
                 "host_time": {"display": "10:15 AM"},
-                "software": {"git_branch": "main", "git_short_commit": "6e2cf82"},
+                "software": {"git_branch": "main", "git_short_commit": "6e2cf82", "git_dirty": False},
                 "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
-                "storage": {"total": "2.0 GB"},
+                "storage": {"path": "/home/hugo/plamp", "free": "2.0 GB", "used": "1.0 GB", "total": "3.0 GB"},
                 "log": {"path": "/var/log/plamp-web.log"},
-                "detected": {"picos": [], "cameras": []},
+                "detected": {"picos": [{"port": "/dev/ttyACM0", "serial": "abc", "vendor_id": "1234", "product_id": "abcd"}], "cameras": [{"connector": "cam0", "model": "Camera Module 3 Wide", "sensor": "imx708", "lens": "wide", "path": "/dev/video0"}]},
+                "camera_worker": {"state": "idle", "available": True, "queue_depth": 0, "last_capture_at": "2026-05-20T10:15:00", "last_error": None, "scheduled_cameras": ["cam0"]},
+                "monitors": {"pump_lights": {"serial": "abc", "state": "idle", "connected": True, "port": "/dev/ttyACM0", "last_seen": "2026-05-20T10:14:59", "last_error": None}},
             }
         , "plamp-web started")
 
         self.assertIn("<h2>System info</h2>", html)
+        self.assertIn("<h2>Storage</h2>", html)
+        self.assertIn("<h2>Camera worker</h2>", html)
+        self.assertIn("<h2>Controller workers</h2>", html)
         self.assertIn("Restart", html)
         self.assertIn("Reinstall", html)
         self.assertIn("Upgrade", html)
         self.assertIn("Logs", html)
         self.assertIn("plamp-web started", html)
         self.assertNotIn('id="hostname-input"', html)
+        self.assertIn("2.0 GB", html)
+        self.assertIn("3.0 GB", html)
+        self.assertIn("cam0", html)
+        self.assertIn("pump_lights", html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -360,7 +369,9 @@ class PageRenderTests(unittest.TestCase):
         })
 
         self.assertIn("System info", html)
-        self.assertIn("<th scope=\"row\">Storage</th>", html)
+        self.assertIn("<h2>Storage</h2>", html)
+        self.assertIn("<th>Path</th><th>Free</th><th>Used</th><th>Total</th>", html)
+        self.assertIn("/path/to/plamp", html)
         self.assertIn("42.0 GB", html)
         self.assertIn("10.0 GB", html)
         self.assertIn("52.0 GB", html)

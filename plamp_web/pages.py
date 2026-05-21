@@ -975,6 +975,8 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     storage = system.get("storage") if isinstance(system.get("storage"), dict) else {}
     log_info = system.get("log") if isinstance(system.get("log"), dict) else {}
     detected = system.get("detected") if isinstance(system.get("detected"), dict) else {}
+    monitors = system.get("monitors") if isinstance(system.get("monitors"), dict) else {}
+    camera_worker = system.get("camera_worker") if isinstance(system.get("camera_worker"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
     page_name = f"{host.get('hostname') or 'Plamp'} System"
@@ -1047,15 +1049,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         "<tr><td>mpremote</td>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
         "<tr><td>pyserial</td>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
     )
-    storage_display = " / ".join(
-        part
-        for part in [
-            f"{storage.get('free') or '-'} free",
-            f"{storage.get('used') or '-'} used",
-            f"{storage.get('total') or '-'} total",
-        ]
-    )
-
     rows = [
         ("Hostname", host.get("hostname") or ""),
         ("FQDN", host.get("fqdn") or ""),
@@ -1068,7 +1061,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         ("Repo root", paths.get("repo_root") or ""),
         ("Data dir", paths.get("data_dir") or ""),
         ("Log file", log_info.get("path") or ""),
-        ("Storage", storage_display),
     ]
     rows_html = "".join(
         f"<tr><th scope=\"row\">{html.escape(str(label))}</th><td>{html.escape(str(value))}</td></tr>"
@@ -1126,6 +1118,49 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
       <p class="muted">Detected software and runtime details.</p>
       <table>
         <tbody>{software_rows}</tbody>
+      </table>
+    </section>
+    <section aria-label="System storage">
+      <h2>Storage</h2>
+      <table>
+        <thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead>
+        <tbody><tr><td><code>{html.escape(str(storage.get("path") or "-"))}</code></td><td>{html.escape(str(storage.get("free") or "-"))}</td><td>{html.escape(str(storage.get("used") or "-"))}</td><td>{html.escape(str(storage.get("total") or "-"))}</td></tr></tbody>
+      </table>
+    </section>
+    <section aria-label="Camera worker">
+      <h2>Camera worker</h2>
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>State</td><td><code>{html.escape(str(camera_worker.get("state") or "-"))}</code></td></tr>
+          <tr><td>Available</td><td><code>{html.escape(str(camera_worker.get("available") if "available" in camera_worker else "-"))}</code></td></tr>
+          <tr><td>Queue depth</td><td><code>{html.escape(str(camera_worker.get("queue_depth") or 0))}</code></td></tr>
+          <tr><td>Last capture</td><td><code>{html.escape(str(camera_worker.get("last_capture_at") or "-"))}</code></td></tr>
+          <tr><td>Last error</td><td><code>{html.escape(str(camera_worker.get("last_error") or "-"))}</code></td></tr>
+          <tr><td>Scheduled cameras</td><td><code>{html.escape(", ".join(camera_worker.get("scheduled_cameras") or []) or "-")}</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section aria-label="Controller workers">
+      <h2>Controller workers</h2>
+      <table>
+        <thead><tr><th>Role</th><th>Serial</th><th>State</th><th>Connected</th><th>Port</th><th>Last seen</th><th>Last error</th></tr></thead>
+        <tbody>
+          {''.join(
+              (
+                  '<tr>'
+                  f'<td>{html.escape(role)}</td>'
+                  f'<td>{html.escape(str(worker.get("serial") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("state") or "-"))}</td>'
+                  f'<td>{html.escape("yes" if worker.get("connected") else "no")}</td>'
+                  f'<td>{html.escape(str(worker.get("port") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("last_seen") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("last_error") or "-"))}</td>'
+                  '</tr>'
+              )
+              for role, worker in sorted(monitors.items())
+          ) or '<tr><td colspan="7">No controller workers found.</td></tr>'}
+        </tbody>
       </table>
     </section>
     <section aria-label="System actions">
