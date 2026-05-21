@@ -1688,13 +1688,15 @@ def controller_telemetry(controller: str) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
-def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
+def controller_status_tree(config: dict[str, Any], controller_ids: set[str] | None = None) -> dict[str, Any]:
     controllers = config.get("controllers", {})
     if not isinstance(controllers, dict):
         return {}
     status = {}
     for controller_id, controller in controllers.items():
         if not isinstance(controller_id, str) or not isinstance(controller, dict):
+            continue
+        if controller_ids is not None and controller_id not in controller_ids:
             continue
         item = dict(controller)
         item["telemetry"] = controller_telemetry(controller_id)
@@ -1712,6 +1714,33 @@ def status_response() -> dict[str, Any]:
     }
 
 
+def status_response_for_paths(paths: list[str] | None = None) -> dict[str, Any]:
+    if not paths:
+        return status_response()
+
+    config = load_config()
+    requested_roots = {path.split(".", 1)[0] for path in paths if path}
+    status: dict[str, Any] = {"config": config}
+
+    if "controllers" in requested_roots:
+        controller_ids: set[str] | None = set()
+        for path in paths:
+            if not path.startswith("controllers."):
+                continue
+            parts = [part for part in path.split(".") if part]
+            if len(parts) > 1:
+                controller_ids.add(parts[1])
+        status["controllers"] = controller_status_tree(config, controller_ids or None)
+
+    if "monitors" in requested_roots:
+        status["monitors"] = monitor_summaries()
+
+    if "camera_worker" in requested_roots:
+        status["camera_worker"] = camera_worker_summary()
+
+    return status
+
+
 def resolve_status_path(node: Any, path: str) -> Any:
     current = node
     if not path:
@@ -1724,7 +1753,7 @@ def resolve_status_path(node: Any, path: str) -> Any:
 
 
 def filtered_status_response(paths: list[str] | None = None, *, status: dict[str, Any] | None = None) -> Any:
-    status = status if status is not None else status_response()
+    status = status if status is not None else status_response_for_paths(paths)
     if not paths:
         return status
     result = []
@@ -1737,7 +1766,7 @@ def iter_status_events(paths: list[str] | None = None, *, poll_interval: float =
     last_payload: Any = object()
     first = True
     while True:
-        payload = filtered_status_response(paths, status=status_response())
+        payload = filtered_status_response(paths, status=status_response_for_paths(paths))
         if first:
             yield sse_message("snapshot", payload)
             last_payload = payload

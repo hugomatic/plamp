@@ -239,7 +239,7 @@ class ConfigApiTests(unittest.TestCase):
             "camera_worker": {"state": "idle"},
         }
         with (
-            patch.object(server, "status_response", side_effect=[status_one, status_two, status_three]),
+            patch.object(server, "status_response_for_paths", side_effect=[status_one, status_two, status_three]),
             patch.object(server.time, "sleep", return_value=None),
         ):
             events = server.iter_status_events(
@@ -249,13 +249,17 @@ class ConfigApiTests(unittest.TestCase):
             first = next(events)
             second = next(events)
 
-        first_lines = first.splitlines()
-        second_lines = second.splitlines()
-        first_payload = json.loads(first_lines[1].removeprefix("data: "))
-        second_payload = json.loads(second_lines[1].removeprefix("data: "))
+        def parse_event(text: str) -> tuple[str, object]:
+            lines = text.splitlines()
+            event_name = lines[0].removeprefix("event: ")
+            payload = json.loads(lines[1].removeprefix("data: "))
+            return event_name, payload
 
-        self.assertEqual(first_lines[0], "event: snapshot")
-        self.assertEqual(second_lines[0], "event: update")
+        first_event, first_payload = parse_event(first)
+        second_event, second_payload = parse_event(second)
+
+        self.assertEqual(first_event, "snapshot")
+        self.assertEqual(second_event, "update")
         self.assertEqual(first_payload[0]["node"]["settings"]["label"], "Pump lights")
         self.assertEqual(second_payload[0]["node"]["settings"]["label"], "Pump lights changed")
         self.assertEqual(first_payload[1]["node"]["connected"], True)
