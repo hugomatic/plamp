@@ -2646,7 +2646,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const streamResult = document.getElementById("stream-result");
       streamResult.textContent = "";
       streamStatus.textContent = `Connecting to ${{statusUrl(true)}}...`;
-      fetch(statusUrl(true)).then(async (response) => {{
+      fetch(statusUrl(false)).then(async (response) => {{
         const probeText = await response.text();
         if (!response.ok) {{
           streamStatus.textContent = `${{response.status}} ${{response.statusText}}`;

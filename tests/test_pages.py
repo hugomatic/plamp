@@ -1061,6 +1061,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('value="controllers.pump_lights.telemetry"', html)
         self.assertIn('getResult.textContent = `Error: ${detail || response.statusText}`;', html)
         self.assertIn('streamStatus.textContent = `Connecting to ${statusUrl(true)}...`;', html)
+        self.assertIn('fetch(statusUrl(false)).then(async (response) => {', html)
+        self.assertNotIn('fetch(statusUrl(true)).then(async (response) => {', html)
         self.assertIn('streamResult.textContent = `Error: ${probeText}`;', html)
         self.assertIn('if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {', html)
         self.assertIn('streamStatus.textContent = "Stream disconnected.";', html)
