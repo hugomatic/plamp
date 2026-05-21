@@ -2251,6 +2251,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <p>Streams filtered status updates with server-sent events.</p>
     <pre id="stream-status-curl-command">curl -N http://localhost:8000/api/status?stream=true</pre>
     <button class="copy-curl" type="button" data-copy-target="stream-status-curl-command">Copy curl</button>
+    <label><input id="stream-pretty" type="checkbox" checked> Pretty JSON</label>
     <button id="start-stream" type="button">Start stream</button>
     <button id="stop-stream" type="button">Stop stream</button>
     <div><span id="stream-status">Not streaming.</span></div>
@@ -2305,6 +2306,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     const listCapturesLimitInput = document.getElementById("list-captures-limit");
     const listCapturesOffsetInput = document.getElementById("list-captures-offset");
     const addStatusPathButton = document.getElementById("add-status-path");
+    const streamPrettyInput = document.getElementById("stream-pretty");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
     const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
@@ -2619,13 +2621,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
     function appendStreamEvent(eventName, data) {{
       const streamResult = document.getElementById("stream-result");
-      const streamBoard = document.getElementById("timer-status-board");
       const timestamp = new Date().toLocaleTimeString();
       let display = data;
       try {{
         const parsed = JSON.parse(data);
-        if (streamBoard) streamBoard.textContent = JSON.stringify(parsed, null, 2);
-        display = JSON.stringify(parsed, null, 2);
+        display = JSON.stringify(parsed, null, streamPrettyInput.checked ? 2 : 0);
       }} catch (error) {{
       }}
       streamResult.textContent += `[${{timestamp}}] ${{eventName}}\n${{display}}\n\n`;
