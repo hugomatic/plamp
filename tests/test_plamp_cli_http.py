@@ -64,6 +64,26 @@ class PlampCliHttpTests(unittest.TestCase):
         self.assertEqual(request.full_url, "http://127.0.0.1:8000/api/config")
 
     @patch("plamp_cli.http.urlopen")
+    def test_request_json_encodes_repeated_query_keys(self, urlopen):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({"ok": True}).encode("utf-8")
+        urlopen.return_value = response
+
+        result = request_json(
+            "GET",
+            "http://127.0.0.1:8000",
+            "/api/status",
+            query={"path": ["controllers.pump_lights", "controllers.grow"]},
+        )
+
+        self.assertEqual(result, {"ok": True})
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.full_url,
+            "http://127.0.0.1:8000/api/status?path=controllers.pump_lights&path=controllers.grow",
+        )
+
+    @patch("plamp_cli.http.urlopen")
     def test_request_json_raises_api_error_with_clean_detail(self, urlopen):
         urlopen.side_effect = HTTPError(
             "http://127.0.0.1:8000/api/config",

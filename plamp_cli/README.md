@@ -57,6 +57,7 @@ uv run python -m plamp_cli --help
 uv run python -m plamp_cli config --help
 uv run python -m plamp_cli controllers --help
 uv run python -m plamp_cli system --help
+uv run python -m plamp_cli status --help
 uv run python -m plamp_cli pico-scheduler --help
 uv run python -m plamp_cli pics --help
 ```
@@ -67,6 +68,7 @@ uv run python -m plamp_cli pics --help
 uv run python -m plamp_cli config get
 uv run python -m plamp_cli controllers list
 uv run python -m plamp_cli system status
+uv run python -m plamp_cli status --path controllers.pump_lights
 uv run python -m plamp_cli pico-scheduler list
 uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
 ```
@@ -100,9 +102,13 @@ Expected shape:
 }
 ```
 
-Use `/api/system` for detected Picos/cameras and `/api/status` for live
-controller telemetry. `system status` reads `/api/status` and exposes the git
-branch and commit in the `software` section.
+Use `/api/system` for detected Picos/cameras, host metadata, and software
+identity. `system status` reads `/api/system` and exposes the git branch and
+commit in the `software` section.
+
+Controller reads now come from `/api/status` so the CLI can request filtered
+live state without depending on `/api/controllers/{id}`. `controllers get`
+and `pico-scheduler get` both read a filtered status path.
 
 2. List controller families:
 
@@ -258,6 +264,7 @@ Commands:
 
 ```bash
 uv run python -m plamp_cli controllers list
+uv run python -m plamp_cli controllers get pump_lights
 ```
 
 Examples:
@@ -265,6 +272,28 @@ Examples:
 ```bash
 uv run python -m plamp_cli controllers list
 uv run python -m plamp_cli --pretty controllers list
+uv run python -m plamp_cli controllers get pump_lights
+```
+
+### Status
+
+`status` streams `/api/status?stream=true` and appends repeated `--path`
+filters as repeated `path=` query arguments.
+
+Commands:
+
+```bash
+uv run python -m plamp_cli status
+uv run python -m plamp_cli status --path controllers.pump_lights
+uv run python -m plamp_cli status --path controllers.pump_lights --path controllers.grow
+```
+
+Examples:
+
+```bash
+uv run python -m plamp_cli status
+uv run python -m plamp_cli status --path controllers.pump_lights
+uv run python -m plamp_cli status --path controllers.pump_lights --path controllers.grow
 ```
 
 ### System
@@ -302,6 +331,9 @@ uv run python -m plamp_cli pico-scheduler get pump_lights
 uv run python -m plamp_cli --table pico-scheduler get pump_lights
 cat schedule.json | uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights -
 ```
+
+`pico-scheduler get` now reads the controller state through `/api/status` with
+`path=controllers.<id>`.
 
 ### Pictures
 
