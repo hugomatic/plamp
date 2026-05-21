@@ -333,7 +333,7 @@ class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
     def test_controllers_get_uses_status_path_filter(self, request_json):
         request_json.return_value = [
-            {"path": "controllers.pump_lights", "node": {"firmware": "pico_scheduler"}}
+            {"path": "controllers.pump_lights", "value": {"firmware": "pico_scheduler"}}
         ]
         stdout = StringIO()
         stderr = StringIO()
@@ -389,7 +389,7 @@ class PlampCliTimerTests(unittest.TestCase):
         request_json.return_value = [
             {
                 "path": "controllers.pump_lights",
-                "node": {"devices": [{"id": "pump", "enabled": True}], "report_every": 10},
+                "value": {"devices": [{"id": "pump", "enabled": True}], "report_every": 10},
             }
         ]
         stdout = StringIO()
@@ -452,7 +452,7 @@ class PlampCliTimerTests(unittest.TestCase):
 
     @patch("plamp_cli.main.request_json")
     def test_pico_scheduler_get_renders_table_output(self, request_json):
-        request_json.return_value = [{"path": "controllers.pump_lights", "node": {"mode": "auto"}}]
+        request_json.return_value = [{"path": "controllers.pump_lights", "value": {"mode": "auto"}}]
         stdout = StringIO()
         stderr = StringIO()
 

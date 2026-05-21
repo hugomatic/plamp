@@ -1781,7 +1781,7 @@ def filtered_status_response(paths: list[str] | None = None, *, status: dict[str
         return status
     result = []
     for path in paths:
-        result.append({"path": path, "node": resolve_status_path(status, path)})
+        result.append({"path": path, "value": resolve_status_path(status, path)})
     return result
 
 

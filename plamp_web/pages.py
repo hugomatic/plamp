@@ -1481,6 +1481,9 @@ def render_timer_dashboard_page(
     }
 
     function statusNode(message) {
+      if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "value" in message[0]) {
+        return message[0].value;
+      }
       if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "node" in message[0]) {
         return message[0].node;
       }

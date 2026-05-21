@@ -291,8 +291,12 @@ def _normalize_pico_scheduler_response(response: object) -> object:
 def _normalize_status_response(response: object) -> object:
     if isinstance(response, list) and len(response) == 1:
         item = response[0]
+        if isinstance(item, dict) and "value" in item:
+            return item["value"]
         if isinstance(item, dict) and "node" in item:
             return item["node"]
+    if isinstance(response, dict) and "value" in response:
+        return response["value"]
     if isinstance(response, dict) and "node" in response:
         return response["node"]
     return response

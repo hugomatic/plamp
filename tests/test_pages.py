@@ -173,6 +173,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const source = new EventSource(`/api/status?stream=true&path=${encodeURIComponent(`controllers.${role}.telemetry`)}`);', html)
         self.assertIn('for (const eventName of ["snapshot", "update"]) {', html)
         self.assertIn('timerMessages.set(role, statusNode(JSON.parse(event.data)));', html)
+        self.assertIn('"value" in message[0]', html)
+        self.assertIn("return message[0].value;", html)
         self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
         self.assertIn('body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;', html)
         self.assertIn('const configResponse = await fetch("/api/config");', html)

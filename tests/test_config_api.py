@@ -172,11 +172,11 @@ class ConfigApiTests(unittest.TestCase):
             [
                 {
                     "path": "config.controllers.pump_lights",
-                    "node": config["controllers"]["pump_lights"],
+                    "value": config["controllers"]["pump_lights"],
                 },
                 {
                     "path": "controllers.pump_lights.telemetry",
-                    "node": telemetry,
+                    "value": telemetry,
                 },
             ],
         )
@@ -269,9 +269,9 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(first_event, "snapshot")
         self.assertEqual(second_event, "update")
-        self.assertEqual(first_payload[0]["node"]["settings"]["label"], "Pump lights")
-        self.assertEqual(second_payload[0]["node"]["settings"]["label"], "Pump lights changed")
-        self.assertEqual(first_payload[1]["node"]["connected"], True)
+        self.assertEqual(first_payload[0]["value"]["settings"]["label"], "Pump lights")
+        self.assertEqual(second_payload[0]["value"]["settings"]["label"], "Pump lights changed")
+        self.assertEqual(first_payload[1]["value"]["connected"], True)
 
     def test_get_status_stream_returns_streaming_response(self):
         with patch.object(server, "status_response", return_value={"config": {"controllers": {}, "cameras": {}}, "controllers": {}, "monitors": {}, "camera_worker": {"state": "idle"}}):
