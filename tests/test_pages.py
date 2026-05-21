@@ -82,7 +82,7 @@ class PageRenderTests(unittest.TestCase):
     def test_system_info_page_shows_actions_and_no_hostname_editor(self):
         html = render_system_info_page(
             {
-                "host": {"hostname": "sprout"},
+                "host": {"hostname": "sprout", "hardware_model": "Raspberry Pi Zero 2 W Rev 1.0"},
                 "host_time": {"display": "10:15 AM"},
                 "software": {
                     "git_branch": "main",
@@ -119,6 +119,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertEqual(html.count("Plamp data"), 0)
         self.assertEqual(html.count("Operating system</th>"), 1)
         self.assertEqual(html.count("User name</th>"), 1)
+        self.assertEqual(html.count("Computer hardware model</th>"), 1)
+        self.assertIn("Raspberry Pi Zero 2 W Rev 1.0", html)
+        self.assertEqual(html.count("Log file</th>"), 1)
+        self.assertNotIn("<th scope=\"row\">Log file</th><td>/var/log/plamp-web.log</td>", html)
         self.assertNotIn("Detected picos", html)
         self.assertNotIn("Detected cameras", html)
         self.assertIn("Restart", html)
@@ -390,6 +394,7 @@ class PageRenderTests(unittest.TestCase):
                 "used": "10.0 GB",
                 "total": "52.0 GB",
             },
+            "log": {"path": "/repo/plamp/data/plamp.log"},
         })
 
         self.assertIn("System info", html)
@@ -400,9 +405,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<th scope=\"row\">Free disk space</th>", html)
         self.assertIn("<th scope=\"row\">Used disk space</th>", html)
         self.assertIn("<th scope=\"row\">Total disk space</th>", html)
+        self.assertIn("<th scope=\"row\">Log file</th>", html)
         self.assertNotIn("<th>Path</th><th>Free</th><th>Used</th><th>Total</th>", html)
         self.assertIn("/repo/plamp", html)
         self.assertIn("/repo/plamp/data", html)
+        self.assertIn("/repo/plamp/data/plamp.log", html)
         self.assertIn("/path/to/plamp", html)
         self.assertIn("42.0 GB", html)
         self.assertIn("10.0 GB", html)
@@ -440,8 +447,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("System info", html)
         self.assertIn("<h2>Hardware</h2>", html)
         self.assertIn("<h3>Serial USB peripherals</h3>", html)
+        self.assertIn("<h3>Cameras</h3>", html)
         self.assertNotIn("Detected hardware", html)
         self.assertNotIn("<h3>Peripherals</h3>", html)
+        self.assertNotIn("<h3>Raspberry Pi cameras</h3>", html)
         self.assertNotIn("Detected cameras", html)
         self.assertNotIn("Detected picos", html)
         self.assertIn("cam0", html)

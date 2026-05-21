@@ -99,6 +99,7 @@ class ConfigApiTests(unittest.TestCase):
             patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
             patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
             patch.object(server, "storage_summary", return_value={"path": "/repo/plamp", "free": "2 GB", "used": "1 GB", "total": "3 GB"}),
+            patch.object(server, "computer_hardware_model", return_value="Raspberry Pi Zero 2 W Rev 1.0"),
         ):
             data = server.get_system()
 
@@ -110,6 +111,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["storage"]["free"], "2 GB")
         self.assertEqual(data["storage"]["used"], "1 GB")
         self.assertEqual(data["storage"]["total"], "3 GB")
+        self.assertEqual(data["host"]["hardware_model"], "Raspberry Pi Zero 2 W Rev 1.0")
 
     def test_status_response_contains_config_tree_and_controller_telemetry(self):
         config = {

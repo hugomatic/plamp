@@ -1025,6 +1025,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         "<tr><th scope=\"row\">Free disk space</th>" f"<td>{html.escape(str(storage.get('free') or '-'))}</td></tr>"
         "<tr><th scope=\"row\">Used disk space</th>" f"<td>{html.escape(str(storage.get('used') or '-'))}</td></tr>"
         "<tr><th scope=\"row\">Total disk space</th>" f"<td>{html.escape(str(storage.get('total') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Log file</th>" f"<td><code>{html.escape(str(log_info.get('path') or '-'))}</code></td></tr>"
     )
     def camera_status_name(item: dict[str, Any]) -> str:
         connector = item.get("connector")
@@ -1067,7 +1068,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         ("Host time", host_time.get("display") or ""),
         ("Operating system", os_display),
         ("User name", user_display),
-        ("Log file", log_info.get("path") or ""),
+        ("Computer hardware model", host.get("hardware_model") or "unknown"),
     ]
     rows_html = "".join(
         f"<tr><th scope=\"row\">{html.escape(str(label))}</th><td>{html.escape(str(value))}</td></tr>"
@@ -1120,7 +1121,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         <thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
         <tbody>{pico_rows}</tbody>
       </table>
-      <h3>Raspberry Pi cameras</h3>
+      <h3>Cameras</h3>
       <table>
         <thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead>
         <tbody>{camera_rows}</tbody>

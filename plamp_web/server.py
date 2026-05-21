@@ -1571,6 +1571,29 @@ def storage_summary(path: Path = REPO_ROOT) -> dict[str, Any]:
     }
 
 
+def computer_hardware_model(
+    *,
+    device_tree_model_path: Path = Path("/proc/device-tree/model"),
+    cpuinfo_path: Path = Path("/proc/cpuinfo"),
+) -> str:
+    try:
+        model = device_tree_model_path.read_text(errors="replace").replace("\x00", "").strip()
+        if model:
+            return model
+    except OSError:
+        pass
+    try:
+        for line in cpuinfo_path.read_text(errors="replace").splitlines():
+            if line.lower().startswith("model name"):
+                _, value = line.split(":", 1)
+                model = value.strip()
+                if model:
+                    return model
+    except OSError:
+        pass
+    return platform.machine() or platform.processor() or "unknown"
+
+
 def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
     try:
         return subprocess.check_output(args, cwd=repo_root, text=True, stderr=subprocess.DEVNULL).strip()
@@ -1640,6 +1663,7 @@ def system_response() -> dict[str, Any]:
         "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
+            "hardware_model": computer_hardware_model(),
             "ips": host_ips(),
             "default_route": default_route(),
             "network": network_summary(),
