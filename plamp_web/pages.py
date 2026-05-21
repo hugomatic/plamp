@@ -1047,24 +1047,22 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         for item in cameras
     ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
     software_rows = (
-        "<tr><td>Plamp root</td>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
-        "<tr><td>Plamp data</td>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
-        "<tr><td>Operating system</td>" f"<td><code>{html.escape(os_display)}</code></td></tr>"
-        "<tr><td>User name</td>" f"<td><code>{html.escape(user_display)}</code></td></tr>"
-        "<tr><td>Git commit</td>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
-        "<tr><td>Git branch</td>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
-        "<tr><td>Git commit time</td>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
-        "<tr><td>Git dirty</td>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
-        "<tr><td>mpremote</td>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
-        "<tr><td>pyserial</td>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">Plamp root</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Plamp data</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Git commit</th>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
+        "<tr><th scope=\"row\">Git branch</th>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
+        "<tr><th scope=\"row\">Git commit time</th>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">Git dirty</th>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">mpremote</th>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">pyserial</th>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
     )
     rows = [
         ("Hostname", host.get("hostname") or ""),
         ("Host time", host_time.get("display") or ""),
+        ("Operating system", os_display),
+        ("User name", user_display),
         ("Detected picos", len(picos)),
         ("Detected cameras", len(cameras)),
-        ("Repo root", paths.get("repo_root") or ""),
-        ("Data dir", paths.get("data_dir") or ""),
         ("Log file", log_info.get("path") or ""),
     ]
     rows_html = "".join(
@@ -1091,7 +1089,8 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     .system-status {{ color: #555; min-height: 1.25rem; }}
     table {{ border-collapse: collapse; margin: 1rem 0 1.5rem; width: 100%; max-width: 1100px; }}
     th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
-    th {{ background: #f4f4f4; }}
+    th {{ background: #f4f4f4; font-weight: 700; }}
+    td {{ background: #fff; color: #111; }}
     code {{ background: #f4f4f4; padding: .1rem .25rem; }}
     .muted, .system-status {{ color: #555; font-size: .9rem; }}
     .host-clock {{ color: #555; font-size: .95rem; }}
@@ -1142,12 +1141,12 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
       <table>
         <thead><tr><th>Field</th><th>Value</th></tr></thead>
         <tbody>
-          <tr><td>State</td><td><code>{html.escape(str(camera_worker.get("state") or "-"))}</code></td></tr>
-          <tr><td>Available</td><td><code>{html.escape(str(camera_worker.get("available") if "available" in camera_worker else "-"))}</code></td></tr>
-          <tr><td>Queue depth</td><td><code>{html.escape(str(camera_worker.get("queue_depth") or 0))}</code></td></tr>
-          <tr><td>Last capture</td><td><code>{html.escape(str(camera_worker.get("last_capture_at") or "-"))}</code></td></tr>
-          <tr><td>Last error</td><td><code>{html.escape(str(camera_worker.get("last_error") or "-"))}</code></td></tr>
-          <tr><td>Scheduled cameras</td><td><code>{html.escape(", ".join(camera_worker.get("scheduled_cameras") or []) or "-")}</code></td></tr>
+          <tr><th scope="row">State</th><td><code>{html.escape(str(camera_worker.get("state") or "-"))}</code></td></tr>
+          <tr><th scope="row">Available</th><td><code>{html.escape(str(camera_worker.get("available") if "available" in camera_worker else "-"))}</code></td></tr>
+          <tr><th scope="row">Queue depth</th><td><code>{html.escape(str(camera_worker.get("queue_depth") or 0))}</code></td></tr>
+          <tr><th scope="row">Last capture</th><td><code>{html.escape(str(camera_worker.get("last_capture_at") or "-"))}</code></td></tr>
+          <tr><th scope="row">Last error</th><td><code>{html.escape(str(camera_worker.get("last_error") or "-"))}</code></td></tr>
+          <tr><th scope="row">Scheduled cameras</th><td><code>{html.escape(", ".join(camera_worker.get("scheduled_cameras") or []) or "-")}</code></td></tr>
         </tbody>
       </table>
     </section>

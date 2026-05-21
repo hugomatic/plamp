@@ -89,6 +89,13 @@ class PageRenderTests(unittest.TestCase):
                     "git_short_commit": "6e2cf82",
                     "git_dirty": False,
                     "git_commit_timestamp": "2026-05-20T10:15:00-07:00",
+                    "os_name": "Debian GNU/Linux",
+                    "os_version": "12",
+                    "os_arch": "aarch64",
+                    "user_name": "hugo",
+                    "user_is_sudoer": True,
+                    "user_has_serial_access": True,
+                    "user_has_video_access": True,
                 },
                 "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
                 "storage": {"path": "/home/hugo/plamp", "free": "2.0 GB", "used": "1.0 GB", "total": "3.0 GB"},
@@ -105,7 +112,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Controller workers</h2>", html)
         self.assertIn('class="host-clock"', html)
         self.assertIn("<strong>Host time:</strong> 10:15 AM", html)
-        self.assertEqual(html.count("Git commit</td>"), 1)
+        self.assertEqual(html.count("Git commit</th>"), 1)
+        self.assertEqual(html.count("Repo root"), 0)
+        self.assertEqual(html.count("Plamp root</th>"), 1)
+        self.assertEqual(html.count("Plamp data</th>"), 1)
+        self.assertEqual(html.count("Operating system</th>"), 1)
+        self.assertEqual(html.count("User name</th>"), 1)
         self.assertIn("Restart", html)
         self.assertIn("Reinstall", html)
         self.assertIn("Upgrade", html)
