@@ -1640,7 +1640,6 @@ def system_response() -> dict[str, Any]:
         "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
-            "fqdn": socket.getfqdn(),
             "ips": host_ips(),
             "default_route": default_route(),
             "network": network_summary(),

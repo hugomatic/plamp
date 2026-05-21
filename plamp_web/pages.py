@@ -1051,7 +1051,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     )
     rows = [
         ("Hostname", host.get("hostname") or ""),
-        ("FQDN", host.get("fqdn") or ""),
         ("Host time", host_time.get("display") or ""),
         ("Git branch", software.get("git_branch") or ""),
         ("Git commit", software.get("git_short_commit") or software.get("git_commit") or ""),

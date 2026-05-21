@@ -82,7 +82,7 @@ class PageRenderTests(unittest.TestCase):
     def test_system_info_page_shows_actions_and_no_hostname_editor(self):
         html = render_system_info_page(
             {
-                "host": {"hostname": "sprout", "fqdn": "sprout.local"},
+                "host": {"hostname": "sprout"},
                 "host_time": {"display": "10:15 AM"},
                 "software": {"git_branch": "main", "git_short_commit": "6e2cf82", "git_dirty": False},
                 "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
