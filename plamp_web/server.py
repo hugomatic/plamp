@@ -1915,11 +1915,15 @@ def get_system_page() -> str:
     return render_system_info_page(system_response(), read_log_tail(200))
 
 
-@app.get("/api/status")
 def get_status(path: list[str] | None = None, stream: bool = False) -> Any:
     if stream:
         return stream_status(path)
     return filtered_status_response(path)
+
+
+@app.get("/api/status")
+def get_status_route(path: list[str] | None = Query(default=None), stream: bool = Query(default=False)) -> Any:
+    return get_status(path, stream)
 
 
 @app.put("/api/config")

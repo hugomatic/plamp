@@ -2214,10 +2214,15 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   <h2>Status</h2>
 
   <fieldset>
-    <legend>GET /api/status</legend>
-    <p>Reads filtered status nodes for one or more paths. Leave the list empty to read the full status tree.</p>
+    <legend>Status paths</legend>
+    <p>These paths are shared by the filtered GET and streaming GET views below.</p>
     <div id="status-path-list">{default_status_path_rows}</div>
     <button id="add-status-path" type="button">Add path</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>GET /api/status</legend>
+    <p>Reads filtered status nodes for one or more paths. Leave the list empty to read the full status tree.</p>
     <pre id="get-status-curl-command">curl http://localhost:8000/api/status</pre>
     <button class="copy-curl" type="button" data-copy-target="get-status-curl-command">Copy curl</button>
     <button id="get-status" type="button">Run request</button>
@@ -2292,6 +2297,15 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return putRoleInput.value.trim();
     }}
 
+    function bindStatusPathRow(row) {{
+      row.querySelector(".status-path-input").addEventListener("input", updateCurl);
+      row.querySelector(".remove-status-path").addEventListener("click", () => {{
+        row.remove();
+        if (!statusPathList.children.length) addStatusPath("");
+        updateCurl();
+      }});
+    }}
+
     function statusPaths() {{
       return Array.from(statusPathList.querySelectorAll(".status-path-input"))
         .map((input) => input.value.trim())
@@ -2305,12 +2319,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{putRoleInput.value.trim() || ""}}.telemetry"></label>
         <button type="button" class="remove-status-path">Remove</button>
       `;
-      row.querySelector(".status-path-input").addEventListener("input", updateCurl);
-      row.querySelector(".remove-status-path").addEventListener("click", () => {{
-        row.remove();
-        if (!statusPathList.children.length) addStatusPath("");
-        updateCurl();
-      }});
+      bindStatusPathRow(row);
       return row;
     }}
 
@@ -2487,14 +2496,19 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       try {{
         const response = await fetch(url);
         const text = await response.text();
-        let display = text;
+        getStatus.textContent = `${{response.status}} ${{response.statusText}}`;
         if (response.ok) {{
           const parsed = JSON.parse(text);
-          display = JSON.stringify(parsed, null, 2);
+          getResult.textContent = JSON.stringify(parsed, null, 2);
           updateCurl();
+        }} else {{
+          let detail = text;
+          try {{
+            const parsed = JSON.parse(text);
+            detail = parsed?.detail || text;
+          }} catch (error) {{}}
+          getResult.textContent = `Error: ${{detail || response.statusText}}`;
         }}
-        getStatus.textContent = `${{response.status}} ${{response.statusText}}`;
-        getResult.textContent = display;
       }} catch (error) {{
         getStatus.textContent = "Request failed.";
         getResult.textContent = String(error);
@@ -2619,21 +2633,35 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const streamResult = document.getElementById("stream-result");
       streamResult.textContent = "";
       streamStatus.textContent = `Connecting to ${{statusUrl(true)}}...`;
-      timerEventSource = new EventSource(statusUrl(true));
-      timerEventSource.onopen = () => {{
-        streamStatus.textContent = "Streaming filtered status.";
-      }};
-      for (const eventName of ["snapshot", "update"]) {{
-        timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
-      }}
-      timerEventSource.onerror = () => {{
-        if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {{
-          streamStatus.textContent = "Stream disconnected.";
+      fetch(statusUrl(true)).then(async (response) => {{
+        const probeText = await response.text();
+        if (!response.ok) {{
+          streamStatus.textContent = `${{response.status}} ${{response.statusText}}`;
+          streamResult.textContent = `Error: ${{probeText}}`;
+          return;
         }}
-      }};
+        timerEventSource = new EventSource(statusUrl(true));
+        timerEventSource.onopen = () => {{
+          streamStatus.textContent = "Streaming filtered status.";
+        }};
+        for (const eventName of ["snapshot", "update"]) {{
+          timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
+        }}
+        timerEventSource.onerror = () => {{
+          if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {{
+            streamStatus.textContent = "Stream disconnected.";
+          }}
+        }};
+      }}).catch((error) => {{
+        streamStatus.textContent = "Request failed.";
+        streamResult.textContent = String(error);
+      }});
     }}
 
     addStatusPathButton.addEventListener("click", () => addStatusPath(""));
+    for (const row of Array.from(statusPathList.querySelectorAll(".status-path-row"))) {{
+      bindStatusPathRow(row);
+    }}
     if (!statusPathList.children.length) {{
       if (defaultStatusPaths.length) {{
         for (const path of defaultStatusPaths) {{
