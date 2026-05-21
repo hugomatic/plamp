@@ -98,11 +98,18 @@ class ConfigApiTests(unittest.TestCase):
         with (
             patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
             patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+            patch.object(server, "storage_summary", return_value={"path": "/repo/plamp", "free": "2 GB", "used": "1 GB", "total": "3 GB"}),
         ):
             data = server.get_system()
 
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
+        self.assertEqual(data["paths"]["repo_root"], str(server.REPO_ROOT.resolve()))
+        self.assertEqual(data["paths"]["data_dir"], str(server.DATA_DIR.resolve()))
+        self.assertEqual(data["storage"]["path"], "/repo/plamp")
+        self.assertEqual(data["storage"]["free"], "2 GB")
+        self.assertEqual(data["storage"]["used"], "1 GB")
+        self.assertEqual(data["storage"]["total"], "3 GB")
 
     def test_status_response_contains_config_tree_and_controller_telemetry(self):
         config = {

@@ -113,11 +113,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('class="host-clock"', html)
         self.assertIn("<strong>Host time:</strong> 10:15 AM", html)
         self.assertEqual(html.count("Git commit</th>"), 1)
-        self.assertEqual(html.count("Repo root"), 0)
-        self.assertEqual(html.count("Plamp root</th>"), 1)
-        self.assertEqual(html.count("Plamp data</th>"), 1)
+        self.assertEqual(html.count("Repo root</th>"), 1)
+        self.assertEqual(html.count("Data dir</th>"), 1)
+        self.assertEqual(html.count("Plamp root"), 0)
+        self.assertEqual(html.count("Plamp data"), 0)
         self.assertEqual(html.count("Operating system</th>"), 1)
         self.assertEqual(html.count("User name</th>"), 1)
+        self.assertNotIn("Detected picos", html)
+        self.assertNotIn("Detected cameras", html)
         self.assertIn("Restart", html)
         self.assertIn("Reinstall", html)
         self.assertIn("Upgrade", html)
@@ -380,6 +383,7 @@ class PageRenderTests(unittest.TestCase):
         html = render_system_info_page({
             "host_time": {"display": "1:23 PM"},
             "host": {"hostname": "plamp", "network": []},
+            "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
             "storage": {
                 "path": "/path/to/plamp",
                 "free": "42.0 GB",
@@ -390,7 +394,15 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn("System info", html)
         self.assertIn("<h2>Storage</h2>", html)
-        self.assertIn("<th>Path</th><th>Free</th><th>Used</th><th>Total</th>", html)
+        self.assertIn("<th scope=\"row\">Repo root</th>", html)
+        self.assertIn("<th scope=\"row\">Data dir</th>", html)
+        self.assertIn("<th scope=\"row\">Storage path</th>", html)
+        self.assertIn("<th scope=\"row\">Free disk space</th>", html)
+        self.assertIn("<th scope=\"row\">Used disk space</th>", html)
+        self.assertIn("<th scope=\"row\">Total disk space</th>", html)
+        self.assertNotIn("<th>Path</th><th>Free</th><th>Used</th><th>Total</th>", html)
+        self.assertIn("/repo/plamp", html)
+        self.assertIn("/repo/plamp/data", html)
         self.assertIn("/path/to/plamp", html)
         self.assertIn("42.0 GB", html)
         self.assertIn("10.0 GB", html)
@@ -426,9 +438,13 @@ class PageRenderTests(unittest.TestCase):
         })
 
         self.assertIn("System info", html)
-        self.assertIn("Detected cameras", html)
+        self.assertIn("<h2>Hardware</h2>", html)
+        self.assertIn("<h3>Serial USB peripherals</h3>", html)
+        self.assertNotIn("Detected hardware", html)
+        self.assertNotIn("<h3>Peripherals</h3>", html)
+        self.assertNotIn("Detected cameras", html)
+        self.assertNotIn("Detected picos", html)
         self.assertIn("cam0", html)
-        self.assertIn("1", html)
 
     def test_settings_page_includes_plamp_setup_without_system_status_or_hostname_editor(self):
         html = render_settings_page(

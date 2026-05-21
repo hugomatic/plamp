@@ -1018,6 +1018,14 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     mpremote_display = mpremote_path if not mpremote_version_suffix else f"{mpremote_path} version {mpremote_version_suffix}"
     pyserial_value = str(system.get("tools", {}).get("pyserial") or "-")
     pyserial_display = pyserial_value if pyserial_value in {"-", "unknown"} else f"version {pyserial_value}"
+    storage_rows = (
+        "<tr><th scope=\"row\">Repo root</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Data dir</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Storage path</th>" f"<td><code>{html.escape(str(storage.get('path') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Free disk space</th>" f"<td>{html.escape(str(storage.get('free') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Used disk space</th>" f"<td>{html.escape(str(storage.get('used') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Total disk space</th>" f"<td>{html.escape(str(storage.get('total') or '-'))}</td></tr>"
+    )
     def camera_status_name(item: dict[str, Any]) -> str:
         connector = item.get("connector")
         if connector:
@@ -1047,8 +1055,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         for item in cameras
     ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
     software_rows = (
-        "<tr><th scope=\"row\">Plamp root</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
-        "<tr><th scope=\"row\">Plamp data</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
         "<tr><th scope=\"row\">Git commit</th>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
         "<tr><th scope=\"row\">Git branch</th>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
         "<tr><th scope=\"row\">Git commit time</th>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
@@ -1061,8 +1067,6 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         ("Host time", host_time.get("display") or ""),
         ("Operating system", os_display),
         ("User name", user_display),
-        ("Detected picos", len(picos)),
-        ("Detected cameras", len(cameras)),
         ("Log file", log_info.get("path") or ""),
     ]
     rows_html = "".join(
@@ -1109,9 +1113,9 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
         <tbody>{rows_html}</tbody>
       </table>
     </section>
-    <section aria-label="Detected hardware">
-      <h2>Detected hardware</h2>
-      <h3>Peripherals</h3>
+    <section aria-label="Hardware">
+      <h2>Hardware</h2>
+      <h3>Serial USB peripherals</h3>
       <table>
         <thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
         <tbody>{pico_rows}</tbody>
@@ -1132,8 +1136,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     <section aria-label="System storage">
       <h2>Storage</h2>
       <table>
-        <thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead>
-        <tbody><tr><td><code>{html.escape(str(storage.get("path") or "-"))}</code></td><td>{html.escape(str(storage.get("free") or "-"))}</td><td>{html.escape(str(storage.get("used") or "-"))}</td><td>{html.escape(str(storage.get("total") or "-"))}</td></tr></tbody>
+        <tbody>{storage_rows}</tbody>
       </table>
     </section>
     <section aria-label="Camera worker">
