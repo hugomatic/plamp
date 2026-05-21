@@ -142,7 +142,10 @@ remote_install_plamp() {
   local remote_cmd
   remote_cmd="bash -s -- --plamp-dir ${quoted_remote_dir}"
   if [[ $# -gt 0 ]]; then
-    printf -v remote_cmd '%s %q' "${remote_cmd}" "$@"
+    local remote_arg
+    for remote_arg in "$@"; do
+      printf -v remote_cmd '%s %q' "${remote_cmd}" "${remote_arg}"
+    done
   fi
 
   echo "Remote host    : ${host}"

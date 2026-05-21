@@ -788,32 +788,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     <button id="save-cameras" type="button">Save cameras</button> <span id="cameras-status" class="status">Ready.</span>
   </section>
 
-  <section aria-label="System status">
-    <h2>System status</h2>
-    <p class="muted">Detected hardware and host status.</p>
-    <h3>Peripherals</h3>
-    <table><thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>Assigned</th><th>USB ID</th></tr></thead><tbody>{pico_rows}</tbody></table>
-    <h3>Raspberry Pi cameras</h3>
-    <table><thead><tr><th>Camera</th><th>Model</th><th>Assigned</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead><tbody>{camera_rows}</tbody></table>
-    <h3>Network</h3>
-    <p><strong>Hostname:</strong> {html.escape(hostname)}</p>
-    <table><thead><tr><th>Device</th><th>IPv4</th><th>Network</th></tr></thead><tbody>{network_rows}</tbody></table>
-    <h3>Software</h3>
-    <table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>{software_rows}</tbody></table>
-    <h3>Camera worker</h3>
-    <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>{camera_worker_rows}</tbody></table>
-    <h2>Storage</h2>
-    <table><thead><tr><th>Path</th><th>Free</th><th>Used</th><th>Total</th></tr></thead><tbody>{storage_rows}</tbody></table>
-  </section>
-
-  <section aria-label="Device control">
-    <h2>Device control</h2>
-    <p class="muted">Changes here may require reconnecting to the device.</p>
-    <label>Hostname <input id="hostname-input" value="{html.escape(hostname, quote=True)}"></label>
-    <button id="hostname-confirm" type="button">Apply hostname</button>
-    <span id="hostname-status" class="status">Ready.</span>
-  </section>
-
   <script id="hidden-scheduler-controllers" type="application/json">{json_script_text(hidden_controllers)}</script>
   <script>
     function cleanObject(value) {{
@@ -988,17 +962,6 @@ def render_settings_page(summary: dict[str, Any]) -> str:
     document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
     document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())));
     document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
-    document.getElementById("hostname-confirm").addEventListener("click", async () => {{
-      const hostname = document.getElementById("hostname-input").value.trim();
-      if (!window.confirm(`Apply hostname "${{hostname}}"? You may need to reconnect.`)) return;
-      const status = document.getElementById("hostname-status");
-      status.textContent = "Applying...";
-      const response = await fetch("/api/host-config/hostname", {{method: "POST", headers: {{"content-type": "application/json"}}, body: JSON.stringify({{hostname}})}});
-      const text = await response.text();
-      let parsed = null;
-      try {{ parsed = JSON.parse(text); }} catch (error) {{}}
-      status.textContent = response.ok ? (parsed?.message || "Hostname updated; reconnect or reboot may be required.") : `${{response.status}} ${{parsed?.detail || text}}`;
-    }});
   </script>
 </body>
 </html>"""
@@ -1012,23 +975,99 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
     storage = system.get("storage") if isinstance(system.get("storage"), dict) else {}
     log_info = system.get("log") if isinstance(system.get("log"), dict) else {}
     detected = system.get("detected") if isinstance(system.get("detected"), dict) else {}
+    monitors = system.get("monitors") if isinstance(system.get("monitors"), dict) else {}
+    camera_worker = system.get("camera_worker") if isinstance(system.get("camera_worker"), dict) else {}
     picos = detected.get("picos") if isinstance(detected.get("picos"), list) else []
     cameras = detected.get("cameras") if isinstance(detected.get("cameras"), list) else []
     page_name = f"{host.get('hostname') or 'Plamp'} System"
+    git_short_commit = software.get("git_short_commit") or software.get("git_commit") or "unknown"
+    git_branch = software.get("git_branch") or "unknown"
+    git_commit_timestamp = software.get("git_commit_timestamp") or "unknown"
+    git_commit_relative = relative_time_label(software.get("git_commit_timestamp"))
+    git_commit_timestamp_display = (
+        f"{git_commit_timestamp} ({git_commit_relative})" if git_commit_relative else str(git_commit_timestamp)
+    )
 
+    git_dirty = software.get("git_dirty")
+    git_dirty_files = software.get("git_dirty_files") if isinstance(software.get("git_dirty_files"), list) else []
+    if git_dirty is None:
+        git_dirty_display = "unknown"
+    elif not git_dirty:
+        git_dirty_display = "no"
+    else:
+        dirty_preview = ", ".join(str(path) for path in git_dirty_files[:2] if path)
+        if len(git_dirty_files) > 2:
+            dirty_preview = f"{dirty_preview}, ..." if dirty_preview else "..."
+        git_dirty_display = f"yes: {dirty_preview}" if dirty_preview else "yes"
+    os_name = str(software.get("os_name") or "unknown")
+    os_arch = str(software.get("os_arch") or "unknown")
+    os_version = str(software.get("os_version") or "unknown")
+    os_display = f"{os_name} {os_version}; arch {os_arch}"
+    user_name = str(software.get("user_name") or "unknown")
+    user_is_sudoer = bool(software.get("user_is_sudoer"))
+    user_has_serial_access = bool(software.get("user_has_serial_access"))
+    user_has_video_access = bool(software.get("user_has_video_access"))
+    user_display = (
+        f"{user_name}; sudoer {'yes' if user_is_sudoer else 'no'}; "
+        f"serial {'yes' if user_has_serial_access else 'no'}; "
+        f"video {'yes' if user_has_video_access else 'no'}"
+    )
+    mpremote_path = str(software.get("mpremote_path") or "not found")
+    mpremote_version = str(software.get("mpremote_version") or "").strip()
+    mpremote_version_suffix = mpremote_version.removeprefix("mpremote ").strip()
+    mpremote_display = mpremote_path if not mpremote_version_suffix else f"{mpremote_path} version {mpremote_version_suffix}"
+    pyserial_value = str(system.get("tools", {}).get("pyserial") or "-")
+    pyserial_display = pyserial_value if pyserial_value in {"-", "unknown"} else f"version {pyserial_value}"
+    storage_rows = (
+        "<tr><th scope=\"row\">Root folder</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Data dir</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Free disk space</th>" f"<td>{html.escape(str(storage.get('free') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Used disk space</th>" f"<td>{html.escape(str(storage.get('used') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Total disk space</th>" f"<td>{html.escape(str(storage.get('total') or '-'))}</td></tr>"
+        "<tr><th scope=\"row\">Log file</th>" f"<td><code>{html.escape(str(log_info.get('path') or '-'))}</code></td></tr>"
+    )
+    def camera_status_name(item: dict[str, Any]) -> str:
+        connector = item.get("connector")
+        if connector:
+            return str(connector)
+        index = item.get("index")
+        if index is not None:
+            return f"cam{index}"
+        key = normalize_camera_key(item.get("key"))
+        return key or "-"
+    pico_rows = "\n".join(
+        "<tr>"
+        f"<td>{html.escape(str(item.get('port') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('usb_device') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('serial') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('vendor_id') or '-'))}:{html.escape(str(item.get('product_id') or '-'))}</td>"
+        "</tr>"
+        for item in picos
+    ) or '<tr><td colspan="4">No peripherals found.</td></tr>'
+    camera_rows = "\n".join(
+        "<tr>"
+        f"<td>{html.escape(camera_status_name(item))}</td>"
+        f"<td>{html.escape(camera_model_label(item))}</td>"
+        f"<td>{html.escape(str(item.get('sensor') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('lens') or '-'))}</td>"
+        f"<td><code>{html.escape(str(item.get('path') or '-'))}</code></td>"
+        "</tr>"
+        for item in cameras
+    ) or '<tr><td colspan="5">No Raspberry Pi cameras found.</td></tr>'
+    software_rows = (
+        "<tr><th scope=\"row\">Git commit</th>" f"<td><code>{html.escape(str(git_short_commit))}</code></td></tr>"
+        "<tr><th scope=\"row\">Git branch</th>" f"<td><code>{html.escape(str(git_branch))}</code></td></tr>"
+        "<tr><th scope=\"row\">Git commit time</th>" f"<td><code>{html.escape(git_commit_timestamp_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">Git dirty</th>" f"<td><code>{html.escape(git_dirty_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">mpremote</th>" f"<td><code>{html.escape(mpremote_display)}</code></td></tr>"
+        "<tr><th scope=\"row\">pyserial</th>" f"<td><code>{html.escape(pyserial_display)}</code></td></tr>"
+    )
     rows = [
         ("Hostname", host.get("hostname") or ""),
-        ("FQDN", host.get("fqdn") or ""),
         ("Host time", host_time.get("display") or ""),
-        ("Git branch", software.get("git_branch") or ""),
-        ("Git commit", software.get("git_short_commit") or software.get("git_commit") or ""),
-        ("Git dirty", software.get("git_dirty")),
-        ("Detected picos", len(picos)),
-        ("Detected cameras", len(cameras)),
-        ("Repo root", paths.get("repo_root") or ""),
-        ("Data dir", paths.get("data_dir") or ""),
-        ("Log file", log_info.get("path") or ""),
-        ("Storage", storage.get("total") or ""),
+        ("Operating system", os_display),
+        ("User name", user_display),
+        ("Computer hardware model", host.get("hardware_model") or "unknown"),
     ]
     rows_html = "".join(
         f"<tr><th scope=\"row\">{html.escape(str(label))}</th><td>{html.escape(str(value))}</td></tr>"
@@ -1046,14 +1085,19 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
     nav {{ margin-bottom: 1.5rem; }}
+    section {{ border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 1rem; }}
     a {{ color: #174ea6; }}
     button {{ -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }}
-    .system-page {{ display: grid; gap: 1rem; max-width: 980px; }}
+    .system-page {{ max-width: 1100px; }}
     .system-actions {{ display: flex; flex-wrap: wrap; gap: .5rem; }}
     .system-status {{ color: #555; min-height: 1.25rem; }}
-    table {{ border-collapse: collapse; width: 100%; }}
-    th, td {{ border-bottom: 1px solid #ddd; padding: .4rem .5rem; text-align: left; vertical-align: top; }}
-    th {{ width: 12rem; }}
+    table {{ border-collapse: collapse; margin: 1rem 0 1.5rem; width: 100%; max-width: 1100px; }}
+    th, td {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }}
+    th {{ background: #f4f4f4; font-weight: 700; }}
+    td {{ background: #fff; color: #111; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .muted, .system-status {{ color: #555; font-size: .9rem; }}
+    .host-clock {{ color: #555; font-size: .95rem; }}
     pre {{ background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; white-space: pre-wrap; }}
     .logs-actions {{ align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }}
   </style>
@@ -1061,11 +1105,74 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
 <body>
   {MAIN_NAV}
   <h1>{html.escape(page_name)}</h1>
+  <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <div class="system-page">
     <section aria-label="System summary">
       <h2>System info</h2>
       <table>
         <tbody>{rows_html}</tbody>
+      </table>
+    </section>
+    <section aria-label="Hardware">
+      <h2>Hardware</h2>
+      <h3>Serial USB peripherals</h3>
+      <table>
+        <thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
+        <tbody>{pico_rows}</tbody>
+      </table>
+      <h3>Cameras</h3>
+      <table>
+        <thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead>
+        <tbody>{camera_rows}</tbody>
+      </table>
+    </section>
+    <section aria-label="System software">
+      <h2>Software</h2>
+      <p class="muted">Detected software and runtime details.</p>
+      <table>
+        <tbody>{software_rows}</tbody>
+      </table>
+    </section>
+    <section aria-label="System storage">
+      <h2>Storage</h2>
+      <table>
+        <tbody>{storage_rows}</tbody>
+      </table>
+    </section>
+    <section aria-label="Camera worker">
+      <h2>Camera worker</h2>
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">State</th><td><code>{html.escape(str(camera_worker.get("state") or "-"))}</code></td></tr>
+          <tr><th scope="row">Available</th><td><code>{html.escape(str(camera_worker.get("available") if "available" in camera_worker else "-"))}</code></td></tr>
+          <tr><th scope="row">Queue depth</th><td><code>{html.escape(str(camera_worker.get("queue_depth") or 0))}</code></td></tr>
+          <tr><th scope="row">Last capture</th><td><code>{html.escape(str(camera_worker.get("last_capture_at") or "-"))}</code></td></tr>
+          <tr><th scope="row">Last error</th><td><code>{html.escape(str(camera_worker.get("last_error") or "-"))}</code></td></tr>
+          <tr><th scope="row">Scheduled cameras</th><td><code>{html.escape(", ".join(camera_worker.get("scheduled_cameras") or []) or "-")}</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section aria-label="Controller workers">
+      <h2>Controller workers</h2>
+      <table>
+        <thead><tr><th>Role</th><th>Serial</th><th>State</th><th>Connected</th><th>Port</th><th>Last seen</th><th>Last error</th></tr></thead>
+        <tbody>
+          {''.join(
+              (
+                  '<tr>'
+                  f'<td>{html.escape(role)}</td>'
+                  f'<td>{html.escape(str(worker.get("serial") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("state") or "-"))}</td>'
+                  f'<td>{html.escape("yes" if worker.get("connected") else "no")}</td>'
+                  f'<td>{html.escape(str(worker.get("port") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("last_seen") or "-"))}</td>'
+                  f'<td>{html.escape(str(worker.get("last_error") or "-"))}</td>'
+                  '</tr>'
+              )
+              for role, worker in sorted(monitors.items())
+          ) or '<tr><td colspan="7">No controller workers found.</td></tr>'}
+        </tbody>
       </table>
     </section>
     <section aria-label="System actions">
@@ -1361,12 +1468,26 @@ def render_timer_dashboard_page(
 
     function timerDevicesFromMessage(message) {
       const candidates = [
+        message?.telemetry?.last_report?.content?.devices,
+        message?.telemetry?.report?.content?.devices,
+        message?.telemetry?.content?.devices,
+        message?.telemetry?.devices,
         message?.report?.content?.devices,
         message?.last_report?.content?.devices,
         message?.content?.devices,
         message?.devices,
       ];
       return candidates.find((devices) => Array.isArray(devices)) || [];
+    }
+
+    function statusNode(message) {
+      if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "value" in message[0]) {
+        return message[0].value;
+      }
+      if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "node" in message[0]) {
+        return message[0].node;
+      }
+      return message;
     }
 
     function channelForEvent(role, event, index) {
@@ -1912,11 +2033,11 @@ def render_timer_dashboard_page(
       }
       timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
       for (const role of timerRoles) {
-        const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);
+        const source = new EventSource(`/api/status?stream=true&path=${encodeURIComponent(`controllers.${role}.telemetry`)}`);
         timerEventSources.set(role, source);
-        for (const eventName of ["snapshot", "status", "report"]) {
+        for (const eventName of ["snapshot", "update"]) {
           source.addEventListener(eventName, (event) => {
-            timerMessages.set(role, JSON.parse(event.data));
+            timerMessages.set(role, statusNode(JSON.parse(event.data)));
             renderTimerStatus();
           });
         }
@@ -1979,6 +2100,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_get_curl = f"curl http://localhost:8000/api/controllers/{default_role}"
     default_stream_curl = f"curl -N 'http://localhost:8000/api/controllers/{default_role}?stream=true'"
+    default_status_paths = [f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else []
+    default_status_path_rows = "".join(
+        f'<div class="row status-path-row"><label>Path <input class="status-path-input" value="{html.escape(path, quote=True)}" placeholder="controllers.{html.escape(default_role, quote=True)}.telemetry"></label><button type="button" class="remove-status-path">Remove</button></div>'
+        for path in default_status_paths
+    )
     default_put_curl = "\n".join([
         f"curl -X PUT 'http://localhost:8000/api/controllers/{default_role}' " + chr(92),
         "  -H 'content-type: application/json' " + chr(92),
@@ -2074,15 +2200,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="get-system-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
-    <legend>GET /api/status</legend>
-    <p>Reads live resolved state, including controller telemetry.</p>
-    <pre id="get-status-curl-command">curl http://localhost:8000/api/status</pre>
-    <button class="copy-curl" type="button" data-copy-target="get-status-curl-command">Copy curl</button>
-    <button id="get-status" type="button">Run request</button>
-    <div><span id="get-status-status">Ready.</span></div>
-    <pre id="get-status-result">GET response will appear here.</pre>
-  </fieldset>
-  <fieldset>
     <legend>PUT /api/config</legend>
     <p>Saves controllers and cameras together. Scheduler devices live inside each controller.</p>
     <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"cameras":{{}}}}'</pre>
@@ -2110,32 +2227,36 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="put-config-cameras-result">PUT response will appear here.</pre>
   </fieldset>
 
-  <h2>Controllers</h2>
+  <h2>Status</h2>
 
   <fieldset>
-    <legend>GET /api/controllers/{{role}}</legend>
-    <p>Reads the current controller state for one role.</p>
-    <label>Role
-      <input id="get-role" list="timer-roles" value="{html.escape(default_role)}">
-    </label>
-    <datalist id="timer-roles">{role_options}</datalist>
-    <pre id="get-curl-command">{html.escape(default_get_curl)}</pre>
-    <button class="copy-curl" type="button" data-copy-target="get-curl-command">Copy curl</button>
-    <button id="get-state" type="button">Run request</button>
-    <div><span id="get-status">Ready.</span></div>
-    <pre id="get-result">GET response will appear here.</pre>
+    <legend>Status paths</legend>
+    <p>These paths are shared by the filtered GET and streaming GET views below.</p>
+    <div id="status-path-list">{default_status_path_rows}</div>
+    <button id="add-status-path" type="button">Add path</button>
   </fieldset>
 
   <fieldset>
-    <legend>GET /api/controllers/{{role}}?stream=true</legend>
-    <p>Streams controller device updates with server-sent events.</p>
-    <pre id="stream-curl-command">{html.escape(default_stream_curl)}</pre>
-    <button class="copy-curl" type="button" data-copy-target="stream-curl-command">Copy curl</button>
+    <legend>GET /api/status</legend>
+    <p>Reads filtered status nodes for one or more paths. Leave the list empty to read the full status tree.</p>
+    <pre id="get-status-curl-command">curl http://localhost:8000/api/status</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-status-curl-command">Copy curl</button>
+    <button id="get-status" type="button">Run request</button>
+    <div><span id="get-status-status">Ready.</span></div>
+    <pre id="get-status-result">GET response will appear here.</pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>GET /api/status?stream=true</legend>
+    <p>Streams filtered status updates with server-sent events.</p>
+    <pre id="stream-status-curl-command">curl -N http://localhost:8000/api/status?stream=true</pre>
+    <button class="copy-curl" type="button" data-copy-target="stream-status-curl-command">Copy curl</button>
+    <label><input id="stream-pretty" type="checkbox" checked> Pretty JSON</label>
     <button id="start-stream" type="button">Start stream</button>
     <button id="stop-stream" type="button">Stop stream</button>
     <div><span id="stream-status">Not streaming.</span></div>
-    <div id="timer-status-board" class="status-board">Start the stream to see timer status.</div>
-    <pre id="stream-result">Stream device updates will appear here.</pre>
+    <div id="timer-status-board" class="status-board">Start the stream to see status.</div>
+    <pre id="stream-result">Stream status updates will appear here.</pre>
   </fieldset>
 
   <fieldset>
@@ -2178,21 +2299,61 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <script>
     const payload = document.getElementById("payload");
-    const getRoleInput = document.getElementById("get-role");
     const putRoleInput = document.getElementById("put-role");
+    const statusPathList = document.getElementById("status-path-list");
     const cameraCaptureCameraIdInput = document.getElementById("camera-capture-camera-id");
     const listCapturesCameraIdInput = document.getElementById("list-captures-camera-id");
     const listCapturesLimitInput = document.getElementById("list-captures-limit");
     const listCapturesOffsetInput = document.getElementById("list-captures-offset");
+    const addStatusPathButton = document.getElementById("add-status-path");
+    const streamPrettyInput = document.getElementById("stream-pretty");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
-
-    function getRole() {{
-      return getRoleInput.value.trim();
-    }}
+    const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
 
     function putRole() {{
       return putRoleInput.value.trim();
+    }}
+
+    function bindStatusPathRow(row) {{
+      row.querySelector(".status-path-input").addEventListener("input", updateCurl);
+      row.querySelector(".remove-status-path").addEventListener("click", () => {{
+        row.remove();
+        if (!statusPathList.children.length) addStatusPath("");
+        updateCurl();
+      }});
+    }}
+
+    function statusPaths() {{
+      return Array.from(statusPathList.querySelectorAll(".status-path-input"))
+        .map((input) => input.value.trim())
+        .filter((path) => path);
+    }}
+
+    function statusPathRow(value) {{
+      const row = document.createElement("div");
+      row.className = "row status-path-row";
+      row.innerHTML = `
+        <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{putRoleInput.value.trim() || ""}}.telemetry"></label>
+        <button type="button" class="remove-status-path">Remove</button>
+      `;
+      bindStatusPathRow(row);
+      return row;
+    }}
+
+    function addStatusPath(value) {{
+      statusPathList.append(statusPathRow(value));
+      updateCurl();
+    }}
+
+    function statusUrl(stream) {{
+      const params = new URLSearchParams();
+      if (stream) params.set("stream", "true");
+      for (const path of statusPaths()) {{
+        params.append("path", path);
+      }}
+      const query = params.toString();
+      return `${{window.location.origin}}/api/status${{query ? "?" + query : ""}}`;
     }}
 
     function listCapturesLimit() {{
@@ -2237,14 +2398,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return JSON.stringify(value);
     }}
 
-    function getCurlCommand() {{
-      return "curl " + doubleQuote(`${{window.location.origin}}/api/controllers/${{encodeURIComponent(getRole())}}`);
-    }}
-
-    function streamCurlCommand() {{
-      return "curl -N " + doubleQuote(`${{window.location.origin}}/api/controllers/${{encodeURIComponent(getRole())}}?stream=true`);
-    }}
-
     function putCurlCommand() {{
       const url = `${{window.location.origin}}/api/controllers/${{encodeURIComponent(putRole())}}`;
       const slash = String.fromCharCode(92);
@@ -2275,8 +2428,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
 
     function updateCurl() {{
-      document.getElementById("get-curl-command").textContent = getCurlCommand();
-      document.getElementById("stream-curl-command").textContent = streamCurlCommand();
+      document.getElementById("get-status-curl-command").textContent = "curl " + doubleQuote(statusUrl(false));
+      document.getElementById("stream-status-curl-command").textContent = "curl -N " + doubleQuote(statusUrl(true));
       document.getElementById("put-curl-command").textContent = putCurlCommand();
       document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
       document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
@@ -2347,29 +2500,33 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }}
     }}
 
-    async function getState() {{
+    async function getStatus() {{
       const getStatus = document.getElementById("get-status");
-      const getResult = document.getElementById("get-result");
+      const getResult = document.getElementById("get-status-result");
       getStatus.textContent = "";
       getResult.textContent = "";
-      if (!window.confirm(`GET /api/controllers/${{getRole()}}?`)) {{
+      const url = statusUrl(false);
+      if (!window.confirm(`GET ${{url}}?`)) {{
         getStatus.textContent = "Cancelled.";
         return;
       }}
       getStatus.textContent = "Loading...";
       try {{
-        const response = await fetch(`/api/controllers/${{encodeURIComponent(getRole())}}`);
+        const response = await fetch(url);
         const text = await response.text();
-        let display = text;
+        getStatus.textContent = `${{response.status}} ${{response.statusText}}`;
         if (response.ok) {{
           const parsed = JSON.parse(text);
-          display = JSON.stringify(parsed, null, 2);
-          payload.value = display;
-          putRoleInput.value = getRole();
+          getResult.textContent = JSON.stringify(parsed, null, 2);
           updateCurl();
+        }} else {{
+          let detail = text;
+          try {{
+            const parsed = JSON.parse(text);
+            detail = parsed?.detail || text;
+          }} catch (error) {{}}
+          getResult.textContent = `Error: ${{detail || response.statusText}}`;
         }}
-        getStatus.textContent = `${{response.status}} ${{response.statusText}}`;
-        getResult.textContent = display;
       }} catch (error) {{
         getStatus.textContent = "Request failed.";
         getResult.textContent = String(error);
@@ -2410,6 +2567,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
     function timerDevicesFromMessage(message) {{
       const candidates = [
+        message?.telemetry?.last_report?.content?.devices,
+        message?.telemetry?.report?.content?.devices,
+        message?.telemetry?.content?.devices,
+        message?.telemetry?.devices,
         message?.report?.content?.devices,
         message?.last_report?.content?.devices,
         message?.content?.devices,
@@ -2464,8 +2625,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       let display = data;
       try {{
         const parsed = JSON.parse(data);
-        renderTimerStatus(parsed);
-        display = JSON.stringify(parsed, null, 2);
+        display = JSON.stringify(parsed, null, streamPrettyInput.checked ? 2 : 0);
       }} catch (error) {{
       }}
       streamResult.textContent += `[${{timestamp}}] ${{eventName}}\n${{display}}\n\n`;
@@ -2485,24 +2645,49 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
     function startTimerStream() {{
       stopTimerStream();
-      const role = getRole();
       const streamStatus = document.getElementById("stream-status");
       const streamResult = document.getElementById("stream-result");
       streamResult.textContent = "";
-      streamStatus.textContent = `Connecting to /api/controllers/${{role}}?stream=true...`;
-      timerEventSource = new EventSource(`/api/controllers/${{encodeURIComponent(role)}}?stream=true`);
-      timerEventSource.onopen = () => {{
-        streamStatus.textContent = `Streaming ${{role}}.`;
-      }};
-      for (const eventName of ["snapshot", "status", "report", "error", "keepalive"]) {{
-        timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
-      }}
-      timerEventSource.onerror = () => {{
-        if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {{
-          streamStatus.textContent = "Stream disconnected.";
+      streamStatus.textContent = `Connecting to ${{statusUrl(true)}}...`;
+      fetch(statusUrl(false)).then(async (response) => {{
+        const probeText = await response.text();
+        if (!response.ok) {{
+          streamStatus.textContent = `${{response.status}} ${{response.statusText}}`;
+          streamResult.textContent = `Error: ${{probeText}}`;
+          return;
         }}
-      }};
+        timerEventSource = new EventSource(statusUrl(true));
+        timerEventSource.onopen = () => {{
+          streamStatus.textContent = "Streaming filtered status.";
+        }};
+        for (const eventName of ["snapshot", "update"]) {{
+          timerEventSource.addEventListener(eventName, (event) => appendStreamEvent(eventName, event.data));
+        }}
+        timerEventSource.onerror = () => {{
+          if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {{
+            streamStatus.textContent = "Stream disconnected.";
+          }}
+        }};
+      }}).catch((error) => {{
+        streamStatus.textContent = "Request failed.";
+        streamResult.textContent = String(error);
+      }});
     }}
+
+    addStatusPathButton.addEventListener("click", () => addStatusPath(""));
+    for (const row of Array.from(statusPathList.querySelectorAll(".status-path-row"))) {{
+      bindStatusPathRow(row);
+    }}
+    if (!statusPathList.children.length) {{
+      if (defaultStatusPaths.length) {{
+        for (const path of defaultStatusPaths) {{
+          addStatusPath(path);
+        }}
+      }} else {{
+        addStatusPath("");
+      }}
+    }}
+    updateCurl();
 
     async function putState() {{
       const putStatus = document.getElementById("put-status");
@@ -2656,11 +2841,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
     document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
     document.getElementById("get-system").addEventListener("click", () => runConfigRequest("system"));
-    document.getElementById("get-status").addEventListener("click", () => runConfigRequest("status"));
     document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
     document.getElementById("put-config-controllers").addEventListener("click", () => runConfigRequest("controllers"));
     document.getElementById("put-config-cameras").addEventListener("click", () => runConfigRequest("cameras"));
-    document.getElementById("get-state").addEventListener("click", getState);
+    document.getElementById("get-status").addEventListener("click", getStatus);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
     document.getElementById("put-state").addEventListener("click", putState);
@@ -2673,7 +2857,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     for (const button of document.querySelectorAll(".copy-curl")) {{
       button.addEventListener("click", copyCurlCommand);
     }}
-    getRoleInput.addEventListener("input", updateCurl);
     putRoleInput.addEventListener("input", updateCurl);
     listCapturesLimitInput.addEventListener("input", updateCurl);
     listCapturesOffsetInput.addEventListener("input", updateCurl);

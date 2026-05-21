@@ -1571,6 +1571,29 @@ def storage_summary(path: Path = REPO_ROOT) -> dict[str, Any]:
     }
 
 
+def computer_hardware_model(
+    *,
+    device_tree_model_path: Path = Path("/proc/device-tree/model"),
+    cpuinfo_path: Path = Path("/proc/cpuinfo"),
+) -> str:
+    try:
+        model = device_tree_model_path.read_text(errors="replace").replace("\x00", "").strip()
+        if model:
+            return model
+    except OSError:
+        pass
+    try:
+        for line in cpuinfo_path.read_text(errors="replace").splitlines():
+            if line.lower().startswith("model name"):
+                _, value = line.split(":", 1)
+                model = value.strip()
+                if model:
+                    return model
+    except OSError:
+        pass
+    return platform.machine() or platform.processor() or "unknown"
+
+
 def git_output(args: list[str], *, repo_root: Path = REPO_ROOT) -> str | None:
     try:
         return subprocess.check_output(args, cwd=repo_root, text=True, stderr=subprocess.DEVNULL).strip()
@@ -1640,7 +1663,7 @@ def system_response() -> dict[str, Any]:
         "host_time": host_time_summary(),
         "host": {
             "hostname": socket.gethostname(),
-            "fqdn": socket.getfqdn(),
+            "hardware_model": computer_hardware_model(),
             "ips": host_ips(),
             "default_route": default_route(),
             "network": network_summary(),
@@ -1688,13 +1711,15 @@ def controller_telemetry(controller: str) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
-def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
+def controller_status_tree(config: dict[str, Any], controller_ids: set[str] | None = None) -> dict[str, Any]:
     controllers = config.get("controllers", {})
     if not isinstance(controllers, dict):
         return {}
     status = {}
     for controller_id, controller in controllers.items():
         if not isinstance(controller_id, str) or not isinstance(controller, dict):
+            continue
+        if controller_ids is not None and controller_id not in controller_ids:
             continue
         item = dict(controller)
         item["telemetry"] = controller_telemetry(controller_id)
@@ -1705,14 +1730,82 @@ def controller_status_tree(config: dict[str, Any]) -> dict[str, Any]:
 def status_response() -> dict[str, Any]:
     config = load_config()
     return {
+        "config": config,
         "controllers": controller_status_tree(config),
         "monitors": monitor_summaries(),
         "camera_worker": camera_worker_summary(),
     }
 
 
+def status_response_for_paths(paths: list[str] | None = None) -> dict[str, Any]:
+    if not paths:
+        return status_response()
+
+    config = load_config()
+    requested_roots = {path.split(".", 1)[0] for path in paths if path}
+    status: dict[str, Any] = {"config": config}
+
+    if "controllers" in requested_roots:
+        controller_ids: set[str] | None = set()
+        for path in paths:
+            if not path.startswith("controllers."):
+                continue
+            parts = [part for part in path.split(".") if part]
+            if len(parts) > 1:
+                controller_ids.add(parts[1])
+        status["controllers"] = controller_status_tree(config, controller_ids or None)
+
+    if "monitors" in requested_roots:
+        status["monitors"] = monitor_summaries()
+
+    if "camera_worker" in requested_roots:
+        status["camera_worker"] = camera_worker_summary()
+
+    return status
+
+
+def resolve_status_path(node: Any, path: str) -> Any:
+    current = node
+    if not path:
+        raise HTTPException(status_code=404, detail=f"unknown status path: {path}")
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise HTTPException(status_code=404, detail=f"unknown status path: {path}")
+        current = current[part]
+    return current
+
+
+def filtered_status_response(paths: list[str] | None = None, *, status: dict[str, Any] | None = None) -> Any:
+    status = status if status is not None else status_response_for_paths(paths)
+    if not paths:
+        return status
+    result = []
+    for path in paths:
+        result.append({"path": path, "value": resolve_status_path(status, path)})
+    return result
+
+
+def iter_status_events(paths: list[str] | None = None, *, poll_interval: float = 1.0):
+    last_payload: Any = object()
+    first = True
+    while True:
+        payload = filtered_status_response(paths, status=status_response_for_paths(paths))
+        if first:
+            yield sse_message("snapshot", payload)
+            last_payload = payload
+            first = False
+        elif payload != last_payload:
+            yield sse_message("update", payload)
+            last_payload = payload
+        time.sleep(poll_interval)
+
+
+def stream_status(paths: list[str] | None = None) -> StreamingResponse:
+    return StreamingResponse(iter_status_events(paths), media_type="text/event-stream")
+
+
 def settings_summary() -> dict[str, Any]:
-    return {"config": load_config(), **system_response(), **status_response()}
+    return status_response()
 
 
 def validate_hostname(value: object) -> str:
@@ -1846,11 +1939,15 @@ def get_system_page() -> str:
     return render_system_info_page(system_response(), read_log_tail(200))
 
 
-@app.get("/api/status")
-def get_status(stream: bool = False) -> Any:
+def get_status(path: list[str] | None = None, stream: bool = False) -> Any:
     if stream:
-        return stream_status()
-    return status_response()
+        return stream_status(path)
+    return filtered_status_response(path)
+
+
+@app.get("/api/status")
+def get_status_route(path: list[str] | None = Query(default=None), stream: bool = Query(default=False)) -> Any:
+    return get_status(path, stream)
 
 
 @app.put("/api/config")

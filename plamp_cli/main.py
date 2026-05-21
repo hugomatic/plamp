@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import TextIO
+from urllib.parse import urlencode
 
 if __package__ in {None, ""}:
     repo_root = str(Path(__file__).resolve().parents[1])
@@ -50,8 +51,8 @@ def _usage_hint(argv: Sequence[str]) -> str | None:
     if args == ["system"]:
         return (
             "Command error: missing system action.\n"
-            "Choices: info\n"
-            "Example: plamp system info\n"
+            "Choices: status\n"
+            "Example: plamp system status\n"
         )
 
     if args == ["firmware"]:
@@ -94,9 +95,13 @@ def _argv_mentions_area(argv: Sequence[str]) -> bool:
 
 def _format_api_error(exc: ApiError) -> str:
     if exc.status == 404 and (
-        exc.detail.startswith("unknown timer role:") or exc.detail.startswith("unknown controller:")
+        exc.detail.startswith("unknown timer role:")
+        or exc.detail.startswith("unknown controller:")
+        or exc.detail.startswith("unknown status path:")
     ):
         controller = exc.detail.split(":", 1)[1].strip()
+        if controller.startswith("controllers."):
+            controller = controller.removeprefix("controllers.")
         return (
             f"API 404: unknown pico-scheduler controller: {controller}\n"
             "Try: plamp pico-scheduler list\n"
@@ -193,11 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     system = subparsers.add_parser("system")
     system_subparsers = system.add_subparsers(dest="system_action", required=True)
-    system_info = system_subparsers.add_parser("info")
-    system_info.set_defaults(system_action="info")
+    system_status = system_subparsers.add_parser("status")
+    system_status.set_defaults(system_action="status")
 
     status = subparsers.add_parser("status")
-    status.add_argument("--pretty", action="store_true")
+    status.add_argument("--path", action="append")
     status.set_defaults(area="status")
 
     firmware = subparsers.add_parser("firmware")
@@ -250,7 +255,8 @@ def _handle_controllers(args: argparse.Namespace, base_url: str) -> object:
     if args.controllers_action == "list":
         return request_json("GET", base_url, "/api/controllers")
     if args.controllers_action == "get":
-        return request_json("GET", base_url, f"/api/controllers/{args.controller}")
+        response = request_json("GET", base_url, "/api/status", query={"path": f"controllers.{args.controller}"})
+        return _normalize_status_response(response)
     if args.controllers_action == "set":
         payload = load_json_input(args.payload)
         return request_json("PUT", base_url, f"/api/controllers/{args.controller}", payload)
@@ -282,12 +288,27 @@ def _normalize_pico_scheduler_response(response: object) -> object:
     return normalized
 
 
+def _normalize_status_response(response: object) -> object:
+    if isinstance(response, list) and len(response) == 1:
+        item = response[0]
+        if isinstance(item, dict) and "value" in item:
+            return item["value"]
+        if isinstance(item, dict) and "node" in item:
+            return item["node"]
+    if isinstance(response, dict) and "value" in response:
+        return response["value"]
+    if isinstance(response, dict) and "node" in response:
+        return response["node"]
+    return response
+
+
 def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
     if args.timer_action == "list":
         return _normalize_pico_scheduler_list(request_json("GET", base_url, "/api/controllers"))
 
     if args.timer_action == "get":
-        return request_json("GET", base_url, f"/api/controllers/{args.controller}")
+        response = request_json("GET", base_url, "/api/status", query={"path": f"controllers.{args.controller}"})
+        return _normalize_status_response(response)
 
     if args.timer_action == "set":
         payload = load_json_input(args.payload)
@@ -407,14 +428,22 @@ def _handle_pics(args: argparse.Namespace, base_url: str) -> object | bytes:
 
 
 def _handle_system(args: argparse.Namespace, base_url: str) -> object:
-    if args.system_action == "info":
+    if args.system_action == "status":
         return request_json("GET", base_url, "/api/system")
 
     raise ValueError(f"unsupported system action: {args.system_action}")
 
 
-def _handle_status(args: argparse.Namespace, base_url: str):
-    return stream_json_events(base_url, "/api/status?stream=true")
+def _handle_status(args: argparse.Namespace, base_url: str, stdout: TextIO) -> None:
+    query: dict[str, object] = {"stream": "true"}
+    if args.path:
+        query["path"] = args.path
+    query_string = f"?{urlencode(query, doseq=True)}"
+    for chunk in stream_json_events(base_url, f"/api/status{query_string}"):
+        if isinstance(chunk, str):
+            stdout.write(chunk)
+        else:
+            stdout.write(format_json_output(chunk, pretty=args.pretty))
 
 
 def _format_config_output(value: object, table: bool, pretty: bool) -> str:
@@ -500,9 +529,6 @@ def main(
             result = _handle_controllers(args, base_url)
             if result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
-        elif args.area == "status":
-            for event in _handle_status(args, base_url):
-                stdout.write(format_json_output(event, pretty=args.pretty))
         elif args.area == "pico-scheduler":
             result = _handle_timers(args, base_url)
             if result is not None:
@@ -514,6 +540,8 @@ def main(
                 write_binary_output(result, args.out, stdout_buffer)
             elif result is not None:
                 stdout.write(_format_config_output(result, table=args.table, pretty=args.pretty))
+        elif args.area == "status":
+            _handle_status(args, base_url, stdout)
         elif args.area == "system":
             result = _handle_system(args, base_url)
             if result is not None:

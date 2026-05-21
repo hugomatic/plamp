@@ -98,13 +98,22 @@ class ConfigApiTests(unittest.TestCase):
         with (
             patch.object(server, "enumerate_picos", return_value=[{"serial": "abc", "port": "/dev/ttyACM0"}]),
             patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[{"key": "rpicam:cam0", "index": 0, "model": "imx708_wide", "sensor": "imx708", "lens": "wide"}]),
+            patch.object(server, "storage_summary", return_value={"path": "/repo/plamp", "free": "2 GB", "used": "1 GB", "total": "3 GB"}),
+            patch.object(server, "computer_hardware_model", return_value="Raspberry Pi Zero 2 W Rev 1.0"),
         ):
             data = server.get_system()
 
         self.assertEqual(data["detected"]["picos"][0]["serial"], "abc")
         self.assertEqual(data["detected"]["cameras"][0]["key"], "rpicam_cam0")
+        self.assertEqual(data["paths"]["repo_root"], str(server.REPO_ROOT.resolve()))
+        self.assertEqual(data["paths"]["data_dir"], str(server.DATA_DIR.resolve()))
+        self.assertEqual(data["storage"]["path"], "/repo/plamp")
+        self.assertEqual(data["storage"]["free"], "2 GB")
+        self.assertEqual(data["storage"]["used"], "1 GB")
+        self.assertEqual(data["storage"]["total"], "3 GB")
+        self.assertEqual(data["host"]["hardware_model"], "Raspberry Pi Zero 2 W Rev 1.0")
 
-    def test_status_response_contains_controller_telemetry(self):
+    def test_status_response_contains_config_tree_and_controller_telemetry(self):
         config = {
             "controllers": {
                 "pump_lights": {
@@ -121,17 +130,152 @@ class ConfigApiTests(unittest.TestCase):
         with (
             patch.object(server, "load_config", return_value=config),
             patch.object(server, "monitors", {"pump_lights": monitor}),
+            patch.object(server, "monitor_summaries", return_value={"pump_lights": {"state": "idle"}}),
+            patch.object(server, "camera_worker_summary", return_value={"state": "idle"}),
         ):
             data = server.get_status()
 
+        self.assertIn("config", data)
+        self.assertEqual(data["config"], config)
         self.assertEqual(
             data["controllers"]["pump_lights"]["telemetry"],
             {"connected": True, "port": "/dev/ttyACM0", "last_report": report},
         )
-        self.assertNotIn("config", data)
+        self.assertNotIn("system", data)
+
+    def test_get_status_filters_nested_paths_and_preserves_order(self):
+        config = {
+            "controllers": {
+                "pump_lights": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "abc", "report_every": 10, "devices": []},
+                    "settings": {"label": "Pump lights", "devices": {}},
+                }
+            },
+            "cameras": {},
+        }
+        telemetry = {"connected": True, "port": "/dev/ttyACM0"}
+        monitor = DummyMonitor("abc")
+        monitor.snapshot = lambda: telemetry
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "monitors", {"pump_lights": monitor}),
+            patch.object(server, "monitor_summaries", return_value={}),
+            patch.object(server, "camera_worker_summary", return_value={"state": "idle"}),
+        ):
+            data = server.get_status(
+                path=["config.controllers.pump_lights", "controllers.pump_lights.telemetry"]
+            )
+
+        self.assertEqual(
+            data,
+            [
+                {
+                    "path": "config.controllers.pump_lights",
+                    "value": config["controllers"]["pump_lights"],
+                },
+                {
+                    "path": "controllers.pump_lights.telemetry",
+                    "value": telemetry,
+                },
+            ],
+        )
+
+    def test_get_status_rejects_invalid_path(self):
+        config = {"controllers": {}, "cameras": {}}
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "monitor_summaries", return_value={}),
+            patch.object(server, "camera_worker_summary", return_value={"state": "idle"}),
+        ):
+            with self.assertRaises(HTTPException) as cm:
+                server.get_status(path=["config.controllers.missing"])
+
+        self.assertEqual(cm.exception.status_code, 404)
+        self.assertIn("config.controllers.missing", str(cm.exception.detail))
+
+    def test_status_stream_emits_only_when_filtered_node_changes(self):
+        config = {
+            "controllers": {
+                "pump_lights": {
+                    "type": "pico_scheduler",
+                    "payload": {"pico_serial": "abc", "report_every": 10, "devices": []},
+                    "settings": {"label": "Pump lights", "devices": {}},
+                }
+            },
+            "cameras": {},
+        }
+        status_one = {
+            "config": config,
+            "controllers": {
+                "pump_lights": {
+                    **config["controllers"]["pump_lights"],
+                    "telemetry": {"connected": True, "port": "/dev/ttyACM0"},
+                }
+            },
+            "monitors": {},
+            "camera_worker": {"state": "idle"},
+        }
+        status_two = {
+            "config": {
+                "controllers": {
+                    "pump_lights": {
+                        "type": "pico_scheduler",
+                        "payload": {"pico_serial": "abc", "report_every": 10, "devices": []},
+                        "settings": {"label": "Pump lights changed", "devices": {}},
+                    }
+                },
+                "cameras": {},
+            },
+            "controllers": {
+                "pump_lights": {
+                    **config["controllers"]["pump_lights"],
+                    "telemetry": {"connected": True, "port": "/dev/ttyACM0"},
+                }
+            },
+            "monitors": {},
+            "camera_worker": {"state": "idle"},
+        }
+        status_three = {
+            "config": status_two["config"],
+            "controllers": {
+                "pump_lights": {
+                    **config["controllers"]["pump_lights"],
+                    "telemetry": {"connected": False, "port": None},
+                }
+            },
+            "monitors": {},
+            "camera_worker": {"state": "idle"},
+        }
+        with (
+            patch.object(server, "status_response_for_paths", side_effect=[status_one, status_two, status_three]),
+            patch.object(server.time, "sleep", return_value=None),
+        ):
+            events = server.iter_status_events(
+                ["config.controllers.pump_lights", "controllers.pump_lights.telemetry"],
+                poll_interval=0.01,
+            )
+            first = next(events)
+            second = next(events)
+
+        def parse_event(text: str) -> tuple[str, object]:
+            lines = text.splitlines()
+            event_name = lines[0].removeprefix("event: ")
+            payload = json.loads(lines[1].removeprefix("data: "))
+            return event_name, payload
+
+        first_event, first_payload = parse_event(first)
+        second_event, second_payload = parse_event(second)
+
+        self.assertEqual(first_event, "snapshot")
+        self.assertEqual(second_event, "update")
+        self.assertEqual(first_payload[0]["value"]["settings"]["label"], "Pump lights")
+        self.assertEqual(second_payload[0]["value"]["settings"]["label"], "Pump lights changed")
+        self.assertEqual(first_payload[1]["value"]["connected"], True)
 
     def test_get_status_stream_returns_streaming_response(self):
-        response = server.get_status(stream=True)
+        with patch.object(server, "status_response", return_value={"config": {"controllers": {}, "cameras": {}}, "controllers": {}, "monitors": {}, "camera_worker": {"state": "idle"}}):
+            response = server.get_status(stream=True, path=["config"])
 
         self.assertIsInstance(response, StreamingResponse)
         self.assertEqual(response.media_type, "text/event-stream")
@@ -448,7 +592,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(payload["firmware"], "pico_doser")
         self.assertEqual(saved, {"report_every": 5, "message": "hello"})
 
-    def test_settings_summary_includes_config_and_detected(self):
+    def test_settings_summary_includes_config_and_status_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -467,15 +611,17 @@ class ConfigApiTests(unittest.TestCase):
             )
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "enumerate_picos", return_value=[]),
-                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[]),
+                patch.object(server, "load_config", return_value={"controllers": {"pump_lights": {}}, "cameras": {}}),
+                patch.object(server, "monitor_summaries", return_value={}),
+                patch.object(server, "camera_worker_summary", return_value={"state": "idle"}),
             ):
                 summary = server.settings_summary()
 
         self.assertIn("config", summary)
-        self.assertIn("detected", summary)
-        self.assertEqual(summary["config"]["controllers"]["pump_lights"]["payload"]["pico_serial"], "abc")
-        self.assertNotIn("config", summary["config"]["controllers"]["pump_lights"])
+        self.assertIn("controllers", summary)
+        self.assertIn("camera_worker", summary)
+        self.assertEqual(summary["config"]["controllers"]["pump_lights"], {})
+        self.assertNotIn("detected", summary)
 
     def test_get_settings_page_uses_combined_settings_payload(self):
         with patch.object(

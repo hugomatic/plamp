@@ -70,7 +70,7 @@ def request_json(
     payload: Any | None = None,
     query: dict[str, Any] | None = None,
 ) -> Any:
-    query_string = f"?{urlencode(query)}" if query else ""
+    query_string = f"?{urlencode(query, doseq=True)}" if query else ""
     data = None
     headers: dict[str, str] = {}
     if payload is not None:
@@ -113,6 +113,8 @@ def stream_json_events(base_url: str, path: str):
         raise ApiError(exc.code, detail) from exc
     except URLError as exc:
         raise NetworkError(str(exc.reason)) from exc
+
+
 def download_bytes(base_url: str, path: str) -> bytes:
     request = Request(f"{base_url}{path}", method="GET")
     try:
