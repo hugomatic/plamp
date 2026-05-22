@@ -158,7 +158,10 @@ sub_panel_switch_h = 30;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
+sub_panel_usb_c_cutout_w = 12.5;
+sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
+sub_panel_h = 10;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -336,12 +339,13 @@ module outlet_cover_negative(include_revision = true) {
 }
 
 module sub_panel_8ch_positive() {
-    lip_h = plate_t;
+    base_h = plate_t;
+    lip_h = sub_panel_h - base_h;
 
     union() {
-        fit_plate_from_origin(top_panel_w, top_panel_h);
+        cube([top_panel_w, top_panel_h, base_h]);
 
-        translate([0, 0, plate_t]) {
+        translate([0, 0, base_h]) {
             cube([top_panel_w, sub_panel_wall, lip_h]);
             translate([0, top_panel_h - sub_panel_wall, 0])
                 cube([top_panel_w, sub_panel_wall, lip_h]);
@@ -361,7 +365,7 @@ module sub_panel_barrel_channel_negative() {
 }
 
 module sub_panel_usb_c_negative() {
-    rect_cutout(usb_c_cutout_w, usb_c_cutout_h);
+    rect_cutout(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
@@ -400,6 +404,9 @@ module sub_panel_8ch_negative() {
         sub_panel_c13_negative();
 
     panel_corner_screw_holes();
+
+    translate([revision_x, revision_y, plate_t])
+        write_text(revision_string, 4, -0.01);
 }
 
 // ---------------- final ----------------
