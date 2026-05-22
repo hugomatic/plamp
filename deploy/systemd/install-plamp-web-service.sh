@@ -94,7 +94,18 @@ if [[ -z "$uv_bin" ]]; then
   fi
 fi
 
+service_home="${HOME:-}"
+if service_home_from_passwd="$(getent passwd "$service_user" 2>/dev/null | cut -d: -f6)" && [[ -n "$service_home_from_passwd" ]]; then
+  service_home="$service_home_from_passwd"
+fi
+
 if mpremote_bin="$(command -v mpremote 2>/dev/null)"; then
+  :
+elif [[ -n "${service_home}" && -x "${service_home}/.local/bin/mpremote" ]]; then
+  mpremote_bin="${service_home}/.local/bin/mpremote"
+fi
+
+if [[ -n "${mpremote_bin}" ]]; then
   mpremote_dir="$(dirname "$mpremote_bin")"
   case ":$service_path:" in
     *":$mpremote_dir:"*) ;;

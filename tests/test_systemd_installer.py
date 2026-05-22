@@ -70,6 +70,25 @@ class SystemdInstallerTests(unittest.TestCase):
             unit,
         )
 
+    def test_print_unit_adds_user_local_bin_when_mpremote_is_installed_there(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            bin_dir = home / ".local" / "bin"
+            bin_dir.mkdir(parents=True)
+            mpremote = bin_dir / "mpremote"
+            mpremote.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            mpremote.chmod(0o755)
+            env = dict(os.environ)
+            env["HOME"] = str(home)
+            env["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+            unit = self.print_unit(env=env)
+
+        self.assertIn(
+            f"Environment=PATH={bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+            unit,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
