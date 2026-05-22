@@ -775,7 +775,8 @@ module relay_bottom_mount_holes() {
 
 module box_bottom_revision_negative() {
     translate([box_w / 2, box_d / 2, -box_h])
-        write_text(revision_string, box_revision_font, -0.01);
+        mirror([1, 0, 0])
+            write_text(revision_string, box_revision_font, -0.01);
 }
 
 module psu_floor_tie_wrap_anchors_in_box() {
