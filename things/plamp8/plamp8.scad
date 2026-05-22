@@ -118,7 +118,6 @@ top_outline_w = 2;
 top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
-ledge_top_z = -plate_t;
 panel_screw_inset = 4;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
@@ -165,6 +164,7 @@ sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
+ledge_top_z = -(plate_t + sub_panel_h);
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -926,6 +926,11 @@ module sub_panel() {
     sub_panel_8ch();
 }
 
+module mounted_sub_panel() {
+    translate([0, 0, ledge_top_z])
+        sub_panel_8ch();
+}
+
 module mounted_top_panel() {
     translate([0, 0, -plate_t])
         top_panel_8ch(true);
@@ -960,6 +965,8 @@ module plate() {
 
 module assembly() {
     box_context();
+    translate([box_inner_x, box_inner_y, 0])
+        mounted_sub_panel();
     translate([box_inner_x, box_inner_y, 0])
         mounted_top_panel();
     internal_components();
