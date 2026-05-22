@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "internal"; // [internal, top_panel, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
+view = "internal"; // [internal, top_panel, sub_panel, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
 
 show_internal_box = true;
 show_internal_psu = false;
@@ -118,7 +118,6 @@ top_outline_w = 2;
 top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
-ledge_top_z = -plate_t;
 panel_screw_inset = 4;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
@@ -153,6 +152,19 @@ revision_y = nutrients_recess_bottom_y + 9 / 2;
 toggle_label_x_offset = 15;
 toggle_label_step = 7;
 toggle_label_font = 3.2;
+sub_panel_switch_w = 20;
+sub_panel_switch_h = 30;
+sub_panel_socket_w = 35;
+sub_panel_socket_h = 70;
+sub_panel_socket_screw_spacing = 82;
+sub_panel_socket_screw_boss_d = 12;
+sub_panel_socket_raise_h = 2.5;
+sub_panel_usb_c_cutout_w = 12.5;
+sub_panel_usb_c_cutout_h = 10.5;
+sub_panel_wall = 10;
+sub_panel_base_h = 5;
+sub_panel_h = 10;
+ledge_top_z = -(plate_t + sub_panel_h);
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -183,8 +195,9 @@ write_t = 0.75;
 revision_string = "dev";
 
 ac_devices = ["Pump", "Lights", "Fan", "Aux"];
-ac_details = ["CH1 GP21", "CH2 GP20", "CH3 GP19", "CH4 GP18"];
-dc_labels = ["PH Up CH5 GP17", "PH Down CH6 GP16", "Agitator CH7 GP15", "Nutrients CH8 GP14"];
+ac_details = ["CH1 GP21 110V AC", "CH2 GP20 110V AC", "CH3 GP19 110V AC", "CH4 GP18 110V AC"];
+dc_devices = ["PH Up", "PH Down", "Agitator", "Nutrients"];
+dc_details = ["CH5 GP17 12V DC", "CH6 GP16 12V DC", "CH7 GP15 12V DC", "CH8 GP14 12V DC"];
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
@@ -329,6 +342,84 @@ module outlet_cover_negative(include_revision = true) {
             round_hull(outlet_group_w, outlet_group_h, hr, hh);
 }
 
+module sub_panel_8ch_positive() {
+    base_h = sub_panel_base_h;
+    lip_h = sub_panel_h - base_h;
+
+    union() {
+        cube([top_panel_w, top_panel_h, base_h]);
+
+        translate([0, 0, base_h]) {
+            cube([top_panel_w, sub_panel_wall, lip_h]);
+            translate([0, top_panel_h - sub_panel_wall, 0])
+                cube([top_panel_w, sub_panel_wall, lip_h]);
+            translate([0, sub_panel_wall, 0])
+                cube([sub_panel_wall, top_panel_h - 2 * sub_panel_wall, lip_h]);
+            translate([top_panel_w - sub_panel_wall, sub_panel_wall, 0])
+                cube([sub_panel_wall, top_panel_h - 2 * sub_panel_wall, lip_h]);
+        }
+    }
+}
+
+module sub_panel_socket_screw_bosses() {
+    for (x = [left_ac_x, right_ac_x])
+        for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
+            translate([x + outlet_feature_x, ac_row_y + y, sub_panel_base_h])
+                cylinder(h = sub_panel_socket_raise_h, d = sub_panel_socket_screw_boss_d);
+}
+
+module sub_panel_barrel_channel_negative() {
+    translate([barrel_jack_x, 0, 0])
+        screw_hole(barrel_jack_hole_d);
+    translate([barrel_toggle_x, 0, 0])
+        rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
+}
+
+module sub_panel_usb_c_negative() {
+    rect_cutout(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h);
+
+    for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
+        translate([x, 0, 0])
+            screw_hole(usb_c_screw_d);
+}
+
+module sub_panel_c13_negative() {
+    rect_cutout(c13_cutout_w, c13_cutout_h);
+
+    for (x = [-c13_screw_spacing / 2, c13_screw_spacing / 2])
+        translate([x, 0, 0])
+            screw_hole(c13_screw_d);
+}
+
+module sub_panel_8ch_negative() {
+    for (x = [left_ac_x, right_ac_x]) {
+        translate([x + outlet_feature_x, ac_row_y, plate_t / 2])
+            rect_cutout(sub_panel_socket_w, sub_panel_socket_h);
+        for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
+            translate([x + outlet_feature_x, ac_row_y + y, 0])
+                screw_hole(screw_d);
+
+        for (y = [-outlet_spacing / 2, outlet_spacing / 2])
+            translate([x + outlet_toggle_x, ac_row_y + y, 0])
+                rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
+    }
+
+    for (i = [0:3])
+        translate([dc_channel_x(i), dc_channel_y(i), 0])
+            sub_panel_barrel_channel_negative();
+
+    translate([usb_c_panel_x, usb_c_panel_y, 0])
+        sub_panel_usb_c_negative();
+
+    translate([c13_panel_x, service_row_y, 0])
+        sub_panel_c13_negative();
+
+    panel_corner_screw_holes();
+
+    translate([revision_x, revision_y, sub_panel_base_h])
+        write_text(revision_string, 4, -0.01);
+}
+
 // ---------------- final ----------------
 
 module outlet_cover(
@@ -419,7 +510,7 @@ module barrel_revision_negative() {
         label_pocket(revision_label_w, revision_label_h);
 }
 
-module dc_barrel_channel_unit(label = "PH Up CH5 GP17", include_revision = true) {
+module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", include_revision = true) {
     difference() {
         union() {
             fit_plate(barrel_channel_w, barrel_channel_h);
@@ -430,8 +521,8 @@ module dc_barrel_channel_unit(label = "PH Up CH5 GP17", include_revision = true)
             barrel_revision_negative();
     }
 
-    translate([barrel_label_x, -barrel_channel_h / 2 + 10, 0])
-        flush_label(label, 4.3);
+    translate([barrel_label_x, -barrel_channel_h / 2 + 11, 0])
+        flush_two_line_label(device, detail, 4.3, 3.1, 5);
     translate([barrel_toggle_x + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
 
@@ -562,7 +653,7 @@ module top_panel_8ch(include_revision = true) {
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
-                flush_label(dc_labels[i], 4.3);
+                flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 3.1, 5);
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_toggle_x + toggle_label_x_offset, dc_channel_y(i), 0])
@@ -574,6 +665,20 @@ module top_panel_8ch(include_revision = true) {
         if (include_revision)
             translate([revision_x, revision_y, 0])
                 flush_revision_label();
+    }
+}
+
+module sub_panel_8ch() {
+    translate([layout_offset_x, layout_offset_y, 0]) {
+        difference() {
+            union() {
+                translate([-layout_offset_x, -layout_offset_y, 0])
+                    sub_panel_8ch_positive();
+                sub_panel_socket_screw_bosses();
+            }
+
+            sub_panel_8ch_negative();
+        }
     }
 }
 
@@ -671,7 +776,8 @@ module relay_bottom_mount_holes() {
 
 module box_bottom_revision_negative() {
     translate([box_w / 2, box_d / 2, -box_h])
-        write_text(revision_string, box_revision_font, -0.01);
+        mirror([1, 0, 0])
+            write_text(revision_string, box_revision_font, -0.01);
 }
 
 module psu_floor_tie_wrap_anchors_in_box() {
@@ -803,7 +909,7 @@ module ac_duplex_channel() {
 }
 
 module dc_barrel_channel() {
-    dc_barrel_channel_unit(dc_labels[0], true);
+    dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
 }
 
 module usb_c_panel() {
@@ -816,6 +922,15 @@ module c13_inlet() {
 
 module top_panel() {
     top_panel_8ch(true);
+}
+
+module sub_panel() {
+    sub_panel_8ch();
+}
+
+module mounted_sub_panel() {
+    translate([0, 0, ledge_top_z])
+        sub_panel_8ch();
 }
 
 module mounted_top_panel() {
@@ -840,7 +955,7 @@ module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([-62, 66, 0])
-        dc_barrel_channel_unit(dc_labels[0], true);
+        dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
     translate([6, 66, 0])
         usb_c_panel_unit(true);
     translate([78, 56, 0])
@@ -852,6 +967,8 @@ module plate() {
 
 module assembly() {
     box_context();
+    translate([box_inner_x, box_inner_y, 0])
+        mounted_sub_panel();
     translate([box_inner_x, box_inner_y, 0])
         mounted_top_panel();
     internal_components();
@@ -882,6 +999,8 @@ if (view == "internal") {
     c13_inlet();
 } else if (view == "top_panel") {
     top_panel();
+} else if (view == "sub_panel") {
+    sub_panel();
 } else if (view == "assembly") {
     assembly();
 } else {
