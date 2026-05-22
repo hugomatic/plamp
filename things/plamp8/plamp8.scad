@@ -158,9 +158,12 @@ sub_panel_switch_h = 30;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
+sub_panel_socket_screw_boss_d = 12;
+sub_panel_socket_raise_h = 2.5;
 sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
+sub_panel_base_h = 5;
 sub_panel_h = 10;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
@@ -339,7 +342,7 @@ module outlet_cover_negative(include_revision = true) {
 }
 
 module sub_panel_8ch_positive() {
-    base_h = plate_t;
+    base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
 
     union() {
@@ -355,6 +358,13 @@ module sub_panel_8ch_positive() {
                 cube([sub_panel_wall, top_panel_h - 2 * sub_panel_wall, lip_h]);
         }
     }
+}
+
+module sub_panel_socket_screw_bosses() {
+    for (x = [left_ac_x, right_ac_x])
+        for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
+            translate([x + outlet_feature_x, ac_row_y + y, sub_panel_base_h])
+                cylinder(h = sub_panel_socket_raise_h, d = sub_panel_socket_screw_boss_d);
 }
 
 module sub_panel_barrel_channel_negative() {
@@ -405,7 +415,7 @@ module sub_panel_8ch_negative() {
 
     panel_corner_screw_holes();
 
-    translate([revision_x, revision_y, plate_t])
+    translate([revision_x, revision_y, sub_panel_base_h])
         write_text(revision_string, 4, -0.01);
 }
 
@@ -660,8 +670,11 @@ module top_panel_8ch(include_revision = true) {
 module sub_panel_8ch() {
     translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
-            translate([-layout_offset_x, -layout_offset_y, 0])
-                sub_panel_8ch_positive();
+            union() {
+                translate([-layout_offset_x, -layout_offset_y, 0])
+                    sub_panel_8ch_positive();
+                sub_panel_socket_screw_bosses();
+            }
 
             sub_panel_8ch_negative();
         }
