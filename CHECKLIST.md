@@ -158,10 +158,9 @@ Run this intentionally when validating end-to-end hardware behavior.
    mpremote reset
    ```
 4. Point the camera so the Pico LED is visible.
-5. Capture a baseline image with the canonical wrapper:
+5. Capture a baseline image through the web UI or API:
    ```bash
-   cd /path/to/plamp
-   ./scripts/camera-shot.sh /tmp/pico-led-baseline.jpg
+   python3 -m plamp_cli pics take
    ```
 6. Capture one or more images during expected LED-on and LED-off windows.
 7. Confirm the observed LED state in the images matches the schedule.

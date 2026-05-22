@@ -1014,6 +1014,21 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('id="hostname-status"', html)
         self.assertNotIn('/api/host-config/hostname', html)
 
+    def test_settings_page_uses_hostname_in_title_and_heading(self):
+        html = render_settings_page(
+            {
+                "config": {"controllers": {}, "devices": {}, "cameras": {}},
+                "detected": {"picos": [], "cameras": []},
+                "host": {"hostname": "sprout", "network": []},
+                "picos": [],
+                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
+                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+            }
+        )
+
+        self.assertIn("<title>sprout Settings</title>", html)
+        self.assertIn("<h1>sprout Settings</h1>", html)
+
     def test_settings_page_links_to_new_github_issue(self):
         html = render_settings_page(
             {

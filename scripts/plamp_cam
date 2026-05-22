@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOST="${1:-hugo@192.168.68.56}"
+
+ssh "$HOST" \
+  'rpicam-vid -t 0 --nopreview --width 640 --height 480 --framerate 15 --bitrate 800000 --intra 5 --inline --codec h264 --libav-format h264 -o - 2>/tmp/rpicam-vid.log' \
+| ffplay -fflags nobuffer -flags low_delay -framedrop -probesize 32 -analyzeduration 0 -sync ext -f h264 -

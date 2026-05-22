@@ -33,11 +33,11 @@ POST /api/camera/captures
 
 Behavior:
 
-- Runs the configured camera capture wrapper once.
+- Runs the configured camera backend once.
 - Writes a JPG into the neutral camera roll.
 - Writes a JSON sidecar beside the image.
 - Returns JSON metadata with an `image_url`, not raw image bytes.
-- Returns a clear HTTP error if the camera wrapper is missing, fails, or does not produce a non-empty image.
+- Returns a clear HTTP error if the camera backend fails or does not produce a non-empty image.
 
 Response shape:
 
@@ -48,8 +48,6 @@ Response shape:
   "image_url": "/api/camera/captures/cap-abc123/image",
   "image_path": "data/camera/captures/2026-04-12/cap-abc123.jpg",
   "sidecar_path": "data/camera/captures/2026-04-12/cap-abc123.json",
-  "camera_script": "/path/to/plamp/scripts/camera-shot.sh",
-  "camera_command": ["/path/to/plamp/scripts/camera-shot.sh", "/abs/path/to/cap-abc123.jpg"],
   "camera_summary": {
     "timestamp": "2026-04-12_12-10-00",
     "image": "/abs/path/to/cap-abc123.jpg",
@@ -57,12 +55,11 @@ Response shape:
     "exit_code": "0",
     "log": "/home/hugo/camera-logs/rpicam-2026-04-12_12-10-00.log"
   },
-  "camera_stderr": "",
   "brightness_mean": 123.456
 }
 ```
 
-The exact timestamp and brightness values are generated at capture time. `POST /api/camera/captures` returns JSON so clients can inspect status, logs, and metadata. The image itself is fetched separately through `GET /api/camera/captures/{capture_id}/image`, which returns the JPEG bytes. Paths returned to clients should be repo-relative where possible, with absolute paths retained only inside command/debug fields where they reflect what was executed.
+The exact timestamp and brightness values are generated at capture time. `POST /api/camera/captures` returns JSON so clients can inspect status, logs, and metadata. The image itself is fetched separately through `GET /api/camera/captures/{capture_id}/image`, which returns the JPEG bytes. Paths returned to clients should be repo-relative where possible.
 
 Add:
 
@@ -91,23 +88,7 @@ The JSON sidecar should use the same plain-file style as grow captures so future
 
 ## Configuration
 
-The first slice should avoid inventing a full camera settings UI. Use this resolution order for the capture wrapper path:
-
-1. A global camera config value if one already exists in `data/config.json`.
-2. The current grow config path from `grow/grows/grow-thai-basil-siam-queen-2026-03-27/grow.json` as a transitional default.
-3. A clear server error explaining that no camera capture script is configured.
-
-If implementation finds there is no clean global config shape yet, it should add the smallest documented config shape needed, for example:
-
-```json
-{
-  "camera": {
-    "capture_script": "/path/to/plamp/scripts/camera-shot.sh"
-  }
-}
-```
-
-The design preference is to avoid hardcoding the wrapper path in Python code.
+The first slice should avoid inventing a full camera settings UI. Camera captures are owned by the Python backend and configured through the existing camera settings shape rather than a shell wrapper path.
 
 ## API Test Page
 

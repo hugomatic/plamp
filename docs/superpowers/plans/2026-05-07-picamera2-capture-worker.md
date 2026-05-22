@@ -19,7 +19,7 @@
 - Modify: `tests/test_camera_api.py`
 - Modify: `tests/test_pages.py`
 - Modify: `README.md`
-- Keep but demote from primary path: `scripts/camera-shot.sh`
+- Remove legacy shell capture wrapper from the supported script set
 
 ### Task 1: Define backend behavior with failing tests
 

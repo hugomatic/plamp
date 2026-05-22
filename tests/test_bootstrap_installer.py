@@ -13,6 +13,7 @@ class BootstrapInstallerTests(unittest.TestCase):
         self.assertIn("avahi-daemon", script)
         self.assertIn("libnss-mdns", script)
         self.assertIn("avahi-utils", script)
+        self.assertIn("ffmpeg", script)
 
 
 if __name__ == "__main__":

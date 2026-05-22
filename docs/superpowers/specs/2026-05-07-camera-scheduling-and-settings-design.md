@@ -348,11 +348,11 @@ Cron should become transitional only and then be retired.
 3. add runtime worker and state file
 4. surface camera schedule settings in config/UI
 5. migrate nodes from cron to `plamp-capture`
-6. remove legacy path assumptions and old script dependencies where possible
+6. remove legacy path assumptions where possible
 
 ### Legacy Path Assumption
 
-Current camera capture still depends on legacy `capture_script` configuration in some paths.
+Current camera capture still has legacy path assumptions in some paths.
 
 This design moves toward:
 

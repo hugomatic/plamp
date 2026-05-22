@@ -592,7 +592,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(payload["firmware"], "pico_doser")
         self.assertEqual(saved, {"report_every": 5, "message": "hello"})
 
-    def test_settings_summary_includes_config_and_status_only(self):
+    def test_settings_summary_includes_config_status_and_host_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -614,14 +614,25 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "load_config", return_value={"controllers": {"pump_lights": {}}, "cameras": {}}),
                 patch.object(server, "monitor_summaries", return_value={}),
                 patch.object(server, "camera_worker_summary", return_value={"state": "idle"}),
+                patch.object(server.socket, "gethostname", return_value="sprout"),
+                patch.object(server, "host_time_summary", return_value={}),
+                patch.object(server, "computer_hardware_model", return_value="Raspberry Pi"),
+                patch.object(server, "host_ips", return_value=[]),
+                patch.object(server, "default_route", return_value=None),
+                patch.object(server, "network_summary", return_value=[]),
+                patch.object(server, "enumerate_picos", return_value=[]),
+                patch.object(server.hardware_inventory, "detect_rpicam_cameras", return_value=[]),
+                patch.object(server, "software_summary", return_value={"name": "plamp"}),
+                patch.object(server, "storage_summary", return_value={}),
             ):
                 summary = server.settings_summary()
 
         self.assertIn("config", summary)
         self.assertIn("controllers", summary)
         self.assertIn("camera_worker", summary)
+        self.assertEqual(summary["host"]["hostname"], "sprout")
         self.assertEqual(summary["config"]["controllers"]["pump_lights"], {})
-        self.assertNotIn("detected", summary)
+        self.assertIn("detected", summary)
 
     def test_get_settings_page_uses_combined_settings_payload(self):
         with patch.object(

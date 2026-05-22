@@ -1830,7 +1830,13 @@ def stream_status(paths: list[str] | None = None) -> StreamingResponse:
 
 
 def settings_summary() -> dict[str, Any]:
-    return status_response()
+    config = load_config()
+    summary = system_response()
+    summary["config"] = config
+    summary["controllers"] = controller_status_tree(config)
+    summary["monitors"] = monitor_summaries()
+    summary["camera_worker"] = camera_worker_summary()
+    return summary
 
 
 def validate_hostname(value: object) -> str:

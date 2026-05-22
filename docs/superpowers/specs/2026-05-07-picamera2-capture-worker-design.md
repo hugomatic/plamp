@@ -10,7 +10,6 @@ The current camera path is:
 
 - `POST /api/camera/captures`
 - `plamp_web.camera_capture.capture_camera_image(...)`
-- `scripts/camera-shot.sh`
 - `rpicam-still` or `libcamera-still`
 
 That path has three problems:
@@ -52,7 +51,7 @@ Add a dedicated camera backend module under `plamp_web` that:
 - moves the final JPEG into the configured repo-relative capture directory
 - returns the same capture metadata shape currently exposed by the API
 
-The backend is Python-only. `scripts/camera-shot.sh` is no longer part of the normal service path.
+The backend is Python-only. No shell capture wrapper is part of the normal service path.
 
 ### Worker
 
