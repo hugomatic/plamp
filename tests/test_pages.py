@@ -39,6 +39,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<title>nurse-plamp Plamp</title>", html)
         self.assertIn("<h1>nurse-plamp Plamp</h1>", html)
 
+    def test_api_test_page_uses_hostname_in_title_and_heading(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h", hostname="nurse-plamp")
+
+        self.assertIn("<title>nurse-plamp API test</title>", html)
+        self.assertIn("<h1>nurse-plamp API test</h1>", html)
+
 
     def test_pages_use_same_nav_with_github_link(self):
         expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
@@ -302,6 +308,21 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (configurableCount > 0) {', html)
         self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role));', html)
         self.assertIn('actions.textContent = "No configured device schedules.";', html)
+
+    def test_timer_dashboard_edit_schedule_includes_report_period(self):
+        html = render_timer_dashboard_page(
+            ["pump_lights"],
+            "12h",
+            {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "cycle"}]},
+            0,
+            report_periods_by_role={"pump_lights": 17},
+        )
+
+        self.assertIn("const timerReportPeriods = {\"pump_lights\": 17};", html)
+        self.assertIn('class="controller-report-period"', html)
+        self.assertIn('value="${escapeHtml(timerReportPeriods[role] ?? 10)}"', html)
+        self.assertIn('const reportPeriodInput = form.querySelector(".controller-report-period");', html)
+        self.assertIn("controller.payload.report_every = Number(reportPeriodInput.value);", html)
 
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -1014,10 +1035,14 @@ class PageRenderTests(unittest.TestCase):
         for route in [
             "GET /api/config",
             "PUT /api/config",
-            "PUT /api/config/controllers",
             "PUT /api/config/cameras",
+            "PUT /api/config/controllers",
         ]:
             self.assertIn(f"<legend>{route}</legend>", html)
+        self.assertLess(html.index("<legend>GET /api/config</legend>"), html.index("<legend>PUT /api/config</legend>"))
+        self.assertLess(html.index("<legend>PUT /api/config</legend>"), html.index("<legend>PUT /api/config/cameras</legend>"))
+        self.assertLess(html.index("<legend>PUT /api/config/cameras</legend>"), html.index("<legend>PUT /api/config/controllers</legend>"))
+        self.assertLess(html.index("<legend>PUT /api/config/controllers</legend>"), html.index("<legend>GET /api/system</legend>"))
         self.assertIn('data-copy-target="get-config-curl-command"', html)
         self.assertNotIn('data-copy-target="put-config-devices-curl-command"', html)
         for button_id in [

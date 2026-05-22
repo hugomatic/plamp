@@ -1232,6 +1232,7 @@ def render_timer_dashboard_page(
     host_seconds_since_midnight: int = 0,
     camera_ids: list[str] | None = None,
     hostname: str = "",
+    report_periods_by_role: dict[str, int] | None = None,
 ) -> str:
     page_name = f"{hostname} Plamp" if hostname else "Plamp"
     camera_options = "".join(
@@ -1332,6 +1333,7 @@ def render_timer_dashboard_page(
     const clockTimeFormat = __TIME_FORMAT__;
     const timerRoles = __ROLES__;
     const timerChannels = __CHANNELS__;
+    const timerReportPeriods = __REPORT_PERIODS__;
     let timerHostSecondsAtLoad = __HOST_SECONDS__;
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
@@ -1665,6 +1667,9 @@ def render_timer_dashboard_page(
         }
         const controllers = structuredClone(configPayload?.config?.controllers || {});
         const controller = structuredClone(controllers[role] || {});
+        const reportPeriodInput = form.querySelector(".controller-report-period");
+        controller.payload = structuredClone(controller.payload || {});
+        controller.payload.report_every = Number(reportPeriodInput.value);
         controller.settings = structuredClone(controller.settings || {});
         controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
@@ -1833,6 +1838,12 @@ def render_timer_dashboard_page(
         }
         controllerCard.append(controllerTop, devicesGrid);
         if (isEditing) {
+          const reportPeriodRow = document.createElement("div");
+          reportPeriodRow.className = "editor-row";
+          reportPeriodRow.innerHTML = `
+            <label>Report every seconds <input class="controller-report-period" type="number" min="1" step="1" value="${escapeHtml(timerReportPeriods[role] ?? 10)}"></label>
+          `;
+          controllerCard.insertBefore(reportPeriodRow, devicesGrid);
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
           actions.innerHTML = `
@@ -2091,12 +2102,14 @@ def render_timer_dashboard_page(
         .replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
+        .replace("__REPORT_PERIODS__", json.dumps(report_periods_by_role or {}))
         .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
 
 
-def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str) -> str:
+def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "") -> str:
+    page_title = f"{hostname} API test" if hostname else "Plamp API test"
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_get_curl = f"curl http://localhost:8000/api/controllers/{default_role}"
     default_stream_curl = f"curl -N 'http://localhost:8000/api/controllers/{default_role}?stream=true'"
@@ -2117,7 +2130,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Plamp API test</title>
+  <title>{html.escape(page_title)}</title>
   {FAVICON_LINK}
   <style>
     body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
@@ -2150,7 +2163,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 </head>
 <body>
   {MAIN_NAV}
-  <h1>Plamp API test</h1>
+  <h1>{html.escape(page_title)}</h1>
 
   <h2>Camera</h2>
   <fieldset>
@@ -2191,15 +2204,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="get-config-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
-    <legend>GET /api/system</legend>
-    <p>Reads host facts and detected local hardware choices.</p>
-    <pre id="get-system-curl-command">curl http://localhost:8000/api/system</pre>
-    <button class="copy-curl" type="button" data-copy-target="get-system-curl-command">Copy curl</button>
-    <button id="get-system" type="button">Run request</button>
-    <div><span id="get-system-status">Ready.</span></div>
-    <pre id="get-system-result">GET response will appear here.</pre>
-  </fieldset>
-  <fieldset>
     <legend>PUT /api/config</legend>
     <p>Saves controllers and cameras together. Scheduler devices live inside each controller.</p>
     <pre id="put-config-curl-command">curl -X PUT http://localhost:8000/api/config -H 'content-type: application/json' --data '{{"controllers":{{}},"cameras":{{}}}}'</pre>
@@ -2207,6 +2211,15 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <button id="put-config" type="button">Run request</button>
     <div><span id="put-config-status">Ready.</span></div>
     <pre id="put-config-result">PUT response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>PUT /api/config/cameras</legend>
+    <p>Saves camera names and user-confirmed IR filter values.</p>
+    <pre id="put-config-cameras-curl-command">curl -X PUT http://localhost:8000/api/config/cameras -H 'content-type: application/json' --data '{{}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="put-config-cameras-curl-command">Copy curl</button>
+    <button id="put-config-cameras" type="button">Run request</button>
+    <div><span id="put-config-cameras-status">Ready.</span></div>
+    <pre id="put-config-cameras-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
     <legend>PUT /api/config/controllers</legend>
@@ -2218,13 +2231,13 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="put-config-controllers-result">PUT response will appear here.</pre>
   </fieldset>
   <fieldset>
-    <legend>PUT /api/config/cameras</legend>
-    <p>Saves camera names and user-confirmed IR filter values.</p>
-    <pre id="put-config-cameras-curl-command">curl -X PUT http://localhost:8000/api/config/cameras -H 'content-type: application/json' --data '{{}}'</pre>
-    <button class="copy-curl" type="button" data-copy-target="put-config-cameras-curl-command">Copy curl</button>
-    <button id="put-config-cameras" type="button">Run request</button>
-    <div><span id="put-config-cameras-status">Ready.</span></div>
-    <pre id="put-config-cameras-result">PUT response will appear here.</pre>
+    <legend>GET /api/system</legend>
+    <p>Reads host facts and detected local hardware choices.</p>
+    <pre id="get-system-curl-command">curl http://localhost:8000/api/system</pre>
+    <button class="copy-curl" type="button" data-copy-target="get-system-curl-command">Copy curl</button>
+    <button id="get-system" type="button">Run request</button>
+    <div><span id="get-system-status">Ready.</span></div>
+    <pre id="get-system-result">GET response will appear here.</pre>
   </fieldset>
 
   <h2>Status</h2>

@@ -1519,6 +1519,31 @@ def configured_timer_channels() -> dict[str, list[dict[str, Any]]]:
     return result
 
 
+def configured_timer_report_periods() -> dict[str, int]:
+    result: dict[str, int] = {}
+    try:
+        config = load_config()
+        roles = list(timer_roles())
+    except HTTPException:
+        return result
+    controllers = config.get("controllers", {})
+    if not isinstance(controllers, dict):
+        return result
+    for role in roles:
+        controller = controllers.get(role)
+        if not isinstance(controller, dict):
+            continue
+        payload = controller.get("payload")
+        if not isinstance(payload, dict):
+            payload = {}
+        try:
+            report_every = int(payload.get("report_every", 10))
+        except (TypeError, ValueError):
+            report_every = 10
+        result[role] = report_every if report_every > 0 else 10
+    return result
+
+
 
 def configured_camera_ids() -> list[str]:
     try:
@@ -2260,7 +2285,7 @@ def api_test_page_response() -> HTMLResponse:
     roles = configured_timer_roles()
     default_role = roles[0] if roles else "pump_lights"
     default_payload = default_timer_payload_for_api_test(default_role if roles else None)
-    return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format()))
+    return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format(), socket.gethostname()))
 
 
 @app.get("/api/test", response_class=HTMLResponse)
@@ -2288,5 +2313,6 @@ def get_timer_dashboard_page() -> HTMLResponse:
             seconds_since_midnight(),
             configured_camera_ids(),
             socket.gethostname(),
+            configured_timer_report_periods(),
         )
     )
