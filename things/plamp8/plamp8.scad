@@ -195,8 +195,9 @@ write_t = 0.75;
 revision_string = "dev";
 
 ac_devices = ["Pump", "Lights", "Fan", "Aux"];
-ac_details = ["CH1 GP21", "CH2 GP20", "CH3 GP19", "CH4 GP18"];
-dc_labels = ["PH Up CH5 GP17", "PH Down CH6 GP16", "Agitator CH7 GP15", "Nutrients CH8 GP14"];
+ac_details = ["CH1 GP21 110V AC", "CH2 GP20 110V AC", "CH3 GP19 110V AC", "CH4 GP18 110V AC"];
+dc_devices = ["PH Up", "PH Down", "Agitator", "Nutrients"];
+dc_details = ["CH5 GP17 12V DC", "CH6 GP16 12V DC", "CH7 GP15 12V DC", "CH8 GP14 12V DC"];
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
@@ -509,7 +510,7 @@ module barrel_revision_negative() {
         label_pocket(revision_label_w, revision_label_h);
 }
 
-module dc_barrel_channel_unit(label = "PH Up CH5 GP17", include_revision = true) {
+module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", include_revision = true) {
     difference() {
         union() {
             fit_plate(barrel_channel_w, barrel_channel_h);
@@ -520,8 +521,8 @@ module dc_barrel_channel_unit(label = "PH Up CH5 GP17", include_revision = true)
             barrel_revision_negative();
     }
 
-    translate([barrel_label_x, -barrel_channel_h / 2 + 10, 0])
-        flush_label(label, 4.3);
+    translate([barrel_label_x, -barrel_channel_h / 2 + 11, 0])
+        flush_two_line_label(device, detail, 4.3, 3.1, 5);
     translate([barrel_toggle_x + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
 
@@ -652,7 +653,7 @@ module top_panel_8ch(include_revision = true) {
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
-                flush_label(dc_labels[i], 4.3);
+                flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 3.1, 5);
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_toggle_x + toggle_label_x_offset, dc_channel_y(i), 0])
@@ -908,7 +909,7 @@ module ac_duplex_channel() {
 }
 
 module dc_barrel_channel() {
-    dc_barrel_channel_unit(dc_labels[0], true);
+    dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
 }
 
 module usb_c_panel() {
@@ -954,7 +955,7 @@ module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
     translate([-62, 66, 0])
-        dc_barrel_channel_unit(dc_labels[0], true);
+        dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
     translate([6, 66, 0])
         usb_c_panel_unit(true);
     translate([78, 56, 0])
