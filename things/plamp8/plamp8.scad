@@ -2,20 +2,36 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "internal"; // [internal, top_panel, sub_panel, assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
+view = "internal"; // [internal, top_panel, sub_panel, box,  assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
 
+/* [assembly view options] */
+
+// show / hide box
 show_internal_box = true;
 show_internal_psu = false;
 show_internal_relay = false;
 show_internal_top_outline = false;
+show_internal_sub_panel = false;
+show_internal_top_panel = false;
+
+
+/* [box features] */
+
+//box features: ledge
 feature_ledge = true;
+//box features: floor anchors (tie wraps)
 feature_psu_tie_wrap_anchors = true;
+//box features: wall anchors (tie wraps)
 feature_psu_tie_wrap_anchors_wall = true;
-// ---------------- dimensions ----------------
+feature_ph_ledge_holes = true;
+
+
+/* [dimensions] */
+
+// height between the floor and the ledge
 internal_clearance_h = 80;
 outlet_plate_left = 46;
 outlet_plate_right = 76;
-plate_w = outlet_plate_left + outlet_plate_right;
 plate_h = 120;
 plate_t = 3;
 
@@ -39,6 +55,9 @@ screw_spacing = 84;
 
 // Modular box-builder dimensions. Keep these near the top for fit tuning.
 toggle_hole_d = 12;
+
+
+/* [components dimensions] */
 
 barrel_jack_hole_d = 12;
 barrel_channel_w = 70;
@@ -67,22 +86,22 @@ usb_c_wire_cutout_h = 16;
 usb_c_screw_d = 3.2;
 usb_c_screw_spacing = 20;
 
-inch = 25.4;
 c13_panel_w = 72;
 c13_panel_h = 68;
 c13_label_w = 48;
 c13_label_h = 10;
 c13_group_w = 66;
 c13_group_h = 64;
-c13_face_w = 1.9 * inch;
-c13_face_h = 2.0 * inch;
+inch = 24.5;
+c13_face_w_inch = 1.9;
+c13_face_h_inch = 2.0;
+
 c13_cutout_w = 28;
 c13_cutout_h = 48;
 c13_wire_cutout_w = c13_cutout_w;
 c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
-c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
 
 psu_w = 160;
 psu_d = 98;
@@ -94,13 +113,11 @@ psu_anchor_slot_h = 2.5;
 psu_anchor_slot_z = 1;
 psu_anchor_gap = 5;
 psu_anchor_inset = 20;
-psu_wall_anchor_z = psu_h + psu_anchor_gap;
 psu_stop_l = 10;
 psu_stop_t = 4;
 psu_stop_h = 4;
 psu_stop_anchor_clearance = 1;
-psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
-psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
+
 
 relay_w = 145;
 relay_d = 90;
@@ -133,6 +150,34 @@ ac_row_y = -62;
 dc_row_y = -106;
 left_ac_x = -66;
 right_ac_x = 40;
+
+plate_w = outlet_plate_left + outlet_plate_right;
+
+psu_wall_anchor_z = psu_h + psu_anchor_gap;
+psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
+psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
+
+c13_face_w = c13_face_w_inch * inch;
+c13_face_h = c13_face_h_inch * inch;
+c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
+
+toggle_label_x_offset = 15;
+toggle_label_step = 7;
+toggle_label_font = 3.2;
+sub_panel_switch_w = 20;
+sub_panel_switch_h = 30;
+sub_panel_socket_w = 35;
+sub_panel_socket_h = 70;
+sub_panel_socket_screw_spacing = 82;
+sub_panel_socket_screw_boss_d = 12;
+sub_panel_socket_raise_h = 2.5;
+sub_panel_usb_c_cutout_w = 12.5;
+sub_panel_usb_c_cutout_h = 10.5;
+sub_panel_wall = 10;
+sub_panel_base_h = 5;
+sub_panel_h = 10;
+
+
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
 usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
 usb_c_panel_y = 14;
@@ -149,21 +194,6 @@ nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
 revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = nutrients_recess_bottom_y + 9 / 2;
-toggle_label_x_offset = 15;
-toggle_label_step = 7;
-toggle_label_font = 3.2;
-sub_panel_switch_w = 20;
-sub_panel_switch_h = 30;
-sub_panel_socket_w = 35;
-sub_panel_socket_h = 70;
-sub_panel_socket_screw_spacing = 82;
-sub_panel_socket_screw_boss_d = 12;
-sub_panel_socket_raise_h = 2.5;
-sub_panel_usb_c_cutout_w = 12.5;
-sub_panel_usb_c_cutout_h = 10.5;
-sub_panel_wall = 10;
-sub_panel_base_h = 5;
-sub_panel_h = 10;
 ledge_top_z = -(plate_t + sub_panel_h);
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
@@ -711,13 +741,35 @@ module box_context() {
 
 module top_panel_ledge() {
     // Four self-supporting lips: flat on top, flat against the wall.
+    // bottom
     translate([wall_t, wall_t, ledge_top_z])
         rotate([0, 90, 0])
             quarter_round(length = box_w - 2 * wall_t, r = ledge_r);
+
+    // top
     translate([wall_t, box_d - wall_t, ledge_top_z])
         mirror([0, 1, 0])
-            rotate([0, 90, 0])
-                quarter_round(length = box_w - 2 * wall_t, r = ledge_r);
+            rotate([0, 90, 0]) {
+                r = ledge_r;
+                length = box_w - 2 * wall_t;
+                if (!feature_ph_ledge_holes)
+                    quarter_round(length, r);
+                else {
+                    // the z axis is along the origin x
+                    // we make 3 sgments, avoiding the ph up and ph down toggles
+                    x1 = 0;
+                    l1 = 30;
+                    x2 = 60;
+                    l2 = 40;
+                    x3 = 130;
+                    l3 = length - x3;
+                    translate([0, 0, x1]) quarter_round(l1, r);
+                    translate([0, 0, x2]) quarter_round(l2, r);
+                    translate([0, 0, x3]) quarter_round(l3, r);
+                }
+
+            }
+
     translate([wall_t, wall_t, ledge_top_z])
         rotate([-90, 0, 0])
             quarter_round(length = box_d - 2 * wall_t, r = ledge_r);
@@ -982,7 +1034,19 @@ module internal() {
         translate([box_inner_x, box_inner_y, 0])
             top_panel_outline();
 
+    if (show_internal_sub_panel)
+        translate([box_inner_x, box_inner_y, 0])
+            mounted_sub_panel();
+
+    if (show_internal_top_panel)
+        mounted_top_panel();
+
+
     internal_components(show_internal_psu, show_internal_relay);
+}
+
+module box() {
+        box_context();
 }
 
 if (view == "internal") {
@@ -1003,6 +1067,8 @@ if (view == "internal") {
     sub_panel();
 } else if (view == "assembly") {
     assembly();
+} else if (view == "box") {
+    box();
 } else {
     assembly();
 }
