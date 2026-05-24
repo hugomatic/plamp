@@ -46,7 +46,7 @@ outlet_feature_x = -4;
 outlet_toggle_x = 32;
 outlet_group_x = 8;
 outlet_group_w = 104;
-outlet_group_h = 54;
+outlet_group_h = 56;
 
 screw_d = 4;
 panel_nut_d = 7.4;
@@ -362,14 +362,6 @@ module outlet_cover_negative(include_revision = true) {
     for (y = [-outlet_spacing / 2, outlet_spacing / 2])
         translate([outlet_toggle_x, y, 0])
             screw_hole(toggle_hole_d);
-
-    /*
-    // screw openings
-    for (y = [-screw_spacing / 2, screw_spacing / 2])
-        translate([0, y, plate_t / 2])
-            negative_screw_hole();
-    */
-    negative_screw_hole();
 
     if (include_revision)
         negative_plate_writings();
