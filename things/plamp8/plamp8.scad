@@ -205,6 +205,7 @@ nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
 revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
+top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
 ledge_top_z = -(plate_t + sub_panel_h);
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
@@ -705,7 +706,7 @@ module top_panel_8ch(include_revision = true) {
 
             if (include_revision)
                 translate([revision_x, revision_y, 0])
-                    label_pocket(revision_label_w, revision_label_h);
+                    label_pocket(top_panel_revision_label_w, revision_label_h);
         }
 
         translate([left_ac_x, ac_row_y, 0])
