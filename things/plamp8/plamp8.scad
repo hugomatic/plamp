@@ -4,6 +4,8 @@ $fn = render_fn;
 
 view = "assembly"; // [assembly, box, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
 
+dc_connector_type = "xt60"; // [barrel, xt60]
+
 /* [assembly view options] */
 
 // show / hide box
@@ -59,7 +61,6 @@ toggle_hole_d = 12;
 
 /* [components dimensions] */
 
-dc_connector_type = "barrel"; // [barrel, xt60]
 barrel_jack_hole_d = 12;
 barrel_channel_w = 70;
 barrel_channel_h = 58;
