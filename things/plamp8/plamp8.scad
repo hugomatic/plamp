@@ -73,10 +73,11 @@ barrel_group_h = 42;
 barrel_jack_x = -13;
 barrel_toggle_x = 8;
 dc_toggle_x_extra = dc_connector_type == "xt60" ? 8 : 0;
-xt60_top_cutout_w = 35;
-xt60_top_cutout_h = 16;
-xt60_sub_panel_cutout_w = 19;
-xt60_sub_panel_cutout_h = 12;
+xt60_x_extra = dc_connector_type == "xt60" ? 3 : 0;
+xt60_cutout_w = 19;
+xt60_cutout_h = 12;
+xt60_face_w = 35;
+xt60_face_h = 16;
 xt60_screw_spacing = 25;
 xt60_screw_d = 3.2;
 
@@ -409,9 +410,9 @@ module sub_panel_socket_screw_bosses() {
 }
 
 module sub_panel_barrel_channel_negative() {
-    translate([barrel_jack_x, 0, 0]) {
+    translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
-            xt60_connector_negative(xt60_sub_panel_cutout_w, xt60_sub_panel_cutout_h);
+            xt60_connector_negative();
         else
             screw_hole(barrel_jack_hole_d);
     }
@@ -540,9 +541,9 @@ module flush_revision_label() {
 }
 
 module barrel_channel_negative() {
-    translate([barrel_jack_x, 0, 0]) {
+    translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
-            xt60_connector_negative(xt60_top_cutout_w, xt60_top_cutout_h);
+            xt60_connector_negative();
         else
             screw_hole(barrel_jack_hole_d);
     }
@@ -553,8 +554,8 @@ module barrel_channel_negative() {
         label_pocket(barrel_group_w, barrel_group_h);
 }
 
-module xt60_connector_negative(cutout_w, cutout_h) {
-    rect_cutout(cutout_w, cutout_h);
+module xt60_connector_negative() {
+    rect_cutout(xt60_cutout_w, xt60_cutout_h);
 
     for (x = [-xt60_screw_spacing / 2, xt60_screw_spacing / 2])
         translate([x, 0, 0])
@@ -673,6 +674,7 @@ module relay_board_keepout() {
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
+function dc_connector_x() = barrel_jack_x + xt60_x_extra;
 function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
 function top_ledge_gap_center_for_dc_toggle(i) = layout_offset_x + dc_channel_x(i) + dc_toggle_x();
 function top_ledge_gap_start(i) = max(0, top_ledge_gap_center_for_dc_toggle(i) - ph_ledge_gap_w / 2);
