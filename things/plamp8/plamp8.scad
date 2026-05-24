@@ -2,17 +2,17 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "internal"; // [internal, top_panel, sub_panel, box,  assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
+view = "assembly"; // [assembly, box, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
 
 /* [assembly view options] */
 
 // show / hide box
-show_internal_box = true;
-show_internal_psu = false;
-show_internal_relay = false;
-show_internal_top_outline = false;
-show_internal_sub_panel = false;
-show_internal_top_panel = false;
+show_box = true;
+show_psu = false;
+show_relay = false;
+show_top_outline = false;
+show_sub_panel = false;
+show_top_panel = false;
 
 
 /* [box features] */
@@ -46,7 +46,7 @@ outlet_feature_x = -4;
 outlet_toggle_x = 32;
 outlet_group_x = 8;
 outlet_group_w = 104;
-outlet_group_h = 54;
+outlet_group_h = 56;
 
 screw_d = 4;
 panel_nut_d = 7.4;
@@ -59,6 +59,7 @@ toggle_hole_d = 12;
 
 /* [components dimensions] */
 
+dc_connector_type = "barrel"; // [barrel, xt60]
 barrel_jack_hole_d = 12;
 barrel_channel_w = 70;
 barrel_channel_h = 58;
@@ -67,10 +68,18 @@ barrel_label_h = 10;
 barrel_label_x = 7;
 barrel_group_y = -8;
 barrel_group_x = 5;
-barrel_group_w = 66;
-barrel_group_h = 42;
+barrel_group_w = 70;
+barrel_group_h = 46;
 barrel_jack_x = -13;
 barrel_toggle_x = 8;
+dc_toggle_x_extra = dc_connector_type == "xt60" ? 8 : 0;
+xt60_x_extra = dc_connector_type == "xt60" ? 3 : 0;
+xt60_cutout_w = 19;
+xt60_cutout_h = 12;
+xt60_face_w = 35;
+xt60_face_h = 16;
+xt60_screw_spacing = 25;
+xt60_screw_d = 3.2;
 
 usb_c_panel_w = 44;
 usb_c_panel_h = 34;
@@ -146,7 +155,7 @@ vent_hole_spacing = 10;
 vent_wall_margin = 10;
 vent_top_margin = ledge_r + vent_hole_d;
 service_row_y = 58;
-ac_row_y = -62;
+ac_row_y = -63;
 dc_row_y = -106;
 left_ac_x = -66;
 right_ac_x = 40;
@@ -176,6 +185,8 @@ sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
+ph_ledge_gap_clearance = 5;
+ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
@@ -193,7 +204,8 @@ dc_row_spacing = barrel_group_h + dc_channel_gap;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
 revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
-revision_y = nutrients_recess_bottom_y + 9 / 2;
+revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
+top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
 ledge_top_z = -(plate_t + sub_panel_h);
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
@@ -351,14 +363,6 @@ module outlet_cover_negative(include_revision = true) {
         translate([outlet_toggle_x, y, 0])
             screw_hole(toggle_hole_d);
 
-    /*
-    // screw openings
-    for (y = [-screw_spacing / 2, screw_spacing / 2])
-        translate([0, y, plate_t / 2])
-            negative_screw_hole();
-    */
-    negative_screw_hole();
-
     if (include_revision)
         negative_plate_writings();
 
@@ -399,9 +403,13 @@ module sub_panel_socket_screw_bosses() {
 }
 
 module sub_panel_barrel_channel_negative() {
-    translate([barrel_jack_x, 0, 0])
-        screw_hole(barrel_jack_hole_d);
-    translate([barrel_toggle_x, 0, 0])
+    translate([dc_connector_x(), 0, 0]) {
+        if (dc_connector_type == "xt60")
+            xt60_connector_negative();
+        else
+            screw_hole(barrel_jack_hole_d);
+    }
+    translate([dc_toggle_x(), 0, 0])
         rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
 }
 
@@ -526,13 +534,25 @@ module flush_revision_label() {
 }
 
 module barrel_channel_negative() {
-    translate([barrel_jack_x, 0, 0])
-        screw_hole(barrel_jack_hole_d);
-    translate([barrel_toggle_x, 0, 0])
+    translate([dc_connector_x(), 0, 0]) {
+        if (dc_connector_type == "xt60")
+            xt60_connector_negative();
+        else
+            screw_hole(barrel_jack_hole_d);
+    }
+    translate([dc_toggle_x(), 0, 0])
         screw_hole(toggle_hole_d);
 
     translate([barrel_group_x, barrel_group_y, 0])
         label_pocket(barrel_group_w, barrel_group_h);
+}
+
+module xt60_connector_negative() {
+    rect_cutout(xt60_cutout_w, xt60_cutout_h);
+
+    for (x = [-xt60_screw_spacing / 2, xt60_screw_spacing / 2])
+        translate([x, 0, 0])
+            screw_hole(xt60_screw_d);
 }
 
 module barrel_revision_negative() {
@@ -553,7 +573,7 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
 
     translate([barrel_label_x, -barrel_channel_h / 2 + 11, 0])
         flush_two_line_label(device, detail, 4.3, 3.1, 5);
-    translate([barrel_toggle_x + toggle_label_x_offset, 0, 0])
+    translate([dc_toggle_x() + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
 
     if (include_revision)
@@ -647,6 +667,11 @@ module relay_board_keepout() {
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
+function dc_connector_x() = barrel_jack_x + xt60_x_extra;
+function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
+function top_ledge_gap_center_for_dc_toggle(i) = layout_offset_x + dc_channel_x(i) + dc_toggle_x();
+function top_ledge_gap_start(i) = max(0, top_ledge_gap_center_for_dc_toggle(i) - ph_ledge_gap_w / 2);
+function top_ledge_gap_end(i, length) = min(length, top_ledge_gap_center_for_dc_toggle(i) + ph_ledge_gap_w / 2);
 
 module top_panel_8ch(include_revision = true) {
     translate([layout_offset_x, layout_offset_y, 0]) {
@@ -673,7 +698,7 @@ module top_panel_8ch(include_revision = true) {
 
             if (include_revision)
                 translate([revision_x, revision_y, 0])
-                    label_pocket(revision_label_w, revision_label_h);
+                    label_pocket(top_panel_revision_label_w, revision_label_h);
         }
 
         translate([left_ac_x, ac_row_y, 0])
@@ -686,7 +711,7 @@ module top_panel_8ch(include_revision = true) {
                 flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 3.1, 5);
 
         for (i = [0:3])
-            translate([dc_channel_x(i) + barrel_toggle_x + toggle_label_x_offset, dc_channel_y(i), 0])
+            translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
         translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 8, 0])
@@ -755,17 +780,14 @@ module top_panel_ledge() {
                 if (!feature_ph_ledge_holes)
                     quarter_round(length, r);
                 else {
-                    // the z axis is along the origin x
-                    // we make 3 sgments, avoiding the ph up and ph down toggles
-                    x1 = 0;
-                    l1 = 30;
-                    x2 = 60;
-                    l2 = 40;
-                    x3 = 130;
-                    l3 = length - x3;
-                    translate([0, 0, x1]) quarter_round(l1, r);
-                    translate([0, 0, x2]) quarter_round(l2, r);
-                    translate([0, 0, x3]) quarter_round(l3, r);
+                    gap0_start = top_ledge_gap_start(0);
+                    gap0_end = top_ledge_gap_end(0, length);
+                    gap1_start = top_ledge_gap_start(1);
+                    gap1_end = top_ledge_gap_end(1, length);
+
+                    top_ledge_segment(0, gap0_start, r);
+                    top_ledge_segment(gap0_end, gap1_start, r);
+                    top_ledge_segment(gap1_end, length, r);
                 }
 
             }
@@ -778,6 +800,12 @@ module top_panel_ledge() {
             rotate([-90, 0, 0])
                 quarter_round(length = box_d - 2 * wall_t, r = ledge_r);
 
+}
+
+module top_ledge_segment(start, end, r) {
+    if (end > start)
+        translate([0, 0, start])
+            quarter_round(end - start, r);
 }
 
 module quarter_round(length, r) {
@@ -1018,40 +1046,29 @@ module plate() {
 }
 
 module assembly() {
-    box_context();
-    translate([box_inner_x, box_inner_y, 0])
-        mounted_sub_panel();
-    translate([box_inner_x, box_inner_y, 0])
-        mounted_top_panel();
-    internal_components();
-}
-
-module internal() {
-    if (show_internal_box)
+    if (show_box)
         box_context();
 
-    if (show_internal_top_outline)
+    if (show_top_outline)
         translate([box_inner_x, box_inner_y, 0])
             top_panel_outline();
 
-    if (show_internal_sub_panel)
+    if (show_sub_panel)
         translate([box_inner_x, box_inner_y, 0])
             mounted_sub_panel();
 
-    if (show_internal_top_panel)
-        translate([plate_t, plate_t,0])mounted_top_panel();
+    if (show_top_panel)
+        translate([box_inner_x, box_inner_y, 0])
+            mounted_top_panel();
 
-
-    internal_components(show_internal_psu, show_internal_relay);
+    internal_components(show_psu, show_relay);
 }
 
 module box() {
-        box_context();
+    box_context();
 }
 
-if (view == "internal") {
-    internal();
-} else if (view == "plate") {
+if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
     ac_duplex_channel();
