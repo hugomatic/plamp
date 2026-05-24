@@ -1039,7 +1039,7 @@ module internal() {
             mounted_sub_panel();
 
     if (show_internal_top_panel)
-        mounted_top_panel();
+        translate([plate_t, plate_t,0])mounted_top_panel();
 
 
     internal_components(show_internal_psu, show_internal_relay);
