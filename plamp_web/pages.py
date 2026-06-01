@@ -2164,6 +2164,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 <body>
   {MAIN_NAV}
   <h1>{html.escape(page_title)}</h1>
+  <p>This page is the human-friendly API guide. For machine-readable integration, use <a href="/openapi.json"><code>/openapi.json</code></a>. For interactive FastAPI docs, use <a href="/docs"><code>/docs</code></a>.</p>
 
   <h2>Camera</h2>
   <fieldset>

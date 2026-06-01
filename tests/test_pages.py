@@ -1081,6 +1081,9 @@ class PageRenderTests(unittest.TestCase):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 
         self.assertIn("<title>Plamp API test</title>", html)
+        self.assertIn('href="/openapi.json"', html)
+        self.assertIn('href="/docs"', html)
+        self.assertIn("For machine-readable integration", html)
         for title in [
             "POST /api/camera/captures",
             "GET /api/camera/captures",
