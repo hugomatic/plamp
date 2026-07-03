@@ -857,9 +857,10 @@ module top_ledge_segment(start, end, r) {
 
 module quarter_round(length, r) {
     linear_extrude(height = length)
-        intersection() {
-            circle(r = r);
+        difference() {
             square([r, r]);
+            translate([r, r])
+                circle(r = r);
         }
 }
 
