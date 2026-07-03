@@ -974,9 +974,9 @@ module retaining_corner(w, d, sx, sy) {
     t = retaining_corner_t;
     h = retaining_corner_h;
 
-    translate([sx * (w / 2 + l / 2), sy * (d / 2 + t / 2), h / 2])
+    translate([sx * (w / 2 - l / 2), sy * (d / 2 + t / 2), h / 2])
         cube([l, t, h], center = true);
-    translate([sx * (w / 2 + t / 2), sy * (d / 2 + l / 2), h / 2])
+    translate([sx * (w / 2 + t / 2), sy * (d / 2 - l / 2), h / 2])
         cube([t, l, h], center = true);
 }
 
