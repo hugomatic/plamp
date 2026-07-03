@@ -119,7 +119,7 @@ psu_w = 134;
 psu_d = 36;
 psu_h = 23;
 psu_mount_hole_d = 4.5;
-psu_mount_x_inset = 8.25;
+psu_mount_y = 0;
 psu_mount_chamfer_d = 9;
 psu_wall_clearance = 1;
 psu_anchor_r = 5;
@@ -916,16 +916,16 @@ module psu_bottom_mount_holes() {
 }
 
 module psu_mount_holes() {
-    translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2, 0])
+    translate([-psu_w / 2, psu_mount_y, 0])
         bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
-    translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2, 0])
+    translate([psu_w / 2, psu_mount_y, 0])
         bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
 }
 
 module psu_mount_markers(z) {
-    translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2, z])
+    translate([-psu_w / 2, psu_mount_y, z])
         cylinder(h = 2, d = psu_mount_hole_d);
-    translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2, z])
+    translate([psu_w / 2, psu_mount_y, z])
         cylinder(h = 2, d = psu_mount_hole_d);
 }
 
@@ -974,10 +974,10 @@ module retaining_corner(w, d, sx, sy) {
     t = retaining_corner_t;
     h = retaining_corner_h;
 
-    translate([sx * (w / 2 - l / 2), sy * (d / 2 + t / 2), h / 2])
-        cube([l, t, h], center = true);
-    translate([sx * (w / 2 + t / 2), sy * (d / 2 - l / 2), h / 2])
-        cube([t, l, h], center = true);
+    translate([sx * (w / 2 + (t - l) / 2), sy * (d / 2 + t / 2), h / 2])
+        cube([l + t, t, h], center = true);
+    translate([sx * (w / 2 + t / 2), sy * (d / 2 + (t - l) / 2), h / 2])
+        cube([t, l + t, h], center = true);
 }
 
 module converter_bottom_mount_holes() {
