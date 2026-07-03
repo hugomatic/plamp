@@ -22,9 +22,11 @@ show_top_panel = false;
 //box features: ledge
 feature_ledge = true;
 //box features: floor anchors (tie wraps)
-feature_psu_tie_wrap_anchors = true;
+feature_psu_tie_wrap_anchors = false;
 //box features: wall anchors (tie wraps)
-feature_psu_tie_wrap_anchors_wall = true;
+feature_psu_tie_wrap_anchors_wall = false;
+//box features: power module bottom screw mounts
+feature_power_screw_mounts = true;
 feature_ph_ledge_holes = true;
 
 
@@ -113,9 +115,12 @@ c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
 
-psu_w = 160;
-psu_d = 98;
-psu_h = 38;
+psu_w = 134;
+psu_d = 36;
+psu_h = 23;
+psu_mount_hole_d = 4.5;
+psu_mount_x_inset = 8.25;
+psu_mount_chamfer_d = 9;
 psu_anchor_r = 5;
 psu_anchor_l = 14;
 psu_anchor_slot_w = 5;
@@ -128,6 +133,12 @@ psu_stop_t = 4;
 psu_stop_h = 4;
 psu_stop_anchor_clearance = 1;
 
+converter_w = 27;
+converter_d = 46;
+converter_h = 14;
+converter_mount_spacing = 50;
+converter_mount_hole_d = 4.5;
+converter_mount_chamfer_d = 9;
 
 relay_w = 145;
 relay_d = 90;
@@ -148,6 +159,9 @@ ledge_r = ledge_w;
 panel_screw_inset = 4;
 internal_psu_y = 10;
 internal_psu_rot_z = 90;
+internal_converter_x = 45;
+internal_converter_y = -70;
+internal_converter_rot_z = 0;
 internal_relay_x = -50;
 internal_relay_y = 0;
 internal_relay_rot_z = 90;
@@ -653,6 +667,25 @@ module psu_keepout() {
     color([1, 0.6, 0.1, 0.25])
         translate([0, 0, psu_h / 2])
             cube([psu_w, psu_d, psu_h], center = true);
+
+    color([0, 0, 0, 1])
+        for (
+            x = [-psu_w / 2 + psu_mount_x_inset, psu_w / 2 - psu_mount_x_inset],
+            y = [-psu_d / 2, psu_d / 2]
+        )
+            translate([x, y, psu_h + 1])
+                cylinder(h = 2, d = psu_mount_hole_d);
+}
+
+module converter_keepout() {
+    color([0.8, 0.25, 0.95, 0.25])
+        translate([0, 0, converter_h / 2])
+            cube([converter_w, converter_d, converter_h], center = true);
+
+    color([0, 0, 0, 1])
+        for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
+            translate([0, y, converter_h + 1])
+                cylinder(h = 2, d = converter_mount_hole_d);
 }
 
 module relay_board_keepout() {
@@ -751,12 +784,17 @@ module box_context() {
                         cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
                     side_wall_psu_vents();
                     relay_bottom_mount_holes();
+                    if (feature_power_screw_mounts) {
+                        psu_bottom_mount_holes();
+                        converter_bottom_mount_holes();
+                    }
                     box_bottom_revision_negative();
                 }
                 if (feature_ledge) top_panel_ledge();
                 if (feature_psu_tie_wrap_anchors)
                     psu_floor_tie_wrap_anchors_in_box();
-                psu_floor_stops_in_box();
+                if (feature_psu_tie_wrap_anchors)
+                    psu_floor_stops_in_box();
                 if (feature_psu_tie_wrap_anchors_wall)
                     psu_right_wall_tie_wrap_anchors_in_box();
             }
@@ -853,6 +891,40 @@ module relay_bottom_mount_holes() {
                 translate([x, y, -box_h - 0.1])
                     cylinder(h = relay_countersink_h + 0.1, d1 = relay_countersink_d, d2 = relay_mount_hole_d);
             }
+}
+
+module bottom_chamfered_mount_hole(d, chamfer_d) {
+    translate([0, 0, -box_h - 1])
+        cylinder(h = wall_t + 2, d = d);
+    translate([0, 0, -box_h - 0.1])
+        cylinder(h = wall_t + 0.1, d1 = chamfer_d, d2 = d);
+}
+
+module psu_bottom_mount_holes() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_psu_x,
+        box_inner_y + top_panel_h / 2 + internal_psu_y,
+        0
+    ])
+        rotate([0, 0, internal_psu_rot_z])
+            for (
+                x = [-psu_w / 2 + psu_mount_x_inset, psu_w / 2 - psu_mount_x_inset],
+                y = [-psu_d / 2, psu_d / 2]
+            )
+                translate([x, y, 0])
+                    bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
+}
+
+module converter_bottom_mount_holes() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_converter_x,
+        box_inner_y + top_panel_h / 2 + internal_converter_y,
+        0
+    ])
+        rotate([0, 0, internal_converter_rot_z])
+            for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
+                translate([0, y, 0])
+                    bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d);
 }
 
 module box_bottom_revision_negative() {
@@ -1025,6 +1097,10 @@ module internal_components(show_psu = true, show_relay = true) {
             translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
                 rotate([0, 0, internal_psu_rot_z])
                     psu_keepout();
+        if (show_psu)
+            translate([internal_converter_x, internal_converter_y, -box_h + wall_t])
+                rotate([0, 0, internal_converter_rot_z])
+                    converter_keepout();
         if (show_relay)
             translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
                 rotate([0, 0, internal_relay_rot_z])
