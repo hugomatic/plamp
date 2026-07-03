@@ -121,9 +121,6 @@ psu_h = 23;
 psu_mount_hole_d = 4.5;
 psu_mount_x_inset = 8.25;
 psu_mount_chamfer_d = 9;
-psu_retaining_wall_t = 2;
-psu_retaining_wall_h = 5;
-psu_retaining_wall_gap = 18;
 psu_wall_clearance = 1;
 psu_anchor_r = 5;
 psu_anchor_l = 14;
@@ -151,6 +148,10 @@ relay_mount_hole_d = 5;
 relay_mount_x = 135;
 relay_mount_y = 70;
 relay_countersink_d = 9;
+
+retaining_corner_l = 5;
+retaining_corner_t = 2;
+retaining_corner_h = 5;
 
 wall_t = 3;
 relay_countersink_h = wall_t;
@@ -241,7 +242,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
-internal_psu_x = top_panel_w / 2 - psu_d / 2 - psu_retaining_wall_t - psu_wall_clearance;
+internal_psu_x = top_panel_w / 2 - psu_d / 2 - retaining_corner_l - psu_wall_clearance;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -790,8 +791,11 @@ module box_context() {
                     box_bottom_revision_negative();
                 }
                 if (feature_ledge) top_panel_ledge();
-                if (feature_power_screw_mounts)
-                    psu_retaining_wall_in_box();
+                if (feature_power_screw_mounts) {
+                    psu_retaining_corners_in_box();
+                    relay_retaining_corners_in_box();
+                    converter_retaining_corners_in_box();
+                }
                 if (feature_psu_tie_wrap_anchors)
                     psu_floor_tie_wrap_anchors_in_box();
                 if (feature_psu_tie_wrap_anchors)
@@ -925,34 +929,55 @@ module psu_mount_markers(z) {
         cylinder(h = 2, d = psu_mount_hole_d);
 }
 
-module psu_retaining_wall_in_box() {
+module psu_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_psu_x,
         box_inner_y + top_panel_h / 2 + internal_psu_y,
         -box_h + wall_t
     ])
         rotate([0, 0, internal_psu_rot_z])
-            psu_retaining_wall();
+            psu_retaining_corners();
 }
 
-module psu_retaining_wall() {
-    t = psu_retaining_wall_t;
-    h = psu_retaining_wall_h;
-    gap = psu_retaining_wall_gap;
+module relay_retaining_corners_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_relay_x,
+        box_inner_y + top_panel_h / 2 + internal_relay_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_relay_rot_z])
+            retaining_corners(relay_w, relay_d);
+}
 
-    difference() {
-        translate([-psu_w / 2 - t, -psu_d / 2 - t, 0])
-            cube([psu_w + 2 * t, psu_d + 2 * t, h]);
+module converter_retaining_corners_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_converter_x,
+        box_inner_y + top_panel_h / 2 + internal_converter_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_converter_rot_z])
+            retaining_corners(converter_w, converter_d);
+}
 
-        translate([-psu_w / 2, -psu_d / 2, -1])
-            cube([psu_w, psu_d, h + 2]);
+module retaining_corners(w, d) {
+    for (sx = [-1, 1], sy = [-1, 1])
+        retaining_corner(w, d, sx, sy);
+}
 
-        translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2 - t, h / 2])
-            cube([gap, 2 * t + 0.1, h + 2], center = true);
+module psu_retaining_corners() {
+    retaining_corner(psu_w, psu_d, -1, 1);
+    retaining_corner(psu_w, psu_d, 1, -1);
+}
 
-        translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2 + t, h / 2])
-            cube([gap, 2 * t + 0.1, h + 2], center = true);
-    }
+module retaining_corner(w, d, sx, sy) {
+    l = retaining_corner_l;
+    t = retaining_corner_t;
+    h = retaining_corner_h;
+
+    translate([sx * (w / 2 + l / 2), sy * (d / 2 + t / 2), h / 2])
+        cube([l, t, h], center = true);
+    translate([sx * (w / 2 + t / 2), sy * (d / 2 + l / 2), h / 2])
+        cube([t, l, h], center = true);
 }
 
 module converter_bottom_mount_holes() {
