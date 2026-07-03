@@ -123,6 +123,8 @@ psu_mount_x_inset = 8.25;
 psu_mount_y_inset = 2.5;
 psu_mount_chamfer_d = 9;
 psu_wall_clearance = 1;
+psu_view_w = psu_d;
+psu_view_d = psu_w;
 psu_anchor_r = 5;
 psu_anchor_l = 14;
 psu_anchor_slot_w = 5;
@@ -917,16 +919,22 @@ module psu_bottom_mount_holes() {
 }
 
 module psu_mount_holes() {
-    translate([psu_w / 2 - psu_mount_x_inset, -psu_d / 2 + psu_mount_y_inset, 0])
-        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
-    translate([-psu_w / 2 + psu_mount_x_inset, psu_d / 2 - psu_mount_y_inset, 0])
+    psu_mount_hole_from_view(psu_view_w - psu_mount_x_inset, psu_mount_y_inset);
+    psu_mount_hole_from_view(psu_mount_x_inset, psu_view_d - psu_mount_y_inset);
+}
+
+module psu_mount_hole_from_view(x, y) {
+    translate([y - psu_view_d / 2, psu_view_w / 2 - x, 0])
         bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
 }
 
 module psu_mount_markers(z) {
-    translate([psu_w / 2 - psu_mount_x_inset, -psu_d / 2 + psu_mount_y_inset, z])
-        cylinder(h = 2, d = psu_mount_hole_d);
-    translate([-psu_w / 2 + psu_mount_x_inset, psu_d / 2 - psu_mount_y_inset, z])
+    psu_mount_marker_from_view(psu_view_w - psu_mount_x_inset, psu_mount_y_inset, z);
+    psu_mount_marker_from_view(psu_mount_x_inset, psu_view_d - psu_mount_y_inset, z);
+}
+
+module psu_mount_marker_from_view(x, y, z) {
+    translate([y - psu_view_d / 2, psu_view_w / 2 - x, z])
         cylinder(h = 2, d = psu_mount_hole_d);
 }
 
