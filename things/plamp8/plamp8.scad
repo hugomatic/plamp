@@ -121,6 +121,10 @@ psu_h = 23;
 psu_mount_hole_d = 4.5;
 psu_mount_x_inset = 8.25;
 psu_mount_chamfer_d = 9;
+psu_retaining_wall_t = 2;
+psu_retaining_wall_h = 5;
+psu_retaining_wall_gap = 18;
+psu_wall_clearance = 1;
 psu_anchor_r = 5;
 psu_anchor_l = 14;
 psu_anchor_slot_w = 5;
@@ -237,7 +241,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
-internal_psu_x = top_panel_w / 2 - psu_d / 2;
+internal_psu_x = top_panel_w / 2 - psu_d / 2 - psu_retaining_wall_t - psu_wall_clearance;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -669,12 +673,7 @@ module psu_keepout() {
             cube([psu_w, psu_d, psu_h], center = true);
 
     color([0, 0, 0, 1])
-        for (
-            x = [-psu_w / 2 + psu_mount_x_inset, psu_w / 2 - psu_mount_x_inset],
-            y = [-psu_d / 2, psu_d / 2]
-        )
-            translate([x, y, psu_h + 1])
-                cylinder(h = 2, d = psu_mount_hole_d);
+        psu_mount_markers(psu_h + 1);
 }
 
 module converter_keepout() {
@@ -791,6 +790,8 @@ module box_context() {
                     box_bottom_revision_negative();
                 }
                 if (feature_ledge) top_panel_ledge();
+                if (feature_power_screw_mounts)
+                    psu_retaining_wall_in_box();
                 if (feature_psu_tie_wrap_anchors)
                     psu_floor_tie_wrap_anchors_in_box();
                 if (feature_psu_tie_wrap_anchors)
@@ -907,12 +908,51 @@ module psu_bottom_mount_holes() {
         0
     ])
         rotate([0, 0, internal_psu_rot_z])
-            for (
-                x = [-psu_w / 2 + psu_mount_x_inset, psu_w / 2 - psu_mount_x_inset],
-                y = [-psu_d / 2, psu_d / 2]
-            )
-                translate([x, y, 0])
-                    bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
+            psu_mount_holes();
+}
+
+module psu_mount_holes() {
+    translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2, 0])
+        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
+    translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2, 0])
+        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
+}
+
+module psu_mount_markers(z) {
+    translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2, z])
+        cylinder(h = 2, d = psu_mount_hole_d);
+    translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2, z])
+        cylinder(h = 2, d = psu_mount_hole_d);
+}
+
+module psu_retaining_wall_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_psu_x,
+        box_inner_y + top_panel_h / 2 + internal_psu_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_psu_rot_z])
+            psu_retaining_wall();
+}
+
+module psu_retaining_wall() {
+    t = psu_retaining_wall_t;
+    h = psu_retaining_wall_h;
+    gap = psu_retaining_wall_gap;
+
+    difference() {
+        translate([-psu_w / 2 - t, -psu_d / 2 - t, 0])
+            cube([psu_w + 2 * t, psu_d + 2 * t, h]);
+
+        translate([-psu_w / 2, -psu_d / 2, -1])
+            cube([psu_w, psu_d, h + 2]);
+
+        translate([-psu_w / 2 + psu_mount_x_inset, -psu_d / 2 - t, h / 2])
+            cube([gap, 2 * t + 0.1, h + 2], center = true);
+
+        translate([psu_w / 2 - psu_mount_x_inset, psu_d / 2 + t, h / 2])
+            cube([gap, 2 * t + 0.1, h + 2], center = true);
+    }
 }
 
 module converter_bottom_mount_holes() {
