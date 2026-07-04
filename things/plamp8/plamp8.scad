@@ -833,7 +833,7 @@ module box_context() {
 }
 
 module box_walls_context() {
-    color([0.7, 0.72, 0.68, 0.35])
+    color([0.15, 0.45, 0.9, 0.35])
         difference() {
             union() {
                 difference() {
