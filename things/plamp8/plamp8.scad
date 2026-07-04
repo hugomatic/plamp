@@ -202,13 +202,13 @@ top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
 panel_screw_inset = 4;
-internal_psu_y = 10;
+internal_psu_y = 35;
 internal_psu_rot_z = 90;
 internal_converter_x = 45;
-internal_converter_y = -70;
-internal_converter_rot_z = 0;
-internal_relay_x = -50;
-internal_relay_y = 0;
+internal_converter_y = -85;
+internal_converter_rot_z = 90;
+internal_relay_x = 0;
+internal_relay_y = 15;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
@@ -282,7 +282,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
-internal_psu_x = top_panel_w / 2 - psu_d / 2 - retaining_corner_l - psu_wall_clearance;
+internal_psu_x = 45;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -857,8 +857,8 @@ module floor_context() {
     color([0.68, 0.68, 0.62, 0.45])
         difference() {
             union() {
-                translate([0, 0, -box_h])
-                    cube([box_w, box_d, wall_t]);
+                translate([wall_t, wall_t, -box_h])
+                    cube([box_inner_w, box_inner_d, wall_t]);
                 floor_perimeter_rib();
                 if (feature_power_screw_mounts) {
                     psu_retaining_corners_in_box();
