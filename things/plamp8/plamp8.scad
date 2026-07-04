@@ -181,7 +181,7 @@ relay_countersink_d = screw_chamfer_d(relay_screw_size);
 
 retaining_corner_l = 5;
 retaining_corner_t = 2;
-retaining_corner_h = 5;
+retaining_corner_h = 10;
 psu_side_guide_l = 10;
 psu_side_guide_t = 2;
 psu_side_guide_h = retaining_corner_h;
@@ -190,7 +190,7 @@ wall_t = 3;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
-component_airflow_post_spacing = 18;
+component_airflow_post_spacing = 14;
 component_airflow_post_hole_clearance = 8;
 floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
 floor_fastener_chamfer_d = screw_chamfer_d(floor_screw_size);
@@ -1135,23 +1135,27 @@ module component_airflow_posts_in_box() {
 }
 
 module component_airflow_posts(w, d) {
-    for (
-        x = [-w / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:w / 2 - component_airflow_post_spacing / 2],
-        y = [-d / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:d / 2 - component_airflow_post_spacing / 2]
-    )
+    xs = support_positions(w);
+    ys = support_positions(d);
+    for (x = xs, y = ys)
         translate([x, y, 0])
             cylinder(h = component_raise_h, d = component_airflow_post_d);
 }
 
 module component_airflow_posts_except(w, d, excludes) {
-    for (
-        x = [-w / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:w / 2 - component_airflow_post_spacing / 2],
-        y = [-d / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:d / 2 - component_airflow_post_spacing / 2]
-    )
+    xs = support_positions(w);
+    ys = support_positions(d);
+    for (x = xs, y = ys)
         if (!point_near_any([x, y], excludes, component_airflow_post_hole_clearance))
             translate([x, y, 0])
                 cylinder(h = component_raise_h, d = component_airflow_post_d);
 }
+
+function support_position_count(length) = max(3, floor(length / component_airflow_post_spacing) + 1);
+function support_position_span(length) = length - component_airflow_post_spacing;
+function support_positions(length) =
+    let(n = support_position_count(length), span = support_position_span(length))
+        [for (i = [0:n - 1]) n == 1 ? 0 : -span / 2 + i * span / (n - 1)];
 
 function point_near_any(p, points, clearance, i = 0) =
     i >= len(points) ? false :
@@ -1184,10 +1188,9 @@ module relay_airflow_posts() {
 }
 
 module converter_airflow_posts() {
-    for (
-        x = [-converter_w / 2 + component_airflow_post_spacing / 2, converter_w / 2 - component_airflow_post_spacing / 2],
-        y = [-converter_d / 2 + component_airflow_post_spacing / 2, converter_d / 2 - component_airflow_post_spacing / 2]
-    )
+    xs = support_positions(converter_w);
+    ys = support_positions(converter_d);
+    for (x = xs, y = ys)
         if (!point_near_any([x, y], converter_mount_points(), component_airflow_post_hole_clearance))
             translate([x, y, 0])
                 cylinder(h = component_raise_h, d = component_airflow_post_d);
