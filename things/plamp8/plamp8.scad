@@ -195,6 +195,7 @@ floor_tab_h = 8;
 floor_fastener_inset = wall_t + floor_tab_d / 2;
 floor_rib_t = 2;
 floor_rib_h = 5;
+floor_rib_corner_l = 30;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
@@ -882,14 +883,18 @@ module floor_context() {
 
 module floor_perimeter_rib() {
     z = -box_h + wall_t;
-    translate([wall_t, wall_t, z])
-        cube([box_inner_w, floor_rib_t, floor_rib_h]);
-    translate([wall_t, box_d - wall_t - floor_rib_t, z])
-        cube([box_inner_w, floor_rib_t, floor_rib_h]);
-    translate([wall_t, wall_t + floor_rib_t, z])
-        cube([floor_rib_t, box_inner_d - 2 * floor_rib_t, floor_rib_h]);
-    translate([box_w - wall_t - floor_rib_t, wall_t + floor_rib_t, z])
-        cube([floor_rib_t, box_inner_d - 2 * floor_rib_t, floor_rib_h]);
+    for (sx = [-1, 1], sy = [-1, 1])
+        floor_rib_corner(sx, sy, z);
+}
+
+module floor_rib_corner(sx, sy, z) {
+    x0 = sx < 0 ? wall_t : box_w - wall_t - floor_rib_t;
+    y0 = sy < 0 ? wall_t : box_d - wall_t - floor_rib_t;
+
+    translate([sx < 0 ? wall_t : box_w - wall_t - floor_rib_corner_l, y0, z])
+        cube([floor_rib_corner_l, floor_rib_t, floor_rib_h]);
+    translate([x0, sy < 0 ? wall_t : box_d - wall_t - floor_rib_corner_l, z])
+        cube([floor_rib_t, floor_rib_corner_l, floor_rib_h]);
 }
 
 module top_panel_ledge() {
