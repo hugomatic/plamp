@@ -996,7 +996,7 @@ module relay_mount_holes(z0 = -box_h) {
         y = [-relay_mount_y / 2, relay_mount_y / 2]
     )
         translate([x, y, 0])
-            bottom_chamfered_mount_hole(relay_mount_hole_d, relay_countersink_d, z0, relay_countersink_h + component_raise_h);
+            bottom_chamfered_mount_hole(relay_mount_hole_d, relay_countersink_d, z0, relay_countersink_h);
 }
 
 module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t) {
@@ -1092,7 +1092,7 @@ module relay_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_relay_x,
         box_inner_y + top_panel_h / 2 + internal_relay_y,
-        -box_h + wall_t + component_raise_h
+        -box_h + wall_t
     ])
         rotate([0, 0, internal_relay_rot_z])
             retaining_corners(relay_w, relay_d);
@@ -1116,14 +1116,6 @@ module component_airflow_posts_in_box() {
     ])
         rotate([0, 0, internal_psu_rot_z])
             psu_airflow_posts();
-
-    translate([
-        box_inner_x + top_panel_w / 2 + internal_relay_x,
-        box_inner_y + top_panel_h / 2 + internal_relay_y,
-        -box_h + wall_t
-    ])
-        rotate([0, 0, internal_relay_rot_z])
-            relay_airflow_posts();
 
     translate([
         box_inner_x + top_panel_w / 2 + internal_converter_x,
@@ -1415,7 +1407,7 @@ module internal_components(show_psu = true, show_relay = true) {
                 rotate([0, 0, internal_converter_rot_z])
                     converter_keepout();
         if (show_relay)
-            translate([internal_relay_x, internal_relay_y, -box_h + wall_t + component_raise_h])
+            translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
                 rotate([0, 0, internal_relay_rot_z])
                     relay_board_keepout();
     }
@@ -1495,11 +1487,7 @@ module relay_footprint() {
             footprint_base(relay_d, relay_w);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_relay_rot_z])
-                    relay_airflow_posts();
-            translate([0, 0, wall_t])
-                rotate([0, 0, internal_relay_rot_z])
-                    translate([0, 0, component_raise_h])
-                        retaining_corners(relay_w, relay_d);
+                    retaining_corners(relay_w, relay_d);
         }
         rotate([0, 0, internal_relay_rot_z])
             relay_mount_holes(0);
