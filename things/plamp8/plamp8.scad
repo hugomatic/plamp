@@ -195,7 +195,7 @@ floor_tab_h = 8;
 floor_fastener_inset = wall_t + floor_tab_d / 2;
 floor_rib_t = 2;
 floor_rib_h = 5;
-floor_rib_corner_l = 30;
+floor_rib_corner_l = 60;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
@@ -283,7 +283,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
-internal_psu_x = 45;
+internal_psu_x = 60;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
