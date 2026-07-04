@@ -191,6 +191,7 @@ relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
 component_airflow_post_spacing = 18;
+component_airflow_post_hole_clearance = 8;
 floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
 floor_fastener_chamfer_d = screw_chamfer_d(floor_screw_size);
 floor_nut_trap_d = screw_nut_trap_d(floor_screw_size);
@@ -1114,7 +1115,7 @@ module component_airflow_posts_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_psu_rot_z])
-            component_airflow_posts(psu_w, psu_d);
+            psu_airflow_posts();
 
     translate([
         box_inner_x + top_panel_w / 2 + internal_relay_x,
@@ -1122,7 +1123,7 @@ module component_airflow_posts_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_relay_rot_z])
-            component_airflow_posts(relay_w, relay_d);
+            relay_airflow_posts();
 
     translate([
         box_inner_x + top_panel_w / 2 + internal_converter_x,
@@ -1130,7 +1131,7 @@ module component_airflow_posts_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_converter_rot_z])
-            component_airflow_posts(converter_w, converter_d);
+            converter_airflow_posts();
 }
 
 module component_airflow_posts(w, d) {
@@ -1140,6 +1141,56 @@ module component_airflow_posts(w, d) {
     )
         translate([x, y, 0])
             cylinder(h = component_raise_h, d = component_airflow_post_d);
+}
+
+module component_airflow_posts_except(w, d, excludes) {
+    for (
+        x = [-w / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:w / 2 - component_airflow_post_spacing / 2],
+        y = [-d / 2 + component_airflow_post_spacing / 2:component_airflow_post_spacing:d / 2 - component_airflow_post_spacing / 2]
+    )
+        if (!point_near_any([x, y], excludes, component_airflow_post_hole_clearance))
+            translate([x, y, 0])
+                cylinder(h = component_raise_h, d = component_airflow_post_d);
+}
+
+function point_near_any(p, points, clearance, i = 0) =
+    i >= len(points) ? false :
+    norm([p[0] - points[i][0], p[1] - points[i][1]]) < clearance ? true :
+    point_near_any(p, points, clearance, i + 1);
+
+function psu_mount_points() = [
+    [psu_mount_y_inset - psu_view_d / 2, psu_view_w / 2 - (psu_view_w - psu_mount_x_inset)],
+    [psu_view_d - psu_mount_y_inset - psu_view_d / 2, psu_view_w / 2 - psu_mount_x_inset]
+];
+
+function relay_mount_points() = [
+    [-relay_mount_x / 2, -relay_mount_y / 2],
+    [-relay_mount_x / 2, relay_mount_y / 2],
+    [relay_mount_x / 2, -relay_mount_y / 2],
+    [relay_mount_x / 2, relay_mount_y / 2]
+];
+
+function converter_mount_points() = [
+    [0, -converter_mount_spacing / 2],
+    [0, converter_mount_spacing / 2]
+];
+
+module psu_airflow_posts() {
+    component_airflow_posts_except(psu_w, psu_d, psu_mount_points());
+}
+
+module relay_airflow_posts() {
+    component_airflow_posts_except(relay_w, relay_d, relay_mount_points());
+}
+
+module converter_airflow_posts() {
+    for (
+        x = [-converter_w / 2 + component_airflow_post_spacing / 2, converter_w / 2 - component_airflow_post_spacing / 2],
+        y = [-converter_d / 2 + component_airflow_post_spacing / 2, converter_d / 2 - component_airflow_post_spacing / 2]
+    )
+        if (!point_near_any([x, y], converter_mount_points(), component_airflow_post_hole_clearance))
+            translate([x, y, 0])
+                cylinder(h = component_raise_h, d = component_airflow_post_d);
 }
 
 module retaining_corners(w, d) {
@@ -1405,7 +1456,7 @@ module psu_footprint() {
             footprint_base(psu_view_w, psu_view_d);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_psu_rot_z])
-                    component_airflow_posts(psu_w, psu_d);
+                    psu_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_psu_rot_z])
                     translate([0, 0, component_raise_h])
@@ -1423,7 +1474,7 @@ module converter_footprint() {
             footprint_base(converter_w, converter_d);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
-                    component_airflow_posts(converter_w, converter_d);
+                    converter_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
                     translate([0, 0, component_raise_h])
@@ -1441,7 +1492,7 @@ module relay_footprint() {
             footprint_base(relay_d, relay_w);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_relay_rot_z])
-                    component_airflow_posts(relay_w, relay_d);
+                    relay_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_relay_rot_z])
                     translate([0, 0, component_raise_h])
