@@ -10,6 +10,8 @@ dc_connector_type = "xt60"; // [barrel, xt60]
 
 // show / hide box
 show_box = true;
+show_box_walls = true;
+show_floor = true;
 show_psu = false;
 show_relay = false;
 show_top_outline = false;
@@ -190,6 +192,7 @@ floor_nut_trap_h = screw_nut_trap_h(floor_screw_size);
 floor_tab_w = 22;
 floor_tab_d = 16;
 floor_tab_h = 8;
+floor_fastener_inset = wall_t + floor_tab_d / 2;
 floor_rib_t = 2;
 floor_rib_h = 5;
 box_h = internal_clearance_h + wall_t;
@@ -989,10 +992,10 @@ module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t) {
 }
 
 function floor_fastener_points() = [
-    [box_w / 2, wall_t / 2, 0],
-    [box_w / 2, box_d - wall_t / 2, 180],
-    [wall_t / 2, box_d / 2, -90],
-    [box_w - wall_t / 2, box_d / 2, 90]
+    [box_w / 2, floor_fastener_inset, 0],
+    [box_w / 2, box_d - floor_fastener_inset, 180],
+    [floor_fastener_inset, box_d / 2, -90],
+    [box_w - floor_fastener_inset, box_d / 2, 90]
 ];
 
 module floor_fastener_holes() {
@@ -1376,8 +1379,11 @@ module relay_footprint() {
 
 module assembly() {
     echo_hardware(true, true, true, true);
-    if (show_box)
-        box_context();
+    if (show_box && show_box_walls)
+        box_walls_context();
+
+    if (show_box && show_floor)
+        floor_context();
 
     if (show_top_outline)
         translate([box_inner_x, box_inner_y, 0])
