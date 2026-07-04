@@ -2,15 +2,14 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, box_walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, box, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
 /* [assembly view options] */
 
-// show / hide box
-show_box = true;
-show_box_walls = true;
+// show / hide enclosure parts
+show_walls = true;
 show_floor = true;
 show_psu = false;
 show_relay = false;
@@ -834,14 +833,7 @@ module sub_panel_8ch() {
 
 
 
-module box_context() {
-    union() {
-        box_walls_context();
-        floor_context();
-    }
-}
-
-module box_walls_context() {
+module walls_context() {
     color([0.15, 0.45, 0.9, 0.35])
         difference() {
             union() {
@@ -1126,14 +1118,6 @@ module component_airflow_posts_in_box() {
             converter_airflow_posts();
 }
 
-module component_airflow_posts(w, d) {
-    xs = support_positions(w);
-    ys = support_positions(d);
-    for (x = xs, y = ys)
-        translate([x, y, 0])
-            cylinder(h = component_raise_h, d = component_airflow_post_d);
-}
-
 module component_airflow_posts_except(w, d, excludes) {
     xs = support_positions(w);
     ys = support_positions(d);
@@ -1159,13 +1143,6 @@ function psu_mount_points() = [
     [psu_view_d - psu_mount_y_inset - psu_view_d / 2, psu_view_w / 2 - psu_mount_x_inset]
 ];
 
-function relay_mount_points() = [
-    [-relay_mount_x / 2, -relay_mount_y / 2],
-    [-relay_mount_x / 2, relay_mount_y / 2],
-    [relay_mount_x / 2, -relay_mount_y / 2],
-    [relay_mount_x / 2, relay_mount_y / 2]
-];
-
 function converter_mount_points() = [
     [0, -converter_mount_spacing / 2],
     [0, converter_mount_spacing / 2]
@@ -1173,10 +1150,6 @@ function converter_mount_points() = [
 
 module psu_airflow_posts() {
     component_airflow_posts_except(psu_w, psu_d, psu_mount_points());
-}
-
-module relay_airflow_posts() {
-    component_airflow_posts_except(relay_w, relay_d, relay_mount_points());
 }
 
 module converter_airflow_posts() {
@@ -1427,10 +1400,10 @@ module plate() {
         top_panel_8ch(true);
 }
 
-module box_walls() {
+module walls() {
     echo_hardware(include_floor = true);
     translate([0, 0, box_h])
-        box_walls_context();
+        walls_context();
 }
 
 module floor_part() {
@@ -1496,10 +1469,10 @@ module relay_footprint() {
 
 module assembly() {
     echo_hardware(true, true, true, true);
-    if (show_box && show_box_walls)
-        box_walls_context();
+    if (show_walls)
+        walls_context();
 
-    if (show_box && show_floor)
+    if (show_floor)
         floor_context();
 
     if (show_top_outline)
@@ -1517,11 +1490,6 @@ module assembly() {
     internal_components(show_psu, show_relay);
 }
 
-module box() {
-    echo_hardware(true, true, true, true);
-    box_context();
-}
-
 if (view == "relay_footprint") {
     relay_footprint();
 } else if (view == "psu_footprint") {
@@ -1530,8 +1498,8 @@ if (view == "relay_footprint") {
     converter_footprint();
 } else if (view == "floor") {
     floor_part();
-} else if (view == "box_walls") {
-    box_walls();
+} else if (view == "walls") {
+    walls();
 } else if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
@@ -1548,8 +1516,6 @@ if (view == "relay_footprint") {
     sub_panel();
 } else if (view == "assembly") {
     assembly();
-} else if (view == "box") {
-    box();
 } else {
     assembly();
 }
