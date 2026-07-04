@@ -998,6 +998,13 @@ function floor_fastener_points() = [
     [box_w - floor_fastener_inset, box_d / 2, 90]
 ];
 
+function floor_wall_tab_points() = [
+    [box_w / 2, wall_t, 0],
+    [box_w / 2, box_d - wall_t, 180],
+    [wall_t, box_d / 2, -90],
+    [box_w - wall_t, box_d / 2, 90]
+];
+
 module floor_fastener_holes() {
     for (p = floor_fastener_points())
         translate([p[0], p[1], 0])
@@ -1005,7 +1012,7 @@ module floor_fastener_holes() {
 }
 
 module floor_wall_tabs() {
-    for (p = floor_fastener_points())
+    for (p = floor_wall_tab_points())
         translate([p[0], p[1], -box_h + wall_t])
             rotate([0, 0, p[2]])
                 floor_wall_tab();
