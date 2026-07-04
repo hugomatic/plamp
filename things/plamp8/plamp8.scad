@@ -2,14 +2,15 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [assembly, box, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
 /* [assembly view options] */
 
-// show / hide box
-show_box = true;
+// show / hide enclosure parts
+show_walls = true;
+show_floor = true;
 show_psu = false;
 show_relay = false;
 show_top_outline = false;
@@ -59,6 +60,31 @@ screw_spacing = 84;
 
 // Modular box-builder dimensions. Keep these near the top for fit tuning.
 toggle_hole_d = 12;
+
+psu_screw_size = "M5";       // [M3, M4, M5]
+converter_screw_size = "M5"; // [M3, M4, M5]
+relay_screw_size = "M5";     // [M3, M4, M5]
+floor_screw_size = "M5";     // [M3, M4, M5]
+
+function screw_clearance_d(size) =
+    size == "M5" ? 5.5 :
+    size == "M4" ? 4.5 :
+    3.4;
+
+function screw_chamfer_d(size) =
+    size == "M5" ? 10 :
+    size == "M4" ? 8 :
+    6.5;
+
+function screw_nut_trap_d(size) =
+    size == "M5" ? 9.4 :
+    size == "M4" ? 8 :
+    6.5;
+
+function screw_nut_trap_h(size) =
+    size == "M5" ? 4.4 :
+    size == "M4" ? 3.4 :
+    2.8;
 
 
 /* [components dimensions] */
@@ -118,10 +144,10 @@ c13_screw_inset = 1.5;
 psu_w = 134;
 psu_d = 36;
 psu_h = 23;
-psu_mount_hole_d = 4.5;
+psu_mount_hole_d = screw_clearance_d(psu_screw_size);
 psu_mount_x_inset = 8.25;
 psu_mount_y_inset = 2.5;
-psu_mount_chamfer_d = 9;
+psu_mount_chamfer_d = screw_chamfer_d(psu_screw_size);
 psu_wall_clearance = 1;
 psu_view_w = psu_d;
 psu_view_d = psu_w;
@@ -141,23 +167,41 @@ converter_w = 27;
 converter_d = 46;
 converter_h = 14;
 converter_mount_spacing = 50;
-converter_mount_hole_d = 4.5;
-converter_mount_chamfer_d = 9;
+converter_mount_hole_d = screw_clearance_d(converter_screw_size);
+converter_mount_chamfer_d = screw_chamfer_d(converter_screw_size);
 
 relay_w = 145;
 relay_d = 90;
 relay_h = 40;
-relay_mount_hole_d = 5;
+relay_mount_hole_d = screw_clearance_d(relay_screw_size);
 relay_mount_x = 135;
 relay_mount_y = 70;
-relay_countersink_d = 9;
+relay_countersink_d = screw_chamfer_d(relay_screw_size);
 
 retaining_corner_l = 5;
 retaining_corner_t = 2;
-retaining_corner_h = 5;
+retaining_corner_h = 10;
+psu_side_guide_l = 10;
+psu_side_guide_t = 2;
+psu_side_guide_h = retaining_corner_h;
 
 wall_t = 3;
 relay_countersink_h = wall_t;
+component_raise_h = 5;
+component_airflow_post_d = 5;
+component_airflow_post_spacing = 14;
+component_airflow_post_hole_clearance = 8;
+floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
+floor_fastener_chamfer_d = screw_chamfer_d(floor_screw_size);
+floor_nut_trap_d = screw_nut_trap_d(floor_screw_size);
+floor_nut_trap_h = screw_nut_trap_h(floor_screw_size);
+floor_tab_w = 22;
+floor_tab_d = 16;
+floor_tab_h = 8;
+floor_fastener_inset = wall_t + floor_tab_d / 2;
+floor_rib_t = 2;
+floor_rib_h = 5;
+floor_rib_corner_l = 60;
 box_h = internal_clearance_h + wall_t;
 panel_margin = 5;
 top_outline_w = 2;
@@ -165,18 +209,20 @@ top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
 panel_screw_inset = 4;
-internal_psu_y = 10;
+internal_psu_y = 20;
 internal_psu_rot_z = 90;
-internal_converter_x = 45;
-internal_converter_y = -70;
-internal_converter_rot_z = 0;
-internal_relay_x = -50;
-internal_relay_y = 0;
+internal_converter_x = 65;
+internal_converter_y = -85;
+internal_converter_rot_z = 90;
+internal_relay_x = -25;
+internal_relay_y = 15;
 internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
 vent_wall_margin = 10;
 vent_top_margin = ledge_r + vent_hole_d;
+vent_floor_clearance = vent_wall_margin + vent_hole_spacing;
+vent_ledge_clearance = vent_hole_spacing;
 service_row_y = 58;
 ac_row_y = -63;
 dc_row_y = -106;
@@ -245,7 +291,7 @@ layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
-internal_psu_x = top_panel_w / 2 - psu_d / 2 - retaining_corner_l - psu_wall_clearance;
+internal_psu_x = 60;
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -556,6 +602,17 @@ module flush_revision_label() {
     flush_label(revision_string, 4);
 }
 
+module echo_hardware(include_psu = false, include_converter = false, include_relay = false, include_floor = false) {
+    if (include_psu)
+        echo(str("hardware: PSU mount: 2x ", psu_screw_size, " clearance/chamfer"));
+    if (include_converter)
+        echo(str("hardware: converter mount: 2x ", converter_screw_size, " clearance/chamfer"));
+    if (include_relay)
+        echo(str("hardware: relay mount: 4x ", relay_screw_size, " clearance/chamfer"));
+    if (include_floor)
+        echo(str("hardware: floor-to-wall: 4x ", floor_screw_size, " bottom-up, chamfered floor, wall nut traps"));
+}
+
 module barrel_channel_negative() {
     translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
@@ -776,25 +833,37 @@ module sub_panel_8ch() {
 
 
 
-module box_context() {
-    color([0.7, 0.72, 0.68, 0.35])
+module walls_context() {
+    color([0.15, 0.45, 0.9, 0.35])
         difference() {
             union() {
                 difference() {
                     translate([0, 0, -box_h])
                         cube([box_w, box_d, box_h]);
-                    translate([wall_t, wall_t, -box_h + wall_t])
-                        cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 2]);
+                    translate([wall_t, wall_t, -box_h - 1])
+                        cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 3]);
                     side_wall_psu_vents();
-                    relay_bottom_mount_holes();
-                    if (feature_power_screw_mounts) {
-                        psu_bottom_mount_holes();
-                        converter_bottom_mount_holes();
-                    }
-                    box_bottom_revision_negative();
                 }
                 if (feature_ledge) top_panel_ledge();
+                floor_wall_tabs();
+                if (feature_psu_tie_wrap_anchors_wall)
+                    psu_right_wall_tie_wrap_anchors_in_box();
+            }
+            panel_corner_screw_holes_in_box();
+            panel_corner_nut_traps_in_box();
+            floor_wall_tab_negatives();
+        }
+}
+
+module floor_context() {
+    color([0.68, 0.68, 0.62, 0.45])
+        difference() {
+            union() {
+                translate([wall_t, wall_t, -box_h])
+                    cube([box_inner_w, box_inner_d, wall_t]);
+                floor_perimeter_rib();
                 if (feature_power_screw_mounts) {
+                    component_airflow_posts_in_box();
                     psu_retaining_corners_in_box();
                     relay_retaining_corners_in_box();
                     converter_retaining_corners_in_box();
@@ -803,12 +872,31 @@ module box_context() {
                     psu_floor_tie_wrap_anchors_in_box();
                 if (feature_psu_tie_wrap_anchors)
                     psu_floor_stops_in_box();
-                if (feature_psu_tie_wrap_anchors_wall)
-                    psu_right_wall_tie_wrap_anchors_in_box();
             }
-            panel_corner_screw_holes_in_box();
-            panel_corner_nut_traps_in_box();
+            relay_bottom_mount_holes();
+            if (feature_power_screw_mounts) {
+                psu_bottom_mount_holes();
+                converter_bottom_mount_holes();
+                floor_fastener_holes();
+            }
+            box_bottom_revision_negative();
         }
+}
+
+module floor_perimeter_rib() {
+    z = -box_h + wall_t;
+    for (sx = [-1, 1], sy = [-1, 1])
+        floor_rib_corner(sx, sy, z);
+}
+
+module floor_rib_corner(sx, sy, z) {
+    x0 = sx < 0 ? wall_t : box_w - wall_t - floor_rib_t;
+    y0 = sy < 0 ? wall_t : box_d - wall_t - floor_rib_t;
+
+    translate([sx < 0 ? wall_t : box_w - wall_t - floor_rib_corner_l, y0, z])
+        cube([floor_rib_corner_l, floor_rib_t, floor_rib_h]);
+    translate([x0, sy < 0 ? wall_t : box_d - wall_t - floor_rib_corner_l, z])
+        cube([floor_rib_t, floor_rib_corner_l, floor_rib_h]);
 }
 
 module top_panel_ledge() {
@@ -865,7 +953,7 @@ module quarter_round(length, r) {
 }
 
 module side_wall_psu_vents() {
-    vent_zs = [-box_h + vent_wall_margin:vent_hole_spacing:-vent_top_margin];
+    vent_zs = [-box_h + vent_floor_clearance:vent_hole_spacing:-(vent_top_margin + vent_ledge_clearance)];
     right_wall_ys = [vent_wall_margin:vent_hole_spacing:box_d - vent_wall_margin];
     side_wall_xs = [box_w / 2:vent_hole_spacing:box_w - vent_wall_margin];
 
@@ -891,22 +979,65 @@ module relay_bottom_mount_holes() {
         0
     ])
         rotate([0, 0, internal_relay_rot_z])
-            for (
-                x = [-relay_mount_x / 2, relay_mount_x / 2],
-                y = [-relay_mount_y / 2, relay_mount_y / 2]
-            ) {
-                translate([x, y, -box_h - 1])
-                    cylinder(h = wall_t + 2, d = relay_mount_hole_d);
-                translate([x, y, -box_h - 0.1])
-                    cylinder(h = relay_countersink_h + 0.1, d1 = relay_countersink_d, d2 = relay_mount_hole_d);
-            }
+            relay_mount_holes();
 }
 
-module bottom_chamfered_mount_hole(d, chamfer_d) {
-    translate([0, 0, -box_h - 1])
-        cylinder(h = wall_t + 2, d = d);
-    translate([0, 0, -box_h - 0.1])
-        cylinder(h = wall_t + 0.1, d1 = chamfer_d, d2 = d);
+module relay_mount_holes(z0 = -box_h) {
+    for (
+        x = [-relay_mount_x / 2, relay_mount_x / 2],
+        y = [-relay_mount_y / 2, relay_mount_y / 2]
+    )
+        translate([x, y, 0])
+            bottom_chamfered_mount_hole(relay_mount_hole_d, relay_countersink_d, z0, relay_countersink_h);
+}
+
+module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t) {
+    translate([0, 0, z0 - 1])
+        cylinder(h = t + 2, d = d);
+    translate([0, 0, z0 - 0.1])
+        cylinder(h = t + 0.1, d1 = chamfer_d, d2 = d);
+}
+
+function floor_fastener_points() = [
+    [box_w / 2, floor_fastener_inset, 0],
+    [box_w / 2, box_d - floor_fastener_inset, 180],
+    [floor_fastener_inset, box_d / 2, -90],
+    [box_w - floor_fastener_inset, box_d / 2, 90]
+];
+
+function floor_wall_tab_points() = [
+    [box_w / 2, wall_t, 0],
+    [box_w / 2, box_d - wall_t, 180],
+    [wall_t, box_d / 2, -90],
+    [box_w - wall_t, box_d / 2, 90]
+];
+
+module floor_fastener_holes() {
+    for (p = floor_fastener_points())
+        translate([p[0], p[1], 0])
+            bottom_chamfered_mount_hole(floor_fastener_hole_d, floor_fastener_chamfer_d);
+}
+
+module floor_wall_tabs() {
+    for (p = floor_wall_tab_points())
+        translate([p[0], p[1], -box_h + wall_t])
+            rotate([0, 0, p[2]])
+                floor_wall_tab();
+}
+
+module floor_wall_tab() {
+    translate([-floor_tab_w / 2, 0, 0])
+        cube([floor_tab_w, floor_tab_d, floor_tab_h]);
+}
+
+module floor_wall_tab_negatives() {
+    for (p = floor_fastener_points())
+        translate([p[0], p[1], -box_h])
+            rotate([0, 0, p[2]]) {
+                cylinder(h = wall_t + floor_tab_h + 2, d = floor_fastener_hole_d);
+                translate([0, 0, wall_t + floor_tab_h - floor_nut_trap_h + 0.01])
+                    cylinder(h = floor_nut_trap_h + 0.2, d = floor_nut_trap_d, $fn = 6);
+            }
 }
 
 module psu_bottom_mount_holes() {
@@ -919,14 +1050,14 @@ module psu_bottom_mount_holes() {
             psu_mount_holes();
 }
 
-module psu_mount_holes() {
-    psu_mount_hole_from_view(psu_view_w - psu_mount_x_inset, psu_mount_y_inset);
-    psu_mount_hole_from_view(psu_mount_x_inset, psu_view_d - psu_mount_y_inset);
+module psu_mount_holes(z0 = -box_h) {
+    psu_mount_hole_from_view(psu_view_w - psu_mount_x_inset, psu_mount_y_inset, z0);
+    psu_mount_hole_from_view(psu_mount_x_inset, psu_view_d - psu_mount_y_inset, z0);
 }
 
-module psu_mount_hole_from_view(x, y) {
+module psu_mount_hole_from_view(x, y, z0 = -box_h) {
     translate([y - psu_view_d / 2, psu_view_w / 2 - x, 0])
-        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d);
+        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d, z0, wall_t + component_raise_h);
 }
 
 module psu_mount_markers(z) {
@@ -943,7 +1074,7 @@ module psu_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_psu_x,
         box_inner_y + top_panel_h / 2 + internal_psu_y,
-        -box_h + wall_t
+        -box_h + wall_t + component_raise_h
     ])
         rotate([0, 0, internal_psu_rot_z])
             psu_retaining_corners();
@@ -963,10 +1094,71 @@ module converter_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_converter_x,
         box_inner_y + top_panel_h / 2 + internal_converter_y,
-        -box_h + wall_t
+        -box_h + wall_t + component_raise_h
     ])
         rotate([0, 0, internal_converter_rot_z])
             retaining_corners(converter_w, converter_d);
+}
+
+module component_airflow_posts_in_box() {
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_psu_x,
+        box_inner_y + top_panel_h / 2 + internal_psu_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_psu_rot_z])
+            psu_airflow_posts();
+
+    translate([
+        box_inner_x + top_panel_w / 2 + internal_converter_x,
+        box_inner_y + top_panel_h / 2 + internal_converter_y,
+        -box_h + wall_t
+    ])
+        rotate([0, 0, internal_converter_rot_z])
+            converter_airflow_posts();
+}
+
+module component_airflow_posts_except(w, d, excludes) {
+    xs = support_positions(w);
+    ys = support_positions(d);
+    for (x = xs, y = ys)
+        if (!point_near_any([x, y], excludes, component_airflow_post_hole_clearance))
+            translate([x, y, 0])
+                cylinder(h = component_raise_h, d = component_airflow_post_d);
+}
+
+function support_position_count(length) = max(3, floor(length / component_airflow_post_spacing) + 1);
+function support_position_span(length) = length - component_airflow_post_spacing;
+function support_positions(length) =
+    let(n = support_position_count(length), span = support_position_span(length))
+        [for (i = [0:n - 1]) n == 1 ? 0 : -span / 2 + i * span / (n - 1)];
+
+function point_near_any(p, points, clearance, i = 0) =
+    i >= len(points) ? false :
+    norm([p[0] - points[i][0], p[1] - points[i][1]]) < clearance ? true :
+    point_near_any(p, points, clearance, i + 1);
+
+function psu_mount_points() = [
+    [psu_mount_y_inset - psu_view_d / 2, psu_view_w / 2 - (psu_view_w - psu_mount_x_inset)],
+    [psu_view_d - psu_mount_y_inset - psu_view_d / 2, psu_view_w / 2 - psu_mount_x_inset]
+];
+
+function converter_mount_points() = [
+    [0, -converter_mount_spacing / 2],
+    [0, converter_mount_spacing / 2]
+];
+
+module psu_airflow_posts() {
+    component_airflow_posts_except(psu_w, psu_d, psu_mount_points());
+}
+
+module converter_airflow_posts() {
+    xs = support_positions(converter_w);
+    ys = support_positions(converter_d);
+    for (x = xs, y = ys)
+        if (!point_near_any([x, y], converter_mount_points(), component_airflow_post_hole_clearance))
+            translate([x, y, 0])
+                cylinder(h = component_raise_h, d = component_airflow_post_d);
 }
 
 module retaining_corners(w, d) {
@@ -977,6 +1169,13 @@ module retaining_corners(w, d) {
 module psu_retaining_corners() {
     retaining_corner(psu_w, psu_d, -1, 1);
     retaining_corner(psu_w, psu_d, 1, -1);
+    psu_side_guides();
+}
+
+module psu_side_guides() {
+    for (y = [-psu_d / 2 - psu_side_guide_t / 2, psu_d / 2 + psu_side_guide_t / 2])
+        translate([-psu_side_guide_l / 2, y, 0])
+            cube([psu_side_guide_l, psu_side_guide_t, psu_side_guide_h]);
 }
 
 module retaining_corner(w, d, sx, sy) {
@@ -997,9 +1196,13 @@ module converter_bottom_mount_holes() {
         0
     ])
         rotate([0, 0, internal_converter_rot_z])
-            for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
-                translate([0, y, 0])
-                    bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d);
+            converter_mount_holes();
+}
+
+module converter_mount_holes(z0 = -box_h) {
+    for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
+        translate([0, y, 0])
+            bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d, z0, wall_t + component_raise_h);
 }
 
 module box_bottom_revision_negative() {
@@ -1169,11 +1372,11 @@ module mounted_top_panel() {
 module internal_components(show_psu = true, show_relay = true) {
     translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
         if (show_psu)
-            translate([internal_psu_x, internal_psu_y, -box_h + wall_t])
+            translate([internal_psu_x, internal_psu_y, -box_h + wall_t + component_raise_h])
                 rotate([0, 0, internal_psu_rot_z])
                     psu_keepout();
         if (show_psu)
-            translate([internal_converter_x, internal_converter_y, -box_h + wall_t])
+            translate([internal_converter_x, internal_converter_y, -box_h + wall_t + component_raise_h])
                 rotate([0, 0, internal_converter_rot_z])
                     converter_keepout();
         if (show_relay)
@@ -1197,9 +1400,80 @@ module plate() {
         top_panel_8ch(true);
 }
 
+module walls() {
+    echo_hardware(include_floor = true);
+    translate([0, 0, box_h])
+        walls_context();
+}
+
+module floor_part() {
+    echo_hardware(true, true, true, true);
+    translate([0, 0, box_h])
+        floor_context();
+}
+
+module footprint_base(w, d, margin = 12) {
+    translate([-w / 2 - margin, -d / 2 - margin, 0])
+        cube([w + 2 * margin, d + 2 * margin, wall_t]);
+}
+
+module psu_footprint() {
+    echo_hardware(include_psu = true);
+    difference() {
+        union() {
+            footprint_base(psu_view_w, psu_view_d);
+            translate([0, 0, wall_t])
+                rotate([0, 0, internal_psu_rot_z])
+                    psu_airflow_posts();
+            translate([0, 0, wall_t])
+                rotate([0, 0, internal_psu_rot_z])
+                    translate([0, 0, component_raise_h])
+                        psu_retaining_corners();
+        }
+        rotate([0, 0, internal_psu_rot_z])
+            psu_mount_holes(0);
+    }
+}
+
+module converter_footprint() {
+    echo_hardware(include_converter = true);
+    difference() {
+        union() {
+            footprint_base(converter_w, converter_d);
+            translate([0, 0, wall_t])
+                rotate([0, 0, internal_converter_rot_z])
+                    converter_airflow_posts();
+            translate([0, 0, wall_t])
+                rotate([0, 0, internal_converter_rot_z])
+                    translate([0, 0, component_raise_h])
+                        retaining_corners(converter_w, converter_d);
+        }
+        rotate([0, 0, internal_converter_rot_z])
+            converter_mount_holes(0);
+    }
+}
+
+module relay_footprint() {
+    echo_hardware(include_relay = true);
+    difference() {
+        union() {
+            footprint_base(relay_d, relay_w);
+            translate([0, 0, wall_t])
+                rotate([0, 0, internal_relay_rot_z])
+                    retaining_corners(relay_w, relay_d);
+        }
+        rotate([0, 0, internal_relay_rot_z])
+            relay_mount_holes(0);
+    }
+}
+
 module assembly() {
-    if (show_box)
-        box_context();
+    echo_hardware(true, true, true, true);
+    if (show_walls)
+        walls_context();
+
+    if (show_floor)
+        floor_context();
 
     if (show_top_outline)
         translate([box_inner_x, box_inner_y, 0])
@@ -1216,11 +1490,17 @@ module assembly() {
     internal_components(show_psu, show_relay);
 }
 
-module box() {
-    box_context();
-}
-
-if (view == "plate") {
+if (view == "relay_footprint") {
+    relay_footprint();
+} else if (view == "psu_footprint") {
+    psu_footprint();
+} else if (view == "converter_footprint") {
+    converter_footprint();
+} else if (view == "floor") {
+    floor_part();
+} else if (view == "walls") {
+    walls();
+} else if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
     ac_duplex_channel();
@@ -1236,8 +1516,6 @@ if (view == "plate") {
     sub_panel();
 } else if (view == "assembly") {
     assembly();
-} else if (view == "box") {
-    box();
 } else {
     assembly();
 }
