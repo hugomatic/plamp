@@ -186,7 +186,7 @@ retaining_corner_l = 5;
 retaining_corner_t = 4;
 retaining_corner_h = 10;
 psu_side_guide_l = 10;
-psu_side_guide_t = 2;
+psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
 wall_t = 3;
@@ -838,7 +838,7 @@ module sub_panel_8ch() {
 
 
 module walls_context() {
-    color([0.15, 0.45, 0.9, 0.35])
+    color([0.15, 0.45, 0.9, 1])
         difference() {
             union() {
                 difference() {
@@ -860,7 +860,7 @@ module walls_context() {
 }
 
 module floor_context() {
-    color([0.68, 0.68, 0.62, 0.45])
+    color([0.68, 0.68, 0.62, 1])
         difference() {
             union() {
                 translate([wall_t, wall_t, -box_h])
