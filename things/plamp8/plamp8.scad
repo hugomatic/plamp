@@ -856,6 +856,7 @@ module walls_context() {
             panel_corner_screw_holes_in_box();
             panel_corner_nut_traps_in_box();
             floor_wall_tab_negatives();
+            wall_revision_negative();
         }
 }
 
@@ -1212,6 +1213,12 @@ module converter_mount_holes(z0 = -box_h) {
 module box_bottom_revision_negative() {
     translate([box_w / 2, box_d / 2, -box_h])
         mirror([1, 0, 0])
+            write_text(revision_string, box_revision_font, -0.01);
+}
+
+module wall_revision_negative() {
+    translate([box_w / 2, -0.01, -box_h / 2])
+        rotate([-90, 0, 0])
             write_text(revision_string, box_revision_font, -0.01);
 }
 
