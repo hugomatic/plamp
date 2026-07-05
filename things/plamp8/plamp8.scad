@@ -1221,7 +1221,8 @@ module wall_revision_negative() {
     translate([box_w / 2 + wall_revision_x_offset, -0.01, -box_h / 2])
         rotate([-90, 0, 0])
             mirror([1, 0, 0])
-                write_text(revision_string, box_revision_font, -0.01);
+                rotate([0, 0, 180])
+                    write_text(revision_string, box_revision_font, -0.01);
 }
 
 module psu_floor_tie_wrap_anchors_in_box() {
