@@ -304,6 +304,7 @@ label_pocket_r = 3;
 revision_label_w = 26;
 revision_label_h = 9;
 box_revision_font = 6;
+wall_revision_x_offset = -35;
 
 letter_size = 6;
 write_t = 0.75;
@@ -1217,9 +1218,10 @@ module box_bottom_revision_negative() {
 }
 
 module wall_revision_negative() {
-    translate([box_w / 2, -0.01, -box_h / 2])
+    translate([box_w / 2 + wall_revision_x_offset, -0.01, -box_h / 2])
         rotate([-90, 0, 0])
-            write_text(revision_string, box_revision_font, -0.01);
+            mirror([1, 0, 0])
+                write_text(revision_string, box_revision_font, -0.01);
 }
 
 module psu_floor_tie_wrap_anchors_in_box() {
