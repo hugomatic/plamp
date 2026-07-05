@@ -141,8 +141,10 @@ c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
 
-psu_w = 134;
-psu_d = 36;
+// Calibrated from footprint test print: printed PSU diagonal was 138.00 mm
+// against the original 134 x 36 mm footprint diagonal.
+psu_w = 134.73;
+psu_d = 36.2;
 psu_h = 23;
 psu_mount_hole_d = screw_clearance_d(psu_screw_size);
 psu_mount_x_inset = 8.25;
@@ -163,15 +165,17 @@ psu_stop_t = 4;
 psu_stop_h = 4;
 psu_stop_anchor_clearance = 1;
 
-converter_w = 27;
-converter_d = 46;
+// Calibrated from footprint test print: printed 26.74 x 45.78 mm.
+converter_w = 27.26;
+converter_d = 46.22;
 converter_h = 14;
 converter_mount_spacing = 50;
 converter_mount_hole_d = screw_clearance_d(converter_screw_size);
 converter_mount_chamfer_d = screw_chamfer_d(converter_screw_size);
 
-relay_w = 145;
-relay_d = 90;
+// Calibrated from footprint test print: +0.66 mm long side, +0.43 mm short side.
+relay_w = 145.66;
+relay_d = 90.43;
 relay_h = 40;
 relay_mount_hole_d = screw_clearance_d(relay_screw_size);
 relay_mount_x = 135;
