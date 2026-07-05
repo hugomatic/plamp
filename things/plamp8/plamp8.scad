@@ -1078,7 +1078,7 @@ module psu_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_psu_x,
         box_inner_y + top_panel_h / 2 + internal_psu_y,
-        -box_h + wall_t + component_raise_h
+        -box_h + wall_t
     ])
         rotate([0, 0, internal_psu_rot_z])
             psu_retaining_corners();
@@ -1098,7 +1098,7 @@ module converter_retaining_corners_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_converter_x,
         box_inner_y + top_panel_h / 2 + internal_converter_y,
-        -box_h + wall_t + component_raise_h
+        -box_h + wall_t
     ])
         rotate([0, 0, internal_converter_rot_z])
             retaining_corners(converter_w, converter_d);
@@ -1431,8 +1431,7 @@ module psu_footprint() {
                     psu_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_psu_rot_z])
-                    translate([0, 0, component_raise_h])
-                        psu_retaining_corners();
+                    psu_retaining_corners();
         }
         rotate([0, 0, internal_psu_rot_z])
             psu_mount_holes(0);
@@ -1449,8 +1448,7 @@ module converter_footprint() {
                     converter_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
-                    translate([0, 0, component_raise_h])
-                        retaining_corners(converter_w, converter_d);
+                    retaining_corners(converter_w, converter_d);
         }
         rotate([0, 0, internal_converter_rot_z])
             converter_mount_holes(0);
