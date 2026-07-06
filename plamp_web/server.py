@@ -28,7 +28,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -2460,3 +2460,10 @@ def get_timer_dashboard_page() -> HTMLResponse:
             configured_timer_report_periods(),
         )
     )
+
+
+@app.get("/controllers/{controller}", response_class=HTMLResponse)
+def get_controller_page(controller: str) -> HTMLResponse:
+    monitor = get_or_start_monitor(controller)
+    channels = configured_timer_channels().get(controller, [])
+    return HTMLResponse(render_controller_page(controller, channels, monitor.snapshot(), monitor.serial_log()))

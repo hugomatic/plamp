@@ -1337,7 +1337,6 @@ def render_timer_dashboard_page(
     const timerRoles = __ROLES__;
     const timerChannels = __CHANNELS__;
     const timerReportPeriods = __REPORT_PERIODS__;
-    const DEFAULT_PULSE_SECONDS = 5;
     let timerHostSecondsAtLoad = __HOST_SECONDS__;
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
@@ -1369,7 +1368,6 @@ def render_timer_dashboard_page(
     let selectedCameraImageUrl = "";
     let activeEditor = null;
     let pendingTimerRender = false;
-    const serialLogs = new Map();
 
     function formatChangeTime(secondsFromNow) {
       const when = serverDateForSecondsFromNow(secondsFromNow);
@@ -1811,56 +1809,6 @@ def render_timer_dashboard_page(
       }
     }
 
-    function serialLogText(role) {
-      const entries = serialLogs.get(role) || [];
-      if (!entries.length) return "No serial lines captured.";
-      return entries.map((entry) => {
-        const at = entry.at || "";
-        const direction = (entry.direction || "?").toUpperCase();
-        return `${at} ${direction} ${entry.text || ""}`.trim();
-      }).join("\\n");
-    }
-
-    async function refreshSerialLog(role) {
-      try {
-        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/serial-log`);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
-        serialLogs.set(role, Array.isArray(data.entries) ? data.entries : []);
-      } catch (error) {
-        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
-      }
-      renderTimerStatus(true);
-    }
-
-    async function requestReportNow(role) {
-      stopPageAutoRefresh();
-      try {
-        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
-      } catch (error) {
-        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
-      }
-      await refreshSerialLog(role);
-    }
-
-    async function pulseChannel(role, channelId, seconds) {
-      stopPageAutoRefresh();
-      try {
-        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/pulse`, {
-          method: "POST",
-          headers: {"content-type": "application/json"},
-          body: JSON.stringify({seconds}),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
-      } catch (error) {
-        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
-      }
-      await refreshSerialLog(role);
-    }
-
     function renderTimerStatus(force = false) {
       const activeForm = timerBoard.querySelector("#timer-schedule-form");
       if (!force && activeEditor && activeForm && activeForm.contains(document.activeElement)) {
@@ -1932,23 +1880,6 @@ def render_timer_dashboard_page(
           fill.style.width = percent + "%";
           bar.append(fill);
           card.append(top, meta, bar);
-          if (!isEditing && channel.type === "gpio" && channel.visibility !== "hidden") {
-            const controls = document.createElement("div");
-            controls.className = "manual-controls";
-            const seconds = document.createElement("input");
-            seconds.className = "pulse-seconds";
-            seconds.type = "number";
-            seconds.min = "1";
-            seconds.step = "1";
-            seconds.value = String(DEFAULT_PULSE_SECONDS);
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "pulse-channel";
-            button.textContent = "Pulse";
-            button.addEventListener("click", () => pulseChannel(role, channel.id, Number(seconds.value || DEFAULT_PULSE_SECONDS)));
-            controls.append(seconds, button);
-            card.append(controls);
-          }
           if (!hidden || isEditing) {
             devicesGrid.append(card);
             if (isEditing) {
@@ -1989,16 +1920,10 @@ def render_timer_dashboard_page(
           const actions = document.createElement("div");
           actions.className = "controller-actions";
           if (configurableCount > 0) {
-            const report = document.createElement("button");
-            report.type = "button";
-            report.textContent = "Report now";
-            report.addEventListener("click", () => requestReportNow(role));
-            actions.append(report);
-            const refreshLog = document.createElement("button");
-            refreshLog.type = "button";
-            refreshLog.textContent = "Refresh log";
-            refreshLog.addEventListener("click", () => refreshSerialLog(role));
-            actions.append(refreshLog);
+            const pico = document.createElement("a");
+            pico.href = `/controllers/${encodeURIComponent(role)}`;
+            pico.textContent = "Pico";
+            actions.append(pico);
             const edit = document.createElement("button");
             edit.type = "button";
             edit.textContent = "Edit schedule";
@@ -2008,10 +1933,6 @@ def render_timer_dashboard_page(
             actions.textContent = "No configured device schedules.";
           }
           controllerCard.append(actions);
-          const serialLog = document.createElement("pre");
-          serialLog.className = "serial-log";
-          serialLog.textContent = serialLogText(role);
-          controllerCard.append(serialLog);
         }
         if (isEditing) {
           controllerCard.classList.add("controller-card-editing");
@@ -2246,6 +2167,125 @@ def render_timer_dashboard_page(
         .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
+
+
+def render_controller_page(controller: str, channels: list[dict[str, Any]], status: dict[str, Any], serial_entries: list[dict[str, Any]]) -> str:
+    gpio_channels = [
+        channel for channel in channels
+        if str(channel.get("type") or "gpio") == "gpio" and str(channel.get("visibility") or "visible") != "hidden"
+    ]
+    status_rows = "".join(
+        f"<tr><td>{html.escape(str(key))}</td><td><code>{html.escape(str(status.get(key)))}</code></td></tr>"
+        for key in ("state", "connected", "port", "serial", "last_seen", "last_error")
+        if key in status
+    ) or '<tr><td colspan="2">No monitor status.</td></tr>'
+    channel_buttons = "".join(
+        '<button class="pulse-channel" type="button" data-channel="{channel}" data-pin="{pin}">Pulse {label} / pin {pin}</button>'.format(
+            channel=html.escape(str(channel.get("id") or ""), quote=True),
+            pin=html.escape(str(channel.get("pin") or ""), quote=True),
+            label=html.escape(str(channel.get("name") or channel.get("id") or "channel")),
+        )
+        for channel in gpio_channels
+    ) or '<span class="muted">No visible GPIO channels.</span>'
+    log_text = "\n".join(
+        "{at} {direction} {text}".format(
+            at=str(entry.get("at") or ""),
+            direction=str(entry.get("direction") or "?").upper(),
+            text=str(entry.get("text") or ""),
+        ).strip()
+        for entry in serial_entries
+    ) or "No serial lines captured."
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(controller)} Pico</title>
+  {FAVICON_LINK}
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    button {{ background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }}
+    table {{ border-collapse: collapse; margin: 1rem 0; max-width: 760px; width: 100%; }}
+    td, th {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .actions {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }}
+    .status, .muted {{ color: #555; }}
+    .serial-log {{ background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
+  </style>
+</head>
+<body>
+  {MAIN_NAV}
+  <h1>{html.escape(controller)} Pico</h1>
+  <p><a href="/">Back to dashboard</a></p>
+  <section><h2>Status</h2><table><tbody>{status_rows}</tbody></table></section>
+  <section>
+    <h2>Commands</h2>
+    <p id="command-status" class="status">Ready.</p>
+    <div class="actions">
+      <button id="report-now" type="button">Report now</button>
+      {channel_buttons}
+    </div>
+  </section>
+  <section>
+    <h2>Serial log</h2>
+    <button id="refresh-log" type="button">Refresh log</button>
+    <pre id="serial-log" class="serial-log">{html.escape(log_text)}</pre>
+  </section>
+  <script>
+    const controller = {json.dumps(controller)};
+    const statusNode = document.getElementById("command-status");
+    const logNode = document.getElementById("serial-log");
+    function setStatus(text) {{ statusNode.textContent = text; }}
+    function logText(entries) {{
+      if (!Array.isArray(entries) || !entries.length) return "No serial lines captured.";
+      return entries.map((entry) => {{
+        const at = entry.at || "";
+        const direction = (entry.direction || "?").toUpperCase();
+        return `${{at}} ${{direction}} ${{entry.text || ""}}`.trim();
+      }}).join("\\n");
+    }}
+    async function refreshLog() {{
+      const response = await fetch(`/api/controllers/${{encodeURIComponent(controller)}}/serial-log`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      logNode.textContent = logText(data.entries);
+    }}
+    async function postCommand(url, body) {{
+      setStatus("Sending...");
+      const options = {{method: "POST"}};
+      if (body) {{
+        options.headers = {{"content-type": "application/json"}};
+        options.body = JSON.stringify(body);
+      }}
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      setStatus(data.message || "Sent.");
+      await refreshLog();
+    }}
+    document.getElementById("report-now").addEventListener("click", async () => {{
+      try {{ await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/commands/report`); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    document.getElementById("refresh-log").addEventListener("click", async () => {{
+      try {{ await refreshLog(); setStatus("Log refreshed."); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    for (const button of document.querySelectorAll(".pulse-channel")) {{
+      button.addEventListener("click", async () => {{
+        const seconds = prompt(`Pulse pin ${{button.dataset.pin}} for seconds`, "5");
+        if (seconds === null) return;
+        try {{
+          await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/channels/${{encodeURIComponent(button.dataset.channel)}}/pulse`, {{seconds: Number(seconds)}});
+        }} catch (error) {{
+          setStatus(String(error.message || error));
+        }}
+      }});
+    }}
+  </script>
+</body>
+</html>"""
 
 
 def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "") -> str:

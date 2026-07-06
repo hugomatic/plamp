@@ -2,7 +2,7 @@ import json
 import re
 import unittest
 
-from plamp_web.pages import json_script_text, render_api_test_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
@@ -274,7 +274,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channel.editor = structuredClone(device.editor);", html)
         self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
-    def test_timer_dashboard_includes_manual_report_pulse_and_serial_log_controls(self):
+    def test_timer_dashboard_links_to_controller_pico_page(self):
         html = render_timer_dashboard_page(
             ["pump_lights"],
             "12h",
@@ -288,14 +288,31 @@ class PageRenderTests(unittest.TestCase):
             0,
         )
 
-        self.assertIn('const DEFAULT_PULSE_SECONDS = 5;', html)
-        self.assertIn('seconds.className = "pulse-seconds";', html)
-        self.assertIn('button.className = "pulse-channel";', html)
-        self.assertIn('button.textContent = "Pulse";', html)
-        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/pulse`', html)
-        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`', html)
-        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/serial-log`', html)
-        self.assertIn('channel.type === "gpio" && channel.visibility !== "hidden"', html)
+        self.assertIn('pico.href = `/controllers/${encodeURIComponent(role)}`;', html)
+        self.assertIn('pico.textContent = "Pico";', html)
+        self.assertNotIn('textContent = "Report now";', html)
+        self.assertNotIn('textContent = "Refresh log";', html)
+
+    def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
+        html = render_controller_page(
+            "pump_lights",
+            [
+                {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible"},
+                {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible"},
+                {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden"},
+            ],
+            {"state": "connected", "serial": "abc"},
+            [{"at": "now", "direction": "tx", "text": "r"}],
+        )
+
+        self.assertIn('<button id="report-now" type="button">Report now</button>', html)
+        self.assertIn('Pulse Pump / pin 21', html)
+        self.assertNotIn('Pulse Fan / pin 22', html)
+        self.assertNotIn('Pulse Hidden / pin 23', html)
+        self.assertIn('id="refresh-log"', html)
+        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/channels/${encodeURIComponent(button.dataset.channel)}/pulse`', html)
+        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/commands/report`', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}/serial-log`', html)
         self.assertIn('}).join("\\n");', html)
         self.assertNotIn('}).join("\n");', html)
 

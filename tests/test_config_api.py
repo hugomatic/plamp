@@ -661,6 +661,21 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Plamp config", response.body)
 
+    def test_get_controller_page_uses_monitor_status_and_serial_log(self):
+        monitor = DummyMonitor("abc")
+        monitor.serial_log_entries = [{"direction": "tx", "text": "r"}]
+        monitor.snapshot = lambda: {"state": "connected", "serial": "abc"}
+        with (
+            patch.object(server, "get_or_start_monitor", return_value=monitor),
+            patch.object(server, "configured_timer_channels", return_value={"pump_lights": [{"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible"}]}),
+        ):
+            response = server.get_controller_page("pump_lights")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"pump_lights Pico", response.body)
+        self.assertIn(b"Pulse Pump / pin 21", response.body)
+        self.assertIn(b"TX r", response.body)
+
     def test_config_route_is_removed(self):
         routes = {route.path for route in server.app.routes}
         self.assertNotIn("/config", routes)
