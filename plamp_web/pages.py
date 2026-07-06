@@ -1818,7 +1818,7 @@ def render_timer_dashboard_page(
         const at = entry.at || "";
         const direction = (entry.direction || "?").toUpperCase();
         return `${at} ${direction} ${entry.text || ""}`.trim();
-      }).join("\n");
+      }).join("\\n");
     }
 
     async function refreshSerialLog(role) {

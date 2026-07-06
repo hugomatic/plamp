@@ -296,6 +296,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`', html)
         self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/serial-log`', html)
         self.assertIn('channel.type === "gpio" && channel.visibility !== "hidden"', html)
+        self.assertIn('}).join("\\n");', html)
+        self.assertNotIn('}).join("\n");', html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
