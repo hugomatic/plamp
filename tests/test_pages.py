@@ -213,6 +213,51 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("pendingTimerRender = true;", html)
         self.assertIn('controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));', html)
 
+    def test_timer_dashboard_editor_prefers_saved_cycle_values_over_live_progress(self):
+        html = render_timer_dashboard_page(
+            ["pump_lights"],
+            "12h",
+            {
+                "pump_lights": [
+                    {
+                        "id": "pump",
+                        "pin": 3,
+                        "type": "gpio",
+                        "default_editor": "cycle",
+                        "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 1800, "start_at_seconds": 0, "unit": "minutes"},
+                    }
+                ]
+            },
+            0,
+        )
+
+        self.assertIn("function cycleEditorValues(channel, event) {", html)
+        self.assertIn('const editor = channel.editor && typeof channel.editor === "object" ? channel.editor : null;', html)
+        self.assertIn('if (editor?.kind === "cycle" && Number.isFinite(Number(editor.on_seconds)) && Number.isFinite(Number(editor.off_seconds))) {', html)
+        self.assertIn('const unit = ["seconds", "minutes", "hours"].includes(editor.unit) ? editor.unit : chooseSharedUnit([onSeconds, offSeconds, startAtSeconds]);', html)
+        self.assertIn("const cycleValues = cycleEditorValues(channel, event);", html)
+        self.assertIn('value="${cycleValues.onValue}"', html)
+        self.assertIn('value="${cycleValues.offValue}"', html)
+        self.assertIn('value="${cycleValues.startAtValue}"', html)
+
+    def test_timer_dashboard_saves_cycle_editor_values_and_unit_to_config(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn('device.editor = {kind: "cycle", on_seconds: onSeconds, off_seconds: offSeconds, start_at_seconds: startAtSeconds, unit: cycleUnit};', html)
+        self.assertIn("const cycleUnit = block.querySelector(\".editor-cycle-unit\").value;", html)
+        self.assertIn("const onSeconds = Number(block.querySelector(\".editor-on-value\").value) * multiplier;", html)
+        self.assertIn("const offSeconds = Number(block.querySelector(\".editor-off-value\").value) * multiplier;", html)
+        self.assertIn("const startAtSeconds = Number(block.querySelector(\".editor-start-at\").value) * multiplier;", html)
+
+    def test_timer_dashboard_formats_change_time_from_server_clock(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 90)
+
+        self.assertIn("function formatDuration(secondsValue) {", html)
+        self.assertIn('return parts.length ? parts.join(" ") : "0s";', html)
+        self.assertIn("function serverDateForSecondsFromNow(secondsFromNow) {", html)
+        self.assertIn("const deltaSeconds = targetSeconds - hostSecondsNow();", html)
+        self.assertIn('return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";', html)
+
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

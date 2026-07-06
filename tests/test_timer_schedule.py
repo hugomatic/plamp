@@ -16,7 +16,7 @@ class TimerScheduleTests(unittest.TestCase):
             "controllers": {
                 "sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
                     "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "pwm"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
-                    "fan": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "cycle"}}},
+                    "fan": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "cycle", "on_seconds": 300, "off_seconds": 1800, "start_at_seconds": 0, "unit": "minutes"}}},
                 }},
                 "other": {"config": {"pico_serial": "def456"}, "devices": {
                     "pump": {"type": "scheduled_output", "config": {"pin": 4}, "settings": {"schedule": {"kind": "cycle"}}},
@@ -34,8 +34,8 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0},
-                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 1},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
+                {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 1, "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 1800, "start_at_seconds": 0, "unit": "minutes"}},
             ],
         )
 
@@ -49,7 +49,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
             ],
         )
 
@@ -64,7 +64,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0},
+                {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
             ],
         )
 
@@ -79,8 +79,8 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
-                {"role": "sprouter", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "disabled", "visibility": "visible", "programming": "disabled", "display_order": 0},
-                {"role": "sprouter", "id": "lights", "name": "lights", "pin": 3, "type": "gpio", "default_editor": "hidden", "visibility": "hidden", "programming": "disabled", "display_order": 1},
+                {"role": "sprouter", "id": "pump", "name": "pump", "pin": 2, "type": "gpio", "default_editor": "disabled", "visibility": "visible", "programming": "disabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}},
+                {"role": "sprouter", "id": "lights", "name": "lights", "pin": 3, "type": "gpio", "default_editor": "hidden", "visibility": "hidden", "programming": "disabled", "display_order": 1, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}},
             ],
         )
 

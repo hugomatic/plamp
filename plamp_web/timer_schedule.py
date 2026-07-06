@@ -91,6 +91,7 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
                 "visibility": visibility,
                 "programming": programming,
                 "display_order": device.get("display_order", len(result)),
+                "editor": dict(schedule) if isinstance(schedule, dict) else {"kind": "cycle"},
             }
         )
     return result

@@ -349,6 +349,9 @@ def _validate_schedule(value: object, label: str) -> dict:
         schedule["start_at_seconds"] = _required_non_negative_int(
             value.get("start_at_seconds", 0), f"{label} start_at_seconds"
         )
+        unit = value.get("unit")
+        if unit in {"seconds", "minutes", "hours"}:
+            schedule["unit"] = unit
     elif kind == "daily_window":
         for key in ("on_time", "off_time"):
             raw = value.get(key)

@@ -1367,17 +1367,39 @@ def render_timer_dashboard_page(
     let pendingTimerRender = false;
 
     function formatChangeTime(secondsFromNow) {
-      const when = new Date(Date.now() + secondsFromNow * 1000);
+      const when = serverDateForSecondsFromNow(secondsFromNow);
       if (clockTimeFormat === "24h") {
         return when.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
       }
       return when.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
     }
 
+    function formatDuration(secondsValue) {
+      const seconds = Math.max(0, Math.ceil(Number(secondsValue)));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      const parts = [];
+      if (hours) parts.push(hours + "h");
+      if (minutes) parts.push(minutes + "m");
+      if (remainingSeconds || !parts.length) parts.push(remainingSeconds + "s");
+      return parts.length ? parts.join(" ") : "0s";
+    }
+
+    function serverDateForSecondsFromNow(secondsFromNow) {
+      const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
+      const targetSeconds = (hostSecondsNow() + seconds) % 86400;
+      const deltaSeconds = targetSeconds - hostSecondsNow();
+      const date = new Date(Date.now() + deltaSeconds * 1000);
+      date.setHours(Math.floor(targetSeconds / 3600), Math.floor((targetSeconds % 3600) / 60), Math.floor(targetSeconds % 60), 0);
+      return date;
+    }
+
     function formatChangeLabel(secondsFromNow) {
       if (!Number.isFinite(Number(secondsFromNow))) return "?";
       const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
-      return formatChangeTime(seconds) + " (" + seconds + " secs)";
+      const targetSeconds = (hostSecondsNow() + seconds) % 86400;
+      return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";
     }
 
     function secondsToClock(seconds) {
@@ -1554,6 +1576,22 @@ def render_timer_dashboard_page(
       return {on: secondsToTimeInput(onSeconds), off: secondsToTimeInput(onSeconds + durations.on)};
     }
 
+    function cycleEditorValues(channel, event) {
+      const editor = channel.editor && typeof channel.editor === "object" ? channel.editor : null;
+      if (editor?.kind === "cycle" && Number.isFinite(Number(editor.on_seconds)) && Number.isFinite(Number(editor.off_seconds))) {
+        const onSeconds = Math.max(1, Number(editor.on_seconds));
+        const offSeconds = Math.max(1, Number(editor.off_seconds));
+        const startAtSeconds = Math.max(0, Number(editor.start_at_seconds ?? 0));
+        const unit = ["seconds", "minutes", "hours"].includes(editor.unit) ? editor.unit : chooseSharedUnit([onSeconds, offSeconds, startAtSeconds]);
+        const divisor = unitMultiplier(unit);
+        return {onValue: onSeconds / divisor, offValue: offSeconds / divisor, startAtValue: startAtSeconds / divisor, unit};
+      }
+      const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
+      const unit = chooseSharedUnit([durations.on, durations.off]);
+      const divisor = unitMultiplier(unit);
+      return {onValue: durations.on / divisor, offValue: durations.off / divisor, startAtValue: 0, unit};
+    }
+
     function showEditorMessage(message, className, text) {
       message.className = "editor-message" + (className ? " " + className : "");
       message.textContent = text;
@@ -1602,11 +1640,7 @@ def render_timer_dashboard_page(
     }
 
     function scheduleEditorBlock(role, channel, event) {
-      const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
-      const startAtSeconds = Number(event?.cycle_t);
-      const safeStartAt = Number.isFinite(startAtSeconds) && startAtSeconds >= 0 ? startAtSeconds : 0;
-      const sharedUnit = chooseSharedUnit([durations.on, durations.off, safeStartAt]);
-      const divisor = unitMultiplier(sharedUnit);
+      const cycleValues = cycleEditorValues(channel, event);
       const clock = clockValuesForEvent(event);
       const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
       return `
@@ -1623,10 +1657,10 @@ def render_timer_dashboard_page(
             </label>
           </div>
           <div class="editor-row cycle-fields">
-            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${durations.on / divisor}"></label>
-            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${durations.off / divisor}"></label>
-            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="${safeStartAt / divisor}"></label>
-            <label>Unit <select class="editor-cycle-unit" name="cycleUnit-${escapeHtml(channel.id)}"><option value="seconds"${sharedUnit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${sharedUnit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${sharedUnit === "hours" ? " selected" : ""}>hours</option></select></label>
+            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${cycleValues.onValue}"></label>
+            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${cycleValues.offValue}"></label>
+            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="${cycleValues.startAtValue}"></label>
+            <label>Unit <select class="editor-cycle-unit" name="cycleUnit-${escapeHtml(channel.id)}"><option value="seconds"${cycleValues.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${cycleValues.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${cycleValues.unit === "hours" ? " selected" : ""}>hours</option></select></label>
           </div>
           <div class="editor-row clock-fields">
             <label>On at <input class="editor-on-time" name="onTime-${escapeHtml(channel.id)}" type="time" value="${clock.on}"></label>
@@ -1682,13 +1716,24 @@ def render_timer_dashboard_page(
           device.visibility = mode === "hidden" ? "hidden" : "visible";
           device.programming = mode === "disabled" ? "disabled" : "enabled";
           const existingEditor = structuredClone(device.editor || {});
-          device.editor = mode === "clock_window"
-            ? (existingEditor.kind === "daily_window" && existingEditor.on_time && existingEditor.off_time
-                ? existingEditor
-                : {kind: "daily_window", on_time: "06:00", off_time: "18:00"})
-            : (mode === "cycle" || mode === "disabled" || mode === "hidden")
-              ? (existingEditor.kind ? existingEditor : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0})
-              : existingEditor;
+          if (mode === "cycle") {
+            const cycleUnit = block.querySelector(".editor-cycle-unit").value;
+            const multiplier = unitMultiplier(cycleUnit);
+            const onSeconds = Number(block.querySelector(".editor-on-value").value) * multiplier;
+            const offSeconds = Number(block.querySelector(".editor-off-value").value) * multiplier;
+            const startAtSeconds = Number(block.querySelector(".editor-start-at").value) * multiplier;
+            device.editor = {kind: "cycle", on_seconds: onSeconds, off_seconds: offSeconds, start_at_seconds: startAtSeconds, unit: cycleUnit};
+          } else if (mode === "clock_window") {
+            device.editor = {
+              kind: "daily_window",
+              on_time: block.querySelector(".editor-on-time").value || existingEditor.on_time || "06:00",
+              off_time: block.querySelector(".editor-off-time").value || existingEditor.off_time || "18:00",
+            };
+          } else if (mode === "disabled" || mode === "hidden") {
+            device.editor = existingEditor.kind ? existingEditor : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0};
+          } else {
+            device.editor = existingEditor;
+          }
           controller.settings.devices[channelId] = device;
         }
         controllers[role] = controller;
