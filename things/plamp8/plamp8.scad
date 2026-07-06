@@ -310,10 +310,13 @@ letter_size = 6;
 write_t = 0.75;
 revision_string = "dev";
 
-ac_devices = ["Pump", "Lights", "Fan", "Aux"];
-ac_details = ["CH5 GP21 110V AC", "CH7 GP20 110V AC", "CH6 GP19 110V AC", "CH8 GP18 110V AC"];
 dc_devices = ["PH Up", "PH Down", "Agitator", "Nutrients"];
-dc_details = ["CH1 GP17 12V DC", "CH2 GP16 12V DC", "CH3 GP15 12V DC", "CH4 GP14 12V DC"];
+dc_details = ["CH1 GP21 12V DC", "CH2 GP20 12V DC", "CH3 GP19 12V DC", "CH4 GP18 12V DC"];
+
+ac_devices = ["Pump", "Lights", "Fan", "Aux"];
+ac_details = ["CH5 GP17 110V AC", "CH7 GP15 110V AC", "CH6 GP16 110V AC", "CH8 GP14 110V AC"];
+
+
 
 
 module write_text(string, font_size = letter_size, z0 = -0.25) {
