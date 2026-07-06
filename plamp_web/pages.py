@@ -1514,6 +1514,11 @@ def render_timer_dashboard_page(
       return message;
     }
 
+    function applyScheduleResponseState(role, parsed) {
+      if (!parsed?.state || !Array.isArray(parsed.state.devices)) return;
+      timerMessages.set(role, {devices: parsed.state.devices});
+    }
+
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
       const eventPin = Number(event?.pin);
@@ -1782,6 +1787,7 @@ def render_timer_dashboard_page(
           if (!response.ok) {
             throw new Error(`${channelId}: ${parsed?.detail || text || `${response.status} ${response.statusText}`}`);
           }
+          applyScheduleResponseState(role, parsed);
           lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
         }
         for (const block of blocks) {

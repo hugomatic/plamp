@@ -258,6 +258,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("const deltaSeconds = targetSeconds - hostSecondsNow();", html)
         self.assertIn('return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";', html)
 
+    def test_timer_dashboard_uses_schedule_response_state_immediately(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("function applyScheduleResponseState(role, parsed) {", html)
+        self.assertIn("if (!parsed?.state || !Array.isArray(parsed.state.devices)) return;", html)
+        self.assertIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
+        self.assertIn("applyScheduleResponseState(role, parsed);", html)
+
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
