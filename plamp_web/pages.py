@@ -8,8 +8,28 @@ from typing import Any
 
 GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
 GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
-MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
 FAVICON_LINK = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+
+
+def main_nav(controller_ids: list[str] | None = None) -> str:
+    links = ['<a href="/">Plamp</a>']
+    for controller_id in controller_ids or []:
+        links.append(
+            '<a href="/controllers/{href}">{label}</a>'.format(
+                href=html.escape(controller_id, quote=True),
+                label=html.escape(controller_id),
+            )
+        )
+    links.extend([
+        '<a href="/settings">Settings</a>',
+        '<a href="/system">System</a>',
+        '<a href="/api/test">API test</a>',
+        f'<a href="{GITHUB_REPO_URL}">GitHub</a>',
+    ])
+    return "<nav>" + " | ".join(links) + "</nav>"
+
+
+MAIN_NAV = main_nav()
 
 
 def relative_time_label(value: object) -> str | None:
@@ -437,7 +457,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_settings_page(summary: dict[str, Any]) -> str:
+def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | None = None) -> str:
     config = summary.get("config") if isinstance(summary.get("config"), dict) else {}
     if isinstance(config.get("devices"), dict):
         normalized_controllers: dict[str, dict[str, Any]] = {}
@@ -769,7 +789,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_title)}</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <p><a href="{GITHUB_NEW_ISSUE_URL}">Report an issue</a></p>
@@ -967,7 +987,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
+def render_system_info_page(system: dict[str, Any], logs_text: str = "", controller_ids: list[str] | None = None) -> str:
     host = system.get("host") if isinstance(system.get("host"), dict) else {}
     host_time = system.get("host_time") if isinstance(system.get("host_time"), dict) else {}
     software = system.get("software") if isinstance(system.get("software"), dict) else {}
@@ -1103,7 +1123,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_name)}</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <div class="system-page">
@@ -1920,10 +1940,6 @@ def render_timer_dashboard_page(
           const actions = document.createElement("div");
           actions.className = "controller-actions";
           if (configurableCount > 0) {
-            const pico = document.createElement("a");
-            pico.href = `/controllers/${encodeURIComponent(role)}`;
-            pico.textContent = "Pico";
-            actions.append(pico);
             const edit = document.createElement("button");
             edit.type = "button";
             edit.textContent = "Edit schedule";
@@ -2157,7 +2173,7 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__MAIN_NAV__", MAIN_NAV)
+        template.replace("__MAIN_NAV__", main_nav(roles))
         .replace("__PAGE_NAME__", html.escape(page_name))
         .replace("__FAVICON_LINK__", FAVICON_LINK)
         .replace("__TIME_FORMAT__", json.dumps(time_format))
@@ -2169,7 +2185,7 @@ def render_timer_dashboard_page(
     )
 
 
-def render_controller_page(controller: str, channels: list[dict[str, Any]], status: dict[str, Any], serial_entries: list[dict[str, Any]]) -> str:
+def render_controller_page(controller: str, channels: list[dict[str, Any]], status: dict[str, Any], serial_entries: list[dict[str, Any]], controller_ids: list[str] | None = None) -> str:
     gpio_channels = [
         channel for channel in channels
         if str(channel.get("type") or "gpio") == "gpio" and str(channel.get("visibility") or "visible") != "hidden"
@@ -2193,7 +2209,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
             direction=str(entry.get("direction") or "?").upper(),
             text=str(entry.get("text") or ""),
         ).strip()
-        for entry in serial_entries
+        for entry in reversed(serial_entries)
     ) or "No serial lines captured."
     return f"""<!doctype html>
 <html lang="en">
@@ -2215,7 +2231,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(controller)} Pico</h1>
   <p><a href="/">Back to dashboard</a></p>
   <section><h2>Status</h2><table><tbody>{status_rows}</tbody></table></section>
@@ -2239,7 +2255,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     function setStatus(text) {{ statusNode.textContent = text; }}
     function logText(entries) {{
       if (!Array.isArray(entries) || !entries.length) return "No serial lines captured.";
-      return entries.map((entry) => {{
+      return [...entries].reverse().map((entry) => {{
         const at = entry.at || "";
         const direction = (entry.direction || "?").toUpperCase();
         return `${{at}} ${{direction}} ${{entry.text || ""}}`.trim();
@@ -2288,7 +2304,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
 </html>"""
 
 
-def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "") -> str:
+def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "", controller_ids: list[str] | None = None) -> str:
     page_title = f"{hostname} API test" if hostname else "Plamp API test"
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_get_curl = f"curl http://localhost:8000/api/controllers/{default_role}"
@@ -2342,7 +2358,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_title)}</h1>
   <p>This page is the human-friendly API guide. For machine-readable integration, use <a href="/openapi.json"><code>/openapi.json</code></a>. For interactive FastAPI docs, use <a href="/docs"><code>/docs</code></a>.</p>
 

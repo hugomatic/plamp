@@ -58,7 +58,7 @@ class PageRenderTests(unittest.TestCase):
         }
 
         pages = [
-            render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0),
+            render_timer_dashboard_page([], "12h", {}, 0),
             render_settings_page(settings_summary),
             render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h"),
         ]
@@ -71,6 +71,27 @@ class PageRenderTests(unittest.TestCase):
         html = render_system_info_page({"host": {"hostname": "sprout"}})
         self.assertIn(expected, html)
         self.assertEqual(html.count("<nav>"), 1)
+
+    def test_pages_can_include_controller_links_in_nav(self):
+        expected = '<a href="/controllers/octo_relay">octo_relay</a>'
+        settings_summary = {
+            "config": {"controllers": {}, "devices": {}, "cameras": {}},
+            "detected": {"picos": [], "cameras": []},
+            "host": {"hostname": "plamp", "network": []},
+            "picos": [],
+            "software": {},
+            "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+        }
+
+        pages = [
+            render_timer_dashboard_page(["octo_relay"], "12h", {"octo_relay": []}, 0),
+            render_settings_page(settings_summary, ["octo_relay"]),
+            render_system_info_page({"host": {"hostname": "sprout"}}, controller_ids=["octo_relay"]),
+            render_api_test_page(["octo_relay"], "octo_relay", "{}", "12h", controller_ids=["octo_relay"]),
+        ]
+
+        for page in pages:
+            self.assertIn(expected, page)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -274,7 +295,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channel.editor = structuredClone(device.editor);", html)
         self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
-    def test_timer_dashboard_links_to_controller_pico_page(self):
+    def test_timer_dashboard_keeps_manual_controls_off_cards(self):
         html = render_timer_dashboard_page(
             ["pump_lights"],
             "12h",
@@ -288,10 +309,10 @@ class PageRenderTests(unittest.TestCase):
             0,
         )
 
-        self.assertIn('pico.href = `/controllers/${encodeURIComponent(role)}`;', html)
-        self.assertIn('pico.textContent = "Pico";', html)
+        self.assertIn('<a href="/controllers/pump_lights">pump_lights</a>', html)
         self.assertNotIn('textContent = "Report now";', html)
         self.assertNotIn('textContent = "Refresh log";', html)
+        self.assertNotIn('textContent = "Pico";', html)
 
     def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
         html = render_controller_page(

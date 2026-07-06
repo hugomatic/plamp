@@ -2047,7 +2047,7 @@ def get_system() -> dict[str, Any]:
 
 @app.get("/system", response_class=HTMLResponse)
 def get_system_page() -> str:
-    return render_system_info_page(system_response(), read_log_tail(200))
+    return render_system_info_page(system_response(), read_log_tail(200), configured_timer_roles())
 
 
 def get_status(path: list[str] | None = None, stream: bool = False) -> Any:
@@ -2429,7 +2429,7 @@ def api_test_page_response() -> HTMLResponse:
     roles = configured_timer_roles()
     default_role = roles[0] if roles else "pump_lights"
     default_payload = default_timer_payload_for_api_test(default_role if roles else None)
-    return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format(), socket.gethostname()))
+    return HTMLResponse(render_api_test_page(roles, default_role, default_payload, configured_time_format(), socket.gethostname(), roles))
 
 
 @app.get("/api/test", response_class=HTMLResponse)
@@ -2444,7 +2444,7 @@ def get_settings_json() -> dict[str, Any]:
 
 @app.get("/settings", response_class=HTMLResponse)
 def get_settings_page() -> HTMLResponse:
-    return HTMLResponse(render_settings_page(settings_summary()))
+    return HTMLResponse(render_settings_page(settings_summary(), configured_timer_roles()))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -2466,4 +2466,4 @@ def get_timer_dashboard_page() -> HTMLResponse:
 def get_controller_page(controller: str) -> HTMLResponse:
     monitor = get_or_start_monitor(controller)
     channels = configured_timer_channels().get(controller, [])
-    return HTMLResponse(render_controller_page(controller, channels, monitor.snapshot(), monitor.serial_log()))
+    return HTMLResponse(render_controller_page(controller, channels, monitor.snapshot(), monitor.serial_log(), configured_timer_roles()))
