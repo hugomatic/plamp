@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 import time as pytime
@@ -644,6 +645,15 @@ class ApplyCommand:
 
 
 @dataclass
+class SerialCommand:
+    text: str
+    done: threading.Event = field(default_factory=threading.Event)
+    result: dict[str, Any] | None = None
+    error_status: int | None = None
+    error_detail: Any = None
+
+
+@dataclass
 class CameraCommand:
     camera_id: str | None
     capture_kind: str
@@ -830,9 +840,10 @@ class PicoMonitor:
     def __init__(self, role: str, pico_serial: str):
         self.role = role
         self.pico_serial = pico_serial
-        self.commands: queue.Queue[ApplyCommand] = queue.Queue()
+        self.commands: queue.Queue[ApplyCommand | SerialCommand] = queue.Queue()
         self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
         self.lock = threading.Lock()
+        self.serial_entries = deque(maxlen=200)
         self.stop_event = threading.Event()
         self.wake_event = threading.Event()
         self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
@@ -887,6 +898,27 @@ class PicoMonitor:
                     subscriber.put_nowait(payload)
                 except queue.Full:
                     pass
+
+    def record_serial(self, direction: str, text: str) -> dict[str, Any]:
+        entry = {
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "direction": direction,
+            "role": self.role,
+            "text": text,
+        }
+        with self.lock:
+            self.serial_entries.append(entry)
+        if direction == "tx":
+            LOGGER.info("pico-cmd tx role=%s cmd=%r", self.role, text)
+        elif direction == "rx":
+            LOGGER.info("pico-cmd rx role=%s text=%r", self.role, text)
+        else:
+            LOGGER.warning("pico-cmd err role=%s text=%r", self.role, text)
+        return entry
+
+    def serial_log(self) -> list[dict[str, Any]]:
+        with self.lock:
+            return list(self.serial_entries)
 
     def update_status(self, state: str, *, connected: bool | None = None, port: str | None = None, error: Any = None) -> None:
         now = datetime.now().isoformat(timespec="seconds")
@@ -949,6 +981,7 @@ class PicoMonitor:
         text = raw.decode("utf-8", errors="replace").strip()
         if not text:
             return
+        self.record_serial("rx", text)
         now = datetime.now().isoformat(timespec="seconds")
         try:
             report = json.loads(text)
@@ -958,6 +991,7 @@ class PicoMonitor:
                 self.summary["last_seen"] = now
                 self.summary["last_error"] = error
             LOGGER.warning("pico monitor %s invalid JSON: %s", self.role, text)
+            self.record_serial("err", error)
             self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
             return
         reduced = reduce_report(report)
@@ -980,6 +1014,18 @@ class PicoMonitor:
             raise HTTPException(status_code=command.error_status, detail=command.error_detail)
         if command.result is None:
             raise HTTPException(status_code=500, detail="Pico apply finished without a result")
+        return command.result
+
+    def send_serial_command(self, text: str, timeout: float = 5.0) -> dict[str, Any]:
+        command = SerialCommand(text=text)
+        self.commands.put(command)
+        self.wake_event.set()
+        if not command.done.wait(timeout=timeout):
+            raise HTTPException(status_code=504, detail="timed out waiting for Pico command send")
+        if command.error_status is not None:
+            raise HTTPException(status_code=command.error_status, detail=command.error_detail)
+        if command.result is None:
+            raise HTTPException(status_code=500, detail="Pico command finished without a result")
         return command.result
 
     def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> serial.Serial | None:
@@ -1030,6 +1076,33 @@ class PicoMonitor:
         time.sleep(0.5)
         return None
 
+    def handle_serial_command(self, command: SerialCommand, conn: serial.Serial | None) -> serial.Serial | None:
+        if conn is None or not conn.is_open:
+            conn = self.open_serial()
+        if conn is None:
+            command.error_status = 409
+            command.error_detail = f"Pico for role {self.role} is not connected: {self.pico_serial}"
+            command.done.set()
+            self.record_serial("err", str(command.error_detail))
+            return None
+        text = command.text.strip()
+        try:
+            conn.write((text + "\n").encode("utf-8"))
+            conn.flush()
+        except (OSError, serial.SerialException) as exc:
+            port = getattr(conn, "port", None)
+            self.close_serial(conn)
+            command.error_status = 502
+            command.error_detail = str(exc)
+            command.done.set()
+            self.update_status("disconnected", connected=False, port=port, error=str(exc))
+            self.record_serial("err", str(exc))
+            return None
+        self.record_serial("tx", text)
+        command.result = {"role": self.role, "serial": self.pico_serial, "command": text}
+        command.done.set()
+        return conn
+
     def run(self) -> None:
         conn: serial.Serial | None = None
         retry_sleep = 1.0
@@ -1040,7 +1113,10 @@ class PicoMonitor:
                 except queue.Empty:
                     command = None
                 if command is not None:
-                    conn = self.handle_apply(command, conn)
+                    if isinstance(command, ApplyCommand):
+                        conn = self.handle_apply(command, conn)
+                    else:
+                        conn = self.handle_serial_command(command, conn)
                     continue
 
                 if conn is None or not conn.is_open:
@@ -1150,6 +1226,10 @@ def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
             temp_path.unlink()
         except OSError:
             pass
+
+
+def send_timer_command(role: str, command: str) -> dict[str, Any]:
+    return get_or_start_monitor(role).send_serial_command(command)
 
 
 def sse_message(event: str, data: dict[str, Any]) -> str:
@@ -2274,6 +2354,64 @@ def post_controller_apply(controller: str) -> dict[str, Any]:
         "pico": sent,
         "state": state_with_current_values(validated),
     }
+
+
+@app.post("/api/controllers/{controller}/commands/report")
+def post_controller_report_command(controller: str) -> dict[str, Any]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="report command is only supported for pico_scheduler controllers")
+    result = send_timer_command(controller, "r")
+    response = {"controller": controller, "success": True, "message": "report requested"}
+    response.update(result)
+    return response
+
+
+def pulse_channel_command(controller: str, channel_id: str, payload: dict[str, Any]) -> tuple[str, int, int]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="pulse is only supported for pico_scheduler controllers")
+    config = load_config()
+    devices = scheduler_devices_for_controller(config, controller)
+    device = devices.get(channel_id)
+    if not isinstance(device, dict):
+        raise HTTPException(status_code=404, detail=f"unknown channel: {channel_id}")
+    if str(device.get("visibility") or "visible") == "hidden":
+        raise HTTPException(status_code=422, detail="hidden channels cannot be pulsed")
+    if str(device.get("output_type") or "gpio") != "gpio":
+        raise HTTPException(status_code=422, detail="pulse only supports gpio channels")
+    try:
+        pin = int(device["pin"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="channel has no valid GPIO pin") from exc
+    try:
+        seconds = int((payload or {}).get("seconds", 5))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="pulse seconds must be an integer") from exc
+    if seconds <= 0:
+        raise HTTPException(status_code=422, detail="pulse seconds must be > 0")
+    return f"p {pin} {seconds}", pin, seconds
+
+
+@app.post("/api/controllers/{controller}/channels/{channel_id}/pulse")
+def post_controller_channel_pulse(controller: str, channel_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    command, pin, seconds = pulse_channel_command(controller, channel_id, payload)
+    result = send_timer_command(controller, command)
+    response = {
+        "controller": controller,
+        "channel": channel_id,
+        "pin": pin,
+        "seconds": seconds,
+        "success": True,
+        "message": f"pulse requested for pin {pin}",
+    }
+    response.update(result)
+    return response
+
+
+@app.get("/api/controllers/{controller}/serial-log")
+def get_controller_serial_log(controller: str) -> dict[str, Any]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="serial log is only supported for pico_scheduler controllers")
+    return {"controller": controller, "entries": get_or_start_monitor(controller).serial_log()}
 
 
 def default_timer_payload_for_api_test(default_role: str | None) -> str:

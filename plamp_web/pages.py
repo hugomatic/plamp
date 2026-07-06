@@ -1291,6 +1291,9 @@ def render_timer_dashboard_page(
     .editor-note { color: #555; font-size: .9rem; }
     .editor-error { color: #9a3412; font-weight: 600; }
     .editor-success { color: #166534; font-weight: 600; }
+    .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+    .manual-controls input { width: 5rem; }
+    .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 12rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -1334,6 +1337,7 @@ def render_timer_dashboard_page(
     const timerRoles = __ROLES__;
     const timerChannels = __CHANNELS__;
     const timerReportPeriods = __REPORT_PERIODS__;
+    const DEFAULT_PULSE_SECONDS = 5;
     let timerHostSecondsAtLoad = __HOST_SECONDS__;
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
@@ -1365,6 +1369,7 @@ def render_timer_dashboard_page(
     let selectedCameraImageUrl = "";
     let activeEditor = null;
     let pendingTimerRender = false;
+    const serialLogs = new Map();
 
     function formatChangeTime(secondsFromNow) {
       const when = serverDateForSecondsFromNow(secondsFromNow);
@@ -1806,6 +1811,56 @@ def render_timer_dashboard_page(
       }
     }
 
+    function serialLogText(role) {
+      const entries = serialLogs.get(role) || [];
+      if (!entries.length) return "No serial lines captured.";
+      return entries.map((entry) => {
+        const at = entry.at || "";
+        const direction = (entry.direction || "?").toUpperCase();
+        return `${at} ${direction} ${entry.text || ""}`.trim();
+      }).join("\n");
+    }
+
+    async function refreshSerialLog(role) {
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/serial-log`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
+        serialLogs.set(role, Array.isArray(data.entries) ? data.entries : []);
+      } catch (error) {
+        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
+      }
+      renderTimerStatus(true);
+    }
+
+    async function requestReportNow(role) {
+      stopPageAutoRefresh();
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
+      } catch (error) {
+        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
+      }
+      await refreshSerialLog(role);
+    }
+
+    async function pulseChannel(role, channelId, seconds) {
+      stopPageAutoRefresh();
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/pulse`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify({seconds}),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
+      } catch (error) {
+        serialLogs.set(role, [{direction: "err", text: String(error.message || error)}]);
+      }
+      await refreshSerialLog(role);
+    }
+
     function renderTimerStatus(force = false) {
       const activeForm = timerBoard.querySelector("#timer-schedule-form");
       if (!force && activeEditor && activeForm && activeForm.contains(document.activeElement)) {
@@ -1877,6 +1932,23 @@ def render_timer_dashboard_page(
           fill.style.width = percent + "%";
           bar.append(fill);
           card.append(top, meta, bar);
+          if (!isEditing && channel.type === "gpio" && channel.visibility !== "hidden") {
+            const controls = document.createElement("div");
+            controls.className = "manual-controls";
+            const seconds = document.createElement("input");
+            seconds.className = "pulse-seconds";
+            seconds.type = "number";
+            seconds.min = "1";
+            seconds.step = "1";
+            seconds.value = String(DEFAULT_PULSE_SECONDS);
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "pulse-channel";
+            button.textContent = "Pulse";
+            button.addEventListener("click", () => pulseChannel(role, channel.id, Number(seconds.value || DEFAULT_PULSE_SECONDS)));
+            controls.append(seconds, button);
+            card.append(controls);
+          }
           if (!hidden || isEditing) {
             devicesGrid.append(card);
             if (isEditing) {
@@ -1917,6 +1989,16 @@ def render_timer_dashboard_page(
           const actions = document.createElement("div");
           actions.className = "controller-actions";
           if (configurableCount > 0) {
+            const report = document.createElement("button");
+            report.type = "button";
+            report.textContent = "Report now";
+            report.addEventListener("click", () => requestReportNow(role));
+            actions.append(report);
+            const refreshLog = document.createElement("button");
+            refreshLog.type = "button";
+            refreshLog.textContent = "Refresh log";
+            refreshLog.addEventListener("click", () => refreshSerialLog(role));
+            actions.append(refreshLog);
             const edit = document.createElement("button");
             edit.type = "button";
             edit.textContent = "Edit schedule";
@@ -1926,6 +2008,10 @@ def render_timer_dashboard_page(
             actions.textContent = "No configured device schedules.";
           }
           controllerCard.append(actions);
+          const serialLog = document.createElement("pre");
+          serialLog.className = "serial-log";
+          serialLog.textContent = serialLogText(role);
+          controllerCard.append(serialLog);
         }
         if (isEditing) {
           controllerCard.classList.add("controller-card-editing");

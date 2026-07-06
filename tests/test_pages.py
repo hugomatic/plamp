@@ -274,6 +274,29 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channel.editor = structuredClone(device.editor);", html)
         self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
+    def test_timer_dashboard_includes_manual_report_pulse_and_serial_log_controls(self):
+        html = render_timer_dashboard_page(
+            ["pump_lights"],
+            "12h",
+            {
+                "pump_lights": [
+                    {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible", "programming": "enabled"},
+                    {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible", "programming": "enabled"},
+                    {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden", "programming": "enabled"},
+                ]
+            },
+            0,
+        )
+
+        self.assertIn('const DEFAULT_PULSE_SECONDS = 5;', html)
+        self.assertIn('seconds.className = "pulse-seconds";', html)
+        self.assertIn('button.className = "pulse-channel";', html)
+        self.assertIn('button.textContent = "Pulse";', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/pulse`', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(role)}/serial-log`', html)
+        self.assertIn('channel.type === "gpio" && channel.visibility !== "hidden"', html)
+
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

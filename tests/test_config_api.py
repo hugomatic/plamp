@@ -17,6 +17,8 @@ class DummyMonitor:
         self.started = False
         self.stopped = False
         self.joined = False
+        self.sent_commands = []
+        self.serial_log_entries = []
 
     def start(self) -> None:
         self.started = True
@@ -26,6 +28,13 @@ class DummyMonitor:
 
     def join(self) -> None:
         self.joined = True
+
+    def send_serial_command(self, command: str):
+        self.sent_commands.append(command)
+        return {"role": "pump_lights", "command": command}
+
+    def serial_log(self):
+        return list(self.serial_log_entries)
 
 
 class ConfigApiTests(unittest.TestCase):
@@ -1094,6 +1103,82 @@ class ConfigApiTests(unittest.TestCase):
 
         live_devices_for_role.assert_called_once_with("pump_lights")
 
+    def test_post_controller_report_command_sends_r(self):
+        monitor = DummyMonitor("abc")
+        with (
+            patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+            patch.object(server, "get_or_start_monitor", return_value=monitor),
+        ):
+            result = server.post_controller_report_command("pump_lights")
+
+        self.assertEqual(monitor.sent_commands, ["r"])
+        self.assertEqual(result["command"], "r")
+
+    def test_post_controller_channel_pulse_sends_gpio_pin_and_duration(self):
+        monitor = DummyMonitor("abc")
+        config = {
+            "controllers": {
+                "pump_lights": self.scheduler_controller(
+                    serial="abc",
+                    devices={
+                        "pump": self.scheduled_output(21),
+                        "fan": self.scheduled_output(22, output_type="pwm"),
+                        "hidden": self.scheduled_output(23, visibility="hidden"),
+                    },
+                )
+            },
+            "cameras": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_file = self.make_config(Path(tmp), config)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+            ):
+                result = server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 7})
+
+        self.assertEqual(monitor.sent_commands, ["p 21 7"])
+        self.assertEqual(result["pin"], 21)
+        self.assertEqual(result["seconds"], 7)
+
+    def test_post_controller_channel_pulse_rejects_non_gpio_or_hidden_channel(self):
+        monitor = DummyMonitor("abc")
+        config = {
+            "controllers": {
+                "pump_lights": self.scheduler_controller(
+                    serial="abc",
+                    devices={
+                        "fan": self.scheduled_output(22, output_type="pwm"),
+                        "hidden": self.scheduled_output(23, visibility="hidden"),
+                    },
+                )
+            },
+            "cameras": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_file = self.make_config(Path(tmp), config)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+            ):
+                with self.assertRaises(HTTPException):
+                    server.post_controller_channel_pulse("pump_lights", "fan", {"seconds": 5})
+                with self.assertRaises(HTTPException):
+                    server.post_controller_channel_pulse("pump_lights", "hidden", {"seconds": 5})
+
+        self.assertEqual(monitor.sent_commands, [])
+
+    def test_get_controller_serial_log_returns_monitor_ring_buffer(self):
+        monitor = DummyMonitor("abc")
+        monitor.serial_log_entries = [{"direction": "tx", "text": "r"}]
+        with (
+            patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+            patch.object(server, "get_or_start_monitor", return_value=monitor),
+        ):
+            result = server.get_controller_serial_log("pump_lights")
+
+        self.assertEqual(result, {"controller": "pump_lights", "entries": [{"direction": "tx", "text": "r"}]})
+
     def test_get_timer_config_reflects_config_device_changes_immediately(self):
         state = {
             "report_every": 1,
@@ -1135,7 +1220,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0}
+                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}
                     ]
                 },
                 "time_format": "12h",
@@ -1147,7 +1232,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0}
+                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
                     ]
                 },
                 "time_format": "12h",
