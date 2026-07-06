@@ -189,7 +189,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
         self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
-        self.assertIn('if (channel) channel.default_editor = block.querySelector(".editor-mode").value;', html)
+        self.assertIn('syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);', html)
         self.assertIn('activeEditor = null;', html)
         self.assertIn('renderTimerStatus(true);', html)
         self.assertNotIn('/api/controllers/${encodeURIComponent(role)}?stream=true', html)
@@ -265,6 +265,15 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("if (!parsed?.state || !Array.isArray(parsed.state.devices)) return;", html)
         self.assertIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
         self.assertIn("applyScheduleResponseState(role, parsed);", html)
+
+    def test_timer_dashboard_updates_local_editor_metadata_after_save(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("timerReportPeriods[role] = Number(reportPeriodInput.value);", html)
+        self.assertIn("function syncSavedEditorMetadata(role, block, device) {", html)
+        self.assertIn("channel.default_editor = block.querySelector(\".editor-mode\").value;", html)
+        self.assertIn("channel.editor = structuredClone(device.editor);", html)
+        self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)

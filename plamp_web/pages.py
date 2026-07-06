@@ -1519,6 +1519,14 @@ def render_timer_dashboard_page(
       timerMessages.set(role, {devices: parsed.state.devices});
     }
 
+    function syncSavedEditorMetadata(role, block, device) {
+      const channelId = block.dataset.channelId;
+      const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
+      if (!channel || !device) return;
+      channel.default_editor = block.querySelector(".editor-mode").value;
+      channel.editor = structuredClone(device.editor);
+    }
+
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
       const eventPin = Number(event?.pin);
@@ -1710,6 +1718,8 @@ def render_timer_dashboard_page(
         controller.payload = structuredClone(controller.payload || {});
         controller.payload.report_every = Number(reportPeriodInput.value);
         controller.settings = structuredClone(controller.settings || {});
+        controller.settings.report_every = Number(reportPeriodInput.value);
+        timerReportPeriods[role] = Number(reportPeriodInput.value);
         controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
@@ -1792,8 +1802,7 @@ def render_timer_dashboard_page(
         }
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
-          const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
-          if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
+          syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
         }
         activeEditor = null;
         renderTimerStatus(true);
