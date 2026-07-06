@@ -258,13 +258,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("const deltaSeconds = targetSeconds - hostSecondsNow();", html)
         self.assertIn('return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";', html)
 
-    def test_timer_dashboard_uses_schedule_response_state_immediately(self):
+    def test_timer_dashboard_does_not_treat_schedule_response_as_live_state(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn("function applyScheduleResponseState(role, parsed) {", html)
-        self.assertIn("if (!parsed?.state || !Array.isArray(parsed.state.devices)) return;", html)
-        self.assertIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
-        self.assertIn("applyScheduleResponseState(role, parsed);", html)
+        self.assertNotIn("function applyScheduleResponseState(role, parsed) {", html)
+        self.assertNotIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
+        self.assertNotIn("applyScheduleResponseState(role, parsed);", html)
 
     def test_timer_dashboard_updates_local_editor_metadata_after_save(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
