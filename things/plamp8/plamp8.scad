@@ -1182,7 +1182,7 @@ module psu_retaining_corners() {
 }
 
 module psu_side_guides() {
-    for (y = [-psu_d / 2 - psu_side_guide_t / 2, psu_d / 2 + psu_side_guide_t / 2])
+    for (y = [-psu_d / 2 - psu_side_guide_t, psu_d / 2])
         translate([-psu_side_guide_l / 2, y, 0])
             cube([psu_side_guide_l, psu_side_guide_t, psu_side_guide_h]);
 }
