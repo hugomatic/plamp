@@ -2,7 +2,7 @@ import json
 import re
 import unittest
 
-from plamp_web.pages import json_script_text, render_api_test_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class PageRenderTests(unittest.TestCase):
         }
 
         pages = [
-            render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0),
+            render_timer_dashboard_page([], "12h", {}, 0),
             render_settings_page(settings_summary),
             render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h"),
         ]
@@ -71,6 +71,27 @@ class PageRenderTests(unittest.TestCase):
         html = render_system_info_page({"host": {"hostname": "sprout"}})
         self.assertIn(expected, html)
         self.assertEqual(html.count("<nav>"), 1)
+
+    def test_pages_can_include_controller_links_in_nav(self):
+        expected = '<a href="/controllers/octo_relay">octo_relay</a>'
+        settings_summary = {
+            "config": {"controllers": {}, "devices": {}, "cameras": {}},
+            "detected": {"picos": [], "cameras": []},
+            "host": {"hostname": "plamp", "network": []},
+            "picos": [],
+            "software": {},
+            "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
+        }
+
+        pages = [
+            render_timer_dashboard_page(["octo_relay"], "12h", {"octo_relay": []}, 0),
+            render_settings_page(settings_summary, ["octo_relay"]),
+            render_system_info_page({"host": {"hostname": "sprout"}}, controller_ids=["octo_relay"]),
+            render_api_test_page(["octo_relay"], "octo_relay", "{}", "12h", controller_ids=["octo_relay"]),
+        ]
+
+        for page in pages:
+            self.assertIn(expected, page)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -189,7 +210,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
         self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
-        self.assertIn('if (channel) channel.default_editor = block.querySelector(".editor-mode").value;', html)
+        self.assertIn('syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);', html)
         self.assertIn('activeEditor = null;', html)
         self.assertIn('renderTimerStatus(true);', html)
         self.assertNotIn('/api/controllers/${encodeURIComponent(role)}?stream=true', html)
@@ -257,6 +278,71 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("function serverDateForSecondsFromNow(secondsFromNow) {", html)
         self.assertIn("const deltaSeconds = targetSeconds - hostSecondsNow();", html)
         self.assertIn('return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";', html)
+
+    def test_timer_dashboard_does_not_treat_schedule_response_as_live_state(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertNotIn("function applyScheduleResponseState(role, parsed) {", html)
+        self.assertNotIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
+        self.assertNotIn("applyScheduleResponseState(role, parsed);", html)
+
+    def test_timer_dashboard_updates_local_editor_metadata_after_save(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("timerReportPeriods[role] = Number(reportPeriodInput.value);", html)
+        self.assertIn("function syncSavedEditorMetadata(role, block, device) {", html)
+        self.assertIn("channel.default_editor = block.querySelector(\".editor-mode\").value;", html)
+        self.assertIn("channel.editor = structuredClone(device.editor);", html)
+        self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
+
+    def test_timer_dashboard_keeps_manual_controls_off_cards(self):
+        html = render_timer_dashboard_page(
+            ["pump_lights"],
+            "12h",
+            {
+                "pump_lights": [
+                    {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible", "programming": "enabled"},
+                    {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible", "programming": "enabled"},
+                    {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden", "programming": "enabled"},
+                ]
+            },
+            0,
+        )
+
+        self.assertIn('<a href="/controllers/pump_lights">pump_lights</a>', html)
+        self.assertNotIn('textContent = "Report now";', html)
+        self.assertNotIn('textContent = "Refresh log";', html)
+        self.assertNotIn('textContent = "Pico";', html)
+
+    def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
+        html = render_controller_page(
+            "pump_lights",
+            [
+                {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible"},
+                {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible"},
+                {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden"},
+            ],
+            {"state": "connected", "serial": "abc"},
+            [{"at": "now", "direction": "tx", "text": "r"}],
+        )
+
+        self.assertIn('<button id="report-now" type="button">Report now</button>', html)
+        self.assertIn('<input id="pulse-pin" name="pin" type="number"', html)
+        self.assertIn('<input id="pulse-seconds" name="seconds" type="number"', html)
+        self.assertIn('<button id="pulse-send" type="button">Pulse</button>', html)
+        self.assertIn("<td>Pump</td>", html)
+        self.assertIn("<td>21</td>", html)
+        self.assertIn("<td>Fan</td>", html)
+        self.assertIn("<td>22</td>", html)
+        self.assertIn("<td>Hidden</td>", html)
+        self.assertIn("<td>23</td>", html)
+        self.assertIn("Are you sure you want to pulse pin", html)
+        self.assertIn('id="refresh-log"', html)
+        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/pins/${encodeURIComponent(pin)}/pulse`', html)
+        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/commands/report`', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}/serial-log`', html)
+        self.assertIn('}).join("\\n");', html)
+        self.assertNotIn('}).join("\n");', html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)

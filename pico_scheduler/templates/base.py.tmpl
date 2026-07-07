@@ -1,5 +1,7 @@
 {provenance_block}
 
+import select
+import sys
 import time
 import ujson as json
 {machine_import}
@@ -8,6 +10,10 @@ LOOP_SLEEP_MS = {loop_sleep_ms}
 REPORT_EVERY = {report_every}
 {pwm_helper}
 {device_assignments}
+
+poller = select.poll()
+poller.register(sys.stdin, select.POLLIN)
+command_buffer = ""
 
 def error(message):
     print(json.dumps({{"type": "error", "content": message}}))
@@ -32,14 +38,91 @@ def report():
     print(json.dumps({{"type": "report", "content": {{"devices": out}}}}))
 
 
+def device_for_pin(pin):
+    for device in devices:
+        if device["pin"] == pin and device["type"] == "gpio":
+            return device
+    return None
+
+
+def pulse_device(device, seconds):
+    pulse = {{
+        "type": "gpio",
+        "pin": device["pin"],
+        "elapsed_t": 0,
+        "reschedule": 0,
+        "pattern": [{{"val": 1, "dur": seconds}}],
+        "total_t": seconds,
+        "output": device["output"],
+        "last_value": None,
+    }}
+    devices.append(pulse)
+    apply()
+    report()
+    return True
+
+
+def handle_command(line):
+    line = line.strip()
+    if not line:
+        return
+    if line == "r":
+        report()
+        return
+    parts = line.split()
+    if parts[0] == "p" and len(parts) == 3:
+        try:
+            pin = int(parts[1])
+            seconds = int(parts[2])
+        except:
+            error("invalid pulse command")
+            return
+        if seconds <= 0:
+            error("pulse seconds must be > 0")
+            return
+        device = device_for_pin(pin)
+        if device is None:
+            error("unknown pulse pin")
+            return
+        pulse_device(device, seconds)
+        return
+    error("unknown command")
+
+
+def read_commands():
+    global command_buffer
+    while poller.poll(0):
+        char = sys.stdin.read(1)
+        if not char:
+            return
+        if char == "\r":
+            continue
+        if char == "\n":
+            line = command_buffer
+            command_buffer = ""
+            handle_command(line)
+        else:
+            command_buffer += char
+            if len(command_buffer) > 80:
+                command_buffer = ""
+                error("command too long")
+
+
 def tick(dt):
     if dt <= 0:
         return
 
+    remove = []
     for device in devices:
         device["elapsed_t"] += dt
-        if not device["reschedule"] and device["elapsed_t"] > device["total_t"]:
-            device["elapsed_t"] = device["total_t"]
+        if not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:
+            remove.append(device)
+
+    if remove:
+        for device in remove:
+            devices.remove(device)
+        apply()
+        report()
 
 
 def apply():
@@ -77,6 +160,7 @@ def main():
     accum_ms = 0
 
     while True:
+        read_commands()
         now_ms = time.ticks_ms()
         delta_ms = time.ticks_diff(now_ms, last_tick_ms)
         last_tick_ms = now_ms

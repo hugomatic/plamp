@@ -8,8 +8,28 @@ from typing import Any
 
 GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
 GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
-MAIN_NAV = f'<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="{GITHUB_REPO_URL}">GitHub</a></nav>'
 FAVICON_LINK = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+
+
+def main_nav(controller_ids: list[str] | None = None) -> str:
+    links = ['<a href="/">Plamp</a>']
+    for controller_id in controller_ids or []:
+        links.append(
+            '<a href="/controllers/{href}">{label}</a>'.format(
+                href=html.escape(controller_id, quote=True),
+                label=html.escape(controller_id),
+            )
+        )
+    links.extend([
+        '<a href="/settings">Settings</a>',
+        '<a href="/system">System</a>',
+        '<a href="/api/test">API test</a>',
+        f'<a href="{GITHUB_REPO_URL}">GitHub</a>',
+    ])
+    return "<nav>" + " | ".join(links) + "</nav>"
+
+
+MAIN_NAV = main_nav()
 
 
 def relative_time_label(value: object) -> str | None:
@@ -437,7 +457,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_settings_page(summary: dict[str, Any]) -> str:
+def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | None = None) -> str:
     config = summary.get("config") if isinstance(summary.get("config"), dict) else {}
     if isinstance(config.get("devices"), dict):
         normalized_controllers: dict[str, dict[str, Any]] = {}
@@ -769,7 +789,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_title)}</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <p><a href="{GITHUB_NEW_ISSUE_URL}">Report an issue</a></p>
@@ -967,7 +987,7 @@ def render_settings_page(summary: dict[str, Any]) -> str:
 </html>"""
 
 
-def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
+def render_system_info_page(system: dict[str, Any], logs_text: str = "", controller_ids: list[str] | None = None) -> str:
     host = system.get("host") if isinstance(system.get("host"), dict) else {}
     host_time = system.get("host_time") if isinstance(system.get("host_time"), dict) else {}
     software = system.get("software") if isinstance(system.get("software"), dict) else {}
@@ -1103,7 +1123,7 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "") -> str:
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_name)}</h1>
   <p class="host-clock"><strong>Host time:</strong> {html.escape(str(host_time.get("display") or "-"))}</p>
   <div class="system-page">
@@ -1291,6 +1311,9 @@ def render_timer_dashboard_page(
     .editor-note { color: #555; font-size: .9rem; }
     .editor-error { color: #9a3412; font-weight: 600; }
     .editor-success { color: #166534; font-weight: 600; }
+    .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+    .manual-controls input { width: 5rem; }
+    .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 12rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -1514,6 +1537,14 @@ def render_timer_dashboard_page(
       return message;
     }
 
+    function syncSavedEditorMetadata(role, block, device) {
+      const channelId = block.dataset.channelId;
+      const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
+      if (!channel || !device) return;
+      channel.default_editor = block.querySelector(".editor-mode").value;
+      channel.editor = structuredClone(device.editor);
+    }
+
     function channelForEvent(role, event, index) {
       const channels = timerChannels[role] || [];
       const eventPin = Number(event?.pin);
@@ -1705,6 +1736,8 @@ def render_timer_dashboard_page(
         controller.payload = structuredClone(controller.payload || {});
         controller.payload.report_every = Number(reportPeriodInput.value);
         controller.settings = structuredClone(controller.settings || {});
+        controller.settings.report_every = Number(reportPeriodInput.value);
+        timerReportPeriods[role] = Number(reportPeriodInput.value);
         controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
@@ -1786,8 +1819,7 @@ def render_timer_dashboard_page(
         }
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
-          const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
-          if (channel) channel.default_editor = block.querySelector(".editor-mode").value;
+          syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
         }
         activeEditor = null;
         renderTimerStatus(true);
@@ -2141,7 +2173,7 @@ def render_timer_dashboard_page(
 </body>
 </html>"""
     return (
-        template.replace("__MAIN_NAV__", MAIN_NAV)
+        template.replace("__MAIN_NAV__", main_nav(roles))
         .replace("__PAGE_NAME__", html.escape(page_name))
         .replace("__FAVICON_LINK__", FAVICON_LINK)
         .replace("__TIME_FORMAT__", json.dumps(time_format))
@@ -2153,7 +2185,170 @@ def render_timer_dashboard_page(
     )
 
 
-def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "") -> str:
+def render_controller_page(controller: str, channels: list[dict[str, Any]], status: dict[str, Any], serial_entries: list[dict[str, Any]], controller_ids: list[str] | None = None) -> str:
+    status_rows = "".join(
+        f"<tr><td>{html.escape(str(key))}</td><td><code>{html.escape(str(status.get(key)))}</code></td></tr>"
+        for key in ("state", "connected", "port", "serial", "last_seen", "last_error")
+        if key in status
+    ) or '<tr><td colspan="2">No monitor status.</td></tr>'
+    channel_rows = "".join(
+        "<tr>"
+        "<td>{label}</td>"
+        "<td><code>{channel}</code></td>"
+        "<td>{pin}</td>"
+        "<td>{kind}</td>"
+        "<td>{visibility}</td>"
+        "<td>{programming}</td>"
+        '<td><button class="use-pin" type="button" data-pin="{pin_attr}">Use</button></td>'
+        "</tr>".format(
+            label=html.escape(str(channel.get("name") or channel.get("id") or "channel")),
+            channel=html.escape(str(channel.get("id") or "")),
+            pin=html.escape(str(channel.get("pin") or "")),
+            pin_attr=html.escape(str(channel.get("pin") or ""), quote=True),
+            kind=html.escape(str(channel.get("type") or "gpio")),
+            visibility=html.escape(str(channel.get("visibility") or "visible")),
+            programming=html.escape(str(channel.get("programming") or "enabled")),
+        )
+        for channel in channels
+    ) or '<tr><td colspan="7">No configured pins.</td></tr>'
+    log_text = "\n".join(
+        "{at} {direction} {text}".format(
+            at=str(entry.get("at") or ""),
+            direction=str(entry.get("direction") or "?").upper(),
+            text=str(entry.get("text") or ""),
+        ).strip()
+        for entry in reversed(serial_entries)
+    ) or "No serial lines captured."
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(controller)} Pico</title>
+  {FAVICON_LINK}
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }}
+    nav {{ margin-bottom: 1.5rem; }}
+    button {{ background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }}
+    table {{ border-collapse: collapse; margin: 1rem 0; max-width: 760px; width: 100%; }}
+    td, th {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; }}
+    code {{ background: #f4f4f4; padding: .1rem .25rem; }}
+    .actions {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }}
+    .command-form {{ align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }}
+    .command-form label {{ display: grid; gap: .25rem; }}
+    input {{ border: 1px solid #aaa; border-radius: 6px; font: inherit; padding: .4rem .5rem; width: 8rem; }}
+    .status, .muted {{ color: #555; }}
+    .serial-log {{ background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
+  </style>
+</head>
+<body>
+  {main_nav(controller_ids)}
+  <h1>{html.escape(controller)} Pico</h1>
+  <p><a href="/">Back to dashboard</a></p>
+  <section><h2>Status</h2><table><tbody>{status_rows}</tbody></table></section>
+  <section>
+    <h2>Commands</h2>
+    <p id="command-status" class="status">Ready.</p>
+    <div class="actions">
+      <button id="report-now" type="button">Report now</button>
+    </div>
+    <div class="command-form">
+      <label>Pin <input id="pulse-pin" name="pin" type="number" min="0" max="29" step="1" inputmode="numeric"></label>
+      <label>Seconds <input id="pulse-seconds" name="seconds" type="number" min="1" step="1" value="5" inputmode="numeric"></label>
+      <button id="pulse-send" type="button">Pulse</button>
+    </div>
+  </section>
+  <section>
+    <h2>Configured pins</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Channel</th><th>Pin</th><th>Type</th><th>Visibility</th><th>Programming</th><th></th></tr></thead>
+      <tbody>{channel_rows}</tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Serial log</h2>
+    <button id="refresh-log" type="button">Refresh log</button>
+    <pre id="serial-log" class="serial-log">{html.escape(log_text)}</pre>
+  </section>
+  <script>
+    const controller = {json.dumps(controller)};
+    const configuredPins = {json.dumps(channels)};
+    const statusNode = document.getElementById("command-status");
+    const logNode = document.getElementById("serial-log");
+    const pulsePinInput = document.getElementById("pulse-pin");
+    const pulseSecondsInput = document.getElementById("pulse-seconds");
+    function setStatus(text) {{ statusNode.textContent = text; }}
+    function pinLabel(pin) {{
+      const channel = configuredPins.find((item) => Number(item.pin) === Number(pin));
+      return channel ? (channel.name || channel.id || "") : "";
+    }}
+    function logText(entries) {{
+      if (!Array.isArray(entries) || !entries.length) return "No serial lines captured.";
+      return [...entries].reverse().map((entry) => {{
+        const at = entry.at || "";
+        const direction = (entry.direction || "?").toUpperCase();
+        return `${{at}} ${{direction}} ${{entry.text || ""}}`.trim();
+      }}).join("\\n");
+    }}
+    async function refreshLog() {{
+      const response = await fetch(`/api/controllers/${{encodeURIComponent(controller)}}/serial-log`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      logNode.textContent = logText(data.entries);
+    }}
+    async function postCommand(url, body) {{
+      setStatus("Sending...");
+      const options = {{method: "POST"}};
+      if (body) {{
+        options.headers = {{"content-type": "application/json"}};
+        options.body = JSON.stringify(body);
+      }}
+      const response = await fetch(url, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      setStatus(data.message || "Sent.");
+      await refreshLog();
+    }}
+    document.getElementById("report-now").addEventListener("click", async () => {{
+      try {{ await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/commands/report`); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    document.getElementById("refresh-log").addEventListener("click", async () => {{
+      try {{ await refreshLog(); setStatus("Log refreshed."); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    for (const button of document.querySelectorAll(".use-pin")) {{
+      button.addEventListener("click", async () => {{
+        pulsePinInput.value = button.dataset.pin || "";
+        pulsePinInput.focus();
+      }});
+    }}
+    document.getElementById("pulse-send").addEventListener("click", async () => {{
+      const pin = Number(pulsePinInput.value);
+      const seconds = Number(pulseSecondsInput.value);
+      if (!Number.isInteger(pin) || pin < 0 || pin > 29) {{ setStatus("Enter a configured pin number."); return; }}
+      if (!Number.isInteger(seconds) || seconds <= 0) {{ setStatus("Enter pulse seconds."); return; }}
+      const label = pinLabel(pin);
+      const labelText = label ? ` "${{label}}"` : "";
+      if (!window.confirm(`Are you sure you want to pulse pin ${{pin}}${{labelText}} for ${{seconds}} seconds?`)) return;
+      try {{
+        await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/pins/${{encodeURIComponent(pin)}}/pulse`, {{seconds}});
+      }} catch (error) {{
+        setStatus(String(error.message || error));
+      }}
+    }});
+    if (configuredPins.length) {{
+      const firstGpio = configuredPins.find((item) => (item.type || "gpio") === "gpio");
+      if (firstGpio && firstGpio.pin !== undefined && firstGpio.pin !== null) {{
+        pulsePinInput.value = firstGpio.pin;
+      }}
+    }}
+  </script>
+</body>
+</html>"""
+
+
+def render_api_test_page(roles: list[str], default_role: str, default_payload: str, time_format: str, hostname: str = "", controller_ids: list[str] | None = None) -> str:
     page_title = f"{hostname} API test" if hostname else "Plamp API test"
     role_options = "\n".join(f'<option value="{html.escape(role)}"></option>' for role in roles)
     default_get_curl = f"curl http://localhost:8000/api/controllers/{default_role}"
@@ -2207,7 +2402,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav(controller_ids)}
   <h1>{html.escape(page_title)}</h1>
   <p>This page is the human-friendly API guide. For machine-readable integration, use <a href="/openapi.json"><code>/openapi.json</code></a>. For interactive FastAPI docs, use <a href="/docs"><code>/docs</code></a>.</p>
 
