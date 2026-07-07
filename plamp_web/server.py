@@ -2366,6 +2366,27 @@ def post_controller_report_command(controller: str) -> dict[str, Any]:
     return response
 
 
+def pulse_seconds_from_payload(payload: dict[str, Any]) -> int:
+    try:
+        seconds = int((payload or {}).get("seconds", 5))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="pulse seconds must be an integer") from exc
+    if seconds <= 0:
+        raise HTTPException(status_code=422, detail="pulse seconds must be > 0")
+    return seconds
+
+
+def pulse_device_command(controller: str, device_id: str, device: dict[str, Any], payload: dict[str, Any]) -> tuple[str, int, int]:
+    if str(device.get("output_type") or "gpio") != "gpio":
+        raise HTTPException(status_code=422, detail="pulse only supports gpio channels")
+    try:
+        pin = int(device["pin"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="channel has no valid GPIO pin") from exc
+    seconds = pulse_seconds_from_payload(payload)
+    return f"p {pin} {seconds}", pin, seconds
+
+
 def pulse_channel_command(controller: str, channel_id: str, payload: dict[str, Any]) -> tuple[str, int, int]:
     if controller_firmware(controller) != "pico_scheduler":
         raise HTTPException(status_code=422, detail="pulse is only supported for pico_scheduler controllers")
@@ -2374,21 +2395,24 @@ def pulse_channel_command(controller: str, channel_id: str, payload: dict[str, A
     device = devices.get(channel_id)
     if not isinstance(device, dict):
         raise HTTPException(status_code=404, detail=f"unknown channel: {channel_id}")
-    if str(device.get("visibility") or "visible") == "hidden":
-        raise HTTPException(status_code=422, detail="hidden channels cannot be pulsed")
-    if str(device.get("output_type") or "gpio") != "gpio":
-        raise HTTPException(status_code=422, detail="pulse only supports gpio channels")
-    try:
-        pin = int(device["pin"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="channel has no valid GPIO pin") from exc
-    try:
-        seconds = int((payload or {}).get("seconds", 5))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="pulse seconds must be an integer") from exc
-    if seconds <= 0:
-        raise HTTPException(status_code=422, detail="pulse seconds must be > 0")
-    return f"p {pin} {seconds}", pin, seconds
+    return pulse_device_command(controller, channel_id, device, payload)
+
+
+def pulse_pin_command(controller: str, pin: int, payload: dict[str, Any]) -> tuple[str, str, int, int]:
+    if controller_firmware(controller) != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="pulse is only supported for pico_scheduler controllers")
+    config = load_config()
+    for device_id, device in scheduler_devices_for_controller(config, controller).items():
+        if not isinstance(device, dict):
+            continue
+        try:
+            device_pin = int(device.get("pin"))
+        except (TypeError, ValueError):
+            continue
+        if device_pin == pin:
+            command, command_pin, seconds = pulse_device_command(controller, device_id, device, payload)
+            return command, device_id, command_pin, seconds
+    raise HTTPException(status_code=404, detail=f"unknown configured pin: {pin}")
 
 
 @app.post("/api/controllers/{controller}/channels/{channel_id}/pulse")
@@ -2402,6 +2426,22 @@ def post_controller_channel_pulse(controller: str, channel_id: str, payload: dic
         "seconds": seconds,
         "success": True,
         "message": f"pulse requested for pin {pin}",
+    }
+    response.update(result)
+    return response
+
+
+@app.post("/api/controllers/{controller}/pins/{pin}/pulse")
+def post_controller_pin_pulse(controller: str, pin: int, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
+    command, channel_id, command_pin, seconds = pulse_pin_command(controller, pin, payload)
+    result = send_timer_command(controller, command)
+    response = {
+        "controller": controller,
+        "channel": channel_id,
+        "pin": command_pin,
+        "seconds": seconds,
+        "success": True,
+        "message": f"pulse requested for pin {command_pin}",
     }
     response.update(result)
     return response

@@ -2186,23 +2186,31 @@ def render_timer_dashboard_page(
 
 
 def render_controller_page(controller: str, channels: list[dict[str, Any]], status: dict[str, Any], serial_entries: list[dict[str, Any]], controller_ids: list[str] | None = None) -> str:
-    gpio_channels = [
-        channel for channel in channels
-        if str(channel.get("type") or "gpio") == "gpio" and str(channel.get("visibility") or "visible") != "hidden"
-    ]
     status_rows = "".join(
         f"<tr><td>{html.escape(str(key))}</td><td><code>{html.escape(str(status.get(key)))}</code></td></tr>"
         for key in ("state", "connected", "port", "serial", "last_seen", "last_error")
         if key in status
     ) or '<tr><td colspan="2">No monitor status.</td></tr>'
-    channel_buttons = "".join(
-        '<button class="pulse-channel" type="button" data-channel="{channel}" data-pin="{pin}">Pulse {label} / pin {pin}</button>'.format(
-            channel=html.escape(str(channel.get("id") or ""), quote=True),
-            pin=html.escape(str(channel.get("pin") or ""), quote=True),
+    channel_rows = "".join(
+        "<tr>"
+        "<td>{label}</td>"
+        "<td><code>{channel}</code></td>"
+        "<td>{pin}</td>"
+        "<td>{kind}</td>"
+        "<td>{visibility}</td>"
+        "<td>{programming}</td>"
+        '<td><button class="use-pin" type="button" data-pin="{pin_attr}">Use</button></td>'
+        "</tr>".format(
             label=html.escape(str(channel.get("name") or channel.get("id") or "channel")),
+            channel=html.escape(str(channel.get("id") or "")),
+            pin=html.escape(str(channel.get("pin") or "")),
+            pin_attr=html.escape(str(channel.get("pin") or ""), quote=True),
+            kind=html.escape(str(channel.get("type") or "gpio")),
+            visibility=html.escape(str(channel.get("visibility") or "visible")),
+            programming=html.escape(str(channel.get("programming") or "enabled")),
         )
-        for channel in gpio_channels
-    ) or '<span class="muted">No visible GPIO channels.</span>'
+        for channel in channels
+    ) or '<tr><td colspan="7">No configured pins.</td></tr>'
     log_text = "\n".join(
         "{at} {direction} {text}".format(
             at=str(entry.get("at") or ""),
@@ -2226,6 +2234,9 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     td, th {{ border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; }}
     code {{ background: #f4f4f4; padding: .1rem .25rem; }}
     .actions {{ display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }}
+    .command-form {{ align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }}
+    .command-form label {{ display: grid; gap: .25rem; }}
+    input {{ border: 1px solid #aaa; border-radius: 6px; font: inherit; padding: .4rem .5rem; width: 8rem; }}
     .status, .muted {{ color: #555; }}
     .serial-log {{ background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
   </style>
@@ -2240,8 +2251,19 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     <p id="command-status" class="status">Ready.</p>
     <div class="actions">
       <button id="report-now" type="button">Report now</button>
-      {channel_buttons}
     </div>
+    <div class="command-form">
+      <label>Pin <input id="pulse-pin" name="pin" type="number" min="0" max="29" step="1" inputmode="numeric"></label>
+      <label>Seconds <input id="pulse-seconds" name="seconds" type="number" min="1" step="1" value="5" inputmode="numeric"></label>
+      <button id="pulse-send" type="button">Pulse</button>
+    </div>
+  </section>
+  <section>
+    <h2>Configured pins</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Channel</th><th>Pin</th><th>Type</th><th>Visibility</th><th>Programming</th><th></th></tr></thead>
+      <tbody>{channel_rows}</tbody>
+    </table>
   </section>
   <section>
     <h2>Serial log</h2>
@@ -2250,9 +2272,16 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
   </section>
   <script>
     const controller = {json.dumps(controller)};
+    const configuredPins = {json.dumps(channels)};
     const statusNode = document.getElementById("command-status");
     const logNode = document.getElementById("serial-log");
+    const pulsePinInput = document.getElementById("pulse-pin");
+    const pulseSecondsInput = document.getElementById("pulse-seconds");
     function setStatus(text) {{ statusNode.textContent = text; }}
+    function pinLabel(pin) {{
+      const channel = configuredPins.find((item) => Number(item.pin) === Number(pin));
+      return channel ? (channel.name || channel.id || "") : "";
+    }}
     function logText(entries) {{
       if (!Array.isArray(entries) || !entries.length) return "No serial lines captured.";
       return [...entries].reverse().map((entry) => {{
@@ -2288,16 +2317,31 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
       try {{ await refreshLog(); setStatus("Log refreshed."); }}
       catch (error) {{ setStatus(String(error.message || error)); }}
     }});
-    for (const button of document.querySelectorAll(".pulse-channel")) {{
+    for (const button of document.querySelectorAll(".use-pin")) {{
       button.addEventListener("click", async () => {{
-        const seconds = prompt(`Pulse pin ${{button.dataset.pin}} for seconds`, "5");
-        if (seconds === null) return;
-        try {{
-          await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/channels/${{encodeURIComponent(button.dataset.channel)}}/pulse`, {{seconds: Number(seconds)}});
-        }} catch (error) {{
-          setStatus(String(error.message || error));
-        }}
+        pulsePinInput.value = button.dataset.pin || "";
+        pulsePinInput.focus();
       }});
+    }}
+    document.getElementById("pulse-send").addEventListener("click", async () => {{
+      const pin = Number(pulsePinInput.value);
+      const seconds = Number(pulseSecondsInput.value);
+      if (!Number.isInteger(pin) || pin < 0 || pin > 29) {{ setStatus("Enter a configured pin number."); return; }}
+      if (!Number.isInteger(seconds) || seconds <= 0) {{ setStatus("Enter pulse seconds."); return; }}
+      const label = pinLabel(pin);
+      const labelText = label ? ` "${{label}}"` : "";
+      if (!window.confirm(`Are you sure you want to pulse pin ${{pin}}${{labelText}} for ${{seconds}} seconds?`)) return;
+      try {{
+        await postCommand(`/api/controllers/${{encodeURIComponent(controller)}}/pins/${{encodeURIComponent(pin)}}/pulse`, {{seconds}});
+      }} catch (error) {{
+        setStatus(String(error.message || error));
+      }}
+    }});
+    if (configuredPins.length) {{
+      const firstGpio = configuredPins.find((item) => (item.type || "gpio") === "gpio");
+      if (firstGpio && firstGpio.pin !== undefined && firstGpio.pin !== null) {{
+        pulsePinInput.value = firstGpio.pin;
+      }}
     }}
   </script>
 </body>

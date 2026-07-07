@@ -673,7 +673,10 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"pump_lights Pico", response.body)
-        self.assertIn(b"Pulse Pump / pin 21", response.body)
+        self.assertIn(b'<input id="pulse-pin" name="pin" type="number"', response.body)
+        self.assertIn(b'<button id="pulse-send" type="button">Pulse</button>', response.body)
+        self.assertIn(b"<td>Pump</td>", response.body)
+        self.assertIn(b"<td>21</td>", response.body)
         self.assertIn(b"TX r", response.body)
 
     def test_config_route_is_removed(self):
@@ -1156,7 +1159,34 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(result["pin"], 21)
         self.assertEqual(result["seconds"], 7)
 
-    def test_post_controller_channel_pulse_rejects_non_gpio_or_hidden_channel(self):
+    def test_post_controller_pin_pulse_sends_configured_gpio_pin_and_duration(self):
+        monitor = DummyMonitor("abc")
+        config = {
+            "controllers": {
+                "pump_lights": self.scheduler_controller(
+                    serial="abc",
+                    devices={
+                        "pump": self.scheduled_output(21),
+                        "hidden": self.scheduled_output(23, visibility="hidden"),
+                    },
+                )
+            },
+            "cameras": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_file = self.make_config(Path(tmp), config)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+            ):
+                result = server.post_controller_pin_pulse("pump_lights", 23, {"seconds": 7})
+
+        self.assertEqual(monitor.sent_commands, ["p 23 7"])
+        self.assertEqual(result["pin"], 23)
+        self.assertEqual(result["seconds"], 7)
+        self.assertEqual(result["channel"], "hidden")
+
+    def test_post_controller_channel_pulse_rejects_non_gpio_channel(self):
         monitor = DummyMonitor("abc")
         config = {
             "controllers": {
@@ -1178,10 +1208,9 @@ class ConfigApiTests(unittest.TestCase):
             ):
                 with self.assertRaises(HTTPException):
                     server.post_controller_channel_pulse("pump_lights", "fan", {"seconds": 5})
-                with self.assertRaises(HTTPException):
-                    server.post_controller_channel_pulse("pump_lights", "hidden", {"seconds": 5})
+                server.post_controller_channel_pulse("pump_lights", "hidden", {"seconds": 5})
 
-        self.assertEqual(monitor.sent_commands, [])
+        self.assertEqual(monitor.sent_commands, ["p 23 5"])
 
     def test_get_controller_serial_log_returns_monitor_ring_buffer(self):
         monitor = DummyMonitor("abc")
