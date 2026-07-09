@@ -169,6 +169,9 @@ psu_stop_anchor_clearance = 1;
 converter_w = 27.26;
 converter_d = 46.22;
 converter_h = 14;
+converter_fit_clearance = 0.5;
+converter_retaining_w = converter_w + 2 * converter_fit_clearance;
+converter_retaining_d = converter_d + 2 * converter_fit_clearance;
 converter_mount_spacing = 50;
 converter_mount_hole_d = screw_clearance_d(converter_screw_size);
 converter_mount_chamfer_d = screw_chamfer_d(converter_screw_size);
@@ -1106,7 +1109,7 @@ module converter_retaining_corners_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_converter_rot_z])
-            retaining_corners(converter_w, converter_d);
+            retaining_corners(converter_retaining_w, converter_retaining_d);
 }
 
 module component_airflow_posts_in_box() {
@@ -1461,7 +1464,7 @@ module converter_footprint() {
                     converter_airflow_posts();
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
-                    retaining_corners(converter_w, converter_d);
+                    retaining_corners(converter_retaining_w, converter_retaining_d);
         }
         rotate([0, 0, internal_converter_rot_z])
             converter_mount_holes(0);
