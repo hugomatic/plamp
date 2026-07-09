@@ -2405,6 +2405,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   {main_nav(controller_ids)}
   <h1>{html.escape(page_title)}</h1>
   <p>This page is the human-friendly API guide. For machine-readable integration, use <a href="/openapi.json"><code>/openapi.json</code></a>. For interactive FastAPI docs, use <a href="/docs"><code>/docs</code></a>.</p>
+  <datalist id="timer-roles">{role_options}</datalist>
 
   <h2>Camera</h2>
   <fieldset>
@@ -2514,6 +2515,21 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <fieldset>
+    <legend>POST /api/controllers/{{controller}}/pins/{{pin}}/pulse</legend>
+    <p>Requests a short GPIO pulse on a configured Pico scheduler pin.</p>
+    <div class="row">
+      <label>Controller <input id="pulse-controller" list="timer-roles" value="{html.escape(default_role)}"></label>
+      <label>Pin <input id="pulse-pin" type="number" min="0" max="29" step="1" value="21"></label>
+      <label>Seconds <input id="pulse-seconds" type="number" min="1" step="1" value="5"></label>
+    </div>
+    <pre id="pulse-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/pins/21/pulse -H 'content-type: application/json' --data '{{"seconds":5}}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="pulse-curl-command">Copy curl</button>
+    <button id="pulse-request" type="button">Run request</button>
+    <div><span id="pulse-status">Ready.</span></div>
+    <pre id="pulse-result">POST response will appear here.</pre>
+  </fieldset>
+
+  <fieldset>
     <legend>PUT /api/controllers/{{role}}</legend>
     <p>Writes controller state JSON and sends it to the Pico.</p>
     <label>Role
@@ -2561,12 +2577,29 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     const listCapturesOffsetInput = document.getElementById("list-captures-offset");
     const addStatusPathButton = document.getElementById("add-status-path");
     const streamPrettyInput = document.getElementById("stream-pretty");
+    const pulseControllerInput = document.getElementById("pulse-controller");
+    const pulsePinInput = document.getElementById("pulse-pin");
+    const pulseSecondsInput = document.getElementById("pulse-seconds");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
     const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
 
     function putRole() {{
       return putRoleInput.value.trim();
+    }}
+
+    function pulseController() {{
+      return pulseControllerInput.value.trim();
+    }}
+
+    function pulsePin() {{
+      const value = Number(pulsePinInput.value);
+      return Number.isFinite(value) ? Math.max(0, Math.min(29, Math.floor(value))) : 0;
+    }}
+
+    function pulseSeconds() {{
+      const value = Number(pulseSecondsInput.value);
+      return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 5;
     }}
 
     function bindStatusPathRow(row) {{
@@ -2681,12 +2714,25 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return "curl " + doubleQuote(`${{window.location.origin}}/api/camera/captures?${{params.toString()}}`);
     }}
 
+    function pulseUrl() {{
+      return `/api/controllers/${{encodeURIComponent(pulseController())}}/pins/${{encodeURIComponent(pulsePin())}}/pulse`;
+    }}
+
+    function pulseCurlCommand() {{
+      return [
+        "curl -X POST " + doubleQuote(`${{window.location.origin}}${{pulseUrl()}}`),
+        "  -H " + doubleQuote("content-type: application/json"),
+        "  --data " + doubleQuote(JSON.stringify({{seconds: pulseSeconds()}})),
+      ].join(" ");
+    }}
+
     function updateCurl() {{
       document.getElementById("get-status-curl-command").textContent = "curl " + doubleQuote(statusUrl(false));
       document.getElementById("stream-status-curl-command").textContent = "curl -N " + doubleQuote(statusUrl(true));
       document.getElementById("put-curl-command").textContent = putCurlCommand();
       document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
       document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
+      document.getElementById("pulse-curl-command").textContent = pulseCurlCommand();
     }}
 
     function setPayload(state) {{
@@ -3046,6 +3092,32 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }}
     }}
 
+    async function pulsePinRequest() {{
+      const status = document.getElementById("pulse-status");
+      const result = document.getElementById("pulse-result");
+      const url = pulseUrl();
+      status.textContent = "";
+      result.textContent = "";
+      if (!window.confirm(`POST ${{url}} for ${{pulseSeconds()}} seconds?`)) {{
+        status.textContent = "Cancelled.";
+        return;
+      }}
+      status.textContent = "Sending...";
+      try {{
+        const response = await fetch(pulseUrl(), {{
+          method: "POST",
+          headers: {{"content-type": "application/json"}},
+          body: JSON.stringify({{seconds: pulseSeconds()}}),
+        }});
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
     document.getElementById("generate-quick").addEventListener("click", () => {{
       setPayload({{
         report_every: 10,
@@ -3104,10 +3176,14 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("put-state").addEventListener("click", putState);
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
+    document.getElementById("pulse-request").addEventListener("click", pulsePinRequest);
     cameraCaptureCameraIdInput.addEventListener("input", updateCurl);
     listCapturesCameraIdInput.addEventListener("input", updateCurl);
     listCapturesLimitInput.addEventListener("input", updateCurl);
     listCapturesOffsetInput.addEventListener("input", updateCurl);
+    pulseControllerInput.addEventListener("input", updateCurl);
+    pulsePinInput.addEventListener("input", updateCurl);
+    pulseSecondsInput.addEventListener("input", updateCurl);
     for (const button of document.querySelectorAll(".copy-curl")) {{
       button.addEventListener("click", copyCurlCommand);
     }}

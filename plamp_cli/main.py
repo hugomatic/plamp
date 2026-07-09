@@ -168,6 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     timer_set.add_argument("payload")
     timer_set.set_defaults(timer_action="set")
 
+    timer_pulse = pico_scheduler_subparsers.add_parser("pulse")
+    timer_pulse.add_argument("controller")
+    timer_pulse.add_argument("pin", type=int)
+    timer_pulse.add_argument("--seconds", type=int, default=5)
+    timer_pulse.set_defaults(timer_action="pulse")
+
     timer_channels = pico_scheduler_subparsers.add_parser("channels")
     channel_subparsers = timer_channels.add_subparsers(dest="channel_action", required=True)
 
@@ -322,6 +328,15 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
             base_url,
             f"/api/controllers/{args.controller}/channels/{args.channel_id}/schedule",
             payload,
+        )
+        return _normalize_pico_scheduler_response(response)
+
+    if args.timer_action == "pulse":
+        response = request_json(
+            "POST",
+            base_url,
+            f"/api/controllers/{args.controller}/pins/{args.pin}/pulse",
+            {"seconds": args.seconds},
         )
         return _normalize_pico_scheduler_response(response)
 

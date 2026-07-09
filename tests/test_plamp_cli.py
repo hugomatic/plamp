@@ -451,6 +451,28 @@ class PlampCliTimerTests(unittest.TestCase):
         )
 
     @patch("plamp_cli.main.request_json")
+    def test_pico_scheduler_pulse_posts_pin_duration(self, request_json):
+        request_json.return_value = {"controller": "pump_lights", "pin": 21, "seconds": 5, "success": True}
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(
+            ["pico-scheduler", "pulse", "pump_lights", "21", "--seconds", "5"],
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"controller": "pump_lights", "pin": 21, "seconds": 5, "success": true}\n')
+        self.assertEqual(stderr.getvalue(), "")
+        request_json.assert_called_once_with(
+            "POST",
+            "http://127.0.0.1:8000",
+            "/api/controllers/pump_lights/pins/21/pulse",
+            {"seconds": 5},
+        )
+
+    @patch("plamp_cli.main.request_json")
     def test_pico_scheduler_get_renders_table_output(self, request_json):
         request_json.return_value = [{"path": "controllers.pump_lights", "value": {"mode": "auto"}}]
         stdout = StringIO()

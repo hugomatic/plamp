@@ -538,6 +538,20 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("report_every: 10,\n        events: [{", html)
         self.assertNotIn("report_every: 10,\n        events: [", html)
 
+    def test_api_test_page_includes_pico_scheduler_pulse_request(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn('<datalist id="timer-roles"><option value="pump_lights"></option></datalist>', html)
+        self.assertIn("<legend>POST /api/controllers/{controller}/pins/{pin}/pulse</legend>", html)
+        self.assertIn('id="pulse-controller"', html)
+        self.assertIn('id="pulse-pin"', html)
+        self.assertIn('id="pulse-seconds"', html)
+        self.assertIn('id="pulse-curl-command"', html)
+        self.assertIn('id="pulse-request"', html)
+        self.assertIn('pulseUrl()', html)
+        self.assertIn('fetch(pulseUrl(), {', html)
+        self.assertIn('body: JSON.stringify({seconds: pulseSeconds()})', html)
+
 
     def test_settings_page_includes_storage_summary(self):
         html = render_system_info_page({
