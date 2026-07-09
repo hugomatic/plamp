@@ -1074,7 +1074,19 @@ class PicoMonitor:
         self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
         self.update_status("reconnecting", connected=False, port=port, error=None)
         time.sleep(0.5)
-        return None
+        conn = self.open_serial()
+        if conn is None:
+            return None
+        try:
+            conn.write(b"r\n")
+            conn.flush()
+            self.record_serial("tx", "r")
+        except (OSError, serial.SerialException) as exc:
+            self.close_serial(conn)
+            self.update_status("disconnected", connected=False, port=port, error=str(exc))
+            self.record_serial("err", str(exc))
+            return None
+        return conn
 
     def handle_serial_command(self, command: SerialCommand, conn: serial.Serial | None) -> serial.Serial | None:
         if conn is None or not conn.is_open:
