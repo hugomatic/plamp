@@ -259,6 +259,8 @@ sub_panel_socket_raise_h = 2.5;
 sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
+sub_panel_socket_rim_relief_w = sub_panel_socket_w;
+sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
 ph_ledge_gap_clearance = 5;
@@ -482,6 +484,23 @@ module sub_panel_socket_screw_bosses() {
                 cylinder(h = sub_panel_socket_raise_h, d = sub_panel_socket_screw_boss_d);
 }
 
+module sub_panel_socket_bottom_rim_relief_negative() {
+    bottom_rim_inner_y = -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
+    lip_h = sub_panel_h - sub_panel_base_h;
+
+    for (x = [left_ac_x, right_ac_x])
+        translate([
+            x + outlet_feature_x - sub_panel_socket_rim_relief_w / 2,
+            bottom_rim_inner_y,
+            sub_panel_base_h - 0.1
+        ])
+            cube([
+                sub_panel_socket_rim_relief_w,
+                sub_panel_socket_rim_relief_d + 0.1,
+                lip_h + 0.2
+            ]);
+}
+
 module sub_panel_barrel_channel_negative() {
     translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
@@ -510,6 +529,8 @@ module sub_panel_c13_negative() {
 }
 
 module sub_panel_8ch_negative() {
+    sub_panel_socket_bottom_rim_relief_negative();
+
     for (x = [left_ac_x, right_ac_x]) {
         translate([x + outlet_feature_x, ac_row_y, plate_t / 2])
             rect_cutout(sub_panel_socket_w, sub_panel_socket_h);
