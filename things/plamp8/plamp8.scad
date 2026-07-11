@@ -371,7 +371,7 @@ module positive_plate_writings(
     y1 = 50;
 
     x2 = x1;
-    y2 = -y1 + 5;
+    y2 = -y1 + 9;
 
     y_line = -bfont - 2;
 
@@ -720,7 +720,7 @@ module usb_c_panel_unit(include_revision = true) {
             usb_c_revision_negative();
     }
 
-    translate([0, -usb_c_panel_h / 2 + 8, 0])
+    translate([0, -usb_c_panel_h / 2 + 4, 0])
         flush_label("COM", 5);
 
     if (include_revision)
@@ -840,7 +840,7 @@ module top_panel_8ch(include_revision = true) {
             translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
-        translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 8, 0])
+        translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 4, 0])
             flush_label("COM", 5);
 
         if (include_revision)
