@@ -46,7 +46,7 @@ hole_d = 34;        // source cylinder diameter
 hole_h = 24;        // final vertical height after trimming
 hole_depth = 10;    // taller than plate_t for clean boolean
 cut_off_y = 2.5;
-outlet_spacing = 41;
+outlet_spacing = 40.26;
 outlet_feature_x = -4;
 outlet_toggle_x = 32;
 outlet_group_x = 8;
@@ -247,8 +247,8 @@ c13_face_h = c13_face_h_inch * inch;
 c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
 
 toggle_label_x_offset = 15;
-toggle_label_step = 7;
-toggle_label_font = 3.2;
+toggle_label_step = 8.5;
+toggle_label_font = 4.2;
 sub_panel_switch_w = 20;
 sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
@@ -365,15 +365,15 @@ module positive_plate_writings(
     device_b = "Lights",
     detail_b = "ch 2 pin ?"
 ) {
-    bfont = 7;
-    sfont = 4;
+    bfont = 8;
+    sfont = 5;
     x1 = 0;
-    y1 = 47;
+    y1 = 50;
 
     x2 = x1;
     y2 = -y1 + 5;
 
-    y_line = -bfont - 1;
+    y_line = -bfont - 2;
 
     translate([x1, y1, plate_t]) {
         write_text(device_a, bfont, -write_t);
@@ -684,7 +684,7 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
     }
 
     translate([barrel_label_x, -barrel_channel_h / 2 + 11, 0])
-        flush_two_line_label(device, detail, 4.3, 3.1, 5);
+        flush_two_line_label(device, detail, 5.3, 4.1, 6);
     translate([dc_toggle_x() + toggle_label_x_offset, 0, 0])
         toggle_state_labels();
 
@@ -721,7 +721,7 @@ module usb_c_panel_unit(include_revision = true) {
     }
 
     translate([0, -usb_c_panel_h / 2 + 8, 0])
-        flush_label("COM", 4);
+        flush_label("COM", 5);
 
     if (include_revision)
         translate([0, usb_c_panel_h / 2 - 8, 0])
@@ -834,14 +834,14 @@ module top_panel_8ch(include_revision = true) {
 
         for (i = [0:3])
             translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
-                flush_two_line_label(dc_devices[i], dc_details[i], 4.3, 3.1, 5);
+                flush_two_line_label(dc_devices[i], dc_details[i], 5.3, 4.1, 6);
 
         for (i = [0:3])
             translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
         translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 8, 0])
-            flush_label("COM", 4);
+            flush_label("COM", 5);
 
         if (include_revision)
             translate([revision_x, revision_y, 0])
