@@ -367,11 +367,11 @@ module positive_plate_writings(
 ) {
     bfont = 8;
     sfont = 5;
-    x1 = 0;
+    x1 = outlet_feature_x;
     y1 = 50;
 
     x2 = x1;
-    y2 = -y1 + 9;
+    y2 = -y1 + 8;
 
     y_line = -bfont - 2;
 
