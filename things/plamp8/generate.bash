@@ -65,9 +65,10 @@ find_openscad() {
 }
 
 usage() {
-  local last_commit today
+  local last_commit suggested_dir today
   last_commit="$(git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCAD_REPO_DIR/$SCAD_FILE" 2>/dev/null || true)"
   today="$(date +%b%d | tr 'A-Z' 'a-z')"
+  suggested_dir="${today}_${last_commit:-HEAD}"
   cat <<EOF
 
 $cad stl generator
@@ -76,8 +77,8 @@ usage:
   $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
-  $name prints/$today HEAD
-  $name prints/$today ${last_commit:-HEAD}
+  $name prints/$suggested_dir HEAD
+  $name prints/$suggested_dir ${last_commit:-HEAD}
   $name --revision fit-test-1 /tmp/${cad}_fit HEAD
   $name --revision layout --preview --view top_panel /tmp/${cad}_preview HEAD
 
