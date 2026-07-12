@@ -11,11 +11,11 @@ dc_connector_type = "xt60"; // [barrel, xt60]
 // show / hide enclosure parts
 show_walls = true;
 show_floor = true;
-show_psu = false;
-show_relay = false;
+show_psu = true;
+show_relay = true;
 show_top_outline = false;
-show_sub_panel = false;
-show_top_panel = false;
+show_sub_panel = true;
+show_top_panel = true;
 
 
 /* [box features] */
@@ -46,7 +46,7 @@ hole_d = 34;        // source cylinder diameter
 hole_h = 24;        // final vertical height after trimming
 hole_depth = 10;    // taller than plate_t for clean boolean
 cut_off_y = 2.5;
-outlet_spacing = 40.15;
+outlet_spacing = 39.65;
 outlet_feature_x = -4;
 outlet_toggle_x = 32;
 outlet_group_x = 8;
