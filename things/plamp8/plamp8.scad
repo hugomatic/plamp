@@ -141,8 +141,7 @@ c13_cutout_h = 48;
 c13_wire_cutout_w = c13_cutout_w;
 c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
-c13_screw_inset = 1.5;
-c13_screw_spacing_adjust = -3.74;
+c13_screw_spacing = 40;
 
 // Calibrated from footprint test print: printed PSU diagonal was 138.00 mm
 // against the original 134 x 36 mm footprint diagonal.
@@ -247,7 +246,6 @@ psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 *
 
 c13_face_w = c13_face_w_inch * inch;
 c13_face_h = c13_face_h_inch * inch;
-c13_screw_spacing = c13_face_w - 2 * c13_screw_inset + c13_screw_spacing_adjust;
 
 toggle_label_x_offset = 15;
 toggle_label_step = 8.5;
