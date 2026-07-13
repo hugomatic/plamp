@@ -54,6 +54,8 @@ outlet_group_w = 104;
 outlet_group_h = 56;
 
 screw_d = 4;
+panel_screw_countersink_d = 8;
+panel_screw_countersink_h = plate_t;
 panel_nut_d = 7.4;
 panel_nut_h = 3.4;
 screw_spacing = 84;
@@ -118,7 +120,7 @@ usb_c_group_y = -4;
 usb_c_group_w = 36;
 usb_c_group_h = 28;
 usb_c_cutout_w = 14;
-usb_c_cutout_h = 8;
+usb_c_cutout_h = 10.25;
 usb_c_wire_cutout_w = 10;
 usb_c_wire_cutout_h = 16;
 usb_c_screw_d = 3.2;
@@ -140,6 +142,7 @@ c13_wire_cutout_w = c13_cutout_w;
 c13_wire_cutout_h = c13_cutout_h;
 c13_screw_d = 3.5;
 c13_screw_inset = 1.5;
+c13_screw_spacing_adjust = -3.74;
 
 // Calibrated from footprint test print: printed PSU diagonal was 138.00 mm
 // against the original 134 x 36 mm footprint diagonal.
@@ -244,7 +247,7 @@ psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 *
 
 c13_face_w = c13_face_w_inch * inch;
 c13_face_h = c13_face_h_inch * inch;
-c13_screw_spacing = c13_face_w - 2 * c13_screw_inset;
+c13_screw_spacing = c13_face_w - 2 * c13_screw_inset + c13_screw_spacing_adjust;
 
 toggle_label_x_offset = 15;
 toggle_label_step = 8.5;
@@ -254,8 +257,6 @@ sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
-sub_panel_socket_screw_boss_d = 12;
-sub_panel_socket_raise_h = 2.5;
 sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
@@ -475,13 +476,6 @@ module sub_panel_8ch_positive() {
                 cube([sub_panel_wall, top_panel_h - 2 * sub_panel_wall, lip_h]);
         }
     }
-}
-
-module sub_panel_socket_screw_bosses() {
-    for (x = [left_ac_x, right_ac_x])
-        for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
-            translate([x + outlet_feature_x, ac_row_y + y, sub_panel_base_h])
-                cylinder(h = sub_panel_socket_raise_h, d = sub_panel_socket_screw_boss_d);
 }
 
 module sub_panel_socket_bottom_rim_relief_negative() {
@@ -820,7 +814,7 @@ module top_panel_8ch(include_revision = true) {
             translate([c13_panel_x, service_row_y, 0])
                 c13_inlet_negative();
 
-            panel_corner_screw_holes();
+            panel_corner_screw_holes(include_countersink = true);
 
             if (include_revision)
                 translate([revision_x, revision_y, 0])
@@ -855,7 +849,6 @@ module sub_panel_8ch() {
             union() {
                 translate([-layout_offset_x, -layout_offset_y, 0])
                     sub_panel_8ch_positive();
-                sub_panel_socket_screw_bosses();
             }
 
             sub_panel_8ch_negative();
@@ -1347,13 +1340,25 @@ module top_panel_outline() {
             }
 }
 
-module panel_corner_screw_holes() {
+module panel_corner_screw_hole(include_countersink = false) {
+    screw_hole(screw_d);
+
+    if (include_countersink)
+        translate([0, 0, plate_t - panel_screw_countersink_h])
+            cylinder(
+                h = panel_screw_countersink_h + 0.1,
+                d1 = screw_d,
+                d2 = panel_screw_countersink_d
+            );
+}
+
+module panel_corner_screw_holes(include_countersink = false) {
     for (
         x = [panel_screw_inset, top_panel_w - panel_screw_inset],
         y = [panel_screw_inset, top_panel_h - panel_screw_inset]
     )
         translate([x - layout_offset_x, y - layout_offset_y, 0])
-            screw_hole(screw_d);
+            panel_corner_screw_hole(include_countersink);
 }
 
 module panel_corner_screw_holes_in_box() {
