@@ -32,8 +32,9 @@ For each channel:
 5. Server atomically writes the timer state.
 6. Server generates one `main.py` containing every enabled channel.
 7. Server flashes the Pico once.
-8. After reconnecting, the existing monitor sends `r` once.
-9. The next report updates current ON/OFF status and displayed runtime progress.
+8. The monitor reconnects before completing the apply operation, records the current report sequence, and successfully writes `r`.
+9. `handle_line()` treats the next valid JSON message with `type: "report"` as the response to that `r`. It advances the report sequence and publishes the report through the existing SSE stream immediately.
+10. The browser updates current ON/OFF status and runtime progress from that SSE report. It does not poll, sleep, reconstruct runtime state, or wait for the periodic report interval.
 
 The browser removes its current per-channel schedule POST loop. The per-channel API remains available for CLI use, but becomes a wrapper that updates semantic configuration and calls the same whole-controller compile/apply operation. It must not patch compiled timer state directly.
 
@@ -49,7 +50,9 @@ The browser removes its current per-channel schedule POST loop. The per-channel 
 - `plamp_web/server.py`
   - Change `post_controller_apply` to compile from current controller configuration, validate and atomically write the resulting timer state, then call `apply_timer_state` once.
   - Change the per-channel endpoint to update that channel's semantic schedule and delegate to the same controller apply function.
-  - Keep the existing post-flash reconnect and `r` request.
+  - Do not mark the monitor apply command complete until reconnect succeeds and `r` has been written successfully.
+  - Track valid reports with a monotonically increasing sequence updated by `handle_line()`; malformed serial input never advances it.
+  - Publish the first valid report after `r` through the existing SSE path without an artificial delay.
 - API test page in `plamp_web/pages.py`
   - Provide runnable examples for reading controller state, saving complete controller configuration, applying once, requesting a report, and updating one channel through the compatibility endpoint.
   - Examples must show both cycle and daily-window request bodies where applicable.
@@ -60,13 +63,15 @@ The browser removes its current per-channel schedule POST loop. The per-channel 
 - Do not remove the per-channel API or CLI, but do remove their direct compiled-state mutation path.
 - Do not change Pico firmware protocol or report shape.
 - Do not add another persisted schedule representation.
-- Do not make applying configuration wait synchronously for telemetry.
+- Do not add sleeps, polling, or a second flash.
+- Do not change the Pico protocol or add request IDs; the serial command queue already guarantees only one in-flight apply/report request per controller.
 
 ## Errors
 
 - Invalid configuration stops before flashing.
 - Flash failure leaves the saved configuration and timer state available for retry.
-- A missing `r` response does not trigger another flash; the UI waits for normal telemetry.
+- Reconnect or `r` write failure makes apply fail instead of reporting false success.
+- A missing `r` response does not trigger another flash. The UI remains subscribed to telemetry and reports that fresh state has not arrived.
 
 ## Tests
 
@@ -74,4 +79,6 @@ The browser removes its current per-channel schedule POST loop. The per-channel 
 - Applying a mixed cycle/daily controller creates the expected patterns and phases.
 - One editor save calls the controller apply endpoint once and never calls the per-channel endpoint.
 - Controller apply writes one complete state and invokes the flash operation once.
+- Monitor apply does not complete before reconnect and successful `r` transmission.
+- A malformed line after `r` is ignored; the next valid report is published immediately as fresh telemetry.
 - API test page exposes examples for every supported scheduler write/report workflow.
