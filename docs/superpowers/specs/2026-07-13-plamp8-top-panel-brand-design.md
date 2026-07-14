@@ -8,12 +8,12 @@ Use the empty area above the top-panel revision string for understated `plamp` b
 
 - Add lowercase text `plamp` only to the top-panel view and printable top-panel geometry.
 - Center it horizontally on the existing `revision_x` position.
-- Place its center 12 mm above `revision_y`.
-- Use DejaVu Sans at 7 mm, normal weight, matching the existing text system.
-- Put the text in a 34 mm by 11 mm shallow label pocket using the existing flush-inlay construction.
+- Top-align its pocket with the neighboring `COM` pocket, placing its center 19 mm above `revision_y`.
+- Use DejaVu Sans at 4 mm, matching the revision text.
+- Give the brand pocket the same 28 mm by 9 mm dimensions as the revision pocket.
 - Retain the existing revision string, revision pocket, size, and position.
 
-The 12 mm center offset leaves 2 mm between the 11 mm brand pocket and 9 mm revision pocket. The brand remains visually subordinate to the functional channel labels and does not alter any connector or switch geometry.
+The 19 mm center offset puts both the brand and `COM` pocket top edges at y = 24 mm and leaves 10 mm between the brand and revision pockets. Matching the revision width prevents contact with the neighboring `COM` and `Nutrients` pockets. The brand remains visually subordinate to the functional channel labels and does not alter any connector or switch geometry.
 
 ## Implementation
 
@@ -24,9 +24,11 @@ Define named top-panel brand parameters beside the existing revision-label param
 Do not run OpenSCAD locally. Verify from source that:
 
 - brand center x equals `revision_x`;
-- brand center y equals `revision_y + 12`;
-- brand and revision pocket edges have a 2 mm vertical gap;
-- font size is 7 mm;
+- brand center y equals `revision_y + 19`;
+- brand and `COM` pocket top edges both equal y = 24 mm;
+- brand and revision pocket edges have a 10 mm vertical gap;
+- brand and revision pockets are both 28 mm by 9 mm;
+- font size is 4 mm;
 - the existing revision placement is unchanged;
 - only `things/plamp8/plamp8.scad` production geometry changes.
 

@@ -311,10 +311,8 @@ label_pocket_r = 3;
 revision_label_w = 26;
 revision_label_h = 9;
 top_panel_brand_text = "plamp";
-top_panel_brand_font = 7;
-top_panel_brand_label_w = 34;
-top_panel_brand_label_h = 11;
-top_panel_brand_y_offset = 12;
+top_panel_brand_font = 4;
+top_panel_brand_y_offset = 19;
 box_revision_font = 6;
 wall_revision_x_offset = -35;
 
@@ -835,7 +833,7 @@ module top_panel_8ch(include_revision = true) {
                 translate([revision_x, revision_y, 0])
                     label_pocket(top_panel_revision_label_w, revision_label_h);
                 translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
-                    label_pocket(top_panel_brand_label_w, top_panel_brand_label_h);
+                    label_pocket(top_panel_revision_label_w, revision_label_h);
             }
         }
 
