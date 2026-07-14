@@ -104,7 +104,10 @@ barrel_group_h = 46;
 barrel_jack_x = -13;
 barrel_toggle_x = 8;
 dc_toggle_x_extra = dc_connector_type == "xt60" ? 8 : 0;
-xt60_x_extra = dc_connector_type == "xt60" ? 3 : 0;
+xt60_outside_w = 34.25;
+dc_switch_outside_d = 21;
+xt60_switch_clearance = 2;
+xt60_switch_center_spacing = xt60_outside_w / 2 + dc_switch_outside_d / 2 + xt60_switch_clearance;
 xt60_cutout_w = 19;
 xt60_cutout_h = 12;
 xt60_face_w = 35;
@@ -785,8 +788,17 @@ module relay_board_keepout() {
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
-function dc_connector_x() = barrel_jack_x + xt60_x_extra;
 function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
+function dc_connector_x() = dc_connector_type == "xt60"
+    ? dc_toggle_x() - xt60_switch_center_spacing
+    : barrel_jack_x;
+
+assert(
+    dc_connector_type != "xt60"
+        || abs((dc_toggle_x() - dc_connector_x()) - xt60_switch_center_spacing) < 0.001,
+    "XT60-to-switch clearance does not match the measured hardware envelopes"
+);
+
 function top_ledge_gap_center_for_dc_toggle(i) = layout_offset_x + dc_channel_x(i) + dc_toggle_x();
 function top_ledge_gap_start(i) = max(0, top_ledge_gap_center_for_dc_toggle(i) - ph_ledge_gap_w / 2);
 function top_ledge_gap_end(i, length) = min(length, top_ledge_gap_center_for_dc_toggle(i) + ph_ledge_gap_w / 2);
