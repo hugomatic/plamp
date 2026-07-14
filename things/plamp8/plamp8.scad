@@ -310,6 +310,11 @@ label_pocket_h = 3;
 label_pocket_r = 3;
 revision_label_w = 26;
 revision_label_h = 9;
+top_panel_brand_text = "plamp";
+top_panel_brand_font = 7;
+top_panel_brand_label_w = 34;
+top_panel_brand_label_h = 11;
+top_panel_brand_y_offset = 12;
 box_revision_font = 6;
 wall_revision_x_offset = -35;
 
@@ -826,9 +831,12 @@ module top_panel_8ch(include_revision = true) {
 
             panel_corner_screw_holes(include_countersink = true);
 
-            if (include_revision)
+            if (include_revision) {
                 translate([revision_x, revision_y, 0])
                     label_pocket(top_panel_revision_label_w, revision_label_h);
+                translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
+                    label_pocket(top_panel_brand_label_w, top_panel_brand_label_h);
+            }
         }
 
         translate([left_ac_x, ac_row_y, 0])
@@ -847,9 +855,12 @@ module top_panel_8ch(include_revision = true) {
         translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 4, 0])
             flush_label("COM", 5);
 
-        if (include_revision)
+        if (include_revision) {
             translate([revision_x, revision_y, 0])
                 flush_revision_label();
+            translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
+                flush_label(top_panel_brand_text, top_panel_brand_font);
+        }
     }
 }
 
