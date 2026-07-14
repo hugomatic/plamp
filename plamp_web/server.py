@@ -847,6 +847,7 @@ class PicoMonitor:
         self.stop_event = threading.Event()
         self.wake_event = threading.Event()
         self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
+        self.report_sequence = 0
         self.summary: dict[str, Any] = {
             "role": role,
             "serial": pico_serial,
@@ -856,6 +857,7 @@ class PicoMonitor:
             "last_seen": None,
             "last_error": None,
             "last_report": None,
+            "report_sequence": 0,
         }
 
     def start(self) -> None:
@@ -995,14 +997,27 @@ class PicoMonitor:
             self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
             return
         reduced = reduce_report(report)
+        is_report = isinstance(reduced, dict) and reduced.get("type") == "report"
         with self.lock:
             self.summary["last_seen"] = now
             self.summary["last_error"] = None
-            self.summary["last_report"] = reduced
-            if isinstance(reduced, dict) and "pins" in reduced:
-                self.summary["pins"] = reduced["pins"]
-            snapshot = dict(self.summary)
-        self.publish("report", {"role": self.role, "serial": self.pico_serial, "received_at": now, "report": reduced})
+            if is_report:
+                self.report_sequence += 1
+                self.summary["report_sequence"] = self.report_sequence
+                self.summary["last_report"] = reduced
+                if "pins" in reduced:
+                    self.summary["pins"] = reduced["pins"]
+        if is_report:
+            self.publish(
+                "report",
+                {
+                    "role": self.role,
+                    "serial": self.pico_serial,
+                    "received_at": now,
+                    "report_sequence": self.report_sequence,
+                    "report": reduced,
+                },
+            )
 
     def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
         command = ApplyCommand(path=path)
@@ -1028,7 +1043,7 @@ class PicoMonitor:
             raise HTTPException(status_code=500, detail="Pico command finished without a result")
         return command.result
 
-    def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> serial.Serial | None:
+    def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> ApplyCommand | None:
         self.close_serial(conn)
         self.update_status("applying", connected=False, error=None)
         port = self.find_port()
@@ -1069,24 +1084,32 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
-        command.result = {"role": self.role, "port": port, "serial": self.pico_serial}
-        command.done.set()
         self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
         self.update_status("reconnecting", connected=False, port=port, error=None)
-        time.sleep(0.5)
-        conn = self.open_serial()
-        if conn is None:
-            return None
+        return command
+
+    def finish_apply_after_reconnect(self, command: ApplyCommand, conn: serial.Serial) -> None:
+        requested_after = self.report_sequence
         try:
             conn.write(b"r\n")
             conn.flush()
-            self.record_serial("tx", "r")
         except (OSError, serial.SerialException) as exc:
+            port = getattr(conn, "port", None)
             self.close_serial(conn)
+            command.error_status = 502
+            command.error_detail = str(exc)
             self.update_status("disconnected", connected=False, port=port, error=str(exc))
             self.record_serial("err", str(exc))
-            return None
-        return conn
+        else:
+            self.record_serial("tx", "r")
+            command.result = {
+                "role": self.role,
+                "port": getattr(conn, "port", None),
+                "serial": self.pico_serial,
+                "report_sequence": requested_after,
+            }
+        finally:
+            command.done.set()
 
     def handle_serial_command(self, command: SerialCommand, conn: serial.Serial | None) -> serial.Serial | None:
         if conn is None or not conn.is_open:
@@ -1117,16 +1140,31 @@ class PicoMonitor:
 
     def run(self) -> None:
         conn: serial.Serial | None = None
+        pending_apply: ApplyCommand | None = None
         retry_sleep = 1.0
         while not self.stop_event.is_set():
             try:
+                if pending_apply is not None:
+                    if conn is None or not conn.is_open:
+                        conn = self.open_serial()
+                    if conn is None:
+                        self.wake_event.wait(retry_sleep)
+                        self.wake_event.clear()
+                        retry_sleep = min(retry_sleep * 2, 5.0)
+                        continue
+                    retry_sleep = 1.0
+                    self.finish_apply_after_reconnect(pending_apply, conn)
+                    pending_apply = None
+                    continue
+
                 try:
                     command = self.commands.get_nowait()
                 except queue.Empty:
                     command = None
                 if command is not None:
                     if isinstance(command, ApplyCommand):
-                        conn = self.handle_apply(command, conn)
+                        pending_apply = self.handle_apply(command, conn)
+                        conn = None
                     else:
                         conn = self.handle_serial_command(command, conn)
                     continue
