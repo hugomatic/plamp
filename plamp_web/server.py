@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import glob
 import getpass
 import grp
@@ -19,7 +20,6 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-import time as pytime
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ from plamp_web.hardware_config import (
     scheduler_controller_ids,
     scheduler_devices_for_controller,
 )
-from plamp_web.timer_schedule import channel_metadata_for_role, patch_channel_schedule
+from plamp_web.timer_schedule import channel_metadata_for_role, compile_controller_state
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -2285,52 +2285,47 @@ def get_camera_capture_image(capture_id: str) -> FileResponse:
 
 def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, Any] = Body(...)) -> dict[str, Any]:
     config = load_config()
-    timer_role(role)
-    path = timer_state_path(role)
-    saved_state = load_timer_state_for_schedule_edit(path)
-    live_state = latest_timer_state(role)
-    channel_state = live_state if isinstance(live_state, dict) else saved_state
-    channels = channel_metadata_for_role(role, config, channel_state)
-    try:
-        updated = patch_channel_schedule(
-            saved_state,
-            channels,
-            channel_id,
-            schedule,
-            live_devices=live_devices_for_role(role),
-            now=datetime.now().time(),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    validated = validate_timer_state(updated)
-    sent = None
-    message = "schedule saved and sent to Pico"
-    with lock_for(role_locks, role):
-        atomic_write_json(path, validated)
-        try:
-            sent = apply_timer_state(role, path)
-        except HTTPException as exc:
-            detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
-            if detail.startswith(f"Pico for role {role} is not connected:"):
-                reconnected = False
-                for _ in range(6):
-                    pytime.sleep(0.5)
-                    try:
-                        pico_for_role(role)
-                    except HTTPException:
-                        continue
-                    reconnected = True
-                    break
-                message = "schedule saved; Pico briefly reconnected while applying." if reconnected else f"schedule saved; {detail}"
-            else:
-                message = f"schedule saved; {detail}"
+    controllers = copy.deepcopy(config.get("controllers", {}))
+    controller = controllers.get(role)
+    if not isinstance(controller, dict) or controller.get("type", "pico_scheduler") != "pico_scheduler":
+        raise HTTPException(status_code=404, detail=f"unknown pico-scheduler controller: {role}")
+    devices = controller.get("settings", {}).get("devices", {})
+    device = devices.get(channel_id) if isinstance(devices, dict) else None
+    if not isinstance(device, dict):
+        raise HTTPException(status_code=422, detail=f"unknown channel: {channel_id}")
+    mode = schedule.get("mode")
+    if mode == "clock_window":
+        editor = {
+            "kind": "daily_window",
+            "on_time": str(schedule.get("on_time", "")),
+            "off_time": str(schedule.get("off_time", "")),
+        }
+    elif mode == "cycle":
+        existing_editor = device.get("editor") if isinstance(device.get("editor"), dict) else {}
+        editor = {
+            "kind": "cycle",
+            "on_seconds": require_int(schedule.get("on_seconds"), "on_seconds must be an integer"),
+            "off_seconds": require_int(schedule.get("off_seconds"), "off_seconds must be an integer"),
+            "start_at_seconds": require_int(schedule.get("start_at_seconds", 0), "start_at_seconds must be an integer"),
+        }
+        unit = schedule.get("unit", existing_editor.get("unit"))
+        if unit in {"seconds", "minutes", "hours"}:
+            editor["unit"] = unit
+    else:
+        raise HTTPException(status_code=422, detail="mode must be cycle or clock_window")
+    device["editor"] = editor
+    updated_config = copy.deepcopy(config)
+    updated_config["controllers"] = controllers
+    compiled_timer_state_for_controller(role, config=updated_config, now=datetime.now().time())
+    put_config_controllers(controllers)
+    applied = post_controller_apply(role)
     return {
         "role": role,
         "channel": channel_id,
-        "success": True,
-        "message": message,
-        "pico": sent,
-        "state": state_with_current_values(validated),
+        "success": applied["success"],
+        "message": applied["message"],
+        "pico": applied.get("pico"),
+        "state": applied.get("state"),
     }
 
 
@@ -2343,15 +2338,38 @@ def post_controller_channel_schedule(controller: str, channel_id: str, schedule:
     return response
 
 
+def compiled_timer_state_for_controller(
+    controller: str,
+    *,
+    config: dict[str, Any] | None = None,
+    now: Any = None,
+) -> dict[str, Any]:
+    config = load_config() if config is None else config
+    controller_data = config.get("controllers", {}).get(controller)
+    if not isinstance(controller_data, dict) or controller_data.get("type", "pico_scheduler") != "pico_scheduler":
+        raise HTTPException(status_code=404, detail=f"unknown pico-scheduler controller: {controller}")
+    channels = channel_metadata_for_role(controller, config, None)
+    report_every = require_int(
+        controller_data.get("payload", {}).get("report_every", 10),
+        "report_every must be an integer",
+    )
+    try:
+        return compile_controller_state(channels, report_every=report_every, now=now)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/api/controllers/{controller}/apply")
 def post_controller_apply(controller: str) -> dict[str, Any]:
     if controller_firmware(controller) != "pico_scheduler":
         raise HTTPException(status_code=422, detail="apply is only supported for pico_scheduler controllers")
     path = timer_state_path(controller)
-    validated = load_timer_state_for_schedule_edit(path)
     sent = None
     message = "state sent to Pico"
     with lock_for(role_locks, controller):
+        validated = validate_timer_state(
+            compiled_timer_state_for_controller(controller, now=datetime.now().time())
+        )
         atomic_write_json(path, validated)
         try:
             sent = apply_timer_state(controller, path)

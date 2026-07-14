@@ -1599,7 +1599,11 @@ def render_timer_dashboard_page(
       return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
     }
 
-    function clockValuesForEvent(event) {
+    function clockValuesForEvent(channel, event) {
+      const editor = channel.editor && typeof channel.editor === "object" ? channel.editor : null;
+      if (editor?.kind === "daily_window" && editor.on_time && editor.off_time) {
+        return {on: editor.on_time, off: editor.off_time};
+      }
       const durations = twoStepDurations(event);
       if (!durations || durations.total !== 86400) return {on: "06:00", off: "18:00"};
       const cycleT = Number(event.cycle_t ?? event.current_t ?? 0) || 0;
@@ -1672,7 +1676,7 @@ def render_timer_dashboard_page(
 
     function scheduleEditorBlock(role, channel, event) {
       const cycleValues = cycleEditorValues(channel, event);
-      const clock = clockValuesForEvent(event);
+      const clock = clockValuesForEvent(channel, event);
       const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
       return `
         <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}" data-channel-pin="${escapeHtml(channel.pin ?? "")}" data-channel-type="${escapeHtml(channel.type || "gpio")}" data-channel-order="${escapeHtml(channel.display_order ?? 0)}">
@@ -1789,34 +1793,6 @@ def render_timer_dashboard_page(
           throw new Error(applyConfigParsed?.detail || applyConfigText || `apply config: ${applyConfigResponse.status} ${applyConfigResponse.statusText}`);
         }
         lastMessage = applyConfigParsed?.message || "Schedule settings saved.";
-        for (const block of blocks) {
-          const channelId = block.dataset.channelId;
-          const mode = block.querySelector(".editor-mode").value;
-          if (mode !== "cycle" && mode !== "clock_window") continue;
-          const body = {mode};
-          if (mode === "cycle") {
-            const cycleUnit = block.querySelector(".editor-cycle-unit").value;
-            const multiplier = unitMultiplier(cycleUnit);
-            body.on_seconds = Number(block.querySelector(".editor-on-value").value) * multiplier;
-            body.off_seconds = Number(block.querySelector(".editor-off-value").value) * multiplier;
-            body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;
-          } else {
-            body.on_time = block.querySelector(".editor-on-time").value;
-            body.off_time = block.querySelector(".editor-off-time").value;
-          }
-          const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channelId)}/schedule`, {
-            method: "POST",
-            headers: {"content-type": "application/json"},
-            body: JSON.stringify(body),
-          });
-          const text = await response.text();
-          let parsed = null;
-          try { parsed = JSON.parse(text); } catch (error) {}
-          if (!response.ok) {
-            throw new Error(`${channelId}: ${parsed?.detail || text || `${response.status} ${response.statusText}`}`);
-          }
-          lastMessage = parsed?.message || "Schedule applied. Waiting for report...";
-        }
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
@@ -2365,6 +2341,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         default_payload,
         "JSON",
     ])
+    cycle_schedule_example = html.escape(json.dumps({"mode": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0}, separators=(",", ":")))
+    clock_schedule_example = html.escape(json.dumps({"mode": "clock_window", "on_time": "06:00", "off_time": "23:00"}, separators=(",", ":")))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2514,6 +2492,46 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="stream-result">Stream status updates will appear here.</pre>
   </fieldset>
 
+  <h2>Pico scheduler</h2>
+  <p>Normal workflow: save desired config once, then apply the controller once. The apply compiles every configured channel and flashes the complete controller state.</p>
+  <fieldset>
+    <legend>GET /api/controllers/{{controller}}</legend>
+    <p>Reads the controller's current API view, including the latest reported Pico state.</p>
+    <pre id="scheduler-get-curl-command">curl http://localhost:8000/api/controllers/{html.escape(default_role)}</pre>
+    <button class="copy-curl" type="button" data-copy-target="scheduler-get-curl-command">Copy curl</button>
+    <button class="scheduler-request" type="button" data-method="GET" data-path="/api/controllers/{html.escape(default_role)}" data-status="scheduler-get-status" data-result="scheduler-get-result">Run request</button>
+    <div><span id="scheduler-get-status">Ready.</span></div>
+    <pre id="scheduler-get-result">GET response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>POST /api/controllers/{{controller}}/apply</legend>
+    <p>Compiles saved semantic settings for all channels, writes one complete state, and flashes once.</p>
+    <pre id="scheduler-apply-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/apply</pre>
+    <button class="copy-curl" type="button" data-copy-target="scheduler-apply-curl-command">Copy curl</button>
+    <button class="scheduler-request" type="button" data-method="POST" data-path="/api/controllers/{html.escape(default_role)}/apply" data-status="scheduler-apply-status" data-result="scheduler-apply-result">Run request</button>
+    <div><span id="scheduler-apply-status">Ready.</span></div>
+    <pre id="scheduler-apply-result">POST response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>POST /api/controllers/{{controller}}/commands/report</legend>
+    <p>Sends <code>r</code> and returns only after a fresh report is received.</p>
+    <pre id="scheduler-report-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/commands/report</pre>
+    <button class="copy-curl" type="button" data-copy-target="scheduler-report-curl-command">Copy curl</button>
+    <button class="scheduler-request" type="button" data-method="POST" data-path="/api/controllers/{html.escape(default_role)}/commands/report" data-status="scheduler-report-status" data-result="scheduler-report-result">Run request</button>
+    <div><span id="scheduler-report-status">Ready.</span></div>
+    <pre id="scheduler-report-result">POST response will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>POST /api/controllers/{{controller}}/channels/{{channel}}/schedule</legend>
+    <p>Compatibility endpoint for changing one channel. It updates desired config, recompiles all channels, and performs one controller apply.</p>
+    <p class="helper-title">Cycle example</p>
+    <pre id="scheduler-cycle-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/channels/pump/schedule -H 'content-type: application/json' --data '{cycle_schedule_example}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="scheduler-cycle-curl-command">Copy curl</button>
+    <p class="helper-title">Daily-window example</p>
+    <pre id="scheduler-clock-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/channels/lights/schedule -H 'content-type: application/json' --data '{clock_schedule_example}'</pre>
+    <button class="copy-curl" type="button" data-copy-target="scheduler-clock-curl-command">Copy curl</button>
+  </fieldset>
+
   <fieldset>
     <legend>POST /api/controllers/{{controller}}/pins/{{pin}}/pulse</legend>
     <p>Requests a short GPIO pulse on a configured Pico scheduler pin.</p>
@@ -2531,7 +2549,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
 
   <fieldset>
     <legend>PUT /api/controllers/{{role}}</legend>
-    <p>Writes controller state JSON and sends it to the Pico.</p>
+    <p><strong>Low-level compiled-state API.</strong> Writes controller state JSON and sends it to the Pico. Normal schedule editing should use desired config plus controller apply.</p>
     <label>Role
       <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
     </label>
@@ -2791,6 +2809,23 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
           options = {{method: "PUT", headers: {{"content-type": "application/json"}}, body: JSON.stringify(body)}};
         }}
         const response = await fetch(spec.url, options);
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
+    async function runSchedulerRequest(event) {{
+      const button = event.currentTarget;
+      const status = document.getElementById(button.dataset.status);
+      const result = document.getElementById(button.dataset.result);
+      status.textContent = "Sending...";
+      result.textContent = "";
+      try {{
+        const response = await fetch(button.dataset.path, {{method: button.dataset.method}});
         const text = await response.text();
         status.textContent = `${{response.status}} ${{response.statusText}}`;
         result.textContent = prettyResponseText(text);
@@ -3177,6 +3212,9 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
     document.getElementById("pulse-request").addEventListener("click", pulsePinRequest);
+    for (const button of document.querySelectorAll(".scheduler-request")) {{
+      button.addEventListener("click", runSchedulerRequest);
+    }}
     cameraCaptureCameraIdInput.addEventListener("input", updateCurl);
     listCapturesCameraIdInput.addEventListener("input", updateCurl);
     listCapturesLimitInput.addEventListener("input", updateCurl);

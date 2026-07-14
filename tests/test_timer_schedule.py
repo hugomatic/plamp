@@ -5,12 +5,40 @@ from plamp_web.timer_schedule import (
     apply_clock_window_schedule,
     apply_cycle_schedule,
     channel_metadata_for_role,
+    compile_controller_state,
     inspect_two_step_pattern,
     patch_channel_schedule,
 )
 
 
 class TimerScheduleTests(unittest.TestCase):
+    def test_compile_controller_state_builds_all_channels(self):
+        channels = [
+            {
+                "id": "pump",
+                "pin": 3,
+                "type": "gpio",
+                "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0, "unit": "minutes"},
+            },
+            {
+                "id": "lights",
+                "pin": 2,
+                "type": "gpio",
+                "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"},
+            },
+        ]
+
+        state = compile_controller_state(channels, report_every=10, now=time(9, 30))
+
+        self.assertEqual(state["report_every"], 10)
+        self.assertEqual(
+            state["devices"],
+            [
+                {"id": "pump", "type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}]},
+                {"id": "lights", "type": "gpio", "pin": 2, "current_t": 12600, "reschedule": 1, "pattern": [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}]},
+            ],
+        )
+
     def test_channel_metadata_uses_configured_devices_for_role(self):
         config = {
             "controllers": {

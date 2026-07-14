@@ -103,7 +103,7 @@ class PageRenderTests(unittest.TestCase):
     def test_timer_dashboard_page_uses_server_schedule_success_message(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('lastMessage = parsed?.message || "Schedule applied. Waiting for report...";', html)
+        self.assertIn('lastMessage = applyConfigParsed?.message || "Schedule settings saved.";', html)
         self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
 
     def test_system_info_page_shows_actions_and_no_hostname_editor(self):
@@ -203,13 +203,17 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('"value" in message[0]', html)
         self.assertIn("return message[0].value;", html)
         self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
-        self.assertIn('body.start_at_seconds = Number(block.querySelector(".editor-start-at").value) * multiplier;', html)
+        self.assertIn('const startAtSeconds = Number(block.querySelector(".editor-start-at").value) * multiplier;', html)
+        self.assertIn('start_at_seconds: startAtSeconds', html)
         self.assertIn('const configResponse = await fetch("/api/config");', html)
         self.assertIn('controller.settings.devices = structuredClone(controller.settings.devices || {});', html)
         self.assertIn('controller.settings.devices[channelId] = device;', html)
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
         self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
         self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
+        self.assertIn("function clockValuesForEvent(channel, event) {", html)
+        self.assertIn('if (editor?.kind === "daily_window" && editor.on_time && editor.off_time)', html)
+        self.assertNotIn('/channels/${encodeURIComponent(channelId)}/schedule', html)
         self.assertIn('syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);', html)
         self.assertIn('activeEditor = null;', html)
         self.assertIn('renderTimerStatus(true);', html)
@@ -551,6 +555,20 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('pulseUrl()', html)
         self.assertIn('fetch(pulseUrl(), {', html)
         self.assertIn('body: JSON.stringify({seconds: pulseSeconds()})', html)
+
+    def test_api_test_page_documents_complete_scheduler_workflow(self):
+        html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
+
+        self.assertIn("GET /api/controllers/{controller}", html)
+        self.assertIn("PUT /api/config/controllers", html)
+        self.assertIn("POST /api/controllers/{controller}/apply", html)
+        self.assertIn("POST /api/controllers/{controller}/commands/report", html)
+        self.assertIn("POST /api/controllers/{controller}/channels/{channel}/schedule", html)
+        self.assertIn('&quot;mode&quot;:&quot;cycle&quot;', html)
+        self.assertIn('&quot;mode&quot;:&quot;clock_window&quot;', html)
+        self.assertIn('&quot;on_time&quot;:&quot;06:00&quot;', html)
+        self.assertIn("Normal workflow: save desired config once, then apply the controller once.", html)
+        self.assertIn("Compatibility endpoint for changing one channel", html)
 
 
     def test_settings_page_includes_storage_summary(self):

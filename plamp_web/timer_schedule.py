@@ -223,6 +223,40 @@ def _new_channel_device(channel: dict[str, Any], channel_id: str) -> dict[str, A
     }
 
 
+def compile_controller_state(
+    channels: list[dict[str, Any]],
+    *,
+    report_every: int,
+    now: time | None = None,
+) -> dict[str, Any]:
+    devices = []
+    for channel in channels:
+        channel_id = str(channel["id"])
+        device = _new_channel_device(channel, channel_id)
+        editor = channel.get("editor")
+        if not isinstance(editor, dict):
+            raise ValueError(f"channel {channel_id} editor must be an object")
+        kind = editor.get("kind")
+        if kind == "cycle":
+            device = apply_cycle_schedule(
+                device,
+                on_seconds=_as_int(editor.get("on_seconds"), "on_seconds"),
+                off_seconds=_as_int(editor.get("off_seconds"), "off_seconds"),
+                start_at_seconds=_as_int(editor.get("start_at_seconds", 0), "start_at_seconds"),
+            )
+        elif kind == "daily_window":
+            device = apply_clock_window_schedule(
+                device,
+                on_time=str(editor.get("on_time", "")),
+                off_time=str(editor.get("off_time", "")),
+                now=now,
+            )
+        else:
+            raise ValueError(f"channel {channel_id} has unsupported schedule kind: {kind}")
+        devices.append(device)
+    return {"report_every": report_every, "devices": devices}
+
+
 def patch_channel_schedule(
     state: dict[str, Any],
     channels: list[dict[str, Any]],

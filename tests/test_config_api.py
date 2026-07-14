@@ -2,6 +2,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from datetime import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1066,7 +1067,7 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(payload["report_every"], 10)
 
-    def test_post_timer_channel_schedule_uses_live_devices_helper(self):
+    def test_post_timer_channel_schedule_does_not_reconstruct_from_live_devices(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1114,12 +1115,10 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "latest_timer_state", return_value=live_state),
                 patch.object(server, "live_events_for_role", side_effect=AssertionError("old helper should not be used")),
-                patch.object(server, "live_devices_for_role", return_value=live_state["devices"], create=True) as live_devices_for_role,
+                patch.object(server, "live_devices_for_role", side_effect=AssertionError("semantic schedule must not use live devices"), create=True),
                 patch.object(server, "apply_timer_state", return_value={"ok": True}),
             ):
                 server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
-
-        live_devices_for_role.assert_called_once_with("pump_lights")
 
     def test_post_controller_report_command_sends_r(self):
         monitor = DummyMonitor("abc")
@@ -1283,46 +1282,6 @@ class ConfigApiTests(unittest.TestCase):
             },
         )
 
-    def test_post_timer_channel_schedule_softens_transient_reconnect_message(self):
-        state = {
-            "report_every": 1,
-            "devices": [
-                {"id": "ch1", "type": "gpio", "pin": 21, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
-            ],
-        }
-        channels = [{"id": "ch1", "pin": 21, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0}]
-        config = {"controllers": {"octo_relay": self.scheduler_controller(serial="abc", devices={"ch1": self.scheduled_output(21)})}, "cameras": {}}
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(root, config)
-            timers_dir = root / "data" / "timers"
-            timers_dir.mkdir(parents=True, exist_ok=True)
-            (timers_dir / "octo_relay.json").write_text(json.dumps(state), encoding="utf-8")
-            class ReconnectOnce:
-                def __init__(self):
-                    self.calls = 0
-                def __call__(self, role):
-                    self.calls += 1
-                    if self.calls == 1:
-                        raise HTTPException(status_code=409, detail="Pico for role octo_relay is not connected: abc")
-                    return {"serial": "abc"}
-            reconnect_once = ReconnectOnce()
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "DATA_DIR", root / "data"),
-                patch.object(server, "TIMERS_DIR", timers_dir),
-                patch.object(server, "channel_metadata_for_role", return_value=channels),
-                patch.object(server, "load_timer_state_for_schedule_edit", return_value=state),
-                patch.object(server, "latest_timer_state", return_value=state),
-                patch.object(server, "live_devices_for_role", return_value=state["devices"]),
-                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="Pico for role octo_relay is not connected: abc")),
-                patch.object(server, "pico_for_role", side_effect=reconnect_once),
-                patch.object(server.pytime, "sleep", return_value=None),
-            ):
-                response = server.post_timer_channel_schedule("octo_relay", "ch1", {"mode": "cycle", "on_seconds": 5, "off_seconds": 10, "start_at_seconds": 0})
-
-        self.assertEqual(response["message"], "schedule saved; Pico briefly reconnected while applying.")
-
     def test_timer_state_for_pico_excludes_disabled_and_hidden_devices(self):
         raw_state = {
             "report_every": 1,
@@ -1350,7 +1309,39 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
 
-    def test_post_controller_apply_reapplies_saved_scheduler_state(self):
+    def test_compiled_timer_state_for_controller_uses_semantic_config(self):
+        config = server.config_view(
+            {
+                "controllers": {
+                    "sprouter": self.scheduler_controller(
+                        report_every=10,
+                        devices={
+                            "pump": {
+                                "type": "scheduled_output",
+                                "config": {"pin": 3},
+                                "settings": {"schedule": {"kind": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0, "unit": "minutes"}},
+                            },
+                            "lights": {
+                                "type": "scheduled_output",
+                                "config": {"pin": 2},
+                                "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"}},
+                            },
+                        },
+                    )
+                },
+                "cameras": {},
+            }
+        )
+
+        with patch.object(server, "load_config", return_value=config):
+            state = server.compiled_timer_state_for_controller("sprouter", now=time(9, 30))
+
+        self.assertEqual(state["report_every"], 10)
+        self.assertEqual(state["devices"][0]["pattern"], [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}])
+        self.assertEqual(state["devices"][1]["pattern"], [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}])
+        self.assertEqual(state["devices"][1]["current_t"], 12600)
+
+    def test_post_controller_apply_compiles_and_writes_complete_state_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1375,16 +1366,91 @@ class ConfigApiTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            compiled = {
+                "report_every": 10,
+                "devices": [
+                    {"id": "lights", "type": "gpio", "pin": 2, "current_t": 12600, "reschedule": 1, "pattern": [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}]}
+                ],
+            }
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "compiled_timer_state_for_controller", return_value=compiled),
                 patch.object(server, "apply_timer_state", return_value={"ok": True}) as apply_timer_state,
             ):
                 response = server.post_controller_apply("sprouter")
 
+            saved = json.loads(timer_path.read_text(encoding="utf-8"))
+
         self.assertTrue(response["success"])
         self.assertEqual(response["message"], "state sent to Pico")
+        self.assertEqual(saved, compiled)
         apply_timer_state.assert_called_once_with("sprouter", timer_path)
+
+    def test_post_timer_channel_schedule_updates_semantic_config_and_applies_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {
+                        "pump_lights": self.scheduler_controller(
+                            serial="abc",
+                            devices={
+                                "pump": self.scheduled_output(3),
+                                "lights": self.scheduled_output(2, kind="daily_window"),
+                            },
+                        )
+                    },
+                    "cameras": {},
+                },
+            )
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "reconcile_configured_monitors"),
+                patch.object(server, "reconcile_camera_worker"),
+                patch.object(
+                    server,
+                    "post_controller_apply",
+                    return_value={"success": True, "message": "state sent to Pico", "pico": {"serial": "abc"}, "state": {"devices": []}},
+                ) as apply_controller,
+            ):
+                response = server.post_timer_channel_schedule(
+                    "pump_lights",
+                    "lights",
+                    {"mode": "clock_window", "on_time": "06:00", "off_time": "23:00"},
+                )
+
+            saved = json.loads(config_file.read_text(encoding="utf-8"))
+
+        editor = saved["controllers"]["pump_lights"]["settings"]["devices"]["lights"]["editor"]
+        self.assertEqual(editor, {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"})
+        self.assertEqual(response["role"], "pump_lights")
+        self.assertEqual(response["channel"], "lights")
+        apply_controller.assert_called_once_with("pump_lights")
+
+    def test_post_timer_channel_schedule_validates_before_saving_config(self):
+        config = {
+            "controllers": {
+                "pump_lights": self.scheduler_controller(
+                    devices={"lights": self.scheduled_output(2, kind="daily_window")}
+                )
+            },
+            "cameras": {},
+        }
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "put_config_controllers") as save_controllers,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                server.post_timer_channel_schedule(
+                    "pump_lights",
+                    "lights",
+                    {"mode": "clock_window", "on_time": "06:00", "off_time": "06:00"},
+                )
+
+        self.assertEqual(raised.exception.status_code, 422)
+        save_controllers.assert_not_called()
 
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
         config = server.config_view({
@@ -1569,7 +1635,7 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
 
         self.assertTrue(response["success"])
-        self.assertEqual(saved["report_every"], 1)
+        self.assertEqual(saved["report_every"], 10)
         self.assertEqual(saved["devices"][0]["id"], "pump")
         self.assertEqual(saved["devices"][0]["pin"], 2)
 
@@ -1597,7 +1663,7 @@ class ConfigApiTests(unittest.TestCase):
             saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
 
         self.assertTrue(response["success"])
-        self.assertEqual(saved["report_every"], 1)
+        self.assertEqual(saved["report_every"], 10)
         self.assertEqual(saved["devices"][0]["id"], "pump")
         self.assertEqual(saved["devices"][0]["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
 
