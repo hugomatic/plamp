@@ -52,15 +52,11 @@ assert(
 );
 ```
 
-- [ ] **Step 2: Run OpenSCAD to verify the assertion fails**
+- [ ] **Step 2: Verify the current source geometry fails the clearance calculation**
 
 Run:
 
-```bash
-openscad -D 'view="dc_barrel_channel"' -o /tmp/plamp8_xt60_clearance_red.stl things/plamp8/plamp8.scad
-```
-
-Expected: OpenSCAD reports `Assertion ... failed: "XT60-to-switch clearance does not match the measured hardware envelopes"` because the existing center spacing is 26 mm rather than 29.625 mm.
+Use `awk` to read the current fixed offsets from `things/plamp8/plamp8.scad` and calculate the XT60-to-switch spacing and clearance. Expected: center spacing 26 mm and edge clearance -1.625 mm, which fails the required 2 mm clearance. Do not invoke OpenSCAD locally; the user will render on their machine.
 
 - [ ] **Step 3: Derive the connector position from the fit constraint**
 
@@ -86,29 +82,21 @@ function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
 
 Keep the assertion after both functions. This evaluates to XT60 x = -13.625 mm and retains barrel x = -13 mm.
 
-- [ ] **Step 4: Run OpenSCAD to verify the assertion passes**
+- [ ] **Step 4: Verify the source equations pass**
 
 Run:
 
-```bash
-openscad -D 'view="dc_barrel_channel"' -o /tmp/plamp8_xt60_clearance_green.stl things/plamp8/plamp8.scad
-```
+Use `awk` to evaluate `34.25 / 2 + 21 / 2 + 2` and the derived connector position `16 - 29.625`. Expected: center spacing 29.625 mm, connector x = -13.625 mm, edge clearance 2 mm, and XT60 panel-edge margin 4.25 mm.
 
-Expected: exit status 0, a non-empty `/tmp/plamp8_xt60_clearance_green.stl`, and no assertion, empty-object, or missing-include errors.
-
-- [ ] **Step 5: Verify barrel mode is unchanged**
+- [ ] **Step 5: Verify barrel mode is unchanged from the source**
 
 Run:
 
-```bash
-openscad -D 'dc_connector_type="barrel"' -D 'view="dc_barrel_channel"' -o /tmp/plamp8_barrel_regression.stl things/plamp8/plamp8.scad
-```
+Inspect the barrel branch of `dc_connector_x()` and the unchanged switch parameters. Expected: connector x = -13 mm, switch x = 8 mm, and label x = 23 mm, matching the previous barrel layout.
 
-Expected: exit status 0 and a non-empty `/tmp/plamp8_barrel_regression.stl`. The derived functions evaluate to connector x = -13 mm, switch x = 8 mm, and label x = 23 mm, matching the previous barrel layout.
+- [ ] **Step 6: Record the render commands for user review**
 
-- [ ] **Step 6: Render all affected XT60 views with the repository generator**
-
-Run:
+Do not run OpenSCAD locally. Provide these commands after pushing so the user can render the affected views on their machine:
 
 ```bash
 rm -rf /tmp/plamp8_xt60_clearance
@@ -117,7 +105,7 @@ things/plamp8/generate.bash --revision xt60-clearance --preview --view top_panel
 things/plamp8/generate.bash --revision xt60-clearance --preview --view sub_panel /tmp/plamp8_xt60_clearance/sub HEAD
 ```
 
-Expected: each command exits 0; each output directory contains a non-empty STL; logs contain no assertion, empty-top-level-object, or missing-include warnings.
+The user should expect each command to exit 0, create a non-empty STL, and produce no assertion, empty-top-level-object, or missing-include warnings.
 
 - [ ] **Step 7: Review the source diff and commit**
 
