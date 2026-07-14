@@ -642,6 +642,8 @@ class ApplyCommand:
     result: dict[str, Any] | None = None
     error_status: int | None = None
     error_detail: Any = None
+    report_requested_after: int | None = None
+    parse_errors_after: int | None = None
 
 
 @dataclass
@@ -848,6 +850,7 @@ class PicoMonitor:
         self.wake_event = threading.Event()
         self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
         self.report_sequence = 0
+        self.parse_error_count = 0
         self.summary: dict[str, Any] = {
             "role": role,
             "serial": pico_serial,
@@ -979,10 +982,10 @@ class PicoMonitor:
         except (OSError, serial.SerialException):
             pass
 
-    def handle_line(self, raw: bytes) -> None:
+    def handle_line(self, raw: bytes) -> int | None:
         text = raw.decode("utf-8", errors="replace").strip()
         if not text:
-            return
+            return None
         self.record_serial("rx", text)
         now = datetime.now().isoformat(timespec="seconds")
         try:
@@ -990,12 +993,13 @@ class PicoMonitor:
         except json.JSONDecodeError as exc:
             error = f"invalid JSON from Pico: {exc}"
             with self.lock:
+                self.parse_error_count += 1
                 self.summary["last_seen"] = now
                 self.summary["last_error"] = error
             LOGGER.warning("pico monitor %s invalid JSON: %s", self.role, text)
             self.record_serial("err", error)
             self.publish("error", {"role": self.role, "serial": self.pico_serial, "message": error, "raw": text})
-            return
+            return None
         reduced = reduce_report(report)
         is_report = isinstance(reduced, dict) and reduced.get("type") == "report"
         with self.lock:
@@ -1018,6 +1022,8 @@ class PicoMonitor:
                     "report": reduced,
                 },
             )
+            return self.report_sequence
+        return None
 
     def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
         command = ApplyCommand(path=path)
@@ -1091,6 +1097,7 @@ class PicoMonitor:
     def finish_apply_after_reconnect(self, command: ApplyCommand, conn: serial.Serial) -> None:
         requested_after = self.report_sequence
         try:
+            conn.reset_input_buffer()
             conn.write(b"r\n")
             conn.flush()
         except (OSError, serial.SerialException) as exc:
@@ -1102,14 +1109,27 @@ class PicoMonitor:
             self.record_serial("err", str(exc))
         else:
             self.record_serial("tx", "r")
-            command.result = {
-                "role": self.role,
-                "port": getattr(conn, "port", None),
-                "serial": self.pico_serial,
-                "report_sequence": requested_after,
-            }
-        finally:
+            command.report_requested_after = requested_after
+            command.parse_errors_after = self.parse_error_count
+        if command.error_status is not None:
             command.done.set()
+
+    def complete_apply_after_line(self, command: ApplyCommand, report_sequence: int | None) -> bool:
+        if command.parse_errors_after is not None and self.parse_error_count > command.parse_errors_after:
+            command.error_status = 502
+            command.error_detail = "invalid JSON received after report request"
+            command.done.set()
+            return True
+        requested_after = command.report_requested_after
+        if report_sequence is None or requested_after is None or report_sequence <= requested_after:
+            return False
+        command.result = {
+            "role": self.role,
+            "serial": self.pico_serial,
+            "report_sequence": report_sequence,
+        }
+        command.done.set()
+        return True
 
     def handle_serial_command(self, command: SerialCommand, conn: serial.Serial | None) -> serial.Serial | None:
         if conn is None or not conn.is_open:
@@ -1145,22 +1165,26 @@ class PicoMonitor:
         while not self.stop_event.is_set():
             try:
                 if pending_apply is not None:
-                    if conn is None or not conn.is_open:
-                        conn = self.open_serial()
-                    if conn is None:
-                        self.wake_event.wait(retry_sleep)
-                        self.wake_event.clear()
-                        retry_sleep = min(retry_sleep * 2, 5.0)
+                    if pending_apply.report_requested_after is None:
+                        if conn is None or not conn.is_open:
+                            conn = self.open_serial()
+                        if conn is None:
+                            self.wake_event.wait(retry_sleep)
+                            self.wake_event.clear()
+                            retry_sleep = min(retry_sleep * 2, 5.0)
+                            continue
+                        retry_sleep = 1.0
+                        self.finish_apply_after_reconnect(pending_apply, conn)
+                        if pending_apply.done.is_set():
+                            pending_apply = None
                         continue
-                    retry_sleep = 1.0
-                    self.finish_apply_after_reconnect(pending_apply, conn)
-                    pending_apply = None
-                    continue
 
-                try:
-                    command = self.commands.get_nowait()
-                except queue.Empty:
-                    command = None
+                command = None
+                if pending_apply is None:
+                    try:
+                        command = self.commands.get_nowait()
+                    except queue.Empty:
+                        pass
                 if command is not None:
                     if isinstance(command, ApplyCommand):
                         pending_apply = self.handle_apply(command, conn)
@@ -1187,7 +1211,9 @@ class PicoMonitor:
                     self.update_status("disconnected", connected=False, port=port, error=str(exc))
                     continue
                 if line:
-                    self.handle_line(line)
+                    report_sequence = self.handle_line(line)
+                    if pending_apply is not None and self.complete_apply_after_line(pending_apply, report_sequence):
+                        pending_apply = None
             except Exception as exc:
                 self.update_status("error", connected=False, error=str(exc))
                 self.stop_event.wait(1.0)

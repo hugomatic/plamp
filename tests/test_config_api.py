@@ -44,6 +44,7 @@ class FakeSerial:
         self.is_open = True
         self.writes = []
         self.flushed = False
+        self.input_buffer_reset = False
 
     def write(self, value):
         self.writes.append(value)
@@ -53,6 +54,9 @@ class FakeSerial:
 
     def close(self):
         self.is_open = False
+
+    def reset_input_buffer(self):
+        self.input_buffer_reset = True
 
 
 class ConfigApiTests(unittest.TestCase):
@@ -1729,12 +1733,19 @@ class ConfigApiTests(unittest.TestCase):
 
         monitor.finish_apply_after_reconnect(command, conn)
 
+        self.assertTrue(conn.input_buffer_reset)
         self.assertEqual(conn.writes, [b"r\n"])
         self.assertTrue(conn.flushed)
-        self.assertTrue(command.done.is_set())
-        self.assertEqual(command.result["report_sequence"], 0)
+        self.assertFalse(command.done.is_set())
+        self.assertEqual(command.report_requested_after, 0)
         self.assertEqual(monitor.serial_log()[-1]["direction"], "tx")
         self.assertEqual(monitor.serial_log()[-1]["text"], "r")
+
+        report_sequence = monitor.handle_line(b'{"type":"report","content":{"devices":[]}}\n')
+        monitor.complete_apply_after_line(command, report_sequence)
+
+        self.assertTrue(command.done.is_set())
+        self.assertEqual(command.result["report_sequence"], 1)
 
     def test_pico_monitor_only_sequences_valid_reports(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
@@ -1751,6 +1762,20 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(monitor.report_sequence, 1)
         self.assertEqual(report_event["data"]["report_sequence"], 1)
+
+    def test_pico_monitor_fails_pending_apply_on_malformed_report(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        command = server.ApplyCommand(path=Path("/tmp/main.py"))
+        conn = FakeSerial()
+        monitor.finish_apply_after_reconnect(command, conn)
+
+        monitor.handle_line(b"truncated report\n")
+        completed = monitor.complete_apply_after_line(command, None)
+
+        self.assertTrue(completed)
+        self.assertTrue(command.done.is_set())
+        self.assertEqual(command.error_status, 502)
+        self.assertEqual(command.error_detail, "invalid JSON received after report request")
 
     def test_apply_timer_state_generates_report_every_from_controller_config(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -66,6 +66,7 @@ class PicoSchedulerGeneratorTests(unittest.TestCase):
         self.assertNotIn('"kind"', text)
         self.assertNotIn("startup", text)
         self.assertNotIn("state.json", text)
+        self.assertIn("def main():\n    apply()\n\n    last_report_ms", text)
 
     def test_provenance_block_includes_input_json_and_options(self) -> None:
         text = generate_main_py(
