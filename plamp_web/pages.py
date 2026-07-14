@@ -2097,11 +2097,11 @@ def render_timer_dashboard_page(
       }
       timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
       for (const role of timerRoles) {
-        const source = new EventSource(`/api/status?stream=true&path=${encodeURIComponent(`controllers.${role}.telemetry`)}`);
+        const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);
         timerEventSources.set(role, source);
-        for (const eventName of ["snapshot", "update"]) {
+        for (const eventName of ["snapshot", "report"]) {
           source.addEventListener(eventName, (event) => {
-            timerMessages.set(role, statusNode(JSON.parse(event.data)));
+            timerMessages.set(role, JSON.parse(event.data));
             renderTimerStatus();
           });
         }
