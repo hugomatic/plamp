@@ -4,6 +4,14 @@
 
 Save all channel schedules and flash the Pico once. Keep user-entered clock times and units in configuration; use Pico reports for runtime status.
 
+## Invariants
+
+- One editor save causes at most one Pico flash.
+- Opening an editor never changes a saved schedule.
+- `06:00` stays `06:00`; `5 minutes` may compile to 300 seconds but reopens as minutes.
+- Firmware always contains the complete enabled channel set.
+- A missing report never causes an automatic second flash.
+
 ## Algorithm
 
 ### Open editor
@@ -28,6 +36,27 @@ For each channel:
 9. The next report updates current ON/OFF status and displayed runtime progress.
 
 The browser removes its current per-channel schedule POST loop. The per-channel API remains available for CLI use.
+
+## Implementation Boundaries
+
+- `plamp_web/pages.py`
+  - Change `clockValuesForEvent` to accept the channel and return saved daily-window values when present; retain report reconstruction only as its fallback.
+  - Keep building the complete controller configuration from the form.
+  - Delete the per-channel schedule request loop after the controller apply request.
+- `plamp_web/timer_schedule.py`
+  - Add one function that compiles every configured channel into a complete timer state.
+  - Reuse `apply_cycle_schedule` and `apply_clock_window_schedule`; do not create a second schedule compiler.
+- `plamp_web/server.py`
+  - Change `post_controller_apply` to compile from current controller configuration, validate and atomically write the resulting timer state, then call `apply_timer_state` once.
+  - Keep the existing post-flash reconnect and `r` request.
+- Tests belong in `tests/test_pages.py`, `tests/test_timer_schedule.py`, and `tests/test_config_api.py` at the corresponding boundary.
+
+## Non-goals
+
+- Do not remove the per-channel API or CLI.
+- Do not change Pico firmware protocol or report shape.
+- Do not add another persisted schedule representation.
+- Do not make applying configuration wait synchronously for telemetry.
 
 ## Errors
 
