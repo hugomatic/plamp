@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -14,11 +15,26 @@ from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, request_rep
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _non_negative_finite_timeout(value: str) -> float:
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout < 0:
+        raise argparse.ArgumentTypeError("timeout must be finite and non-negative")
+    return timeout
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m plamp")
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "data" / "config.json")
     parser.add_argument("--lock-dir", type=Path, default=REPO_ROOT / "data" / "locks")
-    parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument(
+        "--timeout",
+        type=_non_negative_finite_timeout,
+        default=3.0,
+        help=(
+            "operation budget in seconds (used for lock/read/write waits and checked "
+            "around synchronous OS calls; those calls cannot be forcibly interrupted)"
+        ),
+    )
     areas = parser.add_subparsers(dest="area", required=True)
     pico = areas.add_parser("pico")
     actions = pico.add_subparsers(dest="action", required=True)

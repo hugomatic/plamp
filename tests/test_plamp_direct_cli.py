@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import tempfile
@@ -69,3 +70,32 @@ class DirectCliTests(unittest.TestCase):
             self.assertEqual(rc, 4)
             self.assertEqual(stdout.getvalue(), "")
             self.assertEqual(stderr.getvalue(), "Pico unplugged\n")
+
+    def test_invalid_timeout_is_a_usage_error_without_calling_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self.write_config(Path(tmp))
+            for timeout in ("-1", "nan", "inf", "-inf"):
+                with self.subTest(timeout=timeout):
+                    calls = []
+                    stderr = io.StringIO()
+                    with contextlib.redirect_stderr(stderr):
+                        with self.assertRaises(SystemExit) as caught:
+                            main(
+                                ["--config", str(config), "--timeout", timeout, "pico", "report", "tower"],
+                                report_func=lambda *args, **kwargs: calls.append((args, kwargs)),
+                            )
+                    self.assertEqual(caught.exception.code, 2)
+                    self.assertEqual(calls, [])
+                    self.assertIn("timeout", stderr.getvalue())
+
+    def test_zero_timeout_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self.write_config(Path(tmp))
+            calls = []
+            rc = main(
+                ["--config", str(config), "--timeout", "0", "pico", "report", "tower"],
+                stdout=io.StringIO(), stderr=io.StringIO(),
+                report_func=lambda serial, **kwargs: calls.append(kwargs) or {"type": "report"},
+            )
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls[0]["timeout"], 0.0)
