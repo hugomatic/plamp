@@ -1,9 +1,12 @@
+import math
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, request_report
+from plamp import LockTimeout as ExportedLockTimeout
+from plamp.locks import LockTimeout
+from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, _lock_name, request_report
 
 
 class FakeSerial:
@@ -44,6 +47,44 @@ class FakeSerial:
 
 
 class PicoTransportTests(unittest.TestCase):
+    def test_package_exports_lock_timeout(self):
+        self.assertIs(ExportedLockTimeout, LockTimeout)
+
+    def test_rejects_invalid_timeouts_before_side_effects(self):
+        discovery_calls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for timeout in (-0.01, math.nan, math.inf, -math.inf):
+                with self.subTest(timeout=timeout):
+                    with self.assertRaisesRegex(ValueError, "timeout"):
+                        request_report(
+                            "PICO-A", lock_dir=Path(tmp), timeout=timeout,
+                            port_finder=lambda serial: discovery_calls.append(serial),
+                        )
+        self.assertEqual(discovery_calls, [])
+
+    def test_colliding_sanitized_serials_have_distinct_lock_names(self):
+        first = _lock_name("PICO/A")
+        second = _lock_name("PICO?A")
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("pico-PICO_A-"))
+        self.assertTrue(first.endswith(".lock"))
+
+    def test_serial_write_timeout_uses_remaining_deadline(self):
+        conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        calls = []
+
+        def serial_factory(*args, **kwargs):
+            calls.append((args, kwargs))
+            return conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            request_report(
+                "PICO-A", lock_dir=Path(tmp), timeout=0.1,
+                port_finder=lambda serial: "/dev/ttyACM0", serial_factory=serial_factory,
+            )
+        self.assertGreater(calls[0][1]["write_timeout"], 0)
+        self.assertLessEqual(calls[0][1]["write_timeout"], 0.1)
+
     def test_requests_valid_report_and_always_closes(self):
         conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
         with tempfile.TemporaryDirectory() as tmp:

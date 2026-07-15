@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import re
 import time
 from collections.abc import Callable
@@ -28,7 +30,8 @@ class PicoReportTimeout(TimeoutError):
 
 def _lock_name(pico_serial: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", pico_serial)
-    return f"pico-{safe}.lock"
+    digest = hashlib.sha256(pico_serial.encode("utf-8")).hexdigest()[:12]
+    return f"pico-{safe}-{digest}.lock"
 
 
 def _remaining_or_timeout(
@@ -50,7 +53,16 @@ def request_report(
     serial_factory: Callable[..., Any] = serial.Serial,
     port_finder: Callable[[str], str | None] = find_pico_port,
 ) -> dict[str, Any]:
-    deadline = time.monotonic() + max(timeout, 0.0)
+    """Request one report using ``timeout`` as an enforced operation budget.
+
+    The remaining budget is checked around synchronous discovery, open, reset, flush,
+    and close operations and is supplied to lock, serial read, and serial write waits.
+    Synchronous OS and driver calls cannot be preempted, so this is not a hard interrupt
+    guarantee for those calls.
+    """
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("timeout must be finite and non-negative")
+    deadline = time.monotonic() + timeout
     lock_timeout = max(deadline - time.monotonic(), 0.0)
     with exclusive_lock(lock_dir / _lock_name(pico_serial), timeout=lock_timeout):
         raw_lines: list[bytes] = []
@@ -63,6 +75,7 @@ def request_report(
             port,
             baudrate=115200,
             timeout=min(0.05, remaining),
+            write_timeout=remaining,
             exclusive=True,
         )
         try:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import math
 import os
 import time
 from contextlib import contextmanager
@@ -15,9 +16,15 @@ class LockTimeout(TimeoutError):
 
 @contextmanager
 def exclusive_lock(path: Path, *, timeout: float, poll_interval: float = 0.01) -> Iterator[None]:
+    """Acquire an interprocess lock within a finite, non-negative time budget.
+
+    The budget governs lock polling; it cannot preempt synchronous filesystem OS calls.
+    """
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("timeout must be finite and non-negative")
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o664)
-    deadline = time.monotonic() + max(timeout, 0.0)
+    deadline = time.monotonic() + timeout
     try:
         while True:
             try:

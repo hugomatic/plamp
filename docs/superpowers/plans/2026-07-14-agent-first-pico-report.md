@@ -41,7 +41,10 @@
 
 ---
 
-### Task 1: Deadline-Bound Cross-Process Lock
+### Task 1: Budget-Bound Cross-Process Lock
+
+The timeout is a finite, non-negative enforced budget for lock polling; `0` means
+an immediate attempt. Synchronous filesystem calls cannot be forcibly interrupted.
 
 **Files:**
 - Create: `plamp/__init__.py`
@@ -102,6 +105,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import math
 import os
 import time
 from contextlib import contextmanager
@@ -115,9 +119,11 @@ class LockTimeout(TimeoutError):
 
 @contextmanager
 def exclusive_lock(path: Path, *, timeout: float, poll_interval: float = 0.01) -> Iterator[None]:
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("timeout must be finite and non-negative")
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o664)
-    deadline = time.monotonic() + max(timeout, 0.0)
+    deadline = time.monotonic() + timeout
     try:
         while True:
             try:
@@ -147,7 +153,7 @@ Run:
 /home/hugo/.local/bin/uv run python -m unittest tests.test_plamp_locks -v
 ```
 
-Expected: 2 tests pass.
+Expected: 4 tests pass, including invalid-budget coverage and true subprocess contention/release.
 
 - [ ] **Step 5: Commit the lock primitive**
 
@@ -559,7 +565,9 @@ Expected: import failure for `plamp.pico_transport`.
 # plamp/pico_transport.py
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import re
 import time
 from collections.abc import Callable
@@ -587,7 +595,8 @@ class PicoReportTimeout(TimeoutError):
 
 def _lock_name(pico_serial: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", pico_serial)
-    return f"pico-{safe}.lock"
+    digest = hashlib.sha256(pico_serial.encode("utf-8")).hexdigest()[:12]
+    return f"pico-{safe}-{digest}.lock"
 
 
 def _remaining_or_timeout(
@@ -609,7 +618,9 @@ def request_report(
     serial_factory: Callable[..., Any] = serial.Serial,
     port_finder: Callable[[str], str | None] = find_pico_port,
 ) -> dict[str, Any]:
-    deadline = time.monotonic() + max(timeout, 0.0)
+    if not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("timeout must be finite and non-negative")
+    deadline = time.monotonic() + timeout
     lock_timeout = max(deadline - time.monotonic(), 0.0)
     with exclusive_lock(lock_dir / _lock_name(pico_serial), timeout=lock_timeout):
         raw_lines: list[bytes] = []
@@ -622,6 +633,7 @@ def request_report(
             port,
             baudrate=115200,
             timeout=min(0.05, remaining),
+            write_timeout=remaining,
             exclusive=True,
         )
         try:
@@ -661,7 +673,12 @@ def request_report(
             conn.close()
 ```
 
-Export `PicoReportTimeout`, `PicoUnavailable`, and `request_report` from `plamp/__init__.py`. Do not export CLI functions.
+Export `LockTimeout`, `PicoReportTimeout`, `PicoUnavailable`, and `request_report` from `plamp/__init__.py`. Do not export CLI functions.
+
+`request_report` treats the timeout as an enforced transaction budget: it is used
+for the file lock and serial read/write timeouts and checked around discovery,
+open, reset, flush, and close. Those synchronous OS/driver calls cannot safely be
+preempted, so the budget is not a hard interrupt guarantee. Do not add worker threads.
 
 - [ ] **Step 4: Run transaction and earlier unit tests**
 
@@ -675,7 +692,7 @@ Run:
   tests.test_plamp_pico_transport -v
 ```
 
-Expected: 17 tests pass.
+Expected: 23 tests pass (4 lock, 3 discovery, 4 protocol, and 12 transport tests).
 
 - [ ] **Step 5: Commit the transaction**
 
@@ -823,6 +840,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -835,11 +853,26 @@ from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, request_rep
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _non_negative_finite_timeout(value: str) -> float:
+    timeout = float(value)
+    if not math.isfinite(timeout) or timeout < 0:
+        raise argparse.ArgumentTypeError("timeout must be finite and non-negative")
+    return timeout
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m plamp")
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "data" / "config.json")
     parser.add_argument("--lock-dir", type=Path, default=REPO_ROOT / "data" / "locks")
-    parser.add_argument("--timeout", type=float, default=3.0)
+    parser.add_argument(
+        "--timeout",
+        type=_non_negative_finite_timeout,
+        default=3.0,
+        help=(
+            "operation budget in seconds (used for lock/read/write waits and checked "
+            "around synchronous OS calls; those calls cannot be forcibly interrupted)"
+        ),
+    )
     areas = parser.add_subparsers(dest="area", required=True)
     pico = areas.add_parser("pico")
     actions = pico.add_subparsers(dest="action", required=True)
@@ -940,7 +973,7 @@ Run:
   tests.test_plamp_direct_cli -v
 ```
 
-Expected: 17 tests pass.
+Expected: 29 tests pass (4 lock, 3 discovery, 4 protocol, 12 transport, and 6 direct CLI tests).
 
 - [ ] **Step 2: Run the complete Python test suite**
 
