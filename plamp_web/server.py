@@ -11,6 +11,7 @@ import os
 import platform
 import queue
 import re
+import secrets
 import shutil
 import socket
 import subprocess
