@@ -49,6 +49,24 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("usb_c_cutout_w = 12;", source)
+        self.assertIn("usb_c_cutout_h = 10;", source)
+        self.assertIn("usb_c_cutout_r = 1.5;", source)
+        self.assertIn("usb_c_screw_spacing = 17;", source)
+        self.assertIn("sub_panel_usb_c_cutout_w = 14;", source)
+        self.assertIn("sub_panel_usb_c_cutout_h = 10.25;", source)
+        self.assertRegex(
+            source,
+            r"module usb_c_panel_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+        )
+        self.assertRegex(
+            source,
+            r"module sub_panel_usb_c_negative\(\) \{\s*rect_cutout\(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h\);",
+        )
+
     def test_template_bash_can_select_scad_template(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

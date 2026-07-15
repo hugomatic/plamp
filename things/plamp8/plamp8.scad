@@ -122,12 +122,13 @@ usb_c_label_h = 9;
 usb_c_group_y = -4;
 usb_c_group_w = 36;
 usb_c_group_h = 28;
-usb_c_cutout_w = 14;
-usb_c_cutout_h = 10.25;
+usb_c_cutout_w = 12;
+usb_c_cutout_h = 10;
+usb_c_cutout_r = 1.5;
 usb_c_wire_cutout_w = 10;
 usb_c_wire_cutout_h = 16;
 usb_c_screw_d = 3.2;
-usb_c_screw_spacing = 20;
+usb_c_screw_spacing = 17;
 
 c13_panel_w = 72;
 c13_panel_h = 68;
@@ -258,8 +259,8 @@ sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
-sub_panel_usb_c_cutout_w = usb_c_cutout_w;
-sub_panel_usb_c_cutout_h = usb_c_cutout_h;
+sub_panel_usb_c_cutout_w = 14;
+sub_panel_usb_c_cutout_h = 10.25;
 sub_panel_wall = 10;
 sub_panel_socket_rim_relief_w = sub_panel_socket_w;
 sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
@@ -601,6 +602,17 @@ module rect_cutout(w, h, depth = 30) {
         cube([w, h, depth], center = true);
 }
 
+module rounded_rect_cutout(w, h, r, depth = 30) {
+    translate([0, 0, plate_t / 2])
+        hull()
+            for (
+                x = [-w / 2 + r, w / 2 - r],
+                y = [-h / 2 + r, h / 2 - r]
+            )
+                translate([x, y, 0])
+                    cylinder(h = depth, r = r, center = true);
+}
+
 module fit_plate(w, h) {
     translate([-w / 2, -h / 2, 0])
         cube([w, h, plate_t]);
@@ -692,7 +704,7 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
 }
 
 module usb_c_panel_negative() {
-    rect_cutout(usb_c_cutout_w, usb_c_cutout_h);
+    rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
