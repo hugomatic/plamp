@@ -56,8 +56,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("usb_c_cutout_h = 10;", source)
         self.assertIn("usb_c_cutout_r = 1.5;", source)
         self.assertIn("usb_c_screw_spacing = 17;", source)
-        self.assertIn("sub_panel_usb_c_cutout_w = 14;", source)
-        self.assertIn("sub_panel_usb_c_cutout_h = 10.25;", source)
+        self.assertIn("sub_panel_usb_c_cutout_w = 13;", source)
+        self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
         self.assertRegex(
             source,
             r"module usb_c_panel_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
@@ -66,6 +66,19 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
             r"module sub_panel_usb_c_negative\(\) \{\s*rect_cutout\(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h\);",
         )
+        self.assertIn('panel_screw_size = "M3";', source)
+        self.assertIn("panel_screw_length = 20;", source)
+        self.assertIn("panel_screw_tip_protrusion = 1;", source)
+        self.assertIn("panel_screw_land_d = 9.5;", source)
+        self.assertIn("usb_c_screw_d = 2.4;", source)
+        self.assertIn("usb_c_screw_head_d = 4;", source)
+        self.assertIn("module underside_countersunk_screw_hole", source)
+        self.assertIn("module panel_corner_screw_lands", source)
+        self.assertIn("module panel_corner_fastener_bosses", source)
+        self.assertIn("module side_loaded_panel_nut_traps", source)
+        self.assertIn("panel_nut_entry_detent", source)
+        self.assertIn("module panel_corner_fastener_test", source)
+        self.assertIn('view == "panel_corner_fastener_test"', source)
 
     def test_template_bash_can_select_scad_template(self):
         with tempfile.TemporaryDirectory() as tmp:
