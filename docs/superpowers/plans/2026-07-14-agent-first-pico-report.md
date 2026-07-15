@@ -639,7 +639,8 @@ def request_report(
         try:
             _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.reset_input_buffer()
-            _remaining_or_timeout(deadline, pico_serial, raw_lines)
+            remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
+            conn.write_timeout = remaining
             conn.write(b"r\n")
             _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.flush()
@@ -677,8 +678,9 @@ Export `LockTimeout`, `PicoReportTimeout`, `PicoUnavailable`, and `request_repor
 
 `request_report` treats the timeout as an enforced transaction budget: it is used
 for the file lock and serial read/write timeouts and checked around discovery,
-open, reset, flush, and close. Those synchronous OS/driver calls cannot safely be
-preempted, so the budget is not a hard interrupt guarantee. Do not add worker threads.
+open, reset, and flush. Close remains unconditional. These synchronous OS/driver
+calls cannot safely be preempted, so the budget is not a hard interrupt guarantee.
+Do not add worker threads.
 
 - [ ] **Step 4: Run transaction and earlier unit tests**
 
@@ -692,7 +694,7 @@ Run:
   tests.test_plamp_pico_transport -v
 ```
 
-Expected: 23 tests pass (4 lock, 3 discovery, 4 protocol, and 12 transport tests).
+Expected: 24 tests pass (4 lock, 3 discovery, 4 protocol, and 13 transport tests).
 
 - [ ] **Step 5: Commit the transaction**
 
@@ -973,7 +975,7 @@ Run:
   tests.test_plamp_direct_cli -v
 ```
 
-Expected: 29 tests pass (4 lock, 3 discovery, 4 protocol, 12 transport, and 6 direct CLI tests).
+Expected: 30 tests pass (4 lock, 3 discovery, 4 protocol, 13 transport, and 6 direct CLI tests).
 
 - [ ] **Step 2: Run the complete Python test suite**
 
