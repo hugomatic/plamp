@@ -1091,7 +1091,7 @@ class PicoMonitor:
     def finish_apply_after_reconnect(self, command: ApplyCommand, conn: serial.Serial) -> None:
         requested_after = self.report_sequence
         try:
-            conn.write(b"r\n")
+            conn.write(b"\nr\n")
             conn.flush()
         except (OSError, serial.SerialException) as exc:
             port = getattr(conn, "port", None)
@@ -1122,7 +1122,7 @@ class PicoMonitor:
             return None
         text = command.text.strip()
         try:
-            conn.write((text + "\n").encode("utf-8"))
+            conn.write(("\n" + text + "\n").encode("utf-8"))
             conn.flush()
         except (OSError, serial.SerialException) as exc:
             port = getattr(conn, "port", None)

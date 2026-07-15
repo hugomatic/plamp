@@ -1729,12 +1729,23 @@ class ConfigApiTests(unittest.TestCase):
 
         monitor.finish_apply_after_reconnect(command, conn)
 
-        self.assertEqual(conn.writes, [b"r\n"])
+        self.assertEqual(conn.writes, [b"\nr\n"])
         self.assertTrue(conn.flushed)
         self.assertTrue(command.done.is_set())
         self.assertEqual(command.result["report_sequence"], 0)
         self.assertEqual(monitor.serial_log()[-1]["direction"], "tx")
         self.assertEqual(monitor.serial_log()[-1]["text"], "r")
+
+    def test_pico_monitor_starts_serial_commands_on_a_fresh_line(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        command = server.SerialCommand(text="p 21 5")
+        conn = FakeSerial()
+
+        returned = monitor.handle_serial_command(command, conn)
+
+        self.assertIs(returned, conn)
+        self.assertEqual(conn.writes, [b"\np 21 5\n"])
+        self.assertTrue(command.done.is_set())
 
     def test_pico_monitor_only_sequences_valid_reports(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
