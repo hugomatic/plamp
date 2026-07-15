@@ -28,7 +28,7 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page, set_app_revision
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -64,10 +64,14 @@ camera_worker_lock = threading.Lock()
 camera_worker: "CameraWorker | None" = None
 
 app = FastAPI(title="plamp web")
+APP_REVISION = "unknown"
 
 
 @app.on_event("startup")
 def startup() -> None:
+    global APP_REVISION
+    APP_REVISION = git_output(["git", "rev-parse", "--short", "HEAD"], repo_root=REPO_ROOT) or "unknown"
+    set_app_revision(APP_REVISION)
     ensure_data_dir()
     configure_logging()
     start_configured_monitors()

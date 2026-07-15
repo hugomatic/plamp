@@ -9,9 +9,15 @@ from typing import Any
 GITHUB_REPO_URL = "https://github.com/hugomatic/plamp"
 GITHUB_NEW_ISSUE_URL = f"{GITHUB_REPO_URL}/issues/new"
 FAVICON_LINK = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+APP_REVISION = "unknown"
 
 
-def main_nav(controller_ids: list[str] | None = None) -> str:
+def set_app_revision(revision: str | None) -> None:
+    global APP_REVISION
+    APP_REVISION = revision or "unknown"
+
+
+def main_nav(controller_ids: list[str] | None = None, revision: str | None = None) -> str:
     links = ['<a href="/">Plamp</a>']
     for controller_id in controller_ids or []:
         links.append(
@@ -24,12 +30,15 @@ def main_nav(controller_ids: list[str] | None = None) -> str:
         '<a href="/settings">Settings</a>',
         '<a href="/system">System</a>',
         '<a href="/api/test">API test</a>',
-        f'<a href="{GITHUB_REPO_URL}">GitHub</a>',
     ])
+    revision = revision or APP_REVISION
+    revision_text = html.escape(revision)
+    if revision == "unknown":
+        links.append(f"[rev {revision_text}]")
+    else:
+        revision_href = html.escape(revision, quote=True)
+        links.append(f'<a href="{GITHUB_REPO_URL}/commit/{revision_href}">[rev {revision_text}]</a>')
     return "<nav>" + " | ".join(links) + "</nav>"
-
-
-MAIN_NAV = main_nav()
 
 
 def relative_time_label(value: object) -> str | None:
@@ -383,7 +392,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
   </style>
 </head>
 <body>
-  {MAIN_NAV}
+  {main_nav()}
   <h1>Plamp config</h1>
   <h2>Controllers</h2>
   <table><thead><tr><th>ID</th><th>Assigned Pico</th></tr></thead><tbody>{controller_rows_html}</tbody></table>
