@@ -642,6 +642,9 @@ class ApplyCommand:
     result: dict[str, Any] | None = None
     error_status: int | None = None
     error_detail: Any = None
+    trace_id: str = field(default_factory=lambda: secrets.token_hex(3))
+    reset_completed_monotonic: float | None = None
+    open_attempts: int = 0
 
 
 @dataclass
@@ -1044,6 +1047,7 @@ class PicoMonitor:
         return command.result
 
     def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> ApplyCommand | None:
+        LOGGER.warning("pico-trace role=%s apply=%s event=apply-start monotonic=%.6f", self.role, command.trace_id, time.monotonic())
         self.close_serial(conn)
         self.update_status("applying", connected=False, error=None)
         port = self.find_port()
@@ -1084,12 +1088,28 @@ class PicoMonitor:
             self.update_status("error", connected=False, port=port, error=command.error_detail)
             return None
 
+        command.reset_completed_monotonic = time.monotonic()
+        LOGGER.warning(
+            "pico-trace role=%s apply=%s event=reset-complete monotonic=%.6f",
+            self.role,
+            command.trace_id,
+            command.reset_completed_monotonic,
+        )
         self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
         self.update_status("reconnecting", connected=False, port=port, error=None)
         return command
 
     def finish_apply_after_reconnect(self, command: ApplyCommand, conn: serial.Serial) -> None:
         requested_after = self.report_sequence
+        now = time.monotonic()
+        LOGGER.warning(
+            "pico-trace role=%s apply=%s event=r-tx monotonic=%.6f reset_elapsed=%.6f open_attempts=%d",
+            self.role,
+            command.trace_id,
+            now,
+            now - (command.reset_completed_monotonic or now),
+            command.open_attempts,
+        )
         try:
             conn.write(b"r\n")
             conn.flush()
@@ -1146,7 +1166,25 @@ class PicoMonitor:
             try:
                 if pending_apply is not None:
                     if conn is None or not conn.is_open:
+                        pending_apply.open_attempts += 1
+                        attempt_at = time.monotonic()
+                        LOGGER.warning(
+                            "pico-trace role=%s apply=%s event=open-attempt attempt=%d monotonic=%.6f reset_elapsed=%.6f",
+                            self.role,
+                            pending_apply.trace_id,
+                            pending_apply.open_attempts,
+                            attempt_at,
+                            attempt_at - (pending_apply.reset_completed_monotonic or attempt_at),
+                        )
                         conn = self.open_serial()
+                        LOGGER.warning(
+                            "pico-trace role=%s apply=%s event=open-result attempt=%d success=%s monotonic=%.6f",
+                            self.role,
+                            pending_apply.trace_id,
+                            pending_apply.open_attempts,
+                            conn is not None,
+                            time.monotonic(),
+                        )
                     if conn is None:
                         self.wake_event.wait(retry_sleep)
                         self.wake_event.clear()
@@ -1187,6 +1225,14 @@ class PicoMonitor:
                     self.update_status("disconnected", connected=False, port=port, error=str(exc))
                     continue
                 if line:
+                    LOGGER.warning(
+                        "pico-raw role=%s len=%d newline=%s hex=%s repr=%r",
+                        self.role,
+                        len(line),
+                        line.endswith(b"\n"),
+                        line.hex(),
+                        line,
+                    )
                     self.handle_line(line)
             except Exception as exc:
                 self.update_status("error", connected=False, error=str(exc))
