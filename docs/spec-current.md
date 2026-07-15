@@ -1,258 +1,94 @@
-# Plamp Current Spec
+# Plamp: Current Contract
 
-Last updated: 2026-05-05
+Plamp is local-first hydroponics automation designed for humans and agents. Core schedules must continue with only Pico power. A Raspberry Pi adds monitoring, pictures, configuration, and remote access; Internet access is optional.
 
-This is the canonical product and engineering spec for Plamp.
-It exists to preserve direction, prevent regressions, and keep growth coherent.
+## Current System
 
-![Reliable Agriculture For Everybody](./images/agri-factory.png)
+- `plamp_web`: one FastAPI service providing REST, SSE, scheduled camera captures, Pico monitoring, and the fallback website.
+- `plamp_cli`: JSON-first REST client installed as `plamp`.
+- `plamp`: emerging shared library and direct CLI; the first direct operation is `python -m plamp pico report`.
+- `pico_scheduler`: host-generated MicroPython firmware.
+- `data/`: desired configuration, generated controller state, logs, pictures, and other runtime data.
 
-## 1) Vision: Reliable Agriculture For Everybody
+The current web monitor keeps Pico serial ports open. Direct CLI serial operations therefore require stopping `plamp-web`. This is a migration constraint, not the target architecture.
 
-### Current System
+## Configuration and State
 
-Plamp is local-first hydroponics automation that is understandable and modifiable by humans and agents.
+`data/config.json` is the desired host configuration. Top-level groups are `controllers` and `cameras`.
 
-### Reliability Ladder
-
-1. With only power, we keep the lights on and the pumps running.
-2. With a computer, we take pictures, monitor state, and correct drift in pumps/lights; next steps include dosing food and controlling pH.
-3. With the Internet, we use agents to maximize plant health (for example, detect drift/anomalies early from image and runtime trends), estimate yield over time, and maintain actionable todos (`prune`, `spray`, `harvest`).
-
-References:
-
-- [Settings Unification](./superpowers/specs/2026-04-15-settings-unification-design.md)
-- [Firmware Family API and CLI](./superpowers/specs/2026-05-04-firmware-family-api-and-cli-design.md)
-
-### Pattern Guard
-
-- Do not introduce opaque black-box automation.
-- Do not make cloud connectivity required for core operation.
-- Do not split the conceptual model between GUI and CLI.
-
-## 2) System Shape and Stack
-
-### Current System
-
-Core components:
-
-- `plamp_web` (FastAPI + server-rendered pages)
-- `plamp_cli` (argparse, JSON-first commands)
-- firmware families (`pico_scheduler`, `pico_doser` placeholder)
-- runtime state in `data/`
-
-Toolchain:
-
-- `uv`, `FastAPI`, `uvicorn`, `pyserial`, `mpremote`, `MicroPython`
-
-### Evolution
-
-1. Chose a local-first Raspberry Pi deployment so growers can run and recover the system without cloud dependency.
-2. Kept hardware control explicit (`pyserial`, `mpremote`) so failures are diagnosable at the bench, not hidden behind abstractions.
-3. Added JSON-driven firmware generation so controller behavior is reproducible, reviewable, and safe to evolve over time.
-
-References:
-
-- [Pico Scheduler Firmware Generator](./superpowers/specs/2026-05-04-pico-scheduler-firmware-generator-design.md)
-
-### Pattern Guard
-
-- Prefer explicit local tools over hidden wrappers.
-- Keep orchestration inspectable from terminal and source.
-
-## 3) GUI Contract
-
-### Current System
-
-`/` must:
-
-- show current runtime controller/device state
-- support schedule edits for configured scheduler devices
-- expose capture context
-
-`/settings` must:
-
-- be the single admin/config surface
-- keep `System status / Peripherals` read-only
-- keep assignment editing in `Pico schedulers`
-- preserve grouped-by-controller scheduler editing
-- save in combined top-level config shape
-
-`/api/test` must:
-
-- provide live examples for current API payload contracts
-
-### Evolution
-
-1. Early split admin views caused friction.
-2. Unified settings established one place for setup + status.
-3. Scheduler UX evolved toward grouped controller blocks with assignment clarity.
-
-References:
-
-- [Settings Unification](./superpowers/specs/2026-04-15-settings-unification-design.md)
-- [Pico Schedulers Settings Redesign](./superpowers/specs/2026-04-30-pico-schedulers-settings-design.md)
-
-### Pattern Guard
-
-- Do not reintroduce editable controls into status-only tables.
-- Do not split scheduler editing back into disconnected sections.
-- Do not hide peripheral assignment state.
-
-![Learnable And Modifiable System](./images/agri-ui.png)
-
-## 4) Canonical Data Model
-
-### Current System
-
-Host config:
+Scheduler controllers normalize to:
 
 ```json
 {
-  "controllers": {
-    "pump_lights": {
-      "type": "pico_scheduler",
-      "pico_serial": "e66038b71387a039",
-      "report_every": 10
-    }
+  "type": "pico_scheduler",
+  "payload": {
+    "pico_serial": "e66038b71387a039",
+    "report_every": 10,
+    "devices": []
   },
-  "devices": {
-    "pump": {
-      "controller": "pump_lights",
-      "pin": 3,
-      "editor": "cycle"
+  "settings": {
+    "devices": {
+      "pump": {
+        "pin": 15,
+        "output_type": "gpio",
+        "programming": "enabled",
+        "visibility": "visible",
+        "editor": {"kind": "cycle"}
+      }
     }
-  },
-  "cameras": {}
+  }
 }
 ```
 
-Invariants:
+Controller IDs are unique. Device IDs are unique within a controller. Pins may not collide within a controller. The stable Pico USB serial identifies hardware; tty paths do not.
 
-- controller IDs are global + unique
-- reserved IDs are blocked
-- devices are top-level and reference controller IDs
-- pin collisions are invalid per controller
+Observed reports describe runtime state. They do not replace desired configuration or host-only preferences.
 
-### Evolution
+## Interfaces
 
-1. Simplified to stable top-level config groups.
-2. Kept `devices` top-level for global validation and rename safety.
-3. Treated GUI grouping as presentation, not storage.
+Agents should receive machine-readable JSON on stdout and diagnostics on stderr.
 
-References:
+Current REST-backed operations use `python -m plamp_cli` or the installed `plamp` command. The direct path uses:
 
-- [Config Model Simplification](./superpowers/specs/2026-04-14-config-model-simplification-design.md)
-- [Pico Scheduler Devices Payload](./superpowers/specs/2026-05-03-pico-scheduler-devices-payload-design.md)
+```bash
+python -m plamp pico report <controller>
+```
 
-### Pattern Guard
+Primary HTTP surfaces:
 
-- Do not silently migrate to nested-per-controller device storage.
-- Do not duplicate identity layers for controllers/devices.
+- `/api/config`: persisted desired configuration
+- `/api/system`: host facts and detected hardware
+- `/api/status`: resolved state and telemetry, including SSE
+- `/api/controllers`: controller reads and commands
+- `/api/camera`: capture and image access
 
-## 5) API and CLI Contract
+The web pages are replaceable REST/SSE clients, not the source of domain behavior.
 
-### Current System
+## Firmware
 
-Controller API:
+The host validates scheduler state, generates controller-specific `main.py`, copies it with `mpremote`, resets the Pico, and reads reports over USB serial. Current schedule changes still regenerate and flash application code.
 
-- `GET /api/controllers`
-- `GET /api/controllers/{controller}`
-- `PUT /api/controllers/{controller}`
-- `POST /api/controllers/{controller}/channels/{channel_id}/schedule`
+Provisioning MicroPython on a blank Pico, upgrading application code, and changing runtime configuration are distinct operations in the target design.
 
-CLI top-level sections:
+## Direction
 
-- `config`, `controllers`, `pico-scheduler`, `pics`, `firmware`
+The approved target is agent-first:
 
-CLI behavior:
+- one shared `plamp` library under the CLI and REST service;
+- short cross-process-locked Pico and camera transactions;
+- CLI usable locally or through SSH without the service;
+- demand-driven full Pico reports with host-controlled polling;
+- runtime schedule updates without reflashing;
+- first-class MicroPython provisioning and application recovery;
+- optional web apps using REST and SSE.
 
-- no-arg prints help
-- missing sections/actions return actionable hints
+See [Agent-First Plamp Architecture](./superpowers/specs/2026-07-14-agent-first-plamp-architecture-design.md).
 
-### Evolution
+## Reliability Rules
 
-1. Moved from timer-centric naming toward controller-centric contracts.
-2. Standardized CLI shape around explicit command sections.
-3. Improved parser errors to guide real usage.
-
-References:
-
-- [Firmware Family API and CLI](./superpowers/specs/2026-05-04-firmware-family-api-and-cli-design.md)
-- [Plamp CLI Design](./superpowers/specs/2026-04-30-plamp-cli-design.md)
-
-### Pattern Guard
-
-- Do not create parallel route families for the same concept.
-- Do not hide required payload fields behind implicit defaults.
-- Do not regress to parser-internal error wording only.
-
-## 6) Firmware Families and Growth
-
-### Current System
-
-Families:
-
-- `pico_scheduler` active
-- `pico_doser` placeholder
-
-Workflow:
-
-1. payload JSON
-2. generate firmware source
-3. optional show/pull
-4. flash by port
-5. verify report behavior
-
-### Evolution
-
-1. Initial model: firmware read config on-device, so config had to be copied to Pico storage.
-2. Transitional model: host flashed/reset Pico and copied both `main.py` and config payload files.
-3. GUI era: web server became the operational control point and managed firmware/state writes.
-4. Current model: host generates dedicated firmware from JSON and flashes it, with behavior embedded in generated `main.py`.
-5. Expected future: generation and programming flow may evolve again as new firmware families mature.
-
-References:
-
-- [Pico Scheduler Firmware Generator](./superpowers/specs/2026-05-04-pico-scheduler-firmware-generator-design.md)
-- [Firmware Family API and CLI](./superpowers/specs/2026-05-04-firmware-family-api-and-cli-design.md)
-
-### Pattern Guard
-
-- Do not lock future families into scheduler-only assumptions.
-- Do not generate firmware that is hard to inspect/diff.
-- Do not bypass service ownership of serial link in normal operation.
-
-### Serial Link Ownership
-
-In normal operation, `plamp_web` keeps the serial relationship with Pico active for runtime monitoring/control.
-That means CLI operations that need device state/programming should go through the web API path unless explicitly doing local power-user maintenance.
-
-Guard:
-
-- avoid designing CLI flows that compete with live web-held serial sessions by default
-- if direct serial access is required, it must be an explicit operational mode, not implicit behavior
-
-## 7) Not There Yet (Explicit)
-
-The following goals are directional, not fully implemented end-to-end yet:
-
-- autonomous closed-loop drift correction from image/time-series analysis
-- full dosing-food control workflow in production firmware/UI
-- full pH control workflow in production firmware/UI
-- robust yield estimation over time from standardized measurements
-- integrated task orchestration for `prune`, `spray`, `harvest` beyond basic lists/workflows
-
-Current state:
-
-- Plamp has the foundation (runtime monitoring, camera capture, scheduler control, CLI/API contracts, firmware generation path).
-- Advanced optimization and agronomy automation are planned growth areas and should be treated as roadmap work, not shipped capability.
-
-## Maintenance Rules
-
-When behavior changes:
-
-1. update this file first
-2. update tests
-3. update user docs if contract changed
-4. ship in one PR
+- Do not require cloud access for schedules or recovery.
+- Keep desired configuration separate from observed state.
+- Do not store tty paths as hardware identity.
+- Serialize access to each Pico and camera across processes.
+- Prove firmware readiness with a valid protocol response, not a successful port open.
+- Label planned behavior as direction until it ships.

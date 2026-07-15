@@ -1,156 +1,41 @@
-# plamp
+# Plamp
 
-Raspberry Pi web UI and Pico firmware for a small hydroponic controller.
+Local-first hydroponics automation for Raspberry Pi and MicroPython Picos. Picos run lights and pumps independently; the Pi adds configuration, monitoring, pictures, agents, and a fallback web UI.
 
 ![Plamp running with basil tray, touchscreen UI, and camera](./docs/images/plamp-live-setup.jpg)
 
 ## Install
 
-### One-command bootstrap (recommended)
-
-From a fresh Raspberry Pi shell:
+On a Raspberry Pi:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash
 ```
 
-Alternative with `wget`:
+This installs Plamp and starts `plamp-web` on `127.0.0.1:8000`. Useful options:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash
-```
-
-This installs Plamp and starts `plamp-web` on `127.0.0.1:8000`.
-
-It also installs the system `python3-picamera2` package used by camera capture.
-
-Optional flags:
-
-```bash
-# Public web on port 80 via nginx
+# Public port 80 through nginx
 curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --public
 
-# Include OS update
+# Update OS packages during installation
 curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --update-os
 
-# Install to a custom location (default is the current local repo directory)
+# Install somewhere else
 curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --plamp-dir ~/code/plamp
-
-# Enable heartbeat cron, writing to a specific dead-man-switch file
-curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --enable-heartbeat --heartbeat-file /path/to/last_seen_alive.txt
 ```
 
-Notes:
-
-- No OpenClaw path is required by default.
-- Heartbeat defaults:
-  - heartbeat timestamp file: `data/agent/last_seen_alive.txt`
-  - heartbeat state file: `data/agent/check_alive_state.json`
-- Heartbeat file path is configurable via `--heartbeat-file` (internally `PLAMP_HEARTBEAT_FILE`).
-- If `--public` is not set, nginx/port 80 is not configured.
-
-### Manual install (advanced)
-
-Install `uv` on the Raspberry Pi:
+Host lifecycle commands use `plampctl`:
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+systemctl is-active plamp-web
+./plampctl restart
+./plampctl upgrade
 ```
 
-Reload your shell, then check it:
+## Operate Plamp
 
-```bash
-uv --version
-```
-
-Clone this repo and enter it:
-
-```bash
-git clone https://github.com/hugomatic/plamp.git
-cd plamp
-```
-
-Install Python requirements:
-
-```bash
-uv run python -c "import fastapi, serial, uvicorn"
-```
-
-Install the Raspberry Pi camera Python package:
-
-```bash
-sudo apt update
-sudo apt install python3-picamera2
-```
-
-## Run
-
-Start the development web server:
-
-```bash
-uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000
-```
-
-Open:
-
-```text
-http://<raspberry-pi-ip>:8000/
-```
-
-## Run on boot with nginx
-
-Use nginx as the public port-80 proxy and systemd to keep the Plamp app running
-on unprivileged port 8000 after boot:
-
-```text
-browser -> nginx :80 -> plamp-web.service :8000
-```
-
-Install nginx:
-
-```bash
-sudo apt update
-sudo apt install nginx
-```
-
-Install the Plamp nginx site from the repo root:
-
-```bash
-sudo cp deploy/nginx/plamp.conf /etc/nginx/sites-available/plamp
-sudo ln -sf /etc/nginx/sites-available/plamp /etc/nginx/sites-enabled/plamp
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Install the Plamp systemd service from the repo root as the user that should run
-Plamp:
-
-```bash
-deploy/systemd/install-plamp-web-service.sh
-```
-
-The service installer detects the current user, repo path, and `uv` path, then
-writes a machine-local `/etc/systemd/system/plamp-web.service`. nginx and
-systemd will both start after reboot.
-
-Check it:
-
-```bash
-sudo systemctl status plamp-web
-curl http://127.0.0.1:8000/
-curl http://127.0.0.1/
-```
-
-Open:
-
-```text
-http://<raspberry-pi-ip>/
-```
-
-## CLI
-
-Plamp includes a JSON-first CLI:
+The installed JSON-first CLI currently talks to the local REST API:
 
 ```bash
 plamp config get
@@ -159,129 +44,51 @@ plamp pico-scheduler list
 plamp pics list
 ```
 
-See [`plamp_cli/README.md`](./plamp_cli/README.md) for remote usage, JSON input
-rules, and picture download examples.
-
-For development, stop the boot service before running Uvicorn manually:
+The new direct library CLI can request a Pico report without `plamp-web`:
 
 ```bash
 sudo systemctl stop plamp-web
-uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Then restore the boot-managed server:
-
-```bash
+uv run python -m plamp pico report pump_lights
 sudo systemctl start plamp-web
 ```
 
-Useful pages:
+Do not run direct serial commands while the current web monitor is running; service and CLI locking converge in a later slice. Remote agents can use either the REST CLI or direct CLI over SSH.
 
-- `/` - main Pico scheduler page
-- `/settings` - system status and Plamp config
-- `/api/test` - API test page
+See [CLI reference](./plamp_cli/README.md).
 
-## Configure
+## Web and API
 
-Use `/settings` to configure:
+Open `http://<raspberry-pi-ip>/` after a public install, or port `8000` otherwise.
 
-- Pico controllers
-- devices such as lights, pumps, and fans
-- Raspberry Pi cameras
-- hostname
+- `/`: live controller state, schedule editing, and pictures
+- `/settings`: hardware and configuration
+- `/api/test`: executable API examples
+- `/api/config`: desired configuration
+- `/api/system`: host and detected hardware
+- `/api/status`: resolved state and telemetry
 
-Runtime config is stored in:
+The browser receives live updates through SSE. See [web service notes](./plamp_web/README.md).
 
-```text
-data/config.json
-```
+## Configuration
 
-Controller config includes the scheduler firmware type and reporting interval:
+Runtime configuration lives in `data/config.json`; generated scheduler state lives in `data/timers/`. Both are local runtime data.
 
-```json
-{
-  "controllers": {
-    "pump_lights": {
-      "type": "pico_scheduler",
-      "payload": {
-        "pico_serial": "e66038b71387a039",
-        "report_every": 10,
-        "devices": [
-          {
-            "pin": 15,
-            "type": "gpio",
-            "pattern": [
-              {"val": 1, "dur": 300},
-              {"val": 0, "dur": 1800}
-            ]
-          }
-        ]
-      },
-      "settings": {
-        "devices": {
-          "pump": {
-            "pin": 15,
-            "label": "Pump",
-            "editor": {
-              "kind": "cycle"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+Controllers contain desired device behavior, display settings, and a stable Pico USB serial. `/dev/ttyACM*` paths are rediscovered. See the [current contract](./docs/spec-current.md) for the normalized shape.
 
-`report_every` is configured at `controllers.<id>.payload.report_every` in
-`data/config.json`. Pico
-scheduler state files keep device state; any older `report_every` value in
-legacy Pico scheduler state is not the source of truth for reporting cadence.
-
-API split:
-
-- `/api/config`: persisted desired config only.
-- `/api/system`: host facts and detected hardware.
-- `/api/status`: live resolved state and controller telemetry.
-
-`data/` is local runtime data and is ignored by git.
-
-## Pico Firmware
-
-The Pico firmware is in:
-
-```text
-pico_scheduler/
-```
-
-Install `mpremote` on the Raspberry Pi:
+## Development
 
 ```bash
-python3 -m pip install --user mpremote
+uv run python -m unittest discover -s tests -v
+uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Copy firmware and state to the Pico:
+Stop the boot service before running a development server, then restore it afterward.
 
-```bash
-cd pico_scheduler
-mpremote cp main.py :main.py
-mpremote cp state.json :state.json
-mpremote reset
-```
+## Repository
 
-More detail:
-
-- [`pico_scheduler/README.md`](./pico_scheduler/README.md)
-- [`plamp_web/README.md`](./plamp_web/README.md)
-
-## Repo Map
-
-The printed camera stand and holder live in [`things/plamp_stand/`](./things/plamp_stand/):
-
-![Pi with 3D-printed tripod and camera holder](./things/plamp_stand/doc/stand.jpg)
-
-- [`docs/spec-current.md`](./docs/spec-current.md) - current architecture and contracts spec
-- [`plamp_web/`](./plamp_web/) - web server and pages
-- [`pico_scheduler/`](./pico_scheduler/) - MicroPython Pico firmware
-- `data/grow/grows/` - local grow runtime data directory (not tracked in git)
-- [`things/`](./things/) - printable parts
+- [`docs/spec-current.md`](./docs/spec-current.md): current contract and direction
+- [`plamp/`](./plamp/): direct library and CLI
+- [`plamp_cli/`](./plamp_cli/): REST-backed CLI
+- [`plamp_web/`](./plamp_web/): REST, SSE, scheduled reports/pictures, and fallback UI
+- [`pico_scheduler/`](./pico_scheduler/): generated MicroPython scheduler firmware
+- [`things/`](./things/): printable parts

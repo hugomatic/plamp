@@ -1,91 +1,49 @@
-# pico_scheduler
+# Pico Scheduler
 
-Generated MicroPython firmware for one Raspberry Pi Pico.
+`pico_scheduler` generates one controller-specific MicroPython `main.py` for a Raspberry Pi Pico.
 
-## What Lives Here
+## Inputs
 
-- `generator.py`
-  Host-side firmware generator for `pico_scheduler` controllers.
-- `templates/`
-  Readable firmware templates and device fragments used by the generator.
-- `state.json.example`
-  Example host-side scheduler JSON input shape.
-
-## Source Of Truth
-
-The Raspberry Pi remains the source of truth.
-
-The scheduler JSON shape is still:
+Host scheduler state contains report cadence and devices:
 
 ```json
 {
   "report_every": 10,
   "devices": [
     {
+      "id": "pump",
       "type": "gpio",
-      "pin": 25,
+      "pin": 15,
       "current_t": 0,
       "reschedule": 1,
       "pattern": [
-        {"val": 1, "dur": 5},
-        {"val": 0, "dur": 5}
+        {"val": 1, "dur": 300},
+        {"val": 0, "dur": 1800}
       ]
     }
   ]
 }
 ```
 
-That JSON is generator input on the host. It is not copied to the Pico.
+The Pi is authoritative. This JSON is generator input and is not copied to the Pico.
 
-## Generated Firmware
+## Generated firmware
 
-`plamp-web` generates one controller-specific `main.py` and copies only that file to the Pico.
+`generator.py` renders `templates/` into a readable `main.py` containing provenance and only the helpers required by configured device types. The host copies that file to `:main.py` with `mpremote` and resets the Pico.
 
-The generated `main.py` starts with a top-level triple-quoted provenance block containing:
+Current firmware:
 
-- generator source path
-- generation timestamp
-- git version
-- controller id
-- generator input JSON, including options
+- runs GPIO/PWM patterns independently of the host;
+- emits newline-delimited `type: report` and `type: error` JSON;
+- answers the `r` command with a full report;
+- also emits startup, changed-state, and periodic reports.
 
-The generator emits only the code needed by the configured device types. For example:
+Demand-only full reports and runtime schedule updates without reflashing are target architecture, not current firmware behavior.
 
-- no PWM import or helper code when the controller has only GPIO devices
-- no GPIO output setup when the controller has only PWM devices
-
-## Wire Format
-
-Generated firmware emits minimal JSON messages over USB serial:
-
-- `type: "report"` for full current state snapshots
-- `type: "error"` for explicit failures
-
-Every `report` contains the full current `devices` state.
-
-## Deploy
-
-Normal deploy happens through `plamp-web` when controller state is applied.
-
-At a high level:
-
-1. host-side scheduler JSON is validated
-2. `generator.py` renders controller-specific `main.py`
-3. `mpremote` copies that generated file to `:main.py`
-4. the Pico is reset
-
-There is no `state.json` copy step in this design.
-
-## Install Tool
+## Tools
 
 ```bash
 python3 -m pip install --user mpremote
 ```
 
-If needed:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-See also: [`../plamp_web/README.md`](../plamp_web/README.md).
+Normal generation and deployment happen through `plamp-web`. See [current contract](../docs/spec-current.md).

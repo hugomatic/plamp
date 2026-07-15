@@ -1,115 +1,57 @@
-# plamp_web
+# Plamp Web Service
 
-FastAPI web server for Plamp.
+`plamp-web` is the current FastAPI service for REST, SSE, Pico monitoring, scheduled camera captures, and the fallback website.
 
 ## Run
 
-From the repo root:
-
 ```bash
-uv run uvicorn plamp_web.server:app --host 0.0.0.0 --port 8000
+uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000
 ```
 
-Open:
-
-```text
-http://<raspberry-pi-ip>:8000/
-```
-
-## Run on boot with nginx
-
-Use nginx as the public port-80 proxy and systemd to keep Uvicorn running on
-unprivileged port 8000 after boot:
+Production installation is handled by the root bootstrap script or:
 
 ```bash
-sudo apt update
-sudo apt install nginx
-sudo cp deploy/nginx/plamp.conf /etc/nginx/sites-available/plamp
-sudo ln -sf /etc/nginx/sites-available/plamp /etc/nginx/sites-enabled/plamp
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
 deploy/systemd/install-plamp-web-service.sh
 ```
 
-The service installer writes `/etc/systemd/system/plamp-web.service` with the
-detected user, repo path, and `uv` path. nginx remains the public port-80
-service.
-
-Check it:
-
-```bash
-sudo systemctl status plamp-web
-curl http://127.0.0.1:8000/
-curl http://127.0.0.1/
-```
-
-Open:
-
-```text
-http://<raspberry-pi-ip>/
-```
-
-For development, stop the boot service before running Uvicorn manually:
-
-```bash
-sudo systemctl stop plamp-web
-uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Then restore the boot-managed server:
-
-```bash
-sudo systemctl start plamp-web
-```
+With nginx enabled, the public path is `browser -> nginx :80 -> plamp-web :8000`.
 
 Pages:
 
 - `/` - main Pico scheduler page and camera
-- `/settings` - system status and Plamp config
-- `/api/test` - manual API requests
+- `/settings` - hardware, host status, and configuration
+- `/api/test` - executable API examples
 
-## Config
+## Responsibilities
 
-Runtime config is local:
+- Read and validate `data/config.json`.
+- Maintain current Pico telemetry and publish SSE updates.
+- Generate and apply scheduler firmware.
+- Schedule and capture pictures.
+- Expose REST operations used by the browser and `plamp_cli`.
 
-```text
-data/config.json
-```
+The current monitor owns serial continuously. Stop `plamp-web` before using the direct `python -m plamp pico report` command. A later slice moves monitoring to shared short-lived locked transactions.
 
-Use `/settings` to edit:
+## Configuration
 
-- Pico controllers
-- devices and their pins
-- cameras
-- hostname
-
-The main page is based on this config. Extra pins reported by a Pico are ignored.
-
-Controller config includes the scheduler firmware type and reporting interval:
+Desired configuration lives in `data/config.json`. Scheduler controllers use `payload` for generated state and `settings.devices` for semantic device configuration:
 
 ```json
 {
   "controllers": {
     "pump_lights": {
       "type": "pico_scheduler",
-      "config": {
-        "pico_serial": "e66038b71387a039"
+      "payload": {
+        "pico_serial": "e66038b71387a039",
+        "report_every": 10,
+        "devices": []
       },
       "settings": {
-        "report_every": 10
-      },
-      "devices": {
-        "pump": {
-          "type": "scheduled_output",
-          "config": {
+        "devices": {
+          "pump": {
             "pin": 15,
-            "output_type": "gpio"
-          },
-          "settings": {
-            "schedule": {
-              "kind": "cycle"
-            }
+            "output_type": "gpio",
+            "editor": {"kind": "cycle"}
           }
         }
       }
@@ -120,58 +62,20 @@ Controller config includes the scheduler firmware type and reporting interval:
 
 ## Pico Scheduler State
 
-Each controller has a saved state file:
-
-```text
-data/timers/<controller-id>.json
-```
-
-Pico scheduler devices use `pin`:
-
-```json
-{
-  "report_every": 10,
-  "devices": [
-    {
-      "id": "pump",
-      "type": "gpio",
-      "pin": 15,
-      "current_t": 0,
-      "reschedule": 1,
-      "pattern": [
-        {"val": 1, "dur": 300},
-        {"val": 0, "dur": 1800}
-      ]
-    }
-  ]
-}
-```
-
-`report_every` is configured at `controllers.<id>.payload.report_every` in
-`data/config.json`. Pico
-scheduler state files keep device state; any older `report_every` value in
-`data/timers/<controller>.json` is legacy and is not the source of truth for
-Pico scheduler reporting cadence.
+Generated controller state is stored at `data/timers/<controller-id>.json`. These state files keep device state; `controllers.<id>.payload.report_every` remains the current source of report cadence.
 
 API split:
 
-- `/api/config`: persisted desired config only.
-- `/api/system`: host facts and detected hardware.
-- `/api/status`: live resolved state and controller telemetry.
+- `/api/config`: desired configuration
+- `/api/system`: host facts and detected hardware
+- `/api/status`: resolved state and SSE telemetry
+- `/api/controllers`: controller state and commands
+- `/api/camera`: captures and images
 
 ## Logs
 
-```text
-data/plamp.log
-```
-
-Recent logs:
+Application logs are written to `data/plamp.log` and exposed through:
 
 ```bash
 curl 'http://localhost:8000/api/logs?lines=200'
 ```
-
-## More
-
-- [`../README.md`](../README.md)
-- [`../pico_scheduler/README.md`](../pico_scheduler/README.md)

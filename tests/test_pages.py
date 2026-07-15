@@ -2,10 +2,27 @@ import json
 import re
 import unittest
 
-from plamp_web.pages import json_script_text, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_nav_uses_single_link_to_running_revision(self):
+        nav = main_nav(revision="ebaf545")
+
+        self.assertIn('<a href="https://github.com/hugomatic/plamp/commit/ebaf545">[rev ebaf545]</a>', nav)
+        self.assertNotIn('>GitHub</a>', nav)
+
+    def test_nav_renders_unknown_revision_without_a_link(self):
+        nav = main_nav(revision="unknown")
+
+        self.assertIn("[rev unknown]", nav)
+        self.assertNotIn("/commit/unknown", nav)
+
+    def test_nav_escapes_revision_text(self):
+        nav = main_nav(revision='abc\"<script>')
+
+        self.assertNotIn("<script>", nav)
+
     def hidden_scheduler_controllers_payload(self, html: str) -> dict:
         match = re.search(
             r'<script id="hidden-scheduler-controllers" type="application/json">(.*?)</script>',
@@ -47,7 +64,7 @@ class PageRenderTests(unittest.TestCase):
 
 
     def test_pages_use_same_nav_with_github_link(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
         settings_summary = {
             "config": {"controllers": {}, "devices": {}, "cameras": {}},
             "detected": {"picos": [], "cameras": []},
@@ -67,7 +84,7 @@ class PageRenderTests(unittest.TestCase):
             self.assertIn(expected, html)
 
     def test_pages_use_same_nav_with_system_link(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | <a href="https://github.com/hugomatic/plamp">GitHub</a></nav>'
+        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
         html = render_system_info_page({"host": {"hostname": "sprout"}})
         self.assertIn(expected, html)
         self.assertEqual(html.count("<nav>"), 1)
@@ -197,9 +214,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>', html)
         self.assertIn('message?.telemetry?.last_report?.content?.devices,', html)
         self.assertIn('message?.telemetry?.report?.content?.devices,', html)
-        self.assertIn('const source = new EventSource(`/api/status?stream=true&path=${encodeURIComponent(`controllers.${role}.telemetry`)}`);', html)
-        self.assertIn('for (const eventName of ["snapshot", "update"]) {', html)
-        self.assertIn('timerMessages.set(role, statusNode(JSON.parse(event.data)));', html)
+        self.assertIn('const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);', html)
+        self.assertIn('for (const eventName of ["snapshot", "report"]) {', html)
+        self.assertIn('timerMessages.set(role, JSON.parse(event.data));', html)
         self.assertIn('"value" in message[0]', html)
         self.assertIn("return message[0].value;", html)
         self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
@@ -217,7 +234,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);', html)
         self.assertIn('activeEditor = null;', html)
         self.assertIn('renderTimerStatus(true);', html)
-        self.assertNotIn('/api/controllers/${encodeURIComponent(role)}?stream=true', html)
+        self.assertNotIn('/api/status?stream=true&path=', html)
         self.assertNotIn('/api/timers', html)
         self.assertNotIn("Stream error or reconnecting...", html)
         self.assertNotIn('class="editor-on-unit"', html)

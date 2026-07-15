@@ -38,7 +38,43 @@ class DummyMonitor:
         return list(self.serial_log_entries)
 
 
+class FakeSerial:
+    def __init__(self, port="/dev/ttyACM0"):
+        self.port = port
+        self.is_open = True
+        self.writes = []
+        self.flushed = False
+
+    def write(self, value):
+        self.writes.append(value)
+
+    def flush(self):
+        self.flushed = True
+
+    def close(self):
+        self.is_open = False
+
+
 class ConfigApiTests(unittest.TestCase):
+    def test_startup_resolves_application_revision_once(self):
+        previous_revision = server.APP_REVISION
+        try:
+            with (
+                patch.object(server, "ensure_data_dir"),
+                patch.object(server, "configure_logging"),
+                patch.object(server, "start_configured_monitors"),
+                patch.object(server, "get_or_start_camera_worker"),
+                patch.object(server, "set_app_revision") as set_app_revision,
+                patch.object(server, "git_output", return_value="ebaf545") as git_output,
+            ):
+                server.startup()
+
+            self.assertEqual(server.APP_REVISION, "ebaf545")
+            set_app_revision.assert_called_once_with("ebaf545")
+            git_output.assert_called_once_with(["git", "rev-parse", "--short", "HEAD"], repo_root=server.REPO_ROOT)
+        finally:
+            server.APP_REVISION = previous_revision
+
     def scheduler_controller(self, *, serial: str | None = None, report_every: int = 10, devices: dict | None = None):
         config = {}
         if serial:
@@ -1690,42 +1726,61 @@ class ConfigApiTests(unittest.TestCase):
         self.assertFalse(any(":state.json" in part for call in calls for part in call))
         self.assertNotIn("resume", calls[2])
 
-    def test_pico_monitor_apply_requests_report_after_reconnect_delay(self):
+    def test_pico_monitor_apply_does_not_complete_before_reconnect_and_report_request(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
         command = server.ApplyCommand(path=Path("/tmp/main.py"))
 
-        class FakeSerial:
-            port = "/dev/ttyACM0"
-            is_open = True
-
-            def __init__(self):
-                self.writes = []
-                self.flushed = False
-
-            def write(self, data):
-                self.writes.append(data)
-
-            def flush(self):
-                self.flushed = True
-
-        conn = FakeSerial()
-
         with (
             patch.object(monitor, "find_port", return_value="/dev/ttyACM0"),
-            patch.object(monitor, "open_serial", return_value=conn),
             patch.object(server.shutil, "which", return_value="/usr/bin/mpremote"),
             patch.object(server, "interrupt_pico_program"),
             patch.object(server, "run_command", return_value=(0, "", "")),
-            patch.object(server.time, "sleep") as sleep,
         ):
-            result = monitor.handle_apply(command, None)
+            pending = monitor.handle_apply(command, None)
 
-        sleep.assert_called_once_with(0.5)
-        self.assertIs(result, conn)
-        self.assertEqual(conn.writes, [b"r\n"])
+        self.assertIs(pending, command)
+        self.assertFalse(command.done.is_set())
+
+    def test_pico_monitor_finishes_pending_apply_after_writing_report_request(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        command = server.ApplyCommand(path=Path("/tmp/main.py"))
+        conn = FakeSerial()
+
+        monitor.finish_apply_after_reconnect(command, conn)
+
+        self.assertEqual(conn.writes, [b"\nr\n"])
         self.assertTrue(conn.flushed)
+        self.assertTrue(command.done.is_set())
+        self.assertEqual(command.result["report_sequence"], 0)
         self.assertEqual(monitor.serial_log()[-1]["direction"], "tx")
         self.assertEqual(monitor.serial_log()[-1]["text"], "r")
+
+    def test_pico_monitor_starts_serial_commands_on_a_fresh_line(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        command = server.SerialCommand(text="p 21 5")
+        conn = FakeSerial()
+
+        returned = monitor.handle_serial_command(command, conn)
+
+        self.assertIs(returned, conn)
+        self.assertEqual(conn.writes, [b"\np 21 5\n"])
+        self.assertTrue(command.done.is_set())
+
+    def test_pico_monitor_only_sequences_valid_reports(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        subscriber = monitor.subscribe()
+
+        monitor.handle_line(b"not json\n")
+        self.assertEqual(monitor.report_sequence, 0)
+
+        monitor.handle_line(b'{"type":"report","content":{"devices":[]}}\n')
+        events = []
+        while not subscriber.empty():
+            events.append(subscriber.get_nowait())
+        report_event = next(event for event in events if event["event"] == "report")
+
+        self.assertEqual(monitor.report_sequence, 1)
+        self.assertEqual(report_event["data"]["report_sequence"], 1)
 
     def test_apply_timer_state_generates_report_every_from_controller_config(self):
         with tempfile.TemporaryDirectory() as tmp:
