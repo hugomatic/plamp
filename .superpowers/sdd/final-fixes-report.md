@@ -73,3 +73,39 @@ Result: exit 0; no whitespace errors.
 ## Concerns
 
 No implementation concerns. As documented, synchronous discovery/open/reset/flush/close calls depend on their OS or driver returning and therefore cannot be forcibly preempted by this API budget.
+
+## Final blocking write-timeout follow-up
+
+The serial constructor still receives the pre-open remaining budget, and
+`request_report` now recomputes the budget after open/reset and assigns it to
+`conn.write_timeout` immediately before `conn.write`. Deadline wording no longer
+claims a check around unconditional close.
+
+### RED
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest tests.test_plamp_pico_transport.PicoTransportTests.test_write_timeout_is_refreshed_after_serial_open -v
+```
+
+Result: exit 1; 1 test failed. The write observed `0.10` seconds rather than the
+mocked post-open remaining budget of `0.06` seconds.
+
+### GREEN
+
+The same focused command passed: exit 0; 1 test passed in 0.002s.
+
+All new modules:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest tests.test_plamp_locks tests.test_plamp_pico_discovery tests.test_plamp_pico_protocol tests.test_plamp_pico_transport tests.test_plamp_direct_cli -v
+```
+
+Result: exit 0; 30 tests passed in 0.152s.
+
+Full suite:
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest discover -s tests -v
+```
+
+Result: exit 0; 329 tests passed in 12.436s.

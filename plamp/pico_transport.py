@@ -55,8 +55,8 @@ def request_report(
 ) -> dict[str, Any]:
     """Request one report using ``timeout`` as an enforced operation budget.
 
-    The remaining budget is checked around synchronous discovery, open, reset, flush,
-    and close operations and is supplied to lock, serial read, and serial write waits.
+    The remaining budget is checked around synchronous discovery, open, reset, and
+    flush operations and is supplied to lock, serial read, and serial write waits.
     Synchronous OS and driver calls cannot be preempted, so this is not a hard interrupt
     guarantee for those calls.
     """
@@ -81,7 +81,8 @@ def request_report(
         try:
             _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.reset_input_buffer()
-            _remaining_or_timeout(deadline, pico_serial, raw_lines)
+            remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
+            conn.write_timeout = remaining
             conn.write(b"r\n")
             _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.flush()

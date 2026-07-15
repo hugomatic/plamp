@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from plamp import LockTimeout as ExportedLockTimeout
 from plamp.locks import LockTimeout
@@ -18,7 +19,9 @@ class FakeSerial:
         self.closed = False
         self.read_timeouts = []
         self.readline_calls = 0
+        self.write_timeouts_at_write = []
         self._timeout = None
+        self.write_timeout = None
 
     @property
     def timeout(self):
@@ -33,6 +36,7 @@ class FakeSerial:
         self.input_reset = True
 
     def write(self, value):
+        self.write_timeouts_at_write.append(self.write_timeout)
         self.writes.append(value)
 
     def flush(self):
@@ -84,6 +88,24 @@ class PicoTransportTests(unittest.TestCase):
             )
         self.assertGreater(calls[0][1]["write_timeout"], 0)
         self.assertLessEqual(calls[0][1]["write_timeout"], 0.1)
+
+    def test_write_timeout_is_refreshed_after_serial_open(self):
+        conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        clock = [10.0]
+
+        def serial_factory(*args, **kwargs):
+            conn.write_timeout = kwargs["write_timeout"]
+            clock[0] += 0.04
+            return conn
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("plamp.pico_transport.time.monotonic", side_effect=lambda: clock[0]):
+                request_report(
+                    "PICO-A", lock_dir=Path(tmp), timeout=0.1,
+                    port_finder=lambda serial: "/dev/ttyACM0", serial_factory=serial_factory,
+                )
+        self.assertEqual(len(conn.write_timeouts_at_write), 1)
+        self.assertAlmostEqual(conn.write_timeouts_at_write[0], 0.06)
 
     def test_requests_valid_report_and_always_closes(self):
         conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
