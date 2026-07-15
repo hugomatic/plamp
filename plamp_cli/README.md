@@ -1,412 +1,97 @@
 # Plamp CLI
 
-`plamp` is a JSON-first command-line client for `plamp-web`.
+Plamp currently has two command-line entry points.
 
-## Install
+## REST-backed CLI
 
-Use the repo root, not `plamp_cli/`:
+`python -m plamp_cli` is the mature JSON-first client for `plamp-web`. The installed `plamp` command currently points here.
 
 ```bash
 cd /path/to/plamp
-```
-
-Recommended for testing and agent use:
-
-```bash
 uv run python -m plamp_cli --help
+uv run python -m plamp_cli config get
+uv run python -m plamp_cli controllers list
+uv run python -m plamp_cli pico-scheduler list
 ```
 
-Optional shell install if you want a normal `plamp` command in `PATH`:
+Optional editable installation:
 
 ```bash
 python3 -m pip install --user --no-deps --editable /path/to/plamp
 ```
 
-After a `--user` install:
+The default API is `http://127.0.0.1:8000`. Override it with `--base-url`, `--host`/`--port`, or `PLAMP_HOST`.
+
+### Commands
 
 ```bash
-~/.local/bin/plamp --help
-```
-
-## Run
-
-Recommended:
-
-```bash
-uv run python -m plamp_cli --help
-```
-
-Also supported:
-
-```bash
-~/.local/bin/plamp --help
-```
-
-Default API target:
-
-```text
-http://127.0.0.1:8000
-```
-
-## Help
-
-Use:
-
-```bash
-uv run python -m plamp_cli --help
-uv run python -m plamp_cli config --help
-uv run python -m plamp_cli controllers --help
-uv run python -m plamp_cli system --help
-uv run python -m plamp_cli status --help
-uv run python -m plamp_cli pico-scheduler --help
-uv run python -m plamp_cli pics --help
-```
-
-## Quick Start
-
-```bash
-uv run python -m plamp_cli config get
-uv run python -m plamp_cli controllers list
-uv run python -m plamp_cli system status
-uv run python -m plamp_cli status --path controllers.pump_lights
-uv run python -m plamp_cli pico-scheduler list
-uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
-```
-
-## Smoke Test
-
-1. Read config:
-
-```bash
-uv run python -m plamp_cli --pretty config get
-```
-
-Expected shape:
-
-```json
-{
-  "config": {
-    "controllers": {
-      "pump_lights": {
-        "type": "pico_scheduler",
-        "payload": {
-          "pico_serial": "...",
-          "report_every": 10,
-          "devices": []
-        },
-        "settings": { "devices": {} }
-      }
-    },
-    "cameras": { "...": {} }
-  }
-}
-```
-
-Use `/api/system` for detected Picos/cameras, host metadata, and software
-identity. `system status` reads `/api/system` and exposes the git branch and
-commit in the `software` section.
-
-Controller reads now come from `/api/status` so the CLI can request filtered
-live state without depending on `/api/controllers/{id}`. `controllers get`
-and `pico-scheduler get` both read a filtered status path.
-
-2. List controller families:
-
-```bash
-uv run python -m plamp_cli --pretty controllers list
-```
-
-Expected shape:
-
-```json
-{
-  "controllers": {
-    "pico_scheduler": {
-      "ids": ["pump_lights"]
-    }
-  }
-}
-```
-
-3. List Pico scheduler controllers:
-
-```bash
-uv run python -m plamp_cli --pretty pico-scheduler list
-```
-
-Expected shape:
-
-```json
-{
-  "ids": ["pump_lights"]
-}
-```
-
-4. Read system status:
-
-```bash
-uv run python -m plamp_cli --pretty system status
-```
-
-Expected shape:
-
-```json
-{
-  "software": {
-    "git_branch": "main",
-    "git_commit": "8d92806abcdef",
-    "git_dirty": false,
-    "git_short_commit": "8d92806"
-  }
-}
-```
-
-5. Read one Pico scheduler state:
-
-```bash
-uv run python -m plamp_cli --pretty pico-scheduler get pump_lights
-```
-
-Expected shape:
-
-```json
-{
-  "report_every": 10,
-  "devices": []
-}
-```
-
-6. List a few pictures and copy one `image_key`:
-
-```bash
-uv run python -m plamp_cli --pretty pics list --camera-id rpicam_cam0 --limit 3
-```
-
-Expected shape:
-
-```json
-{
-  "captures": [
-    {
-      "image_key": "...",
-      "image_url": "/api/camera/images/..."
-    }
-  ],
-  "limit": 3,
-  "offset": 0,
-  "has_more": false,
-  "total": 0
-}
-```
-
-7. Trigger one capture:
-
-```bash
-uv run python -m plamp_cli --pretty pics take --camera-id rpicam_cam0
-```
-
-Expected shape:
-
-```json
-{
-  "capture_id": "...",
-  "image_url": "/api/camera/captures/.../image"
-}
-```
-
-8. Download one real image using the `image_key` from step 6:
-
-```bash
-uv run python -m plamp_cli pics get <image_key> --out /tmp/latest.jpg
-ls -lh /tmp/latest.jpg
-```
-
-Expected result:
-
-```text
-/tmp/latest.jpg exists and is non-empty
-```
-
-## Defaults
-
-- base URL: `http://127.0.0.1:8000`
-- stdout: JSON
-- stderr: diagnostics only
-- JSON input: `@file.json` or `-` for stdin
-
-## Command Reference
-
-### Config
-
-Commands:
-
-```bash
+# Desired configuration
 uv run python -m plamp_cli config get
 uv run python -m plamp_cli config set @config.json
 uv run python -m plamp_cli config controllers get
-uv run python -m plamp_cli config controllers set @controllers.json
 uv run python -m plamp_cli config cameras get
-uv run python -m plamp_cli config cameras set @cameras.json
-```
 
-Examples:
-
-```bash
-uv run python -m plamp_cli config get
-uv run python -m plamp_cli config controllers get
-uv run python -m plamp_cli --pretty config controllers get
-uv run python -m plamp_cli config set @config.json
-```
-
-### Controllers
-
-Commands:
-
-```bash
+# Discovery and current state
 uv run python -m plamp_cli controllers list
 uv run python -m plamp_cli controllers get pump_lights
-```
-
-Examples:
-
-```bash
-uv run python -m plamp_cli controllers list
-uv run python -m plamp_cli --pretty controllers list
-uv run python -m plamp_cli controllers get pump_lights
-```
-
-### Status
-
-`status` streams `/api/status?stream=true` and appends repeated `--path`
-filters as repeated `path=` query arguments.
-
-Commands:
-
-```bash
-uv run python -m plamp_cli status
-uv run python -m plamp_cli status --path controllers.pump_lights
-uv run python -m plamp_cli status --path controllers.pump_lights --path controllers.grow
-```
-
-Examples:
-
-```bash
-uv run python -m plamp_cli status
-uv run python -m plamp_cli status --path controllers.pump_lights
-uv run python -m plamp_cli status --path controllers.pump_lights --path controllers.grow
-```
-
-### System
-
-Commands:
-
-```bash
 uv run python -m plamp_cli system status
-```
+uv run python -m plamp_cli status --path controllers.pump_lights
 
-Examples:
-
-```bash
-uv run python -m plamp_cli system status
-uv run python -m plamp_cli --table system status
-uv run python -m plamp_cli --pretty system status
-```
-
-### Pico Scheduler
-
-Commands:
-
-```bash
-uv run python -m plamp_cli pico-scheduler list
+# Scheduler operations
 uv run python -m plamp_cli pico-scheduler get pump_lights
 uv run python -m plamp_cli pico-scheduler set pump_lights @state.json
 uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights @schedule.json
-```
 
-Examples:
-
-```bash
-uv run python -m plamp_cli pico-scheduler list
-uv run python -m plamp_cli pico-scheduler get pump_lights
-uv run python -m plamp_cli --table pico-scheduler get pump_lights
-cat schedule.json | uv run python -m plamp_cli pico-scheduler channels set-schedule pump_lights lights -
-```
-
-`pico-scheduler get` now reads the controller state through `/api/status` with
-`path=controllers.<id>`.
-
-### Pictures
-
-Commands:
-
-```bash
-uv run python -m plamp_cli pics list
+# Pictures
 uv run python -m plamp_cli pics list --camera-id rpicam_cam0
-uv run python -m plamp_cli pics take
-uv run python -m plamp_cli pics take --camera-id rpicam_cam0
+uv run python -m plamp_cli --pretty pics take --camera-id rpicam_cam0
 uv run python -m plamp_cli pics get <image_key> --out latest.jpg
 uv run python -m plamp_cli pics get <image_key> --stdout > latest.jpg
 ```
 
-Examples:
+`status` streams `/api/status?stream=true`; repeated `--path` arguments select subtrees.
+
+### Input and output
+
+- Default stdout is compact JSON; use `--pretty` or `--table` where supported.
+- Diagnostics go to stderr.
+- JSON input accepts `@file.json` or `-` for stdin.
+- `pics get --stdout` writes only image bytes.
+- `pics get --out <path>` writes the file and no stdout payload.
+
+Exit codes:
+
+- `0`: success
+- `2`: usage error
+- `3`: API error
+- `4`: network error
+- `5`: local input error
+
+### Remote use
+
+Use HTTP directly:
 
 ```bash
-uv run python -m plamp_cli pics list --camera-id rpicam_cam0 --limit 10
-uv run python -m plamp_cli --pretty pics list --camera-id rpicam_cam0 --offset 10 --limit 10
-uv run python -m plamp_cli pics take --camera-id rpicam_cam0
-# get a real image_key from `pics list`, then:
-uv run python -m plamp_cli pics get <image_key> --out latest.jpg
-ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
+uv run python -m plamp_cli --host sprout.local system status
 ```
 
-## Output Modes
-
-- default: compact JSON
-- `--pretty`: indented JSON
-- `--table`: table output when the response shape is tabular; otherwise JSON
-
-## Agent Contract
-
-- Default stdout is machine-readable JSON unless `--table` is requested.
-- Diagnostics go to stderr.
-- `pics get` writes binary only when `--stdout` or `--out` is used.
-- `pics get --stdout` writes image bytes only, with no JSON wrapper.
-- `pics get --out <path>` writes the file and produces no stdout payload.
-- `pics get` expects a real `image_key` returned by `pics list`.
-- Nested response shapes fall back to JSON even when `--table` is requested.
-- Exit codes:
-  - `0` success
-  - `2` usage error
-  - `3` API error
-  - `4` network error
-  - `5` local input error
-
-## Remote Use
+Or run the installed CLI through SSH:
 
 ```bash
-uv run python -m plamp_cli --host 127.0.0.1 pico-scheduler get pump_lights
-uv run python -m plamp_cli --host 192.168.68.56 pics list --camera-id rpicam_cam0
 ssh localhost /home/hugo/.local/bin/plamp config get
 ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest.jpg
 ```
 
-You can also set a default host:
+## Direct library CLI
+
+`python -m plamp` calls the shared library without REST. This first slice supports fresh Pico reports:
 
 ```bash
-export PLAMP_HOST=127.0.0.1
-uv run python -m plamp_cli pico-scheduler list
+sudo systemctl stop plamp-web
+uv run python -m plamp pico report pump_lights
+sudo systemctl start plamp-web
 ```
 
-## JSON Input
+Output is one report JSON object. `--config`, `--lock-dir`, and `--timeout` control local paths and the operation budget.
 
-```bash
-uv run python -m plamp_cli config set @config.json
-cat state.json | uv run python -m plamp_cli pico-scheduler set pump_lights -
-```
-
-## Pictures
-
-Picture download is explicit:
-
-- `--out <path>` writes a file
-- `--stdout` writes raw image bytes to stdout
+Until the web monitor migrates to the same filesystem locks, do not run direct serial commands concurrently with `plamp-web`.
