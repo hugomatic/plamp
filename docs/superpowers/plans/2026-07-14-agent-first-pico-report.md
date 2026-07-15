@@ -381,13 +381,14 @@ git commit -m "Validate complete Pico report lines"
 - Produces: `PicoUnavailable(ConnectionError)`.
 - Produces: `PicoReportTimeout(TimeoutError)` with `raw_lines: tuple[bytes, ...]`.
 - Produces: `request_report(pico_serial: str, *, lock_dir: Path, timeout: float = 3.0, serial_factory: Callable[..., Any] = serial.Serial, port_finder: Callable[[str], str | None] = find_pico_port) -> dict[str, Any]`.
-- Consumes: `exclusive_lock`, `LockTimeout`, `decode_report_line`, `PicoProtocolError`, and `find_pico_port`.
+- Consumes: `exclusive_lock`, `decode_report_line`, `PicoProtocolError`, and `find_pico_port`.
 
 - [ ] **Step 1: Write a fake serial connection and failing transaction tests**
 
 ```python
 # tests/test_plamp_pico_transport.py
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -401,6 +402,18 @@ class FakeSerial:
         self.flushed = False
         self.input_reset = False
         self.closed = False
+        self.read_timeouts = []
+        self.readline_calls = 0
+        self._timeout = None
+
+    @property
+    def timeout(self):
+        return self._timeout
+
+    @timeout.setter
+    def timeout(self, value):
+        self._timeout = value
+        self.read_timeouts.append(value)
 
     def reset_input_buffer(self):
         self.input_reset = True
@@ -412,6 +425,7 @@ class FakeSerial:
         self.flushed = True
 
     def readline(self):
+        self.readline_calls += 1
         return self.lines.pop(0) if self.lines else b""
 
     def close(self):
@@ -447,6 +461,19 @@ class PicoTransportTests(unittest.TestCase):
             )
         self.assertEqual(report["content"]["devices"], [])
 
+    def test_accumulates_valid_report_split_across_reads(self):
+        conn = FakeSerial([b'{"type":"report","content":', b'{"devices":[]}}\n'])
+        with tempfile.TemporaryDirectory() as tmp:
+            report = request_report(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                timeout=0.1,
+                port_finder=lambda serial: "/dev/ttyACM0",
+                serial_factory=lambda *args, **kwargs: conn,
+            )
+        self.assertEqual(report["content"]["devices"], [])
+        self.assertEqual(conn.readline_calls, 2)
+
     def test_missing_pico_is_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(PicoUnavailable, "PICO-A"):
@@ -459,12 +486,61 @@ class PicoTransportTests(unittest.TestCase):
                 request_report(
                     "PICO-A",
                     lock_dir=Path(tmp),
-                    timeout=0.0,
+                    timeout=0.01,
                     port_finder=lambda serial: "/dev/ttyACM0",
                     serial_factory=lambda *args, **kwargs: conn,
                 )
         self.assertEqual(caught.exception.raw_lines, (b'bad\n',))
         self.assertTrue(conn.closed)
+
+    def test_read_timeout_never_exceeds_remaining_deadline(self):
+        conn = FakeSerial([b""])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(PicoReportTimeout):
+                request_report(
+                    "PICO-A",
+                    lock_dir=Path(tmp),
+                    timeout=0.01,
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                    serial_factory=lambda *args, **kwargs: conn,
+                )
+        self.assertTrue(conn.read_timeouts)
+        self.assertTrue(all(0 < value <= 0.01 for value in conn.read_timeouts))
+
+    def test_expired_deadline_does_not_discover_or_read(self):
+        conn = FakeSerial([])
+        discovery_calls = []
+
+        def find_port(serial):
+            discovery_calls.append(serial)
+            return "/dev/ttyACM0"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(PicoReportTimeout) as caught:
+                request_report(
+                    "PICO-A",
+                    lock_dir=Path(tmp),
+                    timeout=0.0,
+                    port_finder=find_port,
+                    serial_factory=lambda *args, **kwargs: conn,
+                )
+        self.assertEqual(caught.exception.raw_lines, ())
+        self.assertEqual(discovery_calls, [])
+        self.assertEqual(conn.readline_calls, 0)
+
+    def test_discovery_cannot_return_an_error_after_deadline(self):
+        def slow_missing_port(serial):
+            time.sleep(0.01)
+            return None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(PicoReportTimeout):
+                request_report(
+                    "PICO-A",
+                    lock_dir=Path(tmp),
+                    timeout=0.001,
+                    port_finder=slow_missing_port,
+                )
 ```
 
 - [ ] **Step 2: Run transport tests and confirm failure**
@@ -514,6 +590,17 @@ def _lock_name(pico_serial: str) -> str:
     return f"pico-{safe}.lock"
 
 
+def _remaining_or_timeout(
+    deadline: float, pico_serial: str, raw_lines: list[bytes]
+) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise PicoReportTimeout(
+            f"timed out waiting for report from {pico_serial}", raw_lines
+        )
+    return remaining
+
+
 def request_report(
     pico_serial: str,
     *,
@@ -523,27 +610,53 @@ def request_report(
     port_finder: Callable[[str], str | None] = find_pico_port,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(timeout, 0.0)
-    with exclusive_lock(lock_dir / _lock_name(pico_serial), timeout=max(deadline - time.monotonic(), 0.0)):
+    lock_timeout = max(deadline - time.monotonic(), 0.0)
+    with exclusive_lock(lock_dir / _lock_name(pico_serial), timeout=lock_timeout):
+        raw_lines: list[bytes] = []
+        _remaining_or_timeout(deadline, pico_serial, raw_lines)
         port = port_finder(pico_serial)
+        remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
         if port is None:
             raise PicoUnavailable(f"configured Pico is not connected: {pico_serial}")
-        conn = serial_factory(port, baudrate=115200, timeout=0.05, exclusive=True)
-        raw_lines = []
+        conn = serial_factory(
+            port,
+            baudrate=115200,
+            timeout=min(0.05, remaining),
+            exclusive=True,
+        )
         try:
+            _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.reset_input_buffer()
+            _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.write(b"r\n")
+            _remaining_or_timeout(deadline, pico_serial, raw_lines)
             conn.flush()
+            buffered = b""
             while True:
+                remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
+                conn.timeout = min(0.05, remaining)
                 raw = conn.readline()
                 if raw:
                     raw_lines.append(raw)
-                    LOGGER.debug("pico raw serial=%s len=%d newline=%s repr=%r", pico_serial, len(raw), raw.endswith(b"\n"), raw)
-                    try:
-                        return decode_report_line(raw)
-                    except PicoProtocolError:
-                        LOGGER.warning("ignored invalid Pico line serial=%s repr=%r", pico_serial, raw)
-                if time.monotonic() >= deadline:
-                    raise PicoReportTimeout(f"timed out waiting for report from {pico_serial}", raw_lines)
+                    buffered += raw
+                    while b"\n" in buffered:
+                        line, buffered = buffered.split(b"\n", 1)
+                        line += b"\n"
+                        LOGGER.debug(
+                            "pico raw serial=%s len=%d newline=%s repr=%r",
+                            pico_serial,
+                            len(line),
+                            True,
+                            line,
+                        )
+                        try:
+                            return decode_report_line(line)
+                        except PicoProtocolError:
+                            LOGGER.warning(
+                                "ignored invalid Pico line serial=%s repr=%r",
+                                pico_serial,
+                                line,
+                            )
         finally:
             conn.close()
 ```
@@ -562,7 +675,7 @@ Run:
   tests.test_plamp_pico_transport -v
 ```
 
-Expected: 13 tests pass.
+Expected: 17 tests pass.
 
 - [ ] **Step 5: Commit the transaction**
 
