@@ -2405,8 +2405,7 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
     updated_config = copy.deepcopy(config)
     updated_config["controllers"] = controllers
     compiled_timer_state_for_controller(role, config=updated_config, now=datetime.now().time())
-    put_config_controllers(controllers)
-    applied = post_controller_apply(role)
+    applied = post_controller_schedule(role, controller)
     return {
         "role": role,
         "channel": channel_id,
@@ -2447,28 +2446,95 @@ def compiled_timer_state_for_controller(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def controller_schedule_candidate(
+    raw_config: dict[str, Any],
+    controller: str,
+    proposed_controller: dict[str, Any],
+) -> dict[str, Any]:
+    current_controllers = raw_config.get("controllers")
+    if not isinstance(current_controllers, dict) or controller not in current_controllers:
+        raise HTTPException(status_code=404, detail=f"unknown controller: {controller}")
+
+    candidate = copy.deepcopy(raw_config)
+    candidate_controllers = copy.deepcopy(current_controllers)
+    candidate_controllers[controller] = copy.deepcopy(proposed_controller)
+    try:
+        validated = config_view({"controllers": candidate_controllers, "cameras": candidate.get("cameras", {})})
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    candidate.update(validated)
+
+    current_controller = current_controllers[controller]
+    proposed = candidate["controllers"].get(controller)
+    if not isinstance(proposed, dict) or proposed.get("type", "pico_scheduler") != "pico_scheduler":
+        raise HTTPException(status_code=422, detail="schedule is only supported for pico_scheduler controllers")
+    current_serial = current_controller.get("payload", {}).get("pico_serial")
+    if proposed.get("payload", {}).get("pico_serial") != current_serial:
+        raise HTTPException(status_code=422, detail="pico_serial cannot be changed by the schedule endpoint")
+    return candidate
+
+
+def flash_and_commit_controller_schedule(
+    controller: str,
+    candidate: dict[str, Any],
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    ensure_data_dir()
+    final_state_path = TIMERS_DIR / f"{controller}.json"
+    with tempfile.TemporaryDirectory(dir=DATA_DIR, prefix=f".{controller}-schedule-") as staging_dir:
+        staging_path = Path(staging_dir)
+        staged_config = staging_path / "config.json"
+        staged_state = staging_path / f"{controller}.json"
+        write_config_file(staged_config, candidate)
+        atomic_write_json(staged_state, state)
+
+        sent = apply_timer_state(controller, staged_state)
+        os.replace(staged_config, CONFIG_FILE)
+        os.replace(staged_state, final_state_path)
+        return sent
+
+
+@app.post("/api/controllers/{controller}/schedule")
+def post_controller_schedule(controller: str, proposed_controller: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    if not isinstance(proposed_controller, dict):
+        raise HTTPException(status_code=422, detail="controller schedule must be an object")
+
+    with lock_for(role_locks, controller), config_lock:
+        candidate = controller_schedule_candidate(load_raw_config(), controller, proposed_controller)
+        get_or_start_monitor(controller).require_fresh_report(timeout=3.0)
+        validated_state = validate_timer_state(
+            compiled_timer_state_for_controller(controller, config=candidate, now=datetime.now().time())
+        )
+        sent = flash_and_commit_controller_schedule(controller, candidate, validated_state)
+
+    reconcile_configured_monitors()
+    reconcile_camera_worker()
+    return {
+        "controller": controller,
+        "firmware": "pico_scheduler",
+        "success": True,
+        "message": "schedule verified, saved, and sent to Pico",
+        "pico": sent,
+        "state": state_with_current_values(validated_state),
+    }
+
+
 @app.post("/api/controllers/{controller}/apply")
 def post_controller_apply(controller: str) -> dict[str, Any]:
     if controller_firmware(controller) != "pico_scheduler":
         raise HTTPException(status_code=422, detail="apply is only supported for pico_scheduler controllers")
     path = timer_state_path(controller)
-    sent = None
-    message = "state sent to Pico"
     with lock_for(role_locks, controller):
         validated = validate_timer_state(
             compiled_timer_state_for_controller(controller, now=datetime.now().time())
         )
         atomic_write_json(path, validated)
-        try:
-            sent = apply_timer_state(controller, path)
-        except HTTPException as exc:
-            detail = str(exc.detail) if getattr(exc, "detail", None) else str(exc)
-            message = f"state saved; {detail}"
+        sent = apply_timer_state(controller, path)
     return {
         "controller": controller,
         "firmware": "pico_scheduler",
         "success": True,
-        "message": message,
+        "message": "state sent to Pico",
         "pico": sent,
         "state": state_with_current_values(validated),
     }

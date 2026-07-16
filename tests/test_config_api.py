@@ -1,3 +1,4 @@
+import copy
 import json
 import subprocess
 import tempfile
@@ -115,6 +116,11 @@ class ConfigApiTests(unittest.TestCase):
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
+
+    def healthy_monitor(self):
+        return SimpleNamespace(
+            require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}})
+        )
 
     def test_get_config_returns_config_without_detected_hardware(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1160,7 +1166,9 @@ class ConfigApiTests(unittest.TestCase):
             }
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=live_state),
                 patch.object(server, "live_events_for_role", side_effect=AssertionError("old helper should not be used")),
                 patch.object(server, "live_devices_for_role", side_effect=AssertionError("semantic schedule must not use live devices"), create=True),
@@ -1459,6 +1467,23 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved, compiled)
         apply_timer_state.assert_called_once_with("sprouter", timer_path)
 
+    def test_post_controller_apply_propagates_pico_failure(self):
+        compiled = {"report_every": 5, "devices": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            timers_dir = Path(tmp)
+            with (
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+                patch.object(server, "timer_state_path", return_value=timers_dir / "sprouter.json"),
+                patch.object(server, "compiled_timer_state_for_controller", return_value=compiled),
+                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="configured Pico is not connected: abc")),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_apply("sprouter")
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("not connected", str(raised.exception.detail))
+
     def test_post_timer_channel_schedule_updates_semantic_config_and_applies_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1477,15 +1502,15 @@ class ConfigApiTests(unittest.TestCase):
                     "cameras": {},
                 },
             )
+            timers_dir = root / "data" / "timers"
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
+                patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "reconcile_configured_monitors"),
                 patch.object(server, "reconcile_camera_worker"),
-                patch.object(
-                    server,
-                    "post_controller_apply",
-                    return_value={"success": True, "message": "state sent to Pico", "pico": {"serial": "abc"}, "state": {"devices": []}},
-                ) as apply_controller,
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
+                patch.object(server, "apply_timer_state", return_value={"serial": "abc"}) as apply_controller,
             ):
                 response = server.post_timer_channel_schedule(
                     "pump_lights",
@@ -1499,7 +1524,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(editor, {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"})
         self.assertEqual(response["role"], "pump_lights")
         self.assertEqual(response["channel"], "lights")
-        apply_controller.assert_called_once_with("pump_lights")
+        apply_controller.assert_called_once()
 
     def test_post_timer_channel_schedule_validates_before_saving_config(self):
         config = {
@@ -1512,7 +1537,7 @@ class ConfigApiTests(unittest.TestCase):
         }
         with (
             patch.object(server, "load_config", return_value=config),
-            patch.object(server, "put_config_controllers") as save_controllers,
+            patch.object(server, "post_controller_schedule") as save_schedule,
         ):
             with self.assertRaises(HTTPException) as raised:
                 server.post_timer_channel_schedule(
@@ -1522,7 +1547,7 @@ class ConfigApiTests(unittest.TestCase):
                 )
 
         self.assertEqual(raised.exception.status_code, 422)
-        save_controllers.assert_not_called()
+        save_schedule.assert_not_called()
 
     def test_timer_runtime_excludes_non_scheduler_controllers(self):
         config = server.config_view({
@@ -1656,7 +1681,9 @@ class ConfigApiTests(unittest.TestCase):
             }
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=stale_live),
                 patch.object(server, "apply_timer_state", return_value={"ok": True}),
             ):
@@ -1668,7 +1695,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["devices"][0]["pin"], 2)
         self.assertEqual(saved["devices"][1]["pin"], 3)
 
-    def test_post_timer_channel_schedule_reports_saved_when_pico_is_offline(self):
+    def test_post_controller_schedule_rejects_offline_without_file_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1680,21 +1707,151 @@ class ConfigApiTests(unittest.TestCase):
             )
             timers_dir = root / "data" / "timers"
             timers_dir.mkdir(parents=True)
-            (timers_dir / "pump_lights.json").write_text(json.dumps({"report_every": 1, "devices": []}), encoding="utf-8")
+            timer_file = timers_dir / "pump_lights.json"
+            timer_file.write_text(json.dumps({"report_every": 1, "devices": []}), encoding="utf-8")
+            original_config = config_file.read_bytes()
+            original_state = timer_file.read_bytes()
+            with patch.object(server, "CONFIG_FILE", config_file):
+                proposed = copy.deepcopy(server.load_config()["controllers"]["pump_lights"])
+            proposed["settings"]["devices"]["pump"]["editor"] = {
+                "kind": "cycle",
+                "on_seconds": 10,
+                "off_seconds": 20,
+                "start_at_seconds": 0,
+            }
+            monitor = SimpleNamespace(
+                require_fresh_report=Mock(side_effect=HTTPException(status_code=409, detail="configured Pico is not connected: abc"))
+            )
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
-                patch.object(server, "latest_timer_state", return_value=None),
-                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="Pico for role pump_lights is not connected: abc")),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+                patch.object(server, "apply_timer_state") as apply_timer_state,
             ):
-                response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_schedule("pump_lights", proposed)
 
-            saved = json.loads((timers_dir / "pump_lights.json").read_text(encoding="utf-8"))
+            self.assertEqual(config_file.read_bytes(), original_config)
+            self.assertEqual(timer_file.read_bytes(), original_state)
 
+        self.assertEqual(raised.exception.status_code, 409)
+        apply_timer_state.assert_not_called()
+
+    def test_post_controller_schedule_commits_after_verified_flash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            timer_file = timers_dir / "pump_lights.json"
+            timer_file.write_text(json.dumps({"report_every": 1, "devices": []}), encoding="utf-8")
+            with patch.object(server, "CONFIG_FILE", config_file):
+                proposed = copy.deepcopy(server.load_config()["controllers"]["pump_lights"])
+            proposed["settings"]["devices"]["pump"]["editor"] = {
+                "kind": "cycle",
+                "on_seconds": 10,
+                "off_seconds": 20,
+                "start_at_seconds": 0,
+            }
+            monitor = SimpleNamespace(require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}))
+            staged_states = []
+
+            def verified_apply(role, path):
+                self.assertEqual(role, "pump_lights")
+                self.assertNotEqual(Path(path), timer_file)
+                staged_states.append(json.loads(Path(path).read_text(encoding="utf-8")))
+                return {"serial": "abc", "port": "/dev/ttyACM0"}
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+                patch.object(server, "apply_timer_state", side_effect=verified_apply),
+            ):
+                response = server.post_controller_schedule("pump_lights", proposed)
+
+            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
+            saved_state = json.loads(timer_file.read_text(encoding="utf-8"))
+
+        monitor.require_fresh_report.assert_called_once_with(timeout=3.0)
         self.assertTrue(response["success"])
-        self.assertIn("saved", response["message"])
-        self.assertIn("not connected", response["message"])
-        self.assertEqual(saved["devices"][0]["id"], "pump")
+        self.assertEqual(saved_config["controllers"]["pump_lights"]["settings"]["devices"]["pump"]["editor"]["on_seconds"], 10)
+        self.assertEqual(saved_state, staged_states[0])
+
+    def test_post_controller_schedule_leaves_files_unchanged_when_flash_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})},
+                    "cameras": {},
+                },
+            )
+            timers_dir = root / "data" / "timers"
+            timers_dir.mkdir(parents=True)
+            timer_file = timers_dir / "pump_lights.json"
+            timer_file.write_text(json.dumps({"report_every": 1, "devices": []}), encoding="utf-8")
+            original_config = config_file.read_bytes()
+            original_state = timer_file.read_bytes()
+            with patch.object(server, "CONFIG_FILE", config_file):
+                proposed = copy.deepcopy(server.load_config()["controllers"]["pump_lights"])
+            proposed["settings"]["devices"]["pump"]["editor"] = {
+                "kind": "cycle",
+                "on_seconds": 10,
+                "off_seconds": 20,
+                "start_at_seconds": 0,
+            }
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
+                patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
+                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=502, detail="no valid report after flash")),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_schedule("pump_lights", proposed)
+
+            self.assertEqual(config_file.read_bytes(), original_config)
+            self.assertEqual(timer_file.read_bytes(), original_state)
+
+        self.assertEqual(raised.exception.status_code, 502)
+
+    def test_post_controller_schedule_rejects_pico_serial_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.make_config(
+                root,
+                {
+                    "controllers": {"pump_lights": self.scheduler_controller(serial="old", devices={"pump": self.scheduled_output(2)})},
+                    "cameras": {},
+                },
+            )
+            with patch.object(server, "CONFIG_FILE", config_file):
+                proposed = copy.deepcopy(server.load_config()["controllers"]["pump_lights"])
+            proposed["payload"]["pico_serial"] = "new"
+
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
+                patch.object(server, "TIMERS_DIR", root / "data" / "timers"),
+                patch.object(server, "get_or_start_monitor") as get_monitor,
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_schedule("pump_lights", proposed)
+
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertIn("pico_serial", str(raised.exception.detail))
+        get_monitor.assert_not_called()
 
     def test_post_timer_channel_schedule_creates_state_when_timer_file_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1709,7 +1866,9 @@ class ConfigApiTests(unittest.TestCase):
             timers_dir = root / "data" / "timers"
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=None),
                 patch.object(server, "apply_timer_state", return_value={"ok": True}),
             ):
@@ -1737,7 +1896,9 @@ class ConfigApiTests(unittest.TestCase):
             (timers_dir / "pump_lights.json").write_text("{not json", encoding="utf-8")
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
+                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=None),
                 patch.object(server, "apply_timer_state", return_value={"ok": True}),
             ):
