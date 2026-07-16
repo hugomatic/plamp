@@ -9,20 +9,30 @@ coordination protocol.
 
 ## Installation and instance paths
 
-Plamp currently runs from a Git checkout. That is an intentional deployment
-model, not a runtime discovery mechanism. `plampctl` locates the checkout from
-its own script path and uses Git there for upgrades. The application does not
-search Git to find configuration.
+Plamp currently runs from a Git checkout. `plampctl` locates that checkout from
+its own script path and uses Git there for upgrades. Runtime code does not
+search Git or walk parent directories to find configuration.
 
-A data directory defines one Plamp instance. It contains `config.json` and the
-instance's associated logs, timers, grow data, and other persistent state. The
-default is `data/` inside the source checkout. The CLI, web service, and
-`plampctl` accept `--data-dir PATH` when another instance is needed.
+The running Plamp package determines the default code root. `PLAMP_ROOT` may
+state that root explicitly; relative values are resolved before use. A data
+directory defines one Plamp instance and contains `config.json`, logs, timers,
+grow data, and other persistent state. `PLAMP_DATA_DIR` selects it and defaults
+to `$PLAMP_ROOT/data`.
 
-Configuration is always `<data-dir>/config.json`; there is no separate
-`--config` option or `PLAMP_CONFIG` environment variable. Normal operation uses
-the default without a path argument. This keeps one explicit override while
-allowing multiple configurations on one machine.
+Configuration is always `$PLAMP_DATA_DIR/config.json`. There is no
+`PLAMP_CONFIG`, `--config`, or `--data-dir` option and no other path precedence.
+The web system page and `plamp context` show the effective root, data directory,
+revision, and the environment-variable names.
+
+An optional `setup.sh [DATA_DIR]` selects a checkout for an interactive shell.
+It removes exact PATH entries added by the previous Plamp activation, exports
+`PLAMP_ROOT` and the resolved `PLAMP_DATA_DIR`, prepends the checkout and its
+`.venv/bin`, runs `hash -r`, and prints the selected context. It does not run
+Git or `uv`, change directory, start services, or modify `PYTHONPATH`.
+
+The systemd service sets both variables explicitly. A missing
+`PLAMP_DATA_DIR` is therefore a convenient interactive default, not hidden
+production configuration.
 
 Hardware locks are machine-wide runtime coordination, not instance data. A
 different data directory must not create an independent default lock namespace:
@@ -55,7 +65,7 @@ The direct CLI exposes whole-file operations:
 - `plamp config write FILE` validates and replaces the configured JSON file.
   `FILE` may be `-` for standard input.
 
-Both commands use `<data-dir>/config.json`, where `--data-dir` is optional.
+Both commands use `$PLAMP_DATA_DIR/config.json`.
 
 Validation failures go to standard error, leave the existing file unchanged,
 and return the CLI validation-error exit code. Successful writes print the
