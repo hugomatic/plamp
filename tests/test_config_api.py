@@ -2021,10 +2021,7 @@ class ConfigApiTests(unittest.TestCase):
         monitor.stop_event.is_set.side_effect = [False, True]
         monitor.wake_event = Mock()
 
-        with (
-            patch.object(server.time, "monotonic", side_effect=[10.0, 10.0]),
-            patch.object(server, "configured_timer_report_periods", side_effect=AssertionError("health interval must be fixed")),
-        ):
+        with patch.object(server.time, "monotonic", side_effect=[10.0, 10.0]):
             monitor.run()
 
         monitor.wake_event.wait.assert_called_once_with(5.0)

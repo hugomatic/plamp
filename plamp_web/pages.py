@@ -1261,7 +1261,6 @@ def render_timer_dashboard_page(
     host_seconds_since_midnight: int = 0,
     camera_ids: list[str] | None = None,
     hostname: str = "",
-    report_periods_by_role: dict[str, int] | None = None,
 ) -> str:
     page_name = f"{hostname} Plamp" if hostname else "Plamp"
     camera_options = "".join(
@@ -1286,11 +1285,15 @@ def render_timer_dashboard_page(
     .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
     .status-board { display: grid; gap: 1rem; margin: 1rem 0; max-width: 980px; }
     .controller-card { border: 1px solid #bbb; border-radius: 8px; display: grid; gap: .75rem; padding: .9rem; }
+    .controller-card-error { background: #eee; border-color: #999; color: #555; }
+    .controller-card-error button { background: #e5e5e5; color: #777; }
+    .controller-card-error .timer-value, .controller-card-error .timer-bar, .controller-card-error .timer-fill { background: #ccc; }
     .controller-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .controller-name { font-size: 1.1rem; font-weight: 700; }
     .controller-devices { display: grid; gap: .75rem; }
     .controller-actions { border-top: 1px solid #ddd; margin-top: .25rem; padding-top: .65rem; }
     .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
+    .timer-card-stale { opacity: .65; }
     .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .timer-name { font-weight: 700; }
     .timer-value { border-radius: 6px; padding: .15rem .45rem; }
@@ -1323,6 +1326,7 @@ def render_timer_dashboard_page(
     .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
     .manual-controls input { width: 5rem; }
     .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 12rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
+    .controller-diagnostics pre { background: #f7f7f7; font-size: .8rem; overflow: auto; padding: .5rem; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -1365,7 +1369,6 @@ def render_timer_dashboard_page(
     const clockTimeFormat = __TIME_FORMAT__;
     const timerRoles = __ROLES__;
     const timerChannels = __CHANNELS__;
-    const timerReportPeriods = __REPORT_PERIODS__;
     let timerHostSecondsAtLoad = __HOST_SECONDS__;
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
@@ -1388,6 +1391,8 @@ def render_timer_dashboard_page(
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
+    const timerStatuses = new Map();
+    const timerMessageTimes = new Map();
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
@@ -1498,7 +1503,7 @@ def render_timer_dashboard_page(
       hostClock.textContent = secondsToClock(hostSecondsNow());
     }
 
-    function currentTimerStep(event) {
+    function currentTimerStep(event, ageSeconds = 0) {
       const pattern = Array.isArray(event.pattern) ? event.pattern : [];
       if (!pattern.length) return null;
       const durations = pattern.map((step) => Number(step.dur));
@@ -1506,6 +1511,7 @@ def render_timer_dashboard_page(
       const total = durations.reduce((sum, duration) => sum + duration, 0);
       let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
       if (!Number.isFinite(cycleT)) cycleT = 0;
+      cycleT += Math.max(0, Number(ageSeconds) || 0);
       if (Number(event.reschedule ?? 1)) {
         cycleT = ((cycleT % total) + total) % total;
       } else {
@@ -1641,6 +1647,23 @@ def render_timer_dashboard_page(
       message.textContent = text;
     }
 
+    function responseErrorMessage(payload, fallback) {
+      const detail = payload?.detail;
+      if (typeof detail === "string") return detail;
+      if (typeof detail?.message === "string") return detail.message;
+      if (typeof detail?.health?.error?.message === "string") return detail.health.error.message;
+      return fallback;
+    }
+
+    function formatAge(timestamp) {
+      const milliseconds = Date.now() - Date.parse(timestamp || "");
+      if (!Number.isFinite(milliseconds) || milliseconds < 0) return "unknown";
+      const seconds = Math.floor(milliseconds / 1000);
+      if (seconds < 2) return "just now";
+      if (seconds < 60) return `${seconds}s ago`;
+      return `${Math.floor(seconds / 60)}m ago`;
+    }
+
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -1715,10 +1738,27 @@ def render_timer_dashboard_page(
       `;
     }
 
-    function openControllerScheduleEditor(role) {
+    async function openControllerScheduleEditor(role) {
       stopPageAutoRefresh();
-      activeEditor = {role};
-      renderTimerStatus(true);
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"});
+        const text = await response.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (error) {}
+        if (!response.ok) {
+          throw new Error(responseErrorMessage(parsed, text || `${response.status} ${response.statusText}`));
+        }
+        const health = timerStatuses.get(role) || {};
+        const verifiedAt = new Date().toISOString();
+        timerStatuses.set(role, {...health, ok: true, status: "OK", checked_at: verifiedAt, last_verified_at: verifiedAt, error: null});
+        activeEditor = {role};
+        renderTimerStatus(true);
+      } catch (error) {
+        const health = timerStatuses.get(role) || {};
+        timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {...(health.error || {}), message: String(error.message || error)}});
+        activeEditor = null;
+        renderTimerStatus(true);
+      }
     }
 
     function syncEditorMode(block) {
@@ -1743,14 +1783,8 @@ def render_timer_dashboard_page(
         if (!configResponse.ok) {
           throw new Error(configPayload?.detail || `config: ${configResponse.status} ${configResponse.statusText}`);
         }
-        const controllers = structuredClone(configPayload?.config?.controllers || {});
-        const controller = structuredClone(controllers[role] || {});
-        const reportPeriodInput = form.querySelector(".controller-report-period");
-        controller.payload = structuredClone(controller.payload || {});
-        controller.payload.report_every = Number(reportPeriodInput.value);
+        const controller = structuredClone(configPayload?.config?.controllers?.[role] || {});
         controller.settings = structuredClone(controller.settings || {});
-        controller.settings.report_every = Number(reportPeriodInput.value);
-        timerReportPeriods[role] = Number(reportPeriodInput.value);
         controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
@@ -1782,26 +1816,18 @@ def render_timer_dashboard_page(
           }
           controller.settings.devices[channelId] = device;
         }
-        controllers[role] = controller;
-        const saveConfigResponse = await fetch("/api/config/controllers", {
-          method: "PUT",
+        const scheduleResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/schedule`, {
+          method: "POST",
           headers: {"content-type": "application/json"},
-          body: JSON.stringify(controllers),
+          body: JSON.stringify(controller),
         });
-        const saveConfigText = await saveConfigResponse.text();
-        let saveConfigParsed = null;
-        try { saveConfigParsed = JSON.parse(saveConfigText); } catch (error) {}
-        if (!saveConfigResponse.ok) {
-          throw new Error(saveConfigParsed?.detail || saveConfigText || `config save: ${saveConfigResponse.status} ${saveConfigResponse.statusText}`);
+        const scheduleText = await scheduleResponse.text();
+        let scheduleParsed = null;
+        try { scheduleParsed = JSON.parse(scheduleText); } catch (error) {}
+        if (!scheduleResponse.ok) {
+          throw new Error(responseErrorMessage(scheduleParsed, scheduleText || `${scheduleResponse.status} ${scheduleResponse.statusText}`));
         }
-        const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});
-        const applyConfigText = await applyConfigResponse.text();
-        let applyConfigParsed = null;
-        try { applyConfigParsed = JSON.parse(applyConfigText); } catch (error) {}
-        if (!applyConfigResponse.ok) {
-          throw new Error(applyConfigParsed?.detail || applyConfigText || `apply config: ${applyConfigResponse.status} ${applyConfigResponse.statusText}`);
-        }
-        lastMessage = applyConfigParsed?.message || "Schedule settings saved.";
+        lastMessage = scheduleParsed?.message || "Schedule settings saved.";
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
@@ -1826,6 +1852,8 @@ def render_timer_dashboard_page(
       let rendered = 0;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
+        const health = timerStatuses.get(role);
+        const ok = health?.ok === true;
         const devices = timerDevicesFromMessage(message);
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
@@ -1836,22 +1864,26 @@ def render_timer_dashboard_page(
         const items = channels.length
           ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
           : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
-        const isEditing = activeEditor && activeEditor.role === role;
+        if (!ok && activeEditor?.role === role) activeEditor = null;
+        const isEditing = ok && activeEditor && activeEditor.role === role;
         const controllerCard = document.createElement(isEditing ? "form" : "section");
         if (isEditing) {
           controllerCard.id = "timer-schedule-form";
           controllerCard.dataset.role = role;
         }
         controllerCard.className = "controller-card";
+        controllerCard.classList.toggle("controller-card-error", !ok);
         const controllerTop = document.createElement("div");
         controllerTop.className = "controller-top";
         const controllerName = document.createElement("span");
         controllerName.className = "controller-name";
         controllerName.textContent = role;
-        const controllerMeta = document.createElement("span");
-        controllerMeta.className = "editor-note";
-        controllerMeta.textContent = items.length + " device" + (items.length === 1 ? "" : "s");
-        controllerTop.append(controllerName, controllerMeta);
+        const status = document.createElement("span");
+        status.className = ok ? "editor-success" : "editor-error";
+        status.textContent = ok
+          ? `OK — last verified ${formatAge(health.last_verified_at || health.checked_at)}`
+          : `ERROR: ${health?.error?.message || "no valid report"}`;
+        controllerTop.append(controllerName, status);
         const devicesGrid = document.createElement("div");
         devicesGrid.className = "controller-devices";
         let configurableCount = items.length;
@@ -1860,12 +1892,14 @@ def render_timer_dashboard_page(
           const disabled = channel.default_editor === "disabled";
           const hidden = channel.default_editor === "hidden";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
-          const step = currentTimerStep(event);
+          const messageAge = item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
+          const step = currentTimerStep(event, messageAge);
           const value = Number(step?.step?.val ?? event.current_value ?? 0);
           const isOn = value > 0;
           const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
           const card = document.createElement("div");
           card.className = "timer-card";
+          card.classList.toggle("timer-card-stale", !ok);
           const top = document.createElement("div");
           top.className = "timer-top";
           const name = document.createElement("span");
@@ -1877,7 +1911,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -1895,17 +1929,14 @@ def render_timer_dashboard_page(
                 card.append(block);
               }
             }
-            rendered += 1;
           }
         }
         controllerCard.append(controllerTop, devicesGrid);
+        const diagnostics = document.createElement("details");
+        diagnostics.className = "controller-diagnostics";
+        diagnostics.innerHTML = `<summary>Diagnostics</summary><pre>${escapeHtml(JSON.stringify(health || {status: "ERROR", error: {message: "no valid report"}}, null, 2))}</pre>`;
+        controllerCard.append(diagnostics);
         if (isEditing) {
-          const reportPeriodRow = document.createElement("div");
-          reportPeriodRow.className = "editor-row";
-          reportPeriodRow.innerHTML = `
-            <label>Pico poll interval (seconds) <input class="controller-report-period" type="number" min="1" step="1" value="${escapeHtml(timerReportPeriods[role] ?? 10)}"></label>
-          `;
-          controllerCard.insertBefore(reportPeriodRow, devicesGrid);
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
           actions.innerHTML = `
@@ -1928,6 +1959,7 @@ def render_timer_dashboard_page(
             const edit = document.createElement("button");
             edit.type = "button";
             edit.textContent = "Edit schedule";
+            edit.disabled = !ok;
             edit.addEventListener("click", () => openControllerScheduleEditor(role));
             actions.append(edit);
           } else {
@@ -1939,6 +1971,7 @@ def render_timer_dashboard_page(
           controllerCard.classList.add("controller-card-editing");
         }
         timerBoard.append(controllerCard);
+        rendered += 1;
       }
       restoreEditorFocus(focusState);
       if (!rendered) {
@@ -2099,6 +2132,8 @@ def render_timer_dashboard_page(
     function startTimerStreams() {
       stopTimerStreams();
       timerMessages.clear();
+      timerStatuses.clear();
+      timerMessageTimes.clear();
       renderTimerStatus();
       if (!timerRoles.length) {
         timerStatus.textContent = "No timers configured.";
@@ -2110,11 +2145,24 @@ def render_timer_dashboard_page(
         timerEventSources.set(role, source);
         for (const eventName of ["snapshot", "report"]) {
           source.addEventListener(eventName, (event) => {
-            timerMessages.set(role, JSON.parse(event.data));
+            const data = JSON.parse(event.data);
+            timerMessages.set(role, data);
+            timerMessageTimes.set(role, Date.now());
+            if (eventName === "snapshot") timerStatuses.set(role, data);
             renderTimerStatus();
           });
         }
+        source.addEventListener("status", (event) => {
+          const data = JSON.parse(event.data);
+          timerStatuses.set(role, data);
+          timerMessages.set(role, data);
+          timerMessageTimes.set(role, Date.now());
+          renderTimerStatus();
+        });
         source.onerror = () => {
+          const health = timerStatuses.get(role) || {};
+          timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {message: "controller status stream disconnected"}});
+          renderTimerStatus(true);
           if (source.readyState === EventSource.CLOSED) {
             timerStatus.textContent = "Stream disconnected.";
           }
@@ -2150,6 +2198,7 @@ def render_timer_dashboard_page(
     window.addEventListener("beforeunload", stopTimerStreams);
     refreshHostClock();
     setInterval(refreshHostClock, 30000);
+    setInterval(() => renderTimerStatus(), 1000);
     let pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
     resumeRefreshButton.addEventListener("click", startPageAutoRefresh);
     startTimerStreams();
@@ -2164,7 +2213,6 @@ def render_timer_dashboard_page(
         .replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
-        .replace("__REPORT_PERIODS__", json.dumps(report_periods_by_role or {}))
         .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
