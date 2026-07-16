@@ -138,9 +138,10 @@ usb_c_cutout_h = 10;
 usb_c_cutout_r = 1.5;
 usb_c_wire_cutout_w = 10;
 usb_c_wire_cutout_h = 16;
-usb_c_screw_d = 2.4;
-usb_c_screw_head_d = 4;
+usb_c_screw_d = 3.4;
+usb_c_screw_head_d = 5.61;
 usb_c_screw_spacing = 17;
+usb_c_screw_surface_z = plate_t - 0.5;
 
 c13_panel_w = 72;
 c13_panel_h = 68;
@@ -612,10 +613,10 @@ module screw_hole(d, depth = 30) {
         cylinder(h = depth, d = d);
 }
 
-module topside_countersunk_screw_hole(hole_d, head_d, depth = 30) {
+module topside_countersunk_screw_hole(hole_d, head_d, surface_z = plate_t, depth = 30) {
     countersink_h = (head_d - hole_d) / 2;
     screw_hole(hole_d, depth);
-    translate([0, 0, plate_t - countersink_h])
+    translate([0, 0, surface_z - countersink_h])
         cylinder(h = countersink_h + 0.1, d1 = hole_d, d2 = head_d);
 }
 
@@ -730,7 +731,7 @@ module usb_c_panel_negative() {
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
-            topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d);
+            topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
 
     translate([0, usb_c_group_y, 0])
         label_pocket(usb_c_group_w, usb_c_group_h);

@@ -71,8 +71,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("panel_screw_length = 20;", source)
         self.assertIn("panel_screw_tip_protrusion = 1;", source)
         self.assertIn("panel_screw_land_d = 9.5;", source)
-        self.assertIn("usb_c_screw_d = 2.4;", source)
-        self.assertIn("usb_c_screw_head_d = 4;", source)
+        self.assertIn("usb_c_screw_d = 3.4;", source)
+        self.assertIn("usb_c_screw_head_d = 5.61;", source)
+        self.assertIn("usb_c_screw_surface_z = plate_t - 0.5;", source)
+        self.assertIn(
+            "topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z)",
+            source,
+        )
         self.assertIn("module topside_countersunk_screw_hole", source)
         self.assertNotIn("module underside_countersunk_screw_hole", source)
         self.assertIn("fit_plate(usb_c_panel_w, usb_c_panel_h);", usb_unit)
