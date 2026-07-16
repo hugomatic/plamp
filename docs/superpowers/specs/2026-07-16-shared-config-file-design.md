@@ -37,6 +37,8 @@ production configuration.
 Hardware locks are machine-wide runtime coordination, not instance data. A
 different data directory must not create an independent default lock namespace:
 two instances that name the same Pico or camera must still serialize access.
+The default lock directory is the per-user system temporary path
+`<temp>/plamp-<uid>/locks`, shared by all checkouts and instances for that user.
 Multiple simultaneous web-service instances would also require distinct
 service names and ports and are not part of this work.
 

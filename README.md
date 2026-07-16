@@ -47,12 +47,17 @@ plamp pics list
 The direct library CLI shares short hardware locks with `plamp-web`:
 
 ```bash
+source ./setup.sh
+uv run python -m plamp context
+uv run python -m plamp config get
 uv run python -m plamp pico report pump_lights
 uv run python -m plamp pico pulse pump_lights 21 5
 uv run python -m plamp camera capture rpicam_cam0
 ```
 
 These commands work while the service is running or stopped. Remote agents can use either the REST CLI or direct CLI over SSH.
+
+`setup.sh [DATA_DIR]` selects the checkout and instance for the current shell. It exports `PLAMP_ROOT` and `PLAMP_DATA_DIR`; without an argument, data defaults to `$PLAMP_ROOT/data`. Source another checkout's setup script to switch versions without leaving its executable paths behind.
 
 See [CLI reference](./plamp_cli/README.md).
 
@@ -71,7 +76,7 @@ The browser receives live updates through SSE. See [web service notes](./plamp_w
 
 ## Configuration
 
-Runtime configuration lives in `data/config.json`; generated scheduler state lives in `data/timers/`. Both are local runtime data.
+Runtime configuration lives in `$PLAMP_DATA_DIR/config.json`; generated scheduler state lives beside it in `$PLAMP_DATA_DIR/timers/`. Both are local runtime data. The web system page shows the effective root and data paths.
 
 Controllers contain desired device behavior, display settings, and a stable Pico USB serial. `/dev/ttyACM*` paths are rediscovered. See the [current contract](./docs/spec-current.md) for the normalized shape.
 

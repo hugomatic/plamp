@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +41,10 @@ class RuntimeContextTests(unittest.TestCase):
             env={"HOME": "/home/plant", "PLAMP_ROOT": "/code/b", "PLAMP_DATA_DIR": "/data/b"}
         )
 
-        self.assertEqual(first.lock_dir, Path("/home/plant/.local/state/plamp/locks"))
+        self.assertEqual(
+            first.lock_dir,
+            Path(tempfile.gettempdir()) / f"plamp-{os.getuid()}" / "locks",
+        )
         self.assertEqual(second.lock_dir, first.lock_dir)
 
 
