@@ -1,0 +1,16 @@
+{
+  "pico_runtime_configuration": {
+    "status": "approved design direction",
+    "intent": "Preserve the user's desired schedule while replacing legacy firmware and stop reflashing for ordinary schedule changes.",
+    "rules": [
+      "Pico reports identify the installed firmware revision and protocol.",
+      "A schedule transaction detects missing or incompatible firmware and upgrades it automatically using the currently desired schedule.",
+      "Legacy firmware is replaced instead of supported through a compatibility path.",
+      "Firmware upgrade failure is a hard, visible error and the host does not commit the proposed schedule.",
+      "After migration, the host sends the complete compiled controller state as one JSON command.",
+      "The Pico validates the complete state before changing anything, persists it atomically, applies it, and returns a full report.",
+      "The host verifies the reported devices against the proposal before committing its desired configuration.",
+      "If the configuration reply is lost, the host requests a fresh report and compares applied state before declaring failure."
+    ]
+  }
+}
