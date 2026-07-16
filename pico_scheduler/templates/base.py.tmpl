@@ -133,11 +133,18 @@ def persist_state(state):
 def build_outputs(state):
     built = []
     for source in state["devices"]:
-        if source["type"] == "gpio":
-            output = Pin(source["pin"], Pin.OUT)
-        else:
-            output = PWM(Pin(source["pin"]))
-            output.freq(PWM_FREQ)
+        output = None
+        for active in devices:
+            if (not active.get("overlay") and active["type"] == source["type"]
+                    and active["pin"] == source["pin"]):
+                output = active["output"]
+                break
+        if output is None:
+            if source["type"] == "gpio":
+                output = Pin(source["pin"], Pin.OUT)
+            else:
+                output = PWM(Pin(source["pin"]))
+                output.freq(PWM_FREQ)
         device = {{
             "type": source["type"],
             "pin": source["pin"],
@@ -168,11 +175,12 @@ def retire_output(device):
 def replace_devices(replacement):
     global devices
     overlays = [device for device in devices if device.get("overlay")]
-    protected_pins = set(device["pin"] for device in replacement)
-    protected_pins.update(device["pin"] for device in overlays)
     for device in devices:
-        if not device.get("overlay") and device["pin"] not in protected_pins:
-            retire_output(device)
+        if not device.get("overlay"):
+            reused = any(candidate["output"] is device["output"] for candidate in replacement)
+            overlay_uses = any(overlay["output"] is device["output"] for overlay in overlays)
+            if not reused and not overlay_uses:
+                retire_output(device)
     replacement_by_pin = {{device["pin"]: device for device in replacement}}
     for overlay in overlays:
         base = replacement_by_pin.get(overlay["pin"])
@@ -190,27 +198,39 @@ def error(message, command=None):
     return False
 
 
-def report():
-    out = []
-    for device in devices:
-        item = {{
+def report_item(device, current_value=None):
+    item = {{
             "type": device["type"],
             "pin": device["pin"],
             "elapsed_t": device["elapsed_t"],
             "cycle_t": device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"],
             "reschedule": device["reschedule"],
             "pattern": device["pattern"],
-            "current_value": device["last_value"],
-        }}
-        if "id" in device:
-            item["id"] = device["id"]
-        out.append(item)
+            "current_value": device["last_value"] if current_value is None else current_value,
+    }}
+    if "id" in device:
+        item["id"] = device["id"]
+    return item
+
+
+def report():
+    base_devices = [device for device in devices if not device.get("overlay")]
+    overlays = [device for device in devices if device.get("overlay")]
+    out = []
+    for device in base_devices:
+        overlay_value = None
+        for overlay in overlays:
+            if overlay["pin"] == device["pin"]:
+                overlay_value = overlay["last_value"]
+        out.append(report_item(device, overlay_value))
+    overlay_out = [report_item(overlay) for overlay in overlays]
     firmware = {{
         "name": FIRMWARE_NAME,
         "revision": FIRMWARE_REVISION,
         "protocol": FIRMWARE_PROTOCOL,
     }}
-    print(json.dumps({{"type": "report", "content": {{"firmware": firmware, "devices": out}}}}))
+    content = {{"firmware": firmware, "devices": out, "overlays": overlay_out}}
+    print(json.dumps({{"type": "report", "content": content}}))
 
 
 def apply():
@@ -237,6 +257,10 @@ def apply():
 def configure(content):
     try:
         normalized = normalize_state(content)
+        proposed_types = {{device["pin"]: device["type"] for device in normalized["devices"]}}
+        for device in devices:
+            if device.get("overlay") and proposed_types.get(device["pin"], "gpio") != "gpio":
+                raise ValueError("cannot change active pulse pin %s from gpio to pwm" % device["pin"])
         persist_state(normalized)
         replacement = build_outputs(normalized)
         replace_devices(replacement)
