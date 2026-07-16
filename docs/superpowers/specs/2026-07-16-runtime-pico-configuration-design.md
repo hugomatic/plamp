@@ -72,11 +72,13 @@ The Pico validates the entire document before changing files, outputs, or its in
 On success the Pico:
 
 1. Normalizes the complete state in memory.
-2. Writes a temporary state file and atomically replaces the persisted state.
+2. Writes and syncs the inactive one of two generation-numbered state files.
 3. Replaces the active device list and applies outputs.
 4. Emits one full report.
 
-The configured state is loaded on boot. This preserves the scheduler's existing phase semantics across resets; battery-backed wall-clock recovery is a separate problem.
+On boot the Pico validates both state files and loads the valid file with the highest generation. A torn write is ignored, leaving the previous generation available. This avoids depending on filesystem-specific replacement semantics while remaining two ordinary JSON files, not a database.
+
+The configured state is loaded on boot, including the phase stored by the last configuration transaction. Persistence restores the program, not knowledge of elapsed wall time: after power loss, a daily schedule may be out of phase until a trusted clock reconfigures it. Battery-backed RTC or clock synchronization is a separate feature.
 
 ## Automatic migration
 
@@ -85,7 +87,7 @@ The host performs migration only inside a mutating controller-wide schedule tran
 1. Request a fresh report.
 2. If firmware is current, continue to runtime configuration.
 3. Otherwise compile the currently committed schedule—not the proposed edit.
-4. Copy the current state file and generic scheduler application, reset once, rediscover USB, and require a valid report containing the expected firmware identity and current devices.
+4. Seed both state slots with the current state, copy the generic scheduler application, reset once, rediscover USB, and require a valid report containing the expected firmware identity and current devices.
 5. If any upgrade step fails, return an error and leave host configuration unchanged.
 6. Send the proposed state through the runtime protocol.
 
@@ -134,6 +136,6 @@ Hardware verification on a non-production controller proves:
 1. The first transaction upgrades legacy firmware once and preserves its active schedule.
 2. USB disappears and returns only for that upgrade.
 3. Later schedule changes do not reset USB and complete through one configure/report exchange.
-4. Power cycling loads the persisted schedule.
+4. Power cycling loads the persisted schedule and stored phase without claiming wall-clock correctness.
 5. Invalid configuration leaves the prior schedule active.
 6. Disconnects and malformed lines produce visible errors without changing host files.
