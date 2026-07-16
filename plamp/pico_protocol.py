@@ -31,4 +31,6 @@ def decode_report_line(raw: bytes) -> dict[str, Any]:
         raise PicoProtocolError("message is not a report")
     if not isinstance(value["content"].get("devices"), list):
         raise PicoProtocolError("report content.devices must be a list")
+    if "firmware" in value["content"] and not isinstance(value["content"]["firmware"], dict):
+        raise PicoProtocolError("report content.firmware must be an object")
     return value
