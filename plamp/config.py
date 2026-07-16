@@ -13,22 +13,26 @@ class ConfigError(ValueError):
     pass
 
 
+def _validated_complete_config(config: Any) -> dict[str, Any]:
+    try:
+        validated_sections = config_view(config)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    complete = dict(config)
+    complete.update(validated_sections)
+    return complete
+
+
 def load_config(config_file: Path) -> dict[str, Any]:
     try:
         config = json.loads(config_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ConfigError(f"cannot read configuration: {config_file}: {exc}") from exc
-    try:
-        return config_view(config)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+    return _validated_complete_config(config)
 
 
 def save_config(config_file: Path, config: Any) -> dict[str, Any]:
-    try:
-        validated = config_view(config)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
+    validated = _validated_complete_config(config)
 
     config_file.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(

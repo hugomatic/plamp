@@ -28,6 +28,17 @@ class ConfigFileTests(unittest.TestCase):
             self.assertEqual(loaded["controllers"]["grow"]["payload"]["pico_serial"], "PICO-A")
             self.assertEqual(loaded["cameras"], {})
 
+    def test_validation_preserves_unowned_top_level_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            submitted = self.valid_config() | {"time_format": "24h"}
+
+            saved = save_config(path, submitted)
+            loaded = load_config(path)
+
+            self.assertEqual(saved["time_format"], "24h")
+            self.assertEqual(loaded["time_format"], "24h")
+
     def test_load_rejects_malformed_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config.json"

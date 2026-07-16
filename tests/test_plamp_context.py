@@ -32,6 +32,17 @@ class RuntimeContextTests(unittest.TestCase):
 
             self.assertEqual(context.data_dir, (root / "data").resolve())
 
+    def test_hardware_lock_directory_is_independent_of_root_and_instance(self):
+        first = resolve_context(
+            env={"HOME": "/home/plant", "PLAMP_ROOT": "/code/a", "PLAMP_DATA_DIR": "/data/a"}
+        )
+        second = resolve_context(
+            env={"HOME": "/home/plant", "PLAMP_ROOT": "/code/b", "PLAMP_DATA_DIR": "/data/b"}
+        )
+
+        self.assertEqual(first.lock_dir, Path("/home/plant/.local/state/plamp/locks"))
+        self.assertEqual(second.lock_dir, first.lock_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

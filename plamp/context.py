@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -10,6 +10,7 @@ from pathlib import Path
 class RuntimeContext:
     root: Path
     data_dir: Path
+    lock_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "plamp" / "locks")
 
     @property
     def config_file(self) -> Path:
@@ -25,4 +26,5 @@ def resolve_context(
     default_root = Path(__file__).resolve().parents[1] if package_root is None else Path(package_root)
     root = Path(values.get("PLAMP_ROOT", default_root)).expanduser().resolve()
     data_dir = Path(values.get("PLAMP_DATA_DIR", root / "data")).expanduser().resolve()
-    return RuntimeContext(root=root, data_dir=data_dir)
+    home = Path(values.get("HOME", Path.home())).expanduser().resolve()
+    return RuntimeContext(root=root, data_dir=data_dir, lock_dir=home / ".local" / "state" / "plamp" / "locks")

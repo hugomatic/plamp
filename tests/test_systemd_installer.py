@@ -36,6 +36,8 @@ class SystemdInstallerTests(unittest.TestCase):
         self.assertIn("User=plantbot\n", unit)
         self.assertIn("WorkingDirectory=/opt/plamp\n", unit)
         self.assertIn("RequiresMountsFor=/opt/plamp\n", unit)
+        self.assertIn("Environment=PLAMP_ROOT=/opt/plamp\n", unit)
+        self.assertIn("Environment=PLAMP_DATA_DIR=/opt/plamp/data\n", unit)
         self.assertIn(
             "ExecStart=/usr/local/bin/uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000\n",
             unit,
@@ -48,6 +50,14 @@ class SystemdInstallerTests(unittest.TestCase):
         self.assertIn("Restart=on-failure\n", unit)
         self.assertIn("RestartSec=3\n", unit)
         self.assertIn("WantedBy=multi-user.target\n", unit)
+
+    def test_print_unit_uses_activated_data_directory(self):
+        env = dict(os.environ)
+        env["PLAMP_DATA_DIR"] = "/srv/plamp-test"
+
+        unit = self.print_unit(env=env)
+
+        self.assertIn("Environment=PLAMP_DATA_DIR=/srv/plamp-test\n", unit)
 
     def test_print_unit_has_no_machine_specific_user(self):
         unit = self.print_unit()

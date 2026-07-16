@@ -27,7 +27,7 @@ def _non_negative_finite_timeout(value: str) -> float:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m plamp")
-    parser.add_argument("--lock-dir", type=Path, default=REPO_ROOT / "data" / "locks")
+    parser.add_argument("--lock-dir", type=Path)
     parser.add_argument(
         "--timeout",
         type=_non_negative_finite_timeout,
@@ -72,6 +72,7 @@ def main(
 ) -> int:
     args = build_parser().parse_args(argv)
     context = resolve_context(env=env)
+    lock_dir = args.lock_dir or context.lock_dir
     try:
         if args.area == "context":
             revision = "unknown"
@@ -103,7 +104,7 @@ def main(
         elif args.area == "camera":
             result = camera_capture_func(
                 args.camera_id,
-                lock_dir=args.lock_dir,
+                lock_dir=lock_dir,
                 timeout=args.timeout,
                 repo_root=context.root,
                 data_dir=context.data_dir,
@@ -113,13 +114,13 @@ def main(
         else:
             pico_serial = controller_pico_serial(context.config_file, args.controller)
             if args.action == "report":
-                result = report_func(pico_serial, lock_dir=args.lock_dir, timeout=args.timeout)
+                result = report_func(pico_serial, lock_dir=lock_dir, timeout=args.timeout)
             else:
                 result = pulse_func(
                     pico_serial,
                     args.pin,
                     args.seconds,
-                    lock_dir=args.lock_dir,
+                    lock_dir=lock_dir,
                     timeout=args.timeout,
                 )
     except ConfigError as exc:

@@ -4,6 +4,7 @@ set -euo pipefail
 service_name="plamp-web"
 service_user=""
 repo_root=""
+data_dir="${PLAMP_DATA_DIR:-}"
 uv_bin=""
 mpremote_bin=""
 service_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -87,6 +88,10 @@ if [[ -z "$repo_root" ]]; then
   repo_root="$default_repo_root"
 fi
 
+if [[ -z "$data_dir" ]]; then
+  data_dir="$repo_root/data"
+fi
+
 if [[ -z "$uv_bin" ]]; then
   if ! uv_bin="$(command -v uv)"; then
     echo "uv was not found on PATH; install uv or pass --uv /path/to/uv" >&2
@@ -125,6 +130,8 @@ Type=simple
 User=$service_user
 WorkingDirectory=$repo_root
 Environment=PATH=$service_path
+Environment=PLAMP_ROOT=$repo_root
+Environment=PLAMP_DATA_DIR=$data_dir
 ExecStart=$uv_bin run uvicorn plamp_web.server:app --host $host --port $port
 Restart=on-failure
 RestartSec=3
