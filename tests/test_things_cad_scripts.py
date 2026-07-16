@@ -51,6 +51,7 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 class ThingsCadScriptsTest(unittest.TestCase):
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        usb_unit = source.split("module usb_c_panel_unit", 1)[1].split("module c13_inlet_negative", 1)[0]
 
         self.assertIn("usb_c_cutout_w = 12;", source)
         self.assertIn("usb_c_cutout_h = 10;", source)
@@ -73,10 +74,17 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("usb_c_screw_d = 2.4;", source)
         self.assertIn("usb_c_screw_head_d = 4;", source)
         self.assertIn("module underside_countersunk_screw_hole", source)
+        self.assertIn("fit_plate(usb_c_panel_w, usb_c_panel_h);", usb_unit)
+        self.assertNotIn("alignment_walls", usb_unit)
         self.assertIn("module panel_corner_screw_lands", source)
         self.assertIn("module panel_corner_fastener_bosses", source)
         self.assertIn("module side_loaded_panel_nut_traps", source)
         self.assertIn("panel_nut_entry_detent", source)
+        self.assertIn("module self_supporting_nut_trap_roof", source)
+        self.assertRegex(
+            source,
+            r"module side_loaded_panel_nut_trap\(direction = 1\)[\s\S]*?self_supporting_nut_trap_roof",
+        )
         self.assertIn("module panel_corner_fastener_test", source)
         self.assertIn('view == "panel_corner_fastener_test"', source)
 

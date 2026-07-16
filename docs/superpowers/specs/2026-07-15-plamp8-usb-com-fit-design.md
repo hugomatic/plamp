@@ -8,7 +8,7 @@ Update the USB COM mount for an underside-mounted connector:
 - use a 13 × 10.5 mm sub-panel opening;
 - keep top- and sub-panel opening dimensions independently parameterized.
 
-The standalone `usb_c_panel` view is the fit-test print. Do not generate STL files or run OpenSCAD on Tower; the user will render and print it separately.
+The standalone `usb_c_panel` view is a flat 3 mm fit-test plate without the 8 mm alignment-wall frame. This keeps its underside M2 countersinks on the print bed instead of suspending them in bridged geometry. Do not generate STL files or run OpenSCAD on Tower; the user will render and print it separately.
 
 ## Countersinks and top-panel fasteners
 
@@ -20,5 +20,7 @@ The standalone `usb_c_panel` view is the fit-test print. Do not generate STL fil
 ## Captive nuts
 
 Each top-panel corner uses an inward-facing, side-loaded M3 hex nut pocket inside the ledge. The outside end is closed, hex walls prevent rotation, and a small entrance detent prevents an inserted nut from sliding out while the enclosure is handled or inverted. Nuts are inserted before the top panel is installed; no hand access is required while tightening.
+
+The nut-height pocket remains rectangular for fit, then transitions to a 45-degree self-supporting roof with a narrow tip. The roof must not require support or leave a full-width horizontal bridge over the nut.
 
 Add a small standalone corner/nut-trap fit-test view so nut insertion, retention, screw reach, and countersink fit can be checked without printing the enclosure.

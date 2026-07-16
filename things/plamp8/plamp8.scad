@@ -743,10 +743,8 @@ module usb_c_revision_negative() {
 
 module usb_c_panel_unit(include_revision = true) {
     difference() {
-        union() {
-            fit_plate(usb_c_panel_w, usb_c_panel_h);
-            alignment_walls(usb_c_panel_w - 8, usb_c_panel_h - 8);
-        }
+        // Flat coupon: the connector mounts directly under the 3 mm panel.
+        fit_plate(usb_c_panel_w, usb_c_panel_h);
         usb_c_panel_negative();
         if (include_revision)
             usb_c_revision_negative();
@@ -1473,11 +1471,24 @@ module panel_corner_fastener_bosses() {
     }
 }
 
+module self_supporting_nut_trap_roof(x0, length, width, z0, tip_w = 1) {
+    roof_h = (width - tip_w) / 2;
+
+    hull() {
+        translate([x0, -width / 2, z0 - 0.01])
+            cube([length, width, 0.02]);
+        translate([x0, -tip_w / 2, z0 + roof_h])
+            cube([length, tip_w, 0.02]);
+    }
+}
+
 module side_loaded_panel_nut_trap(direction = 1) {
     slot_w = panel_nut_d + panel_nut_clearance;
     slot_h = panel_nut_h + panel_nut_clearance;
     main_l = panel_nut_entry_l - panel_nut_entry_detent_l;
     throat_w = slot_w - 2 * panel_nut_entry_detent;
+    roof_l = panel_nut_entry_l + panel_nut_d / 2;
+    roof_x = direction < 0 ? -panel_nut_entry_l : -panel_nut_d / 2;
 
     rotate([0, 0, 30])
         cylinder(h = slot_h, d = panel_nut_d + panel_nut_clearance, $fn = 6);
@@ -1490,6 +1501,8 @@ module side_loaded_panel_nut_trap(direction = 1) {
         0
     ])
         cube([panel_nut_entry_detent_l, throat_w, slot_h]);
+
+    self_supporting_nut_trap_roof(roof_x, roof_l, slot_w, slot_h);
 }
 
 module side_loaded_panel_nut_traps() {
