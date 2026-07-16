@@ -357,7 +357,9 @@ def _generate_firmware_source(firmware: str, payload: object, controller: str | 
             raise ValueError("--controller is required for pico_scheduler")
         if not isinstance(payload, dict):
             raise ValueError("pico_scheduler payload must be a JSON object")
-        normalize_scheduler_state(payload)
+        normalized = normalize_scheduler_state(payload)
+        if normalized["devices"]:
+            raise ValueError("non-empty scheduler state cannot be flashed: persistent state seeding is unavailable")
         return generate_main_py(
             firmware_revision="local-cli",
             options=GeneratorOptions(),

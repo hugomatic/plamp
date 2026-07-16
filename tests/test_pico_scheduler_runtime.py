@@ -50,6 +50,7 @@ class FirmwareHarness:
                 self.pin = pin.pin
                 self.frequency = None
                 self.duty = 0
+                self.deinitialized = False
                 harness.pwms[self.pin] = self
 
             def freq(self, frequency):
@@ -57,6 +58,9 @@ class FirmwareHarness:
 
             def duty_u16(self, duty):
                 self.duty = duty
+
+            def deinit(self):
+                self.deinitialized = True
 
         class FakePoll:
             def register(self, stream, event):
@@ -199,6 +203,29 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.pwms[3].duty, 1234)
         self.assertTrue(firmware.paths[1].exists())
 
+    def test_configure_retires_removed_gpio(self):
+        firmware = self.harness()
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=1)]}})
+        removed = firmware.pins[2]
+
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": []}})
+
+        self.assertEqual(removed.value(), 0)
+
+    def test_configure_retires_removed_pwm(self):
+        firmware = self.harness()
+        pwm = {
+            "id": "fan", "type": "pwm", "pin": 3, "current_t": 0,
+            "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}],
+        }
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [pwm]}})
+        removed = firmware.pwms[3]
+
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": []}})
+
+        self.assertEqual(removed.duty, 0)
+        self.assertTrue(removed.deinitialized)
+
     def test_command_buffer_overflow_emits_one_error_and_clears_buffer(self):
         firmware = self.harness()
         oversized = "x" * (firmware.runtime.MAX_COMMAND_BYTES + 50)
@@ -233,6 +260,36 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(len(firmware.runtime.devices), 1)
         self.assertEqual(firmware.runtime.devices[0]["id"], "lights")
         self.assertEqual(firmware.pins[2].value(), 0)
+
+    def test_configure_during_pulse_preserves_overlay_then_restores_new_base(self):
+        firmware = self.harness()
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=0)]}})
+        firmware.call("handle_command", "p 2 2")
+        newer = gpio(value=1)
+        newer["id"] = "new-lights"
+
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [newer]}})
+
+        self.assertEqual(len(firmware.runtime.devices), 2)
+        self.assertEqual(firmware.pins[2].value(), 1)
+        firmware.call("tick", 2)
+        self.assertEqual(len(firmware.runtime.devices), 1)
+        self.assertEqual(firmware.runtime.devices[0]["id"], "new-lights")
+        self.assertEqual(firmware.pins[2].value(), 1)
+
+    def test_removed_base_pulse_expiry_turns_physical_pin_off(self):
+        firmware = self.harness()
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=0)]}})
+        firmware.call("handle_command", "p 2 2")
+        pulsed_pin = firmware.pins[2]
+
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": []}})
+
+        self.assertEqual(len(firmware.runtime.devices), 1)
+        self.assertEqual(pulsed_pin.value(), 1)
+        firmware.call("tick", 2)
+        self.assertEqual(firmware.runtime.devices, [])
+        self.assertEqual(pulsed_pin.value(), 0)
 
     def test_non_rescheduling_configured_gpio_can_be_pulsed(self):
         firmware = self.harness()

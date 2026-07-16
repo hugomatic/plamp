@@ -539,7 +539,7 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliFirmwareTests(unittest.TestCase):
-    def test_scheduler_generation_validates_but_does_not_embed_payload(self):
+    def test_scheduler_generation_rejects_nonempty_payload_until_state_seeding_exists(self):
         payload = {
             "devices": [
                 {
@@ -553,10 +553,36 @@ class PlampCliFirmwareTests(unittest.TestCase):
             ]
         }
 
-        source = _generate_firmware_source("pico_scheduler", payload, "tower")
+        with self.assertRaisesRegex(ValueError, "persistent state seeding is unavailable"):
+            _generate_firmware_source("pico_scheduler", payload, "tower")
+
+    def test_scheduler_generation_allows_empty_generic_firmware(self):
+        source = _generate_firmware_source("pico_scheduler", {"devices": []}, "tower")
 
         self.assertIn('FIRMWARE_REVISION = "local-cli"', source)
-        self.assertNotIn('"id": "lights"', source)
+
+    @patch("plamp_cli.main.subprocess.Popen")
+    @patch("plamp_cli.main._run_command")
+    @patch("plamp_cli.main.load_json_input")
+    def test_scheduler_flash_rejects_nonempty_payload_before_hardware_mutation(self, load_json_input, run_command, popen):
+        load_json_input.return_value = {
+            "devices": [{"id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+                         "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(
+            ["firmware", "flash", "--firmware", "pico_scheduler", "--controller", "tower", "payload.json", "--port", "/dev/ttyACM0"],
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("persistent state seeding is unavailable", stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), "")
+        popen.assert_not_called()
+        run_command.assert_not_called()
 
     def test_scheduler_generation_rejects_invalid_payload_before_rendering(self):
         with self.assertRaisesRegex(ValueError, "devices must be a list"):

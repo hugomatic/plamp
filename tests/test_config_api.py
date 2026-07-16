@@ -2092,7 +2092,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["health"]["error"]["kind"], "unavailable")
 
-    def test_apply_timer_state_keeps_report_period_out_of_firmware(self):
+    def test_apply_timer_state_rejects_nonempty_state_before_hardware_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -2115,24 +2115,14 @@ class ConfigApiTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            applied_payloads = []
-
-            class FakeMonitor:
-                def apply(self, path):
-                    applied_payloads.append(Path(path).read_text(encoding="utf-8"))
-                    return {"ok": True}
-
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "get_or_start_monitor", return_value=FakeMonitor()),
+                patch.object(server, "get_or_start_monitor") as get_monitor,
             ):
-                response = server.apply_timer_state("pump_lights", timer_path)
+                with self.assertRaisesRegex(ValueError, "persistent state seeding is unavailable"):
+                    server.apply_timer_state("pump_lights", timer_path)
 
-        self.assertEqual(response, {"ok": True})
-        self.assertNotIn("REPORT_EVERY", applied_payloads[0])
-        self.assertNotIn("report_every", applied_payloads[0])
-        self.assertIn('FIRMWARE_NAME = "pico_scheduler"', applied_payloads[0])
-        self.assertNotIn('"id": "pump"', applied_payloads[0])
+        get_monitor.assert_not_called()
 
     def test_apply_timer_state_writes_generated_main_py_text(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2150,9 +2140,7 @@ class ConfigApiTests(unittest.TestCase):
                 json.dumps(
                     {
                         "report_every": 1,
-                        "devices": [
-                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
-                        ],
+                        "devices": [],
                     }
                 ),
                 encoding="utf-8",
@@ -2174,4 +2162,4 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(generated_files[0].suffix, ".py")
-        self.assertNotIn('"id": "pump"', generated_sources[0])
+        self.assertIn('FIRMWARE_NAME = "pico_scheduler"', generated_sources[0])

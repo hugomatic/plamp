@@ -141,6 +141,7 @@ def build_outputs(state):
         device = {{
             "type": source["type"],
             "pin": source["pin"],
+            "overlay": False,
             "elapsed_t": source["current_t"],
             "reschedule": source["reschedule"],
             "pattern": source["pattern"],
@@ -154,9 +155,30 @@ def build_outputs(state):
     return built
 
 
+def retire_output(device):
+    if device["type"] == "gpio":
+        device["output"].value(0)
+        return
+    device["output"].duty_u16(0)
+    deinit = getattr(device["output"], "deinit", None)
+    if deinit is not None:
+        deinit()
+
+
 def replace_devices(replacement):
     global devices
-    devices = replacement
+    overlays = [device for device in devices if device.get("overlay")]
+    protected_pins = set(device["pin"] for device in replacement)
+    protected_pins.update(device["pin"] for device in overlays)
+    for device in devices:
+        if not device.get("overlay") and device["pin"] not in protected_pins:
+            retire_output(device)
+    replacement_by_pin = {{device["pin"]: device for device in replacement}}
+    for overlay in overlays:
+        base = replacement_by_pin.get(overlay["pin"])
+        if base is not None:
+            overlay["output"] = base["output"]
+    devices = replacement + overlays
 
 
 def error(message, command=None):
@@ -233,7 +255,7 @@ def handle_message(message):
 
 def device_for_pin(pin):
     for device in devices:
-        if device["pin"] == pin and device["type"] == "gpio":
+        if device["pin"] == pin and device["type"] == "gpio" and not device.get("overlay"):
             return device
     return None
 
@@ -242,6 +264,7 @@ def pulse_device(device, seconds):
     pulse = {{
         "type": "gpio",
         "pin": device["pin"],
+        "overlay": True,
         "elapsed_t": 0,
         "reschedule": 0,
         "pattern": [{{"val": 1, "dur": seconds}}],
@@ -330,6 +353,9 @@ def tick(dt):
     if remove:
         for device in remove:
             devices.remove(device)
+        for device in remove:
+            if device.get("overlay") and not any(active["pin"] == device["pin"] for active in devices):
+                retire_output(device)
         apply()
 
 

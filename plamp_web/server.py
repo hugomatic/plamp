@@ -1302,7 +1302,9 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
 
 
 def rendered_pico_main(role: str, raw_state: Any) -> str:
-    timer_state_for_pico(role, raw_state)
+    state = timer_state_for_pico(role, raw_state)
+    if state["devices"]:
+        raise ValueError("non-empty scheduler state cannot be flashed: persistent state seeding is unavailable")
     git_version = git_output(["git", "rev-parse", "--short", "HEAD"], repo_root=REPO_ROOT) or "unknown"
     return generate_main_py(
         firmware_revision=git_version,
