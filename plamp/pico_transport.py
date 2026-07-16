@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+import tempfile
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -17,7 +18,12 @@ import serial
 from plamp.locks import exclusive_lock
 from plamp.pico_discovery import find_pico_port
 from plamp.pico_protocol import PicoProtocolError, decode_message_line, decode_report_line
-from plamp.scheduler_state import normalize_scheduler_state, report_matches_state
+from plamp.scheduler_state import (
+    FirmwareIdentity,
+    firmware_identity,
+    normalize_scheduler_state,
+    report_matches_state,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,12 +39,21 @@ class PicoCommandError(RuntimeError):
 
 
 class PicoFlashError(RuntimeError):
-    def __init__(self, step: str, returncode: int | None, stdout: str, stderr: str):
+    def __init__(
+        self,
+        step: str,
+        returncode: int | None,
+        stdout: str,
+        stderr: str,
+        *,
+        raw_lines: tuple[bytes, ...] = (),
+    ):
         super().__init__(f"Pico flash {step} failed: {stderr or stdout or returncode}")
         self.step = step
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+        self.raw_lines = tuple(raw_lines)
 
     def detail(self) -> dict[str, Any]:
         return {
@@ -46,6 +61,10 @@ class PicoFlashError(RuntimeError):
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
+            "raw_lines": tuple(
+                raw.decode("utf-8", errors="replace").strip()
+                for raw in self.raw_lines
+            ),
         }
 
 
@@ -221,6 +240,130 @@ class PicoOperation:
             )
         return result
 
+    def _reconnect_report(
+        self, *, sleeper: Callable[[float], Any] = time.sleep
+    ) -> PicoExchange:
+        attempted_lines: list[bytes] = []
+        while True:
+            try:
+                result = self.report(timeout=min(0.5, self.remaining()))
+                return PicoExchange(
+                    result.message,
+                    result.port,
+                    tuple(attempted_lines) + result.raw_lines,
+                )
+            except PicoReportTimeout as exc:
+                attempted_lines.extend(exc.raw_lines)
+            except (PicoUnavailable, OSError, serial.SerialException):
+                pass
+            try:
+                remaining = self.remaining(attempted_lines)
+            except PicoReportTimeout:
+                raise PicoReportTimeout(
+                    f"timed out waiting for report from {self.pico_serial}",
+                    attempted_lines,
+                ) from None
+            sleeper(min(0.05, remaining))
+
+    def upgrade_scheduler(
+        self,
+        main_path: Path,
+        state_path: Path | None,
+        expected: FirmwareIdentity | None,
+        *,
+        command_runner: Callable[[list[str], float], tuple[int | None, str, str]],
+        interrupter: Callable[[str], None],
+        mpremote: str,
+        sleeper: Callable[[float], Any] = time.sleep,
+    ) -> PicoExchange:
+        """Seed state, copy firmware, reset once, and verify after reconnect."""
+        if expected is not None and expected.revision == "unknown":
+            raise ValueError("unknown firmware revision cannot be used for an upgrade")
+        if (state_path is None) != (expected is None):
+            raise ValueError("scheduler state and expected identity must be provided together")
+
+        normalized = None
+        if state_path is not None:
+            normalized = normalize_scheduler_state(
+                json.loads(state_path.read_text(encoding="utf-8"))
+            )
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            seed_path = Path(temporary_dir) / "plamp_state_seed.json"
+            if normalized is not None:
+                seed_path.write_text(
+                    json.dumps(
+                        {"generation": 1, "devices": normalized["devices"]},
+                        separators=(",", ":"),
+                    ),
+                    encoding="utf-8",
+                )
+
+            port = self.find_port()
+            interrupter(port)
+            commands: list[tuple[str, list[str], float]] = []
+            if normalized is not None:
+                commands.extend(
+                    [
+                        (
+                            "state-a",
+                            [
+                                mpremote, "connect", port, "resume", "cp",
+                                str(seed_path), ":plamp_state_a.json",
+                            ],
+                            30,
+                        ),
+                        (
+                            "state-b",
+                            [
+                                mpremote, "connect", port, "resume", "cp",
+                                str(seed_path), ":plamp_state_b.json",
+                            ],
+                            30,
+                        ),
+                    ]
+                )
+            commands.extend(
+                [
+                    (
+                        "firmware",
+                        [
+                            mpremote, "connect", port, "resume", "cp",
+                            str(main_path), ":main.py",
+                        ],
+                        30,
+                    ),
+                    ("reset", [mpremote, "connect", port, "reset"], 15),
+                ]
+            )
+            for step, command, maximum in commands:
+                returncode, stdout, stderr = command_runner(
+                    command, min(maximum, self.remaining())
+                )
+                if returncode != 0:
+                    raise PicoFlashError(step, returncode, stdout, stderr)
+
+            result = self._reconnect_report(sleeper=sleeper)
+
+        if expected is not None and normalized is not None:
+            try:
+                identity = firmware_identity(result.message)
+            except ValueError as exc:
+                raise PicoFlashError(
+                    "verify", None, "", str(exc), raw_lines=result.raw_lines
+                ) from None
+            if identity != expected or not report_matches_state(
+                result.message, normalized
+            ):
+                raise PicoFlashError(
+                    "verify",
+                    None,
+                    "",
+                    "reconnected report does not match expected firmware and state",
+                    raw_lines=result.raw_lines,
+                )
+        return result
+
 
 class PicoClient:
     def __init__(
@@ -277,42 +420,16 @@ class PicoClient:
         sleeper: Callable[[float], Any] = time.sleep,
     ) -> PicoExchange:
         """Copy, reset, rediscover, and verify firmware under one Pico lock."""
-        attempted_lines: list[bytes] = []
         with self.operation(timeout=timeout) as operation:
-            port = operation.find_port()
-            interrupter(port)
-            firmware_rc, firmware_out, firmware_err = command_runner(
-                [mpremote, "connect", port, "resume", "cp", str(path), ":main.py"],
-                min(30, operation.remaining()),
+            return operation.upgrade_scheduler(
+                path,
+                None,
+                None,
+                command_runner=command_runner,
+                interrupter=interrupter,
+                mpremote=mpremote,
+                sleeper=sleeper,
             )
-            if firmware_rc != 0:
-                raise PicoFlashError("firmware", firmware_rc, firmware_out, firmware_err)
-            reset_rc, reset_out, reset_err = command_runner(
-                [mpremote, "connect", port, "reset"],
-                min(15, operation.remaining()),
-            )
-            if reset_rc != 0:
-                raise PicoFlashError("reset", reset_rc, reset_out, reset_err)
-            while True:
-                try:
-                    result = operation.report(timeout=min(0.5, operation.remaining()))
-                    return PicoExchange(
-                        result.message,
-                        result.port,
-                        tuple(attempted_lines) + result.raw_lines,
-                    )
-                except PicoReportTimeout as exc:
-                    attempted_lines.extend(exc.raw_lines)
-                except (PicoUnavailable, OSError, serial.SerialException):
-                    pass
-                try:
-                    remaining = operation.remaining(attempted_lines)
-                except PicoReportTimeout:
-                    raise PicoReportTimeout(
-                        f"timed out waiting for report from {self.pico_serial}",
-                        attempted_lines,
-                    ) from None
-                sleeper(min(0.05, remaining))
 
 
 def request_report(
