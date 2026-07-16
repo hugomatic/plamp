@@ -1,21 +1,170 @@
-{provenance_block}
-
+import os
 import select
 import sys
 import time
 import ujson as json
-{machine_import}
+from machine import Pin, PWM
 
+FIRMWARE_NAME = "pico_scheduler"
+FIRMWARE_REVISION = {firmware_revision}
+FIRMWARE_PROTOCOL = {firmware_protocol}
+STATE_PATHS = ("/plamp_state_a.json", "/plamp_state_b.json")
+MAX_COMMAND_BYTES = 16384
 LOOP_SLEEP_MS = {loop_sleep_ms}
-{pwm_helper}
-{device_assignments}
+PWM_FREQ = {pwm_freq}
 
-poller = select.poll()
-poller.register(sys.stdin, select.POLLIN)
+devices = []
+active_generation = 0
+active_state_path = None
 command_buffer = ""
+command_overflow = False
 
-def error(message):
-    print(json.dumps({{"type": "error", "content": message}}))
+
+def _integer(value, label, minimum, maximum=None):
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError("%s must be an integer >= %s" % (label, minimum))
+    if maximum is not None and value > maximum:
+        raise ValueError("%s must be <= %s" % (label, maximum))
+    return value
+
+
+def normalize_state(raw):
+    if not isinstance(raw, dict) or set(raw) != {{"devices"}}:
+        raise ValueError("scheduler state must contain only devices")
+    if not isinstance(raw["devices"], list):
+        raise ValueError("devices must be a list")
+    normalized = []
+    ids = set()
+    pins = set()
+    for index, source in enumerate(raw["devices"]):
+        if not isinstance(source, dict):
+            raise ValueError("device %s must be an object" % index)
+        allowed = {{"id", "type", "pin", "current_t", "reschedule", "pattern"}}
+        required = {{"type", "pin", "current_t", "reschedule", "pattern"}}
+        if set(source) - allowed or not required <= set(source):
+            raise ValueError("device %s has invalid fields" % index)
+        device_type = source["type"]
+        if device_type not in ("gpio", "pwm"):
+            raise ValueError("device %s has unsupported type: %s" % (index, device_type))
+        pin = _integer(source["pin"], "device %s pin" % index, 0, 29)
+        if pin in pins:
+            raise ValueError("duplicate pin: %s" % pin)
+        pins.add(pin)
+        device_id = source.get("id")
+        if device_id is not None:
+            if not isinstance(device_id, str) or not device_id:
+                raise ValueError("device %s id must be a non-empty string" % index)
+            if device_id in ids:
+                raise ValueError("duplicate device id: %s" % device_id)
+            ids.add(device_id)
+        current_t = _integer(source["current_t"], "device %s current_t" % index, 0)
+        reschedule = _integer(source["reschedule"], "device %s reschedule" % index, 0, 1)
+        source_pattern = source["pattern"]
+        if not isinstance(source_pattern, list) or not source_pattern:
+            raise ValueError("device %s pattern must be a non-empty list" % index)
+        pattern = []
+        for step_index, source_step in enumerate(source_pattern):
+            if not isinstance(source_step, dict) or set(source_step) != {{"val", "dur"}}:
+                raise ValueError("device %s pattern %s must contain val and dur" % (index, step_index))
+            value_max = 1 if device_type == "gpio" else 65535
+            value = _integer(source_step["val"], "device %s pattern %s val" % (index, step_index), 0, value_max)
+            duration = _integer(source_step["dur"], "device %s pattern %s dur" % (index, step_index), 1)
+            pattern.append({{"val": value, "dur": duration}})
+        item = {{
+            "type": device_type,
+            "pin": pin,
+            "current_t": current_t,
+            "reschedule": reschedule,
+            "pattern": pattern,
+        }}
+        if device_id is not None:
+            item["id"] = device_id
+        normalized.append(item)
+    return {{"devices": normalized}}
+
+
+def validate_stored_state(raw):
+    if not isinstance(raw, dict) or set(raw) != {{"generation", "devices"}}:
+        raise ValueError("stored state has invalid fields")
+    generation = _integer(raw["generation"], "generation", 0)
+    normalized = normalize_state({{"devices": raw["devices"]}})
+    return {{"generation": generation, "devices": normalized["devices"]}}
+
+
+def load_state():
+    selected = None
+    selected_path = None
+    for path in STATE_PATHS:
+        try:
+            handle = open(path, "r")
+            try:
+                candidate = validate_stored_state(json.loads(handle.read()))
+            finally:
+                handle.close()
+        except Exception:
+            continue
+        if selected is None or candidate["generation"] > selected["generation"]:
+            selected = candidate
+            selected_path = path
+    if selected is None:
+        return {{"generation": 0, "devices": []}}, None
+    return selected, selected_path
+
+
+def persist_state(state):
+    global active_generation, active_state_path
+    target_path = STATE_PATHS[1] if active_state_path == STATE_PATHS[0] else STATE_PATHS[0]
+    document = {{
+        "generation": active_generation + 1,
+        "devices": state["devices"],
+    }}
+    handle = open(target_path, "w")
+    try:
+        handle.write(json.dumps(document))
+        handle.flush()
+    finally:
+        handle.close()
+    os.sync()
+    active_generation = document["generation"]
+    active_state_path = target_path
+    return document
+
+
+def build_outputs(state):
+    built = []
+    for source in state["devices"]:
+        if source["type"] == "gpio":
+            output = Pin(source["pin"], Pin.OUT)
+        else:
+            output = PWM(Pin(source["pin"]))
+            output.freq(PWM_FREQ)
+        device = {{
+            "type": source["type"],
+            "pin": source["pin"],
+            "elapsed_t": source["current_t"],
+            "reschedule": source["reschedule"],
+            "pattern": source["pattern"],
+            "total_t": sum(step["dur"] for step in source["pattern"]),
+            "output": output,
+            "last_value": None,
+        }}
+        if "id" in source:
+            device["id"] = source["id"]
+        built.append(device)
+    return built
+
+
+def replace_devices(replacement):
+    global devices
+    devices = replacement
+
+
+def error(message, command=None):
+    if command is None:
+        content = message
+    else:
+        content = {{"command": command, "message": message}}
+    print(json.dumps({{"type": "error", "content": content}}))
     return False
 
 
@@ -29,12 +178,57 @@ def report():
             "cycle_t": device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"],
             "reschedule": device["reschedule"],
             "pattern": device["pattern"],
+            "current_value": device["last_value"],
         }}
-        item["current_value"] = device["last_value"]
         if "id" in device:
             item["id"] = device["id"]
         out.append(item)
-    print(json.dumps({{"type": "report", "content": {{"devices": out}}}}))
+    firmware = {{
+        "name": FIRMWARE_NAME,
+        "revision": FIRMWARE_REVISION,
+        "protocol": FIRMWARE_PROTOCOL,
+    }}
+    print(json.dumps({{"type": "report", "content": {{"firmware": firmware, "devices": out}}}}))
+
+
+def apply():
+    changed = False
+    for device in devices:
+        cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
+        elapsed = 0
+        value = device["pattern"][-1]["val"]
+        for step in device["pattern"]:
+            elapsed += step["dur"]
+            if cycle_t < elapsed:
+                value = step["val"]
+                break
+        if device["type"] == "gpio":
+            device["output"].value(value)
+        else:
+            device["output"].duty_u16(value)
+        if device["last_value"] != value:
+            device["last_value"] = value
+            changed = True
+    return changed
+
+
+def configure(content):
+    try:
+        normalized = normalize_state(content)
+        persist_state(normalized)
+        replacement = build_outputs(normalized)
+        replace_devices(replacement)
+        apply()
+        report()
+        return True
+    except Exception as exc:
+        return error(str(exc), "configure")
+
+
+def handle_message(message):
+    if isinstance(message, dict) and "type" in message and message["type"] == "configure":
+        return configure(message.get("content"))
+    return error("unknown command")
 
 
 def device_for_pin(pin):
@@ -73,7 +267,7 @@ def handle_command(line):
         try:
             pin = int(parts[1])
             seconds = int(parts[2])
-        except:
+        except Exception:
             error("invalid pulse command")
             return
         if seconds <= 0:
@@ -88,82 +282,74 @@ def handle_command(line):
             return
         pulse_device(device, seconds)
         return
-    error("unknown command")
+    try:
+        message = json.loads(line)
+    except Exception:
+        error("unknown command")
+        return
+    handle_message(message)
+
+
+poller = select.poll()
+command_input = sys.stdin
+poller.register(command_input, select.POLLIN)
 
 
 def read_commands():
-    global command_buffer
+    global command_buffer, command_overflow
     while poller.poll(0):
-        char = sys.stdin.read(1)
+        char = command_input.read(1)
         if not char:
             return
         if char == "\r":
             continue
         if char == "\n":
+            if command_overflow:
+                command_overflow = False
+                command_buffer = ""
+                continue
             line = command_buffer
             command_buffer = ""
             handle_command(line)
-        else:
+        elif not command_overflow:
             command_buffer += char
-            if len(command_buffer) > 80:
+            if len(command_buffer) > MAX_COMMAND_BYTES:
                 command_buffer = ""
+                command_overflow = True
                 error("command too long")
 
 
 def tick(dt):
     if dt <= 0:
         return
-
     remove = []
     for device in devices:
         device["elapsed_t"] += dt
         if not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:
             remove.append(device)
-
     if remove:
         for device in remove:
             devices.remove(device)
         apply()
 
 
-def apply():
-    changed = False
-
-    for device in devices:
-        cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
-        elapsed = 0
-        value = device["pattern"][-1]["val"]
-
-        for step in device["pattern"]:
-            elapsed += step["dur"]
-            if cycle_t < elapsed:
-                value = step["val"]
-                break
-
-        if device["type"] == "gpio":
-            device["output"].value(value)
-        else:
-            device["output"].duty_u16(value)
-
-        if device["last_value"] != value:
-            device["last_value"] = value
-            changed = True
-
-    return changed
+def initialize():
+    global active_generation, active_state_path
+    stored, path = load_state()
+    active_generation = stored["generation"]
+    active_state_path = path
+    replace_devices(build_outputs({{"devices": stored["devices"]}}))
+    apply()
 
 
 def main():
-    apply()
-
     last_tick_ms = time.ticks_ms()
     accum_ms = 0
-
     while True:
         read_commands()
         now_ms = time.ticks_ms()
         delta_ms = time.ticks_diff(now_ms, last_tick_ms)
         last_tick_ms = now_ms
-
         if delta_ms > 0:
             accum_ms += delta_ms
             dt = accum_ms // 1000
@@ -171,9 +357,10 @@ def main():
                 accum_ms -= dt * 1000
                 tick(dt)
                 apply()
-
         time.sleep_ms(LOOP_SLEEP_MS)
 
+
+initialize()
 
 if __name__ == "__main__":
     main()
