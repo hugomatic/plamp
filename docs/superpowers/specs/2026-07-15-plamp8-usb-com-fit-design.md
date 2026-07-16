@@ -8,11 +8,11 @@ Update the USB COM mount for an underside-mounted connector:
 - use a 13 × 10.5 mm sub-panel opening;
 - keep top- and sub-panel opening dimensions independently parameterized.
 
-The standalone `usb_c_panel` view is a flat 3 mm fit-test plate without the 8 mm alignment-wall frame. This keeps its underside M2 countersinks on the print bed instead of suspending them in bridged geometry. Do not generate STL files or run OpenSCAD on Tower; the user will render and print it separately.
+The standalone `usb_c_panel` view is a flat 3 mm fit-test plate without the 8 mm alignment-wall frame. Its M2 screw heads enter through countersinks on the top face and thread into the USB connector beneath the panel. Do not generate STL files or run OpenSCAD on Tower; the user will render and print it separately.
 
 ## Countersinks and top-panel fasteners
 
-- Add underside countersinks for flat-head M2 COM screws, using 2.4 mm clearance holes and 4 mm head clearance. Do not add circular lands around the COM screws.
+- Add top-face countersinks for flat-head M2 COM screws, using 2.4 mm clearance holes and 4 mm head clearance. Do not add circular lands around the COM screws.
 - Change all four top-panel fasteners from M4 to M3: 3.4 mm clearance holes and 6.5 mm countersinks.
 - Restore a 9.5 mm diameter flat circular land around each top-panel countersink where recessed-area borders interfere.
 - Design the top-panel joint around the available 20 mm screw length. Each screw must traverse the full captive nut and extend approximately 1 mm beyond it.

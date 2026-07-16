@@ -612,11 +612,11 @@ module screw_hole(d, depth = 30) {
         cylinder(h = depth, d = d);
 }
 
-module underside_countersunk_screw_hole(hole_d, head_d, depth = 30) {
+module topside_countersunk_screw_hole(hole_d, head_d, depth = 30) {
     countersink_h = (head_d - hole_d) / 2;
     screw_hole(hole_d, depth);
-    translate([0, 0, -0.1])
-        cylinder(h = countersink_h + 0.1, d1 = head_d, d2 = hole_d);
+    translate([0, 0, plate_t - countersink_h])
+        cylinder(h = countersink_h + 0.1, d1 = hole_d, d2 = head_d);
 }
 
 module rect_cutout(w, h, depth = 30) {
@@ -730,7 +730,7 @@ module usb_c_panel_negative() {
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
-            underside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d);
+            topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d);
 
     translate([0, usb_c_group_y, 0])
         label_pocket(usb_c_group_w, usb_c_group_h);
