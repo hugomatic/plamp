@@ -1302,14 +1302,10 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
 
 
 def rendered_pico_main(role: str, raw_state: Any) -> str:
-    state = timer_state_for_pico(role, raw_state)
-    generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    timer_state_for_pico(role, raw_state)
     git_version = git_output(["git", "rev-parse", "--short", "HEAD"], repo_root=REPO_ROOT) or "unknown"
     return generate_main_py(
-        controller_id=role,
-        state=state,
-        git_version=git_version,
-        generated_at=generated_at,
+        firmware_revision=git_version,
         options=GeneratorOptions(),
     )
 

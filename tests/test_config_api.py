@@ -2131,7 +2131,8 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(response, {"ok": True})
         self.assertNotIn("REPORT_EVERY", applied_payloads[0])
         self.assertNotIn("report_every", applied_payloads[0])
-        self.assertIn('"id": "pump"', applied_payloads[0])
+        self.assertIn('FIRMWARE_NAME = "pico_scheduler"', applied_payloads[0])
+        self.assertNotIn('"id": "pump"', applied_payloads[0])
 
     def test_apply_timer_state_writes_generated_main_py_text(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2157,10 +2158,12 @@ class ConfigApiTests(unittest.TestCase):
                 encoding="utf-8",
             )
             generated_files = []
+            generated_sources = []
 
             class FakeMonitor:
                 def apply(self, path):
                     generated_files.append(Path(path))
+                    generated_sources.append(Path(path).read_text(encoding="utf-8"))
                     return {"ok": True}
 
             with (
@@ -2171,3 +2174,4 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True})
         self.assertEqual(generated_files[0].suffix, ".py")
+        self.assertNotIn('"id": "pump"', generated_sources[0])

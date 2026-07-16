@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from plamp_cli.http import ApiError, NetworkError
 from plamp_cli.io import InputError
-from plamp_cli.main import build_parser, main
+from plamp_cli.main import _generate_firmware_source, build_parser, main
 
 
 class PlampCliBootstrapTests(unittest.TestCase):
@@ -539,6 +539,29 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliFirmwareTests(unittest.TestCase):
+    def test_scheduler_generation_validates_but_does_not_embed_payload(self):
+        payload = {
+            "devices": [
+                {
+                    "id": "lights",
+                    "type": "gpio",
+                    "pin": 2,
+                    "current_t": 0,
+                    "reschedule": 1,
+                    "pattern": [{"val": 1, "dur": 10}],
+                }
+            ]
+        }
+
+        source = _generate_firmware_source("pico_scheduler", payload, "tower")
+
+        self.assertIn('FIRMWARE_REVISION = "local-cli"', source)
+        self.assertNotIn('"id": "lights"', source)
+
+    def test_scheduler_generation_rejects_invalid_payload_before_rendering(self):
+        with self.assertRaisesRegex(ValueError, "devices must be a list"):
+            _generate_firmware_source("pico_scheduler", {"devices": "bad"}, "tower")
+
     @patch("plamp_cli.main._run_command")
     def test_firmware_pull_defaults_to_stdout(self, run_command):
         run_command.return_value = (0, "print('hello')\n", "")
