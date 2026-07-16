@@ -84,6 +84,9 @@ def handle_command(line):
         if device is None:
             error("unknown pulse pin")
             return
+        if device["output"].value() == 1:
+            error("pulse pin is already on")
+            return
         pulse_device(device, seconds)
         return
     error("unknown command")

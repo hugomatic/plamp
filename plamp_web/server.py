@@ -2487,9 +2487,26 @@ def pulse_pin_command(controller: str, pin: int, payload: dict[str, Any]) -> tup
     raise HTTPException(status_code=404, detail=f"unknown configured pin: {pin}")
 
 
+def reject_pulse_if_reported_on(controller: str, pin: int) -> None:
+    state = latest_timer_state(controller)
+    if not isinstance(state, dict):
+        return
+    for device in state.get("devices") or []:
+        if not isinstance(device, dict):
+            continue
+        try:
+            device_pin = int(device.get("pin"))
+            current_value = int(device.get("current_value"))
+        except (TypeError, ValueError):
+            continue
+        if device_pin == pin and current_value == 1:
+            raise HTTPException(status_code=409, detail=f"pin {pin} is already on")
+
+
 @app.post("/api/controllers/{controller}/channels/{channel_id}/pulse")
 def post_controller_channel_pulse(controller: str, channel_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     command, pin, seconds = pulse_channel_command(controller, channel_id, payload)
+    reject_pulse_if_reported_on(controller, pin)
     result = send_timer_command(controller, command)
     response = {
         "controller": controller,
@@ -2506,6 +2523,7 @@ def post_controller_channel_pulse(controller: str, channel_id: str, payload: dic
 @app.post("/api/controllers/{controller}/pins/{pin}/pulse")
 def post_controller_pin_pulse(controller: str, pin: int, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     command, channel_id, command_pin, seconds = pulse_pin_command(controller, pin, payload)
+    reject_pulse_if_reported_on(controller, command_pin)
     result = send_timer_command(controller, command)
     response = {
         "controller": controller,

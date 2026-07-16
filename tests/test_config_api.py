@@ -13,13 +13,14 @@ import plamp_web.server as server
 
 
 class DummyMonitor:
-    def __init__(self, pico_serial: str):
+    def __init__(self, pico_serial: str, last_report=None):
         self.pico_serial = pico_serial
         self.started = False
         self.stopped = False
         self.joined = False
         self.sent_commands = []
         self.serial_log_entries = []
+        self.last_report = last_report
 
     def start(self) -> None:
         self.started = True
@@ -36,6 +37,9 @@ class DummyMonitor:
 
     def serial_log(self):
         return list(self.serial_log_entries)
+
+    def snapshot(self):
+        return {"last_report": self.last_report}
 
 
 class FakeSerial:
@@ -1193,6 +1197,30 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(monitor.sent_commands, ["p 21 7"])
         self.assertEqual(result["pin"], 21)
         self.assertEqual(result["seconds"], 7)
+
+    def test_post_controller_channel_pulse_rejects_reported_on_channel(self):
+        monitor = DummyMonitor(
+            "abc",
+            {"type": "report", "content": {"devices": [{"id": "pump", "pin": 21, "type": "gpio", "current_value": 1}]}},
+        )
+        config = {
+            "controllers": {
+                "pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(21)})
+            },
+            "cameras": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_file = self.make_config(Path(tmp), config)
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 7})
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("pin 21 is already on", str(raised.exception.detail))
+        self.assertEqual(monitor.sent_commands, [])
 
     def test_post_controller_pin_pulse_sends_configured_gpio_pin_and_duration(self):
         monitor = DummyMonitor("abc")
