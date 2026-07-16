@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import re
@@ -16,6 +17,7 @@ import serial
 from plamp.locks import exclusive_lock
 from plamp.pico_discovery import find_pico_port
 from plamp.pico_protocol import PicoProtocolError, decode_message_line, decode_report_line
+from plamp.scheduler_state import normalize_scheduler_state, report_matches_state
 
 LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ class PicoUnavailable(ConnectionError):
 
 
 class PicoCommandError(RuntimeError):
-    pass
+    def __init__(self, message: str, raw_lines: tuple[bytes, ...] = ()):
+        super().__init__(message)
+        self.raw_lines = tuple(raw_lines)
 
 
 class PicoFlashError(RuntimeError):
@@ -49,6 +53,11 @@ class PicoReportTimeout(TimeoutError):
     def __init__(self, message: str, raw_lines: list[bytes]):
         super().__init__(message)
         self.raw_lines = tuple(raw_lines)
+
+
+def _error_message(message: dict[str, Any]) -> str:
+    content = message.get("content", "Pico rejected command")
+    return content if isinstance(content, str) else str(content)
 
 
 def _lock_name(pico_serial: str) -> str:
@@ -180,6 +189,33 @@ class PicoOperation:
     def report(self, *, timeout: float | None = None) -> PicoExchange:
         return self.exchange("r", accepted_types={"report"}, timeout=timeout)
 
+    def configure(self, state: dict[str, Any]) -> PicoExchange:
+        normalized = normalize_scheduler_state(state)
+        command = json.dumps(
+            {"type": "configure", "content": normalized}, separators=(",", ":")
+        )
+        try:
+            result = self.exchange(
+                command,
+                accepted_types={"report", "error"},
+                timeout=min(0.5, self.remaining() / 2),
+            )
+        except PicoReportTimeout as first:
+            proof = self.report()
+            result = PicoExchange(
+                proof.message, proof.port, first.raw_lines + proof.raw_lines
+            )
+        if result.message.get("type") == "error":
+            raise PicoCommandError(
+                _error_message(result.message), raw_lines=result.raw_lines
+            )
+        if not report_matches_state(result.message, normalized):
+            raise PicoCommandError(
+                "Pico report does not match configured state",
+                raw_lines=result.raw_lines,
+            )
+        return result
+
 
 class PicoClient:
     def __init__(
@@ -218,6 +254,12 @@ class PicoClient:
     def command(self, text: str, *, timeout: float = 3.0) -> PicoExchange:
         with self.operation(timeout=timeout) as operation:
             return operation.exchange(text, accepted_types={"report", "error"})
+
+    def configure(
+        self, state: dict[str, Any], *, timeout: float = 3.0
+    ) -> PicoExchange:
+        with self.operation(timeout=timeout) as operation:
+            return operation.configure(state)
 
     def flash_main(
         self,
@@ -312,5 +354,7 @@ def pulse_gpio(
         port_finder=port_finder,
     ).command(f"p {pin} {seconds}", timeout=timeout)
     if result.message.get("type") == "error":
-        raise PicoCommandError(str(result.message.get("content", "Pico rejected command")))
+        raise PicoCommandError(
+            _error_message(result.message), raw_lines=result.raw_lines
+        )
     return result.message

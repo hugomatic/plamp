@@ -1,3 +1,4 @@
+import json
 import math
 import tempfile
 import time
@@ -5,9 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import plamp
 from plamp import LockTimeout as ExportedLockTimeout
 from plamp.locks import LockTimeout
-from plamp.pico_transport import PicoClient, PicoCommandError, PicoFlashError, PicoReportTimeout, PicoUnavailable, _lock_name, pulse_gpio, request_report
+from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, PicoFlashError, PicoOperation, PicoReportTimeout, PicoUnavailable, _lock_name, pulse_gpio, request_report
 
 
 class FakeSerial:
@@ -51,8 +53,84 @@ class FakeSerial:
 
 
 class PicoTransportTests(unittest.TestCase):
+    CONFIGURED_STATE = {"devices": [{
+        "id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+        "reschedule": 1, "pattern": [{"val": 1, "dur": 10}],
+    }]}
+    MATCHING_REPORT = b'{"type":"report","content":{"devices":[{"id":"lights","type":"gpio","pin":2,"elapsed_t":0,"cycle_t":0,"current_value":1,"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
+
     def test_package_exports_lock_timeout(self):
         self.assertIs(ExportedLockTimeout, LockTimeout)
+
+    def test_package_exports_transport_operation_types(self):
+        self.assertIs(plamp.PicoExchange, PicoExchange)
+        self.assertIs(plamp.PicoOperation, PicoOperation)
+
+    def test_configure_writes_one_json_document(self):
+        conn = FakeSerial([self.MATCHING_REPORT])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A", lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: "/dev/ttyACM0",
+            ).configure(self.CONFIGURED_STATE, timeout=0.2)
+
+        self.assertEqual(
+            json.loads(conn.writes[0].strip()),
+            {"type": "configure", "content": self.CONFIGURED_STATE},
+        )
+        self.assertEqual(result.message["type"], "report")
+
+    def test_configure_recovers_lost_reply_with_report(self):
+        first = FakeSerial([b"first attempt noise\n"])
+        second = FakeSerial([self.MATCHING_REPORT])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A", lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: next(connections),
+                port_finder=lambda serial: "/dev/ttyACM0",
+            ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
+        self.assertEqual(
+            result.raw_lines, (b"first attempt noise\n", self.MATCHING_REPORT)
+        )
+
+    def test_configure_rejects_mismatched_recovery_report(self):
+        first = FakeSerial([b"first attempt noise\n"])
+        mismatch = b'{"type":"report","content":{"devices":[]}}\n'
+        second = FakeSerial([mismatch])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "does not match") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(second.writes, [b"\nr\n"])
+        self.assertEqual(
+            caught.exception.raw_lines, (b"first attempt noise\n", mismatch)
+        )
+
+    def test_configure_raises_concise_structured_error_with_raw_evidence(self):
+        raw = b'{"type":"error","content":"invalid scheduler state"}\n'
+        conn = FakeSerial([raw])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "invalid scheduler state") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: conn,
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.2)
+
+        self.assertEqual(str(caught.exception), "invalid scheduler state")
+        self.assertEqual(caught.exception.raw_lines, (raw,))
 
     def test_rejects_invalid_timeouts_before_side_effects(self):
         discovery_calls = []
