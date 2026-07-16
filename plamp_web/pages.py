@@ -550,14 +550,12 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
-            '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
             '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
                 new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(settings.get("label") or ""), quote=True),
                 pico_options_html=pico_options(setup_picos, str(payload.get("pico_serial") or "")),
-                report_every=html.escape(str(payload.get("report_every") or controller.get("settings", {}).get("report_every") or 10), quote=True),
                 type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
             )
         )
@@ -584,7 +582,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
 
     create_scheduler_block = (
         '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead>'
         '<tbody>{controller_row}</tbody></table>'
         '<div class="subsection-indent"><h4>Devices</h4>'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -601,7 +599,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
         scheduler_blocks.append(
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
-            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
             '<div class="subsection-indent"><h4>Devices</h4>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -838,9 +836,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
       const picoSerialSelect = row.querySelector(".controller-pico-serial");
       picoSerialSelect.value = hiddenPayload.pico_serial || "";
       picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";
-      const reportEveryInput = row.querySelector(".controller-report-every");
-      reportEveryInput.value = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");
-      reportEveryInput.defaultValue = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");
     }}
     const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
     const repoRootPath = {repo_root_path_json};
@@ -870,8 +865,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         const labelInput = row.querySelector(".controller-label");
         const label = labelInput.value.trim();
         const type = row.querySelector(".controller-type").value;
-        const reportEveryInput = row.querySelector(".controller-report-every");
-        const reportEvery = reportEveryInput.value;
         const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {{}});
         const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
         const payload = isHiddenReuse ? existingController : {{type, payload: {{}}, settings: {{}}}};
@@ -881,13 +874,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         payload.settings = payload.settings || {{}};
         if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;
         if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;
-        if (type === "pico_scheduler") {{
-          if (reportEvery === "") {{
-            if (!isHiddenReuse) throw new Error(`Report interval required for controller ${{key}}.`);
-          }} else {{
-            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.payload.report_every = Number(reportEvery);
-          }}
-        }}
         payload.settings = cleanObject(payload.settings);
         payload.payload = cleanObject(payload.payload);
         result[key] = payload;
@@ -2414,6 +2400,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     label {{ display: block; margin: .6rem 0; }}
     input, textarea {{ box-sizing: border-box; padding: .35rem; }}
     textarea {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 28rem; width: min(100%, 980px); }}
+    textarea.compact-json {{ min-height: 12rem; }}
     button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
     .row {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }}
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
@@ -2550,7 +2537,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <h2>Pico scheduler</h2>
-  <p>Normal workflow: save desired config once, then apply the controller once. The apply compiles every configured channel and flashes the complete controller state.</p>
+  <p>The Pico is silent until commanded; the host requests a report every five seconds. Schedules are committed only after a verified flash, so failure leaves desired config unchanged.</p>
   <fieldset>
     <legend>GET /api/controllers/{{controller}}</legend>
     <p>Reads the controller's current API view, including the latest reported Pico state.</p>
@@ -2561,8 +2548,30 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="scheduler-get-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
+    <legend>GET /api/controllers/{{controller}}?stream=true</legend>
+    <p>Streams <code>snapshot</code>, <code>status</code>, <code>report</code>, and <code>error</code> events. <code>OK</code> requires a valid report.</p>
+    <pre id="controller-stream-curl-command">{html.escape(default_stream_curl)}</pre>
+    <button class="copy-curl" type="button" data-copy-target="controller-stream-curl-command">Copy curl</button>
+    <button id="controller-stream-start" type="button">Start stream</button>
+    <button id="controller-stream-stop" type="button">Stop stream</button>
+    <div><span id="controller-stream-status">Not streaming.</span></div>
+    <pre id="controller-stream-result">Controller health events will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>POST /api/controllers/{{controller}}/schedule</legend>
+    <p>Loads one controller from desired config, flashes its complete schedule once, waits for a valid report, then commits config and applied state.</p>
+    <button id="scheduler-schedule-load" type="button">Load current controller</button>
+    <label>Request body
+      <textarea id="scheduler-schedule-payload" class="compact-json">{{}}</textarea>
+    </label>
+    <pre id="scheduler-schedule-request">{{}}</pre>
+    <button id="scheduler-schedule-request-button" type="button">Run request</button>
+    <div><span id="scheduler-schedule-status">Ready.</span></div>
+    <pre id="scheduler-schedule-result">POST response will appear here.</pre>
+  </fieldset>
+  <fieldset>
     <legend>POST /api/controllers/{{controller}}/apply</legend>
-    <p>Compiles saved semantic settings for all channels, writes one complete state, and flashes once.</p>
+    <p>Reapplies already-saved semantic settings. Normal schedule changes use the transactional schedule endpoint above.</p>
     <pre id="scheduler-apply-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/apply</pre>
     <button class="copy-curl" type="button" data-copy-target="scheduler-apply-curl-command">Copy curl</button>
     <button class="scheduler-request" type="button" data-method="POST" data-path="/api/controllers/{html.escape(default_role)}/apply" data-status="scheduler-apply-status" data-result="scheduler-apply-result">Run request</button>
@@ -2655,8 +2664,11 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     const pulseControllerInput = document.getElementById("pulse-controller");
     const pulsePinInput = document.getElementById("pulse-pin");
     const pulseSecondsInput = document.getElementById("pulse-seconds");
+    const schedulerController = {json.dumps(default_role)};
+    const schedulerSchedulePayload = document.getElementById("scheduler-schedule-payload");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
+    let controllerEventSource = null;
     const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
 
     function putRole() {{
@@ -2808,6 +2820,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
       document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
       document.getElementById("pulse-curl-command").textContent = pulseCurlCommand();
+      document.getElementById("scheduler-schedule-request").textContent = schedulerSchedulePayload.value;
     }}
 
     function setPayload(state) {{
@@ -2890,6 +2903,81 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         status.textContent = "Request failed.";
         result.textContent = String(error);
       }}
+    }}
+
+    async function loadControllerSchedule() {{
+      const status = document.getElementById("scheduler-schedule-status");
+      const result = document.getElementById("scheduler-schedule-result");
+      status.textContent = "Loading current config...";
+      result.textContent = "";
+      try {{
+        const response = await fetch("/api/config");
+        const text = await response.text();
+        const parsed = JSON.parse(text);
+        if (!response.ok) throw new Error(parsed?.detail || text);
+        const controller = parsed?.config?.controllers?.[schedulerController];
+        if (!controller) throw new Error(`unknown controller: ${{schedulerController}}`);
+        schedulerSchedulePayload.value = JSON.stringify(controller, null, 2);
+        updateCurl();
+        status.textContent = "Current controller loaded.";
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error.message || error);
+      }}
+    }}
+
+    async function runControllerSchedule() {{
+      const status = document.getElementById("scheduler-schedule-status");
+      const result = document.getElementById("scheduler-schedule-result");
+      let body;
+      try {{
+        body = JSON.parse(schedulerSchedulePayload.value);
+      }} catch (error) {{
+        status.textContent = "Invalid JSON.";
+        result.textContent = String(error);
+        return;
+      }}
+      if (!window.confirm(`Flash and commit the complete ${{schedulerController}} schedule?`)) return;
+      status.textContent = "Flashing and verifying...";
+      result.textContent = "";
+      try {{
+        const response = await fetch(`/api/controllers/${{encodeURIComponent(schedulerController)}}/schedule`, {{
+          method: "POST",
+          headers: {{"content-type": "application/json"}},
+          body: JSON.stringify(body),
+        }});
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
+    function stopControllerStream() {{
+      if (controllerEventSource) {{
+        controllerEventSource.close();
+        controllerEventSource = null;
+      }}
+      document.getElementById("controller-stream-status").textContent = "Not streaming.";
+    }}
+
+    function startControllerStream() {{
+      stopControllerStream();
+      const status = document.getElementById("controller-stream-status");
+      const result = document.getElementById("controller-stream-result");
+      result.textContent = "";
+      controllerEventSource = new EventSource(`/api/controllers/${{encodeURIComponent(schedulerController)}}?stream=true`);
+      controllerEventSource.onopen = () => {{ status.textContent = "Streaming controller health."; }};
+      for (const eventName of ["snapshot", "status", "report", "error"]) {{
+        controllerEventSource.addEventListener(eventName, (event) => {{
+          const timestamp = new Date().toLocaleTimeString();
+          result.textContent += `[${{timestamp}}] ${{eventName}}\n${{prettyResponseText(event.data)}}\n\n`;
+          result.scrollTop = result.scrollHeight;
+        }});
+      }}
+      controllerEventSource.onerror = () => {{ status.textContent = "Stream disconnected or reconnecting."; }};
     }}
 
     async function getStatus() {{
@@ -3269,6 +3357,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
     document.getElementById("pulse-request").addEventListener("click", pulsePinRequest);
+    document.getElementById("controller-stream-start").addEventListener("click", startControllerStream);
+    document.getElementById("controller-stream-stop").addEventListener("click", stopControllerStream);
+    document.getElementById("scheduler-schedule-load").addEventListener("click", loadControllerSchedule);
+    document.getElementById("scheduler-schedule-request-button").addEventListener("click", runControllerSchedule);
     for (const button of document.querySelectorAll(".scheduler-request")) {{
       button.addEventListener("click", runSchedulerRequest);
     }}
@@ -3286,6 +3378,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     listCapturesLimitInput.addEventListener("input", updateCurl);
     listCapturesOffsetInput.addEventListener("input", updateCurl);
     payload.addEventListener("input", updateCurl);
+    schedulerSchedulePayload.addEventListener("input", updateCurl);
+    window.addEventListener("beforeunload", () => {{ stopTimerStream(); stopControllerStream(); }});
     updateCurl();
   </script>
 </body>

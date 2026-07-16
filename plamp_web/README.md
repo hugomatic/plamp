@@ -1,6 +1,6 @@
 # Plamp Web Service
 
-`plamp-web` is the current FastAPI service for REST, SSE, Pico monitoring, scheduled camera captures, and the fallback website.
+`plamp-web` provides REST, SSE, Pico monitoring, scheduled camera capture, and the fallback website. Agents and other web apps use the same API.
 
 ## Run
 
@@ -8,74 +8,43 @@
 uv run uvicorn plamp_web.server:app --host 127.0.0.1 --port 8000
 ```
 
-Production installation is handled by the root bootstrap script or:
+Production installation and service control belong to `plampctl`. With nginx enabled, requests follow `browser or agent -> nginx :80 -> plamp-web :8000`.
 
-```bash
-deploy/systemd/install-plamp-web-service.sh
-```
-
-With nginx enabled, the public path is `browser -> nginx :80 -> plamp-web :8000`.
-
-Pages:
+Useful pages:
 
 - `/` - main Pico scheduler page and camera
-- `/settings` - hardware, host status, and configuration
-- `/api/test` - executable API examples
+- `/settings` — hardware and configuration
+- `/api/test` — runnable API examples
+- `/openapi.json` — machine-readable API
 
-## Responsibilities
+## Controller contract
 
-- Read and validate `data/config.json`.
-- Poll Pico telemetry through short shared transactions and publish SSE updates.
-- Generate and apply scheduler firmware.
-- Schedule and capture pictures.
-- Expose REST operations used by the browser and `plamp_cli`.
+- The Pico is silent until commanded.
+- The host requests a report every five seconds. Linux USB events provide immediate add/remove evidence.
+- A controller is `OK` only after a valid report. Otherwise it is `ERROR` with the failed step, serial, port, timestamps, and received raw lines.
+- Successful periodic reports update SSE and the in-memory serial log without writing an INFO line every five seconds.
+- Serial connections are short transactions protected by shared locks; the service does not permanently own the port.
 
-The service, direct CLI, flashing, and camera captures use the shared library locks. The service closes each Pico serial connection after its response and does not permanently own hardware.
+Schedule changes are one controller-wide transaction:
 
-## Configuration
+1. Read and validate a proposed controller.
+2. Obtain a fresh report from the configured Pico.
+3. Compile every configured channel and stage config plus applied state.
+4. Flash once and wait for the Pico's valid post-flash report.
+5. Commit both local files.
 
-Desired configuration lives in `data/config.json`. Scheduler controllers use `payload` for generated state and `settings.devices` for semantic device configuration:
-
-```json
-{
-  "controllers": {
-    "pump_lights": {
-      "type": "pico_scheduler",
-      "payload": {
-        "pico_serial": "e66038b71387a039",
-        "report_every": 10,
-        "devices": []
-      },
-      "settings": {
-        "devices": {
-          "pump": {
-            "pin": 15,
-            "output_type": "gpio",
-            "editor": {"kind": "cycle"}
-          }
-        }
-      }
-    }
-  }
-}
-```
+Any failure before step 5 returns an error and leaves desired config and applied state unchanged. There is no offline queue or automatic reconnect apply.
 
 ## Pico Scheduler State
 
-Generated controller state is stored at `data/timers/<controller-id>.json`. These state files keep device state. For compatibility, `controllers.<id>.payload.report_every` stores the host Pico polling interval; it is not copied into firmware.
+Desired configuration is `data/config.json`. Semantic schedules live under `controllers.<id>.settings.devices`; generated state files keep device state in `data/timers/<controller-id>.json`.
 
-API split:
+The main API groups are:
 
-- `/api/config`: desired configuration
-- `/api/system`: host facts and detected hardware
-- `/api/status`: resolved state and SSE telemetry
-- `/api/controllers`: controller state and commands
-- `/api/camera`: captures and images
+- `/api/config` — desired configuration
+- `/api/status` — combined state and SSE
+- `/api/controllers` — controller health, schedule, report, pulse, and low-level apply operations
+- `/api/camera` — captures and images
+- `/api/system` — host facts and detected hardware
 
-## Logs
-
-Application logs are written to `data/plamp.log` and exposed through:
-
-```bash
-curl 'http://localhost:8000/api/logs?lines=200'
-```
+Application diagnostics are stored in `data/plamp.log` and exposed by `/api/logs` and the controller serial-log endpoint.

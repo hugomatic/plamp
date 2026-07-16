@@ -600,13 +600,22 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn("GET /api/controllers/{controller}", html)
         self.assertIn("PUT /api/config/controllers", html)
-        self.assertIn("POST /api/controllers/{controller}/apply", html)
+        self.assertIn("GET /api/controllers/{controller}?stream=true", html)
+        self.assertIn("POST /api/controllers/{controller}/schedule", html)
         self.assertIn("POST /api/controllers/{controller}/commands/report", html)
         self.assertIn("POST /api/controllers/{controller}/channels/{channel}/schedule", html)
+        self.assertIn('id="controller-stream-start"', html)
+        self.assertIn('id="controller-stream-result"', html)
+        self.assertIn('id="scheduler-schedule-payload"', html)
+        self.assertIn('id="scheduler-schedule-request"', html)
+        self.assertIn('id="scheduler-schedule-result"', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(schedulerController)}/schedule`', html)
+        self.assertIn('for (const eventName of ["snapshot", "status", "report", "error"])', html)
         self.assertIn('&quot;mode&quot;:&quot;cycle&quot;', html)
         self.assertIn('&quot;mode&quot;:&quot;clock_window&quot;', html)
         self.assertIn('&quot;on_time&quot;:&quot;06:00&quot;', html)
-        self.assertIn("Normal workflow: save desired config once, then apply the controller once.", html)
+        self.assertIn("Schedules are committed only after a verified flash", html)
+        self.assertNotIn("Normal workflow: save desired config once, then apply the controller once.", html)
         self.assertIn("Compatibility endpoint for changing one channel", html)
 
 
@@ -799,7 +808,7 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
 
-    def test_settings_page_edits_controller_type_and_report_interval(self):
+    def test_settings_page_does_not_offer_obsolete_report_interval(self):
         html = render_settings_page(
             {
                 "config": {
@@ -822,10 +831,9 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("<th>Pico poll interval (seconds)</th>", html)
-        self.assertIn('class="controller-report-every"', html)
-        self.assertIn('value="15"', html)
-        self.assertIn("payload.payload.report_every = Number(reportEvery);", html)
+        self.assertNotIn("Pico poll interval (seconds)", html)
+        self.assertNotIn('class="controller-report-every"', html)
+        self.assertNotIn("payload.payload.report_every", html)
 
     def test_settings_page_groups_scheduler_settings_by_controller(self):
         html = render_settings_page(
@@ -873,7 +881,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('data-controller-key="unused"', html)
         self.assertIn("<th>Assigned peripheral</th>", html)
         self.assertIn("Pump lights", html)
-        self.assertIn('value="10"', html)
         self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<h4>Devices</h4>", html)
         self.assertIn("<th>Output type</th>", html)
@@ -1054,7 +1061,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const payload = isHiddenReuse ? existingController : {type, payload: {}, settings: {}};', html)
         self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;', html)
         self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;', html)
-        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.payload.report_every = Number(reportEvery);', html)
+        self.assertNotIn("reportEveryInput", html)
 
     def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
         html = render_settings_page(
@@ -1198,7 +1205,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('labelInput.defaultValue = hiddenSettings.label || "";', html)
         self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
         self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";', html)
-        self.assertIn('reportEveryInput.defaultValue = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");', html)
+        self.assertNotIn("reportEveryInput", html)
         self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_no_longer_renders_hostname_confirm_apply_controls(self):

@@ -2,9 +2,9 @@
 
 `pico_scheduler` generates one controller-specific MicroPython `main.py` for a Raspberry Pi Pico.
 
-## Inputs
+## Host state
 
-Host scheduler state contains devices. The existing `report_every` field may still be present as a host polling preference:
+Generator input contains the complete device list:
 
 ```json
 {
@@ -25,26 +25,19 @@ Host scheduler state contains devices. The existing `report_every` field may sti
 }
 ```
 
-The Pi is authoritative. This JSON is generator input and is not copied to the Pico.
+`report_every` remains in the host state schema but is not copied into firmware and does not control health checks. The host requests reports every five seconds.
 
-## Generated firmware
+## Firmware contract
 
-`generator.py` renders `templates/` into a readable `main.py` containing provenance and only the helpers required by configured device types. The host copies that file to `:main.py` with `mpremote` and resets the Pico.
+Generated firmware:
 
-Current firmware:
+- runs GPIO and PWM schedules without the host;
+- stays silent during routine schedule transitions;
+- answers `r` with one newline-delimited JSON report;
+- answers `p <pin> <seconds>` with a report or error;
+- rejects a pulse when the GPIO is already on;
+- applies a pulse as a temporary overlay, then restores the scheduler's value.
 
-- runs GPIO/PWM patterns independently of the host;
-- emits newline-delimited `type: report` and `type: error` JSON;
-- answers the `r` command with a full report;
-- answers pulse commands with a report or error;
-- stays silent for routine schedule transitions.
+The host copies generated code to `:main.py` with `mpremote` and resets the Pico. USB serial may disappear and return during this operation. Flash success requires a valid report after it returns; port presence alone is not success.
 
-The service's host-side polling interval controls telemetry freshness. Runtime schedule updates without reflashing remain future work.
-
-## Tools
-
-```bash
-python3 -m pip install --user mpremote
-```
-
-Normal generation and deployment happen through `plamp-web`. See [current contract](../docs/spec-current.md).
+Normal schedule changes are compiled and flashed by `plamp-web`. See [the current contract](../docs/spec-current.md).
