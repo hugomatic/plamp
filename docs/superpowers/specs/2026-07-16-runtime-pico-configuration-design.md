@@ -129,7 +129,7 @@ Unit and fake-serial tests prove validation is all-or-nothing, persistence prece
 
 Generator tests prove firmware is schedule-independent and revision selection ignores unrelated commits. Existing pulse overlays must continue to restore the newly configured base schedule.
 
-Sprout hardware verification proves:
+Hardware verification on a non-production controller proves:
 
 1. The first transaction upgrades legacy firmware once and preserves its active schedule.
 2. USB disappears and returns only for that upgrade.
