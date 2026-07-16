@@ -160,8 +160,13 @@ upgrade_plamp() {
   git -C "${script_dir}" switch "${branch}"
   git -C "${script_dir}" pull --ff-only origin "${branch}"
 
-  if command -v uv >/dev/null 2>&1; then
-    uv sync --project "${script_dir}"
+  local uv_bin
+  uv_bin="$(command -v uv 2>/dev/null || true)"
+  if [[ -z "${uv_bin}" && -x "${HOME}/.local/bin/uv" ]]; then
+    uv_bin="${HOME}/.local/bin/uv"
+  fi
+  if [[ -n "${uv_bin}" ]]; then
+    "${uv_bin}" sync --project "${script_dir}"
   else
     echo "uv not found; skipping Python dependency sync." >&2
   fi

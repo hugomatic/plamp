@@ -16,7 +16,7 @@ class PlampctlTests(unittest.TestCase):
         path.write_text(body, encoding="utf-8")
         path.chmod(0o755)
 
-    def run_with_stubs(self, *args: str, local_commit: str = "local", remote_commit: str = "remote", curl_failures: int = 0) -> tuple[subprocess.CompletedProcess[str], str]:
+    def run_with_stubs(self, *args: str, local_commit: str = "local", remote_commit: str = "remote", curl_failures: int = 0, uv_on_path: bool = True) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
@@ -55,7 +55,12 @@ class PlampctlTests(unittest.TestCase):
                 """
             )
             self.make_script(bin_dir / "git", git_stub)
-            self.make_script(bin_dir / "uv", command_stub)
+            if uv_on_path:
+                self.make_script(bin_dir / "uv", command_stub)
+            else:
+                fallback_uv = root / "home" / ".local" / "bin" / "uv"
+                fallback_uv.parent.mkdir(parents=True)
+                self.make_script(fallback_uv, command_stub)
             self.make_script(bin_dir / "sudo", command_stub)
             curl_count = root / "curl-count"
             curl_stub = textwrap.dedent(
@@ -82,7 +87,8 @@ class PlampctlTests(unittest.TestCase):
             )
             self.make_script(bin_dir / "systemctl", systemctl_stub)
             env = dict(os.environ)
-            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
+            env["HOME"] = str(root / "home")
+            env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}" if uv_on_path else f"{bin_dir}:/usr/bin:/bin"
 
             result = subprocess.run(
                 [str(repo / "plampctl"), *args],
@@ -161,6 +167,13 @@ class PlampctlTests(unittest.TestCase):
         self.assertIn("fetch origin feature-x", calls)
         self.assertIn("switch feature-x", calls)
         self.assertIn("pull --ff-only origin feature-x", calls)
+
+    def test_upgrade_finds_installed_uv_outside_non_login_path(self):
+        result, calls = self.run_with_stubs("upgrade", uv_on_path=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("uv sync --project", calls)
+        self.assertNotIn("uv not found", result.stderr)
 
     def test_upgrade_rejects_extra_args(self):
         result, _ = self.run_with_stubs("upgrade", "main", "extra")
