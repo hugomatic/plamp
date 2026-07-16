@@ -4,7 +4,7 @@
 
 ## Inputs
 
-Host scheduler state contains report cadence and devices:
+Host scheduler state contains devices. The existing `report_every` field may still be present as a host polling preference:
 
 ```json
 {
@@ -36,9 +36,10 @@ Current firmware:
 - runs GPIO/PWM patterns independently of the host;
 - emits newline-delimited `type: report` and `type: error` JSON;
 - answers the `r` command with a full report;
-- also emits startup, changed-state, and periodic reports.
+- answers pulse commands with a report or error;
+- stays silent for routine schedule transitions.
 
-Demand-only full reports and runtime schedule updates without reflashing are target architecture, not current firmware behavior.
+The service's host-side polling interval controls telemetry freshness. Runtime schedule updates without reflashing remain future work.
 
 ## Tools
 

@@ -75,6 +75,20 @@ class PicoGeneratorTests(unittest.TestCase):
         self.assertEqual(scheduled["elapsed_t"], 6)
         self.assertEqual(scheduled["output"].value(), 1)
 
+    def test_schedule_ticks_are_silent_but_report_command_answers(self):
+        runtime = self.firmware_runtime(current_t=4, pattern=[{"val": 0, "dur": 5}, {"val": 1, "dur": 10}])
+        runtime["apply"]()
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            runtime["tick"](2)
+            runtime["apply"]()
+        self.assertEqual(output.getvalue(), "")
+
+        with redirect_stdout(output):
+            runtime["handle_command"]("r")
+        self.assertIn('"type": "report"', output.getvalue())
+
     def test_generated_scheduler_includes_nonblocking_serial_commands(self):
         source = generate_main_py(
             controller_id="pump_lights",

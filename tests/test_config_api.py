@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -18,6 +19,7 @@ class DummyMonitor:
         self.started = False
         self.stopped = False
         self.joined = False
+        self.woken = False
         self.sent_commands = []
         self.serial_log_entries = []
         self.last_report = last_report
@@ -30,6 +32,9 @@ class DummyMonitor:
 
     def join(self) -> None:
         self.joined = True
+
+    def wake(self) -> None:
+        self.woken = True
 
     def send_serial_command(self, command: str):
         self.sent_commands.append(command)
@@ -1598,6 +1603,17 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(monitor_map["keep"].pico_serial, "KEEP_NEW")
         self.assertNotIn("drop", monitor_map)
 
+    def test_reconcile_wakes_retained_monitor_for_new_poll_interval(self):
+        monitor = DummyMonitor("KEEP")
+        with (
+            patch.object(server, "configured_monitor_serials", return_value={"keep": "KEEP"}),
+            patch.object(server, "pico_serial_for_role", return_value="KEEP"),
+            patch.object(server, "monitors", {"keep": monitor}),
+        ):
+            server.reconcile_configured_monitors()
+
+        self.assertTrue(monitor.woken)
+
     def test_post_timer_channel_schedule_uses_saved_state_not_stale_live_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1731,68 +1747,41 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(saved["devices"][0]["id"], "pump")
         self.assertEqual(saved["devices"][0]["pattern"], [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}])
 
-    def test_pico_monitor_apply_copies_files_without_mpremote_soft_reset(self):
+    def test_pico_monitor_apply_holds_operation_through_reset_and_valid_report(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
-        command = server.ApplyCommand(path=Path("/tmp/main.py"))
-        calls = []
-
-        def fake_run_command(args, timeout=2.0):
-            calls.append(args)
-            return 0, "", ""
+        exchange = SimpleNamespace(
+            port="/dev/ttyACM1",
+            raw_lines=(b'{"type":"report","content":{"devices":[]}}\n',),
+            message={"type": "report", "content": {"devices": []}},
+        )
 
         with (
-            patch.object(monitor, "find_port", return_value="/dev/ttyACM0"),
+            patch.object(monitor.client, "flash_main", return_value=exchange) as flash_main,
             patch.object(server.shutil, "which", return_value="/usr/bin/mpremote"),
-            patch.object(server, "interrupt_pico_program", side_effect=lambda port: calls.append(["interrupt", port])),
-            patch.object(server, "run_command", side_effect=fake_run_command),
         ):
-            monitor.handle_apply(command, None)
+            result = monitor.apply(Path("/tmp/main.py"))
 
-        self.assertEqual(calls[0], ["interrupt", "/dev/ttyACM0"])
-        self.assertIn("resume", calls[1])
-        self.assertTrue(any(":main.py" in part for part in calls[1]))
-        self.assertFalse(any(":state.json" in part for call in calls for part in call))
-        self.assertNotIn("resume", calls[2])
+        self.assertEqual(flash_main.call_args.args, (Path("/tmp/main.py"),))
+        self.assertEqual(flash_main.call_args.kwargs["timeout"], 60.0)
+        self.assertEqual(flash_main.call_args.kwargs["mpremote"], "/usr/bin/mpremote")
+        self.assertEqual(result["port"], "/dev/ttyACM1")
+        self.assertEqual(result["report_sequence"], 1)
 
-    def test_pico_monitor_apply_does_not_complete_before_reconnect_and_report_request(self):
+    def test_pico_monitor_command_waits_for_and_publishes_response(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
-        command = server.ApplyCommand(path=Path("/tmp/main.py"))
+        exchange = SimpleNamespace(
+            port="/dev/ttyACM0",
+            raw_lines=(b'{"type":"report","content":{"devices":[]}}\n',),
+            message={"type": "report", "content": {"devices": []}},
+        )
 
-        with (
-            patch.object(monitor, "find_port", return_value="/dev/ttyACM0"),
-            patch.object(server.shutil, "which", return_value="/usr/bin/mpremote"),
-            patch.object(server, "interrupt_pico_program"),
-            patch.object(server, "run_command", return_value=(0, "", "")),
-        ):
-            pending = monitor.handle_apply(command, None)
+        with patch.object(monitor.client, "command", return_value=exchange) as command:
+            returned = monitor.send_serial_command("p 21 5")
 
-        self.assertIs(pending, command)
-        self.assertFalse(command.done.is_set())
-
-    def test_pico_monitor_finishes_pending_apply_after_writing_report_request(self):
-        monitor = server.PicoMonitor("pump_lights", "abc")
-        command = server.ApplyCommand(path=Path("/tmp/main.py"))
-        conn = FakeSerial()
-
-        monitor.finish_apply_after_reconnect(command, conn)
-
-        self.assertEqual(conn.writes, [b"\nr\n"])
-        self.assertTrue(conn.flushed)
-        self.assertTrue(command.done.is_set())
-        self.assertEqual(command.result["report_sequence"], 0)
-        self.assertEqual(monitor.serial_log()[-1]["direction"], "tx")
-        self.assertEqual(monitor.serial_log()[-1]["text"], "r")
-
-    def test_pico_monitor_starts_serial_commands_on_a_fresh_line(self):
-        monitor = server.PicoMonitor("pump_lights", "abc")
-        command = server.SerialCommand(text="p 21 5")
-        conn = FakeSerial()
-
-        returned = monitor.handle_serial_command(command, conn)
-
-        self.assertIs(returned, conn)
-        self.assertEqual(conn.writes, [b"\np 21 5\n"])
-        self.assertTrue(command.done.is_set())
+        command.assert_called_once_with("p 21 5", timeout=5.0)
+        self.assertEqual(returned["command"], "p 21 5")
+        self.assertEqual(monitor.report_sequence, 1)
+        self.assertEqual([entry["direction"] for entry in monitor.serial_log()], ["tx", "rx"])
 
     def test_pico_monitor_only_sequences_valid_reports(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
@@ -1810,7 +1799,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(monitor.report_sequence, 1)
         self.assertEqual(report_event["data"]["report_sequence"], 1)
 
-    def test_apply_timer_state_generates_report_every_from_controller_config(self):
+    def test_apply_timer_state_keeps_report_period_out_of_firmware(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1847,7 +1836,8 @@ class ConfigApiTests(unittest.TestCase):
                 response = server.apply_timer_state("pump_lights", timer_path)
 
         self.assertEqual(response, {"ok": True})
-        self.assertIn("REPORT_EVERY = 42", applied_payloads[0])
+        self.assertNotIn("REPORT_EVERY", applied_payloads[0])
+        self.assertNotIn("report_every", applied_payloads[0])
         self.assertIn('"id": "pump"', applied_payloads[0])
 
     def test_apply_timer_state_writes_generated_main_py_text(self):

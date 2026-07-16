@@ -66,7 +66,6 @@ def _provenance_block(
     options: GeneratorOptions,
 ) -> str:
     payload = {
-        "report_every": state["report_every"],
         "devices": state["devices"],
         "options": {
             "loop_sleep_ms": options.loop_sleep_ms,
@@ -155,14 +154,13 @@ def generate_main_py(
     return _template("base.py.tmpl").format(
         provenance_block=_provenance_block(
             controller_id=controller_id,
-            state={"report_every": int(state["report_every"]), "devices": state["devices"]},
+            state={"devices": state["devices"]},
             git_version=git_version,
             generated_at=generated_at,
             options=options,
         ),
         machine_import=_machine_import(types),
         loop_sleep_ms=options.loop_sleep_ms,
-        report_every=int(state["report_every"]),
         pwm_helper=_render_pwm_helper(types, options.pwm_freq).rstrip(),
         device_assignments=_render_device_assignments(devices),
     ).rstrip() + "\n"

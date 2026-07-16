@@ -91,3 +91,18 @@ class PicoSchedulerGeneratorTests(unittest.TestCase):
         )
         self.assertIn('"devices": out', text)
         self.assertIn("devices = []", text)
+
+    def test_reports_are_demand_driven_not_periodic_or_state_change_driven(self) -> None:
+        text = generate_main_py(
+            controller_id="pump_n_lights",
+            state={"report_every": 100, "devices": []},
+            git_version="abc1234",
+            generated_at="2026-07-16T00:00:00-10:00",
+            options=GeneratorOptions(),
+        )
+
+        self.assertNotIn("REPORT_EVERY", text)
+        self.assertNotIn("time_to_report", text)
+        self.assertNotIn("if changed", text)
+        self.assertNotIn("report_every", text)
+        self.assertIn('if line == "r":\n        report()', text)

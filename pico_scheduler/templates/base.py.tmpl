@@ -7,7 +7,6 @@ import ujson as json
 {machine_import}
 
 LOOP_SLEEP_MS = {loop_sleep_ms}
-REPORT_EVERY = {report_every}
 {pwm_helper}
 {device_assignments}
 
@@ -125,7 +124,6 @@ def tick(dt):
         for device in remove:
             devices.remove(device)
         apply()
-        report()
 
 
 def apply():
@@ -156,10 +154,8 @@ def apply():
 
 def main():
     apply()
-    report()
 
-    last_report_ms = time.ticks_ms()
-    last_tick_ms = last_report_ms
+    last_tick_ms = time.ticks_ms()
     accum_ms = 0
 
     while True:
@@ -168,20 +164,13 @@ def main():
         delta_ms = time.ticks_diff(now_ms, last_tick_ms)
         last_tick_ms = now_ms
 
-        changed = False
-        time_to_report = time.ticks_diff(now_ms, last_report_ms) >= REPORT_EVERY * 1000
-
         if delta_ms > 0:
             accum_ms += delta_ms
             dt = accum_ms // 1000
             if dt:
                 accum_ms -= dt * 1000
                 tick(dt)
-                changed = apply()
-
-        if changed or time_to_report:
-            last_report_ms = now_ms
-            report()
+                apply()
 
         time.sleep_ms(LOOP_SLEEP_MS)
 

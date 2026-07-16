@@ -25,12 +25,12 @@ Pages:
 ## Responsibilities
 
 - Read and validate `data/config.json`.
-- Maintain current Pico telemetry and publish SSE updates.
+- Poll Pico telemetry through short shared transactions and publish SSE updates.
 - Generate and apply scheduler firmware.
 - Schedule and capture pictures.
 - Expose REST operations used by the browser and `plamp_cli`.
 
-The current monitor owns serial continuously. Stop `plamp-web` before using the direct `python -m plamp pico report` command. A later slice moves monitoring to shared short-lived locked transactions.
+The service, direct CLI, flashing, and camera captures use the shared library locks. The service closes each Pico serial connection after its response and does not permanently own hardware.
 
 ## Configuration
 
@@ -62,7 +62,7 @@ Desired configuration lives in `data/config.json`. Scheduler controllers use `pa
 
 ## Pico Scheduler State
 
-Generated controller state is stored at `data/timers/<controller-id>.json`. These state files keep device state; `controllers.<id>.payload.report_every` remains the current source of report cadence.
+Generated controller state is stored at `data/timers/<controller-id>.json`. These state files keep device state. For compatibility, `controllers.<id>.payload.report_every` stores the host Pico polling interval; it is not copied into firmware.
 
 API split:
 

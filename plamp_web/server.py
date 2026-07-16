@@ -27,6 +27,9 @@ import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
+from plamp.camera import CameraError, capture_camera
+from plamp.locks import LockTimeout
+from plamp.pico_transport import PicoClient, PicoFlashError, PicoReportTimeout, PicoUnavailable
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page, set_app_revision
 from plamp_web.hardware_config import (
@@ -640,24 +643,6 @@ def latest_timer_state(role: str) -> dict[str, Any] | None:
 
 
 @dataclass
-class ApplyCommand:
-    path: Path
-    done: threading.Event = field(default_factory=threading.Event)
-    result: dict[str, Any] | None = None
-    error_status: int | None = None
-    error_detail: Any = None
-
-
-@dataclass
-class SerialCommand:
-    text: str
-    done: threading.Event = field(default_factory=threading.Event)
-    result: dict[str, Any] | None = None
-    error_status: int | None = None
-    error_detail: Any = None
-
-
-@dataclass
 class CameraCommand:
     camera_id: str | None
     capture_kind: str
@@ -781,15 +766,20 @@ class CameraWorker:
                 continue
             self.update_status(state="capturing", available=True)
             try:
-                result = self.capture_func(
+                result = capture_camera(
+                    command.camera_id or "camera",
+                    lock_dir=camera_capture.DATA_DIR / "locks",
+                    timeout=60.0,
+                    capture_func=self.capture_func,
                     repo_root=camera_capture.REPO_ROOT,
                     data_dir=camera_capture.DATA_DIR,
                     config_file=camera_capture.CONFIG_FILE,
-                    camera_id=command.camera_id,
                     capture_kind=command.capture_kind,
                 )
-            except camera_capture.CameraCaptureError as exc:
-                command.error = exc
+            except (CameraError, LockTimeout) as exc:
+                command.error = camera_capture.CameraCaptureError(
+                    str(exc), status_code=getattr(exc, "status_code", 409)
+                )
                 self.mark_capture_failure(camera_id=command.camera_id, capture_kind=command.capture_kind, error=str(exc))
             else:
                 command.result = result
@@ -844,7 +834,7 @@ class PicoMonitor:
     def __init__(self, role: str, pico_serial: str):
         self.role = role
         self.pico_serial = pico_serial
-        self.commands: queue.Queue[ApplyCommand | SerialCommand] = queue.Queue()
+        self.client = PicoClient(pico_serial, lock_dir=DATA_DIR / "locks")
         self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
         self.lock = threading.Lock()
         self.serial_entries = deque(maxlen=200)
@@ -869,6 +859,9 @@ class PicoMonitor:
 
     def stop(self) -> None:
         self.stop_event.set()
+        self.wake_event.set()
+
+    def wake(self) -> None:
         self.wake_event.set()
 
     def join(self, timeout: float = 2.0) -> None:
@@ -961,33 +954,12 @@ class PicoMonitor:
                 return str(pico["port"])
         return None
 
-    def open_serial(self) -> serial.Serial | None:
-        port = self.find_port()
-        if not port:
-            self.update_status("disconnected", connected=False, error="configured Pico is not connected")
-            return None
-        try:
-            conn = serial.Serial(port, baudrate=115200, timeout=0.5)
-        except (OSError, serial.SerialException) as exc:
-            self.update_status("disconnected", connected=False, port=port, error=str(exc))
-            return None
-        self.update_status("connected", connected=True, port=port, error=None)
-        self.publish("snapshot", self.snapshot())
-        return conn
-
-    def close_serial(self, conn: serial.Serial | None) -> None:
-        if conn is None:
-            return
-        try:
-            conn.close()
-        except (OSError, serial.SerialException):
-            pass
-
-    def handle_line(self, raw: bytes) -> None:
+    def handle_line(self, raw: bytes, *, record: bool = True) -> None:
         text = raw.decode("utf-8", errors="replace").strip()
         if not text:
             return
-        self.record_serial("rx", text)
+        if record:
+            self.record_serial("rx", text)
         now = datetime.now().isoformat(timespec="seconds")
         try:
             report = json.loads(text)
@@ -1024,178 +996,106 @@ class PicoMonitor:
             )
 
     def apply(self, path: Path, timeout: float = 60.0) -> dict[str, Any]:
-        command = ApplyCommand(path=path)
-        self.commands.put(command)
-        self.wake_event.set()
-        if not command.done.wait(timeout=timeout):
-            raise HTTPException(status_code=504, detail="timed out waiting for Pico apply")
-        if command.error_status is not None:
-            raise HTTPException(status_code=command.error_status, detail=command.error_detail)
-        if command.result is None:
-            raise HTTPException(status_code=500, detail="Pico apply finished without a result")
-        return command.result
-
-    def send_serial_command(self, text: str, timeout: float = 5.0) -> dict[str, Any]:
-        command = SerialCommand(text=text)
-        self.commands.put(command)
-        self.wake_event.set()
-        if not command.done.wait(timeout=timeout):
-            raise HTTPException(status_code=504, detail="timed out waiting for Pico command send")
-        if command.error_status is not None:
-            raise HTTPException(status_code=command.error_status, detail=command.error_detail)
-        if command.result is None:
-            raise HTTPException(status_code=500, detail="Pico command finished without a result")
-        return command.result
-
-    def handle_apply(self, command: ApplyCommand, conn: serial.Serial | None) -> ApplyCommand | None:
-        self.close_serial(conn)
         self.update_status("applying", connected=False, error=None)
-        port = self.find_port()
-        if not port:
-            command.error_status = 409
-            command.error_detail = f"Pico for role {self.role} is not connected: {self.pico_serial}"
-            command.done.set()
-            self.update_status("disconnected", connected=False, error=command.error_detail)
-            return None
-
         mpremote = shutil.which("mpremote")
         if not mpremote:
-            command.error_status = 500
-            command.error_detail = "mpremote not found"
-            command.done.set()
-            self.update_status("error", connected=False, port=port, error=command.error_detail)
-            return None
-
-        interrupt_pico_program(port)
-
-        firmware_rc, firmware_out, firmware_err = run_command([mpremote, "connect", port, "resume", "cp", str(command.path), ":main.py"], timeout=30)
-        if firmware_rc != 0:
-            command.error_status = 502
-            command.error_detail = {"step": "firmware", "returncode": firmware_rc, "stdout": firmware_out, "stderr": firmware_err}
-            command.done.set()
-            LOGGER.error("pico monitor %s mpremote firmware copy failed: %s", self.role, command.error_detail)
-            self.publish("error", {"role": self.role, "step": "firmware", "detail": command.error_detail})
-            self.update_status("error", connected=False, port=port, error=command.error_detail)
-            return None
-
-        reset_rc, reset_out, reset_err = run_command([mpremote, "connect", port, "reset"], timeout=15)
-        if reset_rc != 0:
-            command.error_status = 502
-            command.error_detail = {"step": "reset", "returncode": reset_rc, "stdout": reset_out, "stderr": reset_err}
-            command.done.set()
-            LOGGER.error("pico monitor %s mpremote reset failed: %s", self.role, command.error_detail)
-            self.publish("error", {"role": self.role, "step": "reset", "detail": command.error_detail})
-            self.update_status("error", connected=False, port=port, error=command.error_detail)
-            return None
-
-        self.publish("status", {"role": self.role, "state": "reconnecting", "port": port, "serial": self.pico_serial})
-        self.update_status("reconnecting", connected=False, port=port, error=None)
-        return command
-
-    def finish_apply_after_reconnect(self, command: ApplyCommand, conn: serial.Serial) -> None:
-        requested_after = self.report_sequence
+            raise HTTPException(status_code=500, detail="mpremote not found")
         try:
-            conn.write(b"\nr\n")
-            conn.flush()
+            result = self.client.flash_main(
+                path,
+                timeout=timeout,
+                mpremote=mpremote,
+                command_runner=lambda args, budget: run_command(args, timeout=budget),
+                interrupter=interrupt_pico_program,
+                sleeper=self.stop_event.wait,
+            )
+        except LockTimeout as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PicoFlashError as exc:
+            self.update_status("error", connected=False, error=exc.detail())
+            raise HTTPException(status_code=502, detail=exc.detail()) from exc
+        except PicoUnavailable as exc:
+            self.update_status("disconnected", connected=False, error=str(exc))
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PicoReportTimeout as exc:
+            self.update_status("error", connected=False, error=str(exc))
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         except (OSError, serial.SerialException) as exc:
-            port = getattr(conn, "port", None)
-            self.close_serial(conn)
-            command.error_status = 502
-            command.error_detail = str(exc)
-            self.update_status("disconnected", connected=False, port=port, error=str(exc))
-            self.record_serial("err", str(exc))
-        else:
-            self.record_serial("tx", "r")
-            command.result = {
-                "role": self.role,
-                "port": getattr(conn, "port", None),
-                "serial": self.pico_serial,
-                "report_sequence": requested_after,
-            }
-        finally:
-            command.done.set()
+            self.update_status("disconnected", connected=False, error=str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    def handle_serial_command(self, command: SerialCommand, conn: serial.Serial | None) -> serial.Serial | None:
-        if conn is None or not conn.is_open:
-            conn = self.open_serial()
-        if conn is None:
-            command.error_status = 409
-            command.error_detail = f"Pico for role {self.role} is not connected: {self.pico_serial}"
-            command.done.set()
-            self.record_serial("err", str(command.error_detail))
-            return None
-        text = command.text.strip()
+        self.record_exchange("r", result)
+        self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
+        self.update_status("connected", connected=True, port=result.port, error=None)
+        return {
+            "role": self.role,
+            "port": result.port,
+            "serial": self.pico_serial,
+            "report_sequence": self.report_sequence,
+        }
+
+    def send_serial_command(self, text: str, timeout: float = 5.0) -> dict[str, Any]:
         try:
-            conn.write(("\n" + text + "\n").encode("utf-8"))
-            conn.flush()
+            result = self.client.command(text, timeout=timeout)
+        except LockTimeout as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PicoUnavailable as exc:
+            self.update_status("disconnected", connected=False, error=str(exc))
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PicoReportTimeout as exc:
+            self.record_timeout(text, exc)
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
         except (OSError, serial.SerialException) as exc:
-            port = getattr(conn, "port", None)
-            self.close_serial(conn)
-            command.error_status = 502
-            command.error_detail = str(exc)
-            command.done.set()
-            self.update_status("disconnected", connected=False, port=port, error=str(exc))
-            self.record_serial("err", str(exc))
-            return None
-        self.record_serial("tx", text)
-        command.result = {"role": self.role, "serial": self.pico_serial, "command": text}
-        command.done.set()
-        return conn
+            self.update_status("disconnected", connected=False, error=str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        self.record_exchange(text, result)
+        if result.message.get("type") == "error":
+            raise HTTPException(status_code=409, detail=result.message.get("content"))
+        self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
+        self.update_status("connected", connected=True, port=result.port, error=None)
+        return {"role": self.role, "serial": self.pico_serial, "command": text}
+
+    def record_exchange(self, command: str, result: Any) -> None:
+        self.record_serial("tx", command)
+        for raw in result.raw_lines:
+            text = raw.decode("utf-8", errors="replace").strip()
+            if text:
+                self.record_serial("rx", text)
+
+    def record_timeout(self, command: str, exc: PicoReportTimeout) -> None:
+        self.record_serial("tx", command)
+        for raw in exc.raw_lines:
+            text = raw.decode("utf-8", errors="replace").strip()
+            if text:
+                self.record_serial("rx", text)
+        self.record_serial("err", str(exc))
+
+    def collect_report(self, timeout: float = 3.0) -> None:
+        result = self.client.report(timeout=timeout)
+        self.record_exchange("r", result)
+        self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
+        self.update_status("connected", connected=True, port=result.port, error=None)
 
     def run(self) -> None:
-        conn: serial.Serial | None = None
-        pending_apply: ApplyCommand | None = None
-        retry_sleep = 1.0
         while not self.stop_event.is_set():
+            started = time.monotonic()
             try:
-                if pending_apply is not None:
-                    if conn is None or not conn.is_open:
-                        conn = self.open_serial()
-                    if conn is None:
-                        self.wake_event.wait(retry_sleep)
-                        self.wake_event.clear()
-                        retry_sleep = min(retry_sleep * 2, 5.0)
-                        continue
-                    retry_sleep = 1.0
-                    self.finish_apply_after_reconnect(pending_apply, conn)
-                    pending_apply = None
-                    continue
-
-                try:
-                    command = self.commands.get_nowait()
-                except queue.Empty:
-                    command = None
-                if command is not None:
-                    if isinstance(command, ApplyCommand):
-                        pending_apply = self.handle_apply(command, conn)
-                        conn = None
-                    else:
-                        conn = self.handle_serial_command(command, conn)
-                    continue
-
-                if conn is None or not conn.is_open:
-                    conn = self.open_serial()
-                    if conn is None:
-                        self.wake_event.wait(retry_sleep)
-                        self.wake_event.clear()
-                        retry_sleep = min(retry_sleep * 2, 5.0)
-                        continue
-                    retry_sleep = 1.0
-
-                try:
-                    line = conn.readline()
-                except (OSError, serial.SerialException) as exc:
-                    port = getattr(conn, "port", None)
-                    self.close_serial(conn)
-                    conn = None
-                    self.update_status("disconnected", connected=False, port=port, error=str(exc))
-                    continue
-                if line:
-                    self.handle_line(line)
+                self.collect_report()
+            except LockTimeout:
+                # Another local process owns the Pico; that is normal, not a fault.
+                pass
+            except PicoUnavailable as exc:
+                self.update_status("disconnected", connected=False, error=str(exc))
+            except PicoReportTimeout as exc:
+                self.record_timeout("r", exc)
+                self.update_status("error", connected=False, error=str(exc))
+            except (OSError, serial.SerialException) as exc:
+                self.update_status("disconnected", connected=False, error=str(exc))
             except Exception as exc:
                 self.update_status("error", connected=False, error=str(exc))
-                self.stop_event.wait(1.0)
-        self.close_serial(conn)
+            period = configured_timer_report_periods().get(self.role, 10)
+            self.wake_event.wait(max(0.0, period - (time.monotonic() - started)))
+            self.wake_event.clear()
         self.update_status("stopped", connected=False)
 
 
@@ -1227,14 +1127,19 @@ def reconcile_configured_monitors() -> None:
     except HTTPException:
         return
     stale = []
+    retained = []
     with monitors_lock:
         for role, monitor in list(monitors.items()):
             if role not in serials or monitor.pico_serial != serials[role]:
                 stale.append(monitors.pop(role))
+            else:
+                retained.append(monitor)
     for monitor in stale:
         monitor.stop()
     for monitor in stale:
         monitor.join()
+    for monitor in retained:
+        monitor.wake()
     for role in sorted(serials):
         get_or_start_monitor(role)
 

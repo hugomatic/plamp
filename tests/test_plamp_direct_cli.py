@@ -99,3 +99,50 @@ class DirectCliTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0)
             self.assertEqual(calls[0]["timeout"], 0.0)
+
+    def test_pico_pulse_calls_focused_library_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = self.write_config(root)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            calls = []
+
+            def fake_pulse(serial, pin, seconds, **kwargs):
+                calls.append((serial, pin, seconds, kwargs))
+                return {"type": "report", "content": {"devices": []}}
+
+            rc = main(
+                ["--config", str(config), "--lock-dir", str(root / "locks"), "pico", "pulse", "tower", "21", "5"],
+                stdout=stdout,
+                stderr=stderr,
+                pulse_func=fake_pulse,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][:3], ("PICO-A", 21, 5))
+        self.assertEqual(json.loads(stdout.getvalue())["type"], "report")
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_camera_capture_calls_shared_library_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = self.write_config(root)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            calls = []
+
+            def fake_capture(camera_id, **kwargs):
+                calls.append((camera_id, kwargs))
+                return {"camera_id": camera_id, "image_path": "data/pic.jpg"}
+
+            rc = main(
+                ["--config", str(config), "--lock-dir", str(root / "locks"), "camera", "capture", "cam0"],
+                stdout=stdout,
+                stderr=stderr,
+                camera_capture_func=fake_capture,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][0], "cam0")
+        self.assertEqual(calls[0][1]["config_file"], config)
+        self.assertEqual(json.loads(stdout.getvalue())["camera_id"], "cam0")
+        self.assertEqual(stderr.getvalue(), "")

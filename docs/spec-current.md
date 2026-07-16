@@ -10,7 +10,7 @@ Plamp is local-first hydroponics automation designed for humans and agents. Core
 - `pico_scheduler`: host-generated MicroPython firmware.
 - `data/`: desired configuration, generated controller state, logs, pictures, and other runtime data.
 
-The current web monitor keeps Pico serial ports open. Direct CLI serial operations therefore require stopping `plamp-web`. This is a migration constraint, not the target architecture.
+The web collector and direct CLI share per-device filesystem locks. Each transaction discovers the current tty, opens it, exchanges a complete message, and closes it.
 
 ## Configuration and State
 

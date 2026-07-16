@@ -798,7 +798,7 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("<th>Report every seconds</th>", html)
+        self.assertIn("<th>Pico poll interval (seconds)</th>", html)
         self.assertIn('class="controller-report-every"', html)
         self.assertIn('value="15"', html)
         self.assertIn("payload.payload.report_every = Number(reportEvery);", html)

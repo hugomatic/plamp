@@ -59,10 +59,10 @@ Each check includes:
 - **How to run:** Review the event/report flow for startup and subsequent state changes.
 - **Success:** The sequence is: startup message, immediate picture, reports, then extra pictures only when the observable state changes.
 
-### Check: Output changes emit an immediate Pico report
-- **Description:** State changes should produce a full report immediately, not only on the periodic interval.
-- **How to run:** Trigger an output change and inspect the emitted Pico reports.
-- **Success:** A full `report` is emitted on each output state change and on `report_every`.
+### Check: Requested Pico reports are complete
+- **Description:** The host must receive one complete current report without relying on unsolicited serial output.
+- **How to run:** Issue `r` through the direct CLI while the service is running and inspect the response and serial log.
+- **Success:** The command acquires the shared lock, returns a valid full report promptly, closes serial, and preserves malformed-line evidence.
 
 ## Script / generation changes
 

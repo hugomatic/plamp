@@ -584,7 +584,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
 
     create_scheduler_block = (
         '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
         '<tbody>{controller_row}</tbody></table>'
         '<div class="subsection-indent"><h4>Devices</h4>'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -601,7 +601,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
         scheduler_blocks.append(
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
-            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Report every seconds</th></tr></thead>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
             '<div class="subsection-indent"><h4>Devices</h4>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -1903,7 +1903,7 @@ def render_timer_dashboard_page(
           const reportPeriodRow = document.createElement("div");
           reportPeriodRow.className = "editor-row";
           reportPeriodRow.innerHTML = `
-            <label>Report every seconds <input class="controller-report-period" type="number" min="1" step="1" value="${escapeHtml(timerReportPeriods[role] ?? 10)}"></label>
+            <label>Pico poll interval (seconds) <input class="controller-report-period" type="number" min="1" step="1" value="${escapeHtml(timerReportPeriods[role] ?? 10)}"></label>
           `;
           controllerCard.insertBefore(reportPeriodRow, devicesGrid);
           const actions = document.createElement("div");

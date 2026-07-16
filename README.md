@@ -44,15 +44,15 @@ plamp pico-scheduler list
 plamp pics list
 ```
 
-The new direct library CLI can request a Pico report without `plamp-web`:
+The direct library CLI shares short hardware locks with `plamp-web`:
 
 ```bash
-sudo systemctl stop plamp-web
 uv run python -m plamp pico report pump_lights
-sudo systemctl start plamp-web
+uv run python -m plamp pico pulse pump_lights 21 5
+uv run python -m plamp camera capture rpicam_cam0
 ```
 
-Do not run direct serial commands while the current web monitor is running; service and CLI locking converge in a later slice. Remote agents can use either the REST CLI or direct CLI over SSH.
+These commands work while the service is running or stopped. Remote agents can use either the REST CLI or direct CLI over SSH.
 
 See [CLI reference](./plamp_cli/README.md).
 

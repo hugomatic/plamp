@@ -67,6 +67,7 @@ class PlampctlTests(unittest.TestCase):
                 count=$((count + 1))
                 printf '%s\n' "$count" > {curl_count}
                 [[ "$count" -le "{curl_failures}" ]] && exit 1
+                exit 0
                 """
             )
             self.make_script(bin_dir / "curl", curl_stub)

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from plamp import LockTimeout as ExportedLockTimeout
 from plamp.locks import LockTimeout
-from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, _lock_name, request_report
+from plamp.pico_transport import PicoClient, PicoCommandError, PicoFlashError, PicoReportTimeout, PicoUnavailable, _lock_name, pulse_gpio, request_report
 
 
 class FakeSerial:
@@ -119,9 +119,102 @@ class PicoTransportTests(unittest.TestCase):
             )
         self.assertEqual(report["type"], "report")
         self.assertTrue(conn.input_reset)
-        self.assertEqual(conn.writes, [b"r\n"])
+        self.assertEqual(conn.writes, [b"\nr\n"])
         self.assertTrue(conn.flushed)
         self.assertTrue(conn.closed)
+
+    def test_client_command_returns_error_or_report_and_releases_serial(self):
+        conn = FakeSerial([b'{"type":"error","content":"pulse pin is already on"}\n'])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: "/dev/ttyACM7",
+            ).command("p 21 5", timeout=0.1)
+
+        self.assertEqual(result.message["type"], "error")
+        self.assertEqual(result.port, "/dev/ttyACM7")
+        self.assertEqual(conn.writes, [b"\np 21 5\n"])
+        self.assertTrue(conn.closed)
+
+    def test_focused_pulse_raises_firmware_error(self):
+        conn = FakeSerial([b'{"type":"error","content":"pulse pin is already on"}\n'])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "already on"):
+                pulse_gpio(
+                    "PICO-A", 21, 5, lock_dir=Path(tmp), timeout=0.1,
+                    serial_factory=lambda *args, **kwargs: conn,
+                    port_finder=lambda serial: "/dev/ttyACM7",
+                )
+
+    def test_one_locked_operation_can_rediscover_after_usb_reconnect(self):
+        ports = iter(["/dev/ttyACM0", "/dev/ttyACM1"])
+        first = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        second = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        serials = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: next(serials),
+                port_finder=lambda serial: next(ports),
+            )
+            with client.operation(timeout=0.2) as operation:
+                before = operation.report()
+                after = operation.report()
+
+        self.assertEqual(before.port, "/dev/ttyACM0")
+        self.assertEqual(after.port, "/dev/ttyACM1")
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
+
+    def test_flash_holds_operation_until_reconnected_valid_report(self):
+        conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        ports = iter(["/dev/ttyACM0", "/dev/ttyACM1"])
+        commands = []
+        interrupts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: next(ports),
+            )
+            result = client.flash_main(
+                Path(tmp) / "main.py",
+                timeout=0.2,
+                mpremote="/usr/bin/mpremote",
+                command_runner=lambda args, timeout: commands.append(args) or (0, "", ""),
+                interrupter=lambda port: interrupts.append(port),
+                sleeper=lambda seconds: None,
+            )
+
+        self.assertEqual(interrupts, ["/dev/ttyACM0"])
+        self.assertIn("resume", commands[0])
+        self.assertIn(":main.py", commands[0])
+        self.assertEqual(commands[1][-1], "reset")
+        self.assertEqual(result.port, "/dev/ttyACM1")
+        self.assertEqual(result.message["type"], "report")
+
+    def test_flash_failure_identifies_failed_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                port_finder=lambda serial: "/dev/ttyACM0",
+            )
+            with self.assertRaises(PicoFlashError) as caught:
+                client.flash_main(
+                    Path(tmp) / "main.py",
+                    timeout=0.2,
+                    mpremote="/usr/bin/mpremote",
+                    command_runner=lambda args, timeout: (7, "out", "bad"),
+                    interrupter=lambda port: None,
+                )
+
+        self.assertEqual(caught.exception.step, "firmware")
+        self.assertEqual(caught.exception.returncode, 7)
 
     def test_logs_malformed_line_in_timeout_and_keeps_reading(self):
         conn = FakeSerial([b'bad\n', b'{"type":"report","content":{"devices":[]}}\n'])
