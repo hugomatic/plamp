@@ -201,7 +201,12 @@ class PicoOperation:
                 timeout=min(0.5, self.remaining() / 2),
             )
         except PicoReportTimeout as first:
-            proof = self.report()
+            try:
+                proof = self.exchange("r", accepted_types={"report", "error"})
+            except PicoReportTimeout as recovery:
+                raise PicoReportTimeout(
+                    str(recovery), list(first.raw_lines + recovery.raw_lines)
+                ) from None
             result = PicoExchange(
                 proof.message, proof.port, first.raw_lines + proof.raw_lines
             )

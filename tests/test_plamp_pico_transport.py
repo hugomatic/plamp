@@ -132,6 +132,48 @@ class PicoTransportTests(unittest.TestCase):
         self.assertEqual(str(caught.exception), "invalid scheduler state")
         self.assertEqual(caught.exception.raw_lines, (raw,))
 
+    def test_configure_recovery_returns_structured_error_with_all_evidence(self):
+        first_raw = b"first attempt noise\n"
+        proof_noise = b"proof attempt noise\n"
+        error_raw = b'{"type":"error","content":"configure rejected"}\n'
+        first = FakeSerial([first_raw])
+        second = FakeSerial([proof_noise, error_raw])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "configure rejected") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(str(caught.exception), "configure rejected")
+        self.assertEqual(
+            caught.exception.raw_lines, (first_raw, proof_noise, error_raw)
+        )
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
+
+    def test_configure_recovery_timeout_retains_both_attempts_evidence(self):
+        first_raw = b"first attempt noise\n"
+        proof_raw = b"proof attempt noise\n"
+        first = FakeSerial([first_raw])
+        second = FakeSerial([proof_raw])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(PicoReportTimeout) as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(caught.exception.raw_lines, (first_raw, proof_raw))
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
+
     def test_rejects_invalid_timeouts_before_side_effects(self):
         discovery_calls = []
         with tempfile.TemporaryDirectory() as tmp:
