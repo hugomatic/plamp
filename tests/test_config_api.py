@@ -5,10 +5,12 @@ import unittest
 from datetime import time
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+from plamp.pico_health import PicoHealth, failed_health
+from plamp.usb_events import UsbSerialEvent
 
 import plamp_web.server as server
 
@@ -72,6 +74,7 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "ensure_data_dir"),
                 patch.object(server, "configure_logging"),
                 patch.object(server, "start_configured_monitors"),
+                patch.object(server, "start_usb_observer"),
                 patch.object(server, "get_or_start_camera_worker"),
                 patch.object(server, "set_app_revision") as set_app_revision,
                 patch.object(server, "git_output", return_value="ebaf545") as git_output,
@@ -1766,6 +1769,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(flash_main.call_args.kwargs["mpremote"], "/usr/bin/mpremote")
         self.assertEqual(result["port"], "/dev/ttyACM1")
         self.assertEqual(result["report_sequence"], 1)
+        self.assertTrue(monitor.snapshot()["ok"])
 
     def test_pico_monitor_command_waits_for_and_publishes_response(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
@@ -1782,6 +1786,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(returned["command"], "p 21 5")
         self.assertEqual(monitor.report_sequence, 1)
         self.assertEqual([entry["direction"] for entry in monitor.serial_log()], ["tx", "rx"])
+        self.assertTrue(monitor.snapshot()["ok"])
 
     def test_pico_monitor_only_sequences_valid_reports(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
@@ -1798,6 +1803,86 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(monitor.report_sequence, 1)
         self.assertEqual(report_event["data"]["report_sequence"], 1)
+
+    def test_pico_monitor_publishes_binary_health(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        subscriber = monitor.subscribe()
+        health = PicoHealth(
+            ok=True,
+            status="OK",
+            checked_at="2026-07-16T12:00:00+00:00",
+            serial="abc",
+            port="/dev/ttyACM0",
+            report={"type": "report", "content": {"devices": []}},
+            raw_lines=('{"type":"report"}',),
+            error=None,
+        )
+
+        with patch.object(server, "probe_pico", return_value=health):
+            monitor.collect_report()
+
+        snapshot = monitor.snapshot()
+        events = []
+        while not subscriber.empty():
+            events.append(subscriber.get_nowait())
+        status = next(event for event in events if event["event"] == "status")
+        self.assertTrue(snapshot["ok"])
+        self.assertEqual(snapshot["status"], "OK")
+        self.assertEqual(snapshot["last_verified_at"], health.checked_at)
+        self.assertEqual(status["data"]["port"], "/dev/ttyACM0")
+
+    def test_pico_monitor_handles_usb_events(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+
+        monitor.handle_usb_event(UsbSerialEvent("remove", "abc", "/dev/ttyACM0"))
+        disconnected = monitor.snapshot()
+        self.assertFalse(disconnected["ok"])
+        self.assertEqual(disconnected["status"], "ERROR")
+        self.assertEqual(disconnected["error"]["kind"], "unavailable")
+        self.assertEqual(disconnected["error"]["step"], "discover")
+
+        monitor.handle_usb_event(UsbSerialEvent("add", "abc", "/dev/ttyACM1"))
+        self.assertTrue(monitor.wake_event.is_set())
+
+    def test_pico_monitor_ignores_other_usb_serials(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        before = monitor.snapshot()
+
+        monitor.handle_usb_event(UsbSerialEvent("remove", "other", "/dev/ttyACM0"))
+
+        self.assertEqual(monitor.snapshot(), before)
+
+    def test_pico_monitor_uses_fixed_health_interval(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        monitor.collect_report = Mock()
+        monitor.update_status = Mock()
+        monitor.stop_event = Mock()
+        monitor.stop_event.is_set.side_effect = [False, True]
+        monitor.wake_event = Mock()
+
+        with (
+            patch.object(server.time, "monotonic", side_effect=[10.0, 10.0]),
+            patch.object(server, "configured_timer_report_periods", side_effect=AssertionError("health interval must be fixed")),
+        ):
+            monitor.run()
+
+        monitor.wake_event.wait.assert_called_once_with(5.0)
+
+    def test_require_fresh_report_raises_structured_http_error(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        health = failed_health(
+            "abc",
+            kind="unavailable",
+            step="discover",
+            message="configured Pico is not connected: abc",
+        )
+
+        with patch.object(server, "probe_pico", return_value=health):
+            with self.assertRaises(HTTPException) as raised:
+                monitor.require_fresh_report(timeout=1.5)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["health"]["error"]["kind"], "unavailable")
 
     def test_apply_timer_state_keeps_report_period_out_of_firmware(self):
         with tempfile.TemporaryDirectory() as tmp:

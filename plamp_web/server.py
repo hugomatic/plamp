@@ -31,7 +31,9 @@ from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
 from plamp.context import resolve_context
 from plamp.locks import LockTimeout
+from plamp.pico_health import PicoHealth, failed_health, probe_pico
 from plamp.pico_transport import PicoClient, PicoFlashError, PicoReportTimeout, PicoUnavailable
+from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page, set_app_revision
 from plamp_web.hardware_config import (
@@ -56,6 +58,7 @@ PICO_TEMPLATES_DIR = REPO_ROOT / "pico_scheduler" / "templates"
 LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
+PICO_HEALTH_INTERVAL_SECONDS = 5.0
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 HOSTNAME_RE = re.compile(
     r"^(?=.{1,63}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
@@ -66,6 +69,7 @@ config_lock = threading.Lock()
 role_locks: dict[str, threading.Lock] = {}
 monitors_lock = threading.Lock()
 monitors: dict[str, "PicoMonitor"] = {}
+usb_observer: Any | None = None
 camera_worker_lock = threading.Lock()
 camera_worker: "CameraWorker | None" = None
 
@@ -81,6 +85,7 @@ def startup() -> None:
     ensure_data_dir()
     configure_logging()
     start_configured_monitors()
+    start_usb_observer()
     get_or_start_camera_worker()
 
 
@@ -92,6 +97,7 @@ def favicon_svg() -> FileResponse:
 @app.on_event("shutdown")
 def shutdown() -> None:
     stop_camera_worker()
+    stop_usb_observer()
     stop_monitors()
 
 
@@ -841,14 +847,26 @@ class PicoMonitor:
         self.wake_event = threading.Event()
         self.thread = threading.Thread(target=self.run, name=f"pico-monitor-{role}", daemon=True)
         self.report_sequence = 0
+        initial_health = failed_health(
+            pico_serial,
+            kind="unavailable",
+            step="report",
+            message="no valid report received",
+        )
         self.summary: dict[str, Any] = {
             "role": role,
             "serial": pico_serial,
             "state": "starting",
             "connected": False,
+            "ok": False,
+            "status": "ERROR",
+            "checked_at": initial_health.checked_at,
             "port": None,
             "last_seen": None,
-            "last_error": None,
+            "last_error": initial_health.error.message,
+            "error": initial_health.error.as_dict(),
+            "raw_lines": [],
+            "last_verified_at": None,
             "last_report": None,
             "report_sequence": 0,
         }
@@ -897,7 +915,7 @@ class PicoMonitor:
                 except queue.Full:
                     pass
 
-    def record_serial(self, direction: str, text: str) -> dict[str, Any]:
+    def record_serial(self, direction: str, text: str, *, journal: bool = True) -> dict[str, Any]:
         entry = {
             "at": datetime.now().isoformat(timespec="seconds"),
             "direction": direction,
@@ -906,6 +924,8 @@ class PicoMonitor:
         }
         with self.lock:
             self.serial_entries.append(entry)
+        if not journal:
+            return entry
         if direction == "tx":
             LOGGER.info("pico-cmd tx role=%s cmd=%r", self.role, text)
         elif direction == "rx":
@@ -946,6 +966,78 @@ class PicoMonitor:
                 snapshot.get("last_error"),
             )
             self.publish("status", snapshot)
+
+    def update_health(self, health: PicoHealth) -> None:
+        error = health.error.as_dict() if health.error else None
+        state = "connected" if health.ok else ("disconnected" if health.error and health.error.kind == "unavailable" else "error")
+        with self.lock:
+            transition = any(
+                (
+                    self.summary.get("ok") != health.ok,
+                    self.summary.get("status") != health.status,
+                    self.summary.get("port") != health.port,
+                    self.summary.get("error") != error,
+                )
+            )
+            self.summary.update(
+                {
+                    "ok": health.ok,
+                    "status": health.status,
+                    "state": state,
+                    "connected": health.ok,
+                    "checked_at": health.checked_at,
+                    "port": health.port,
+                    "error": error,
+                    "last_error": health.error.message if health.error else None,
+                    "raw_lines": list(health.raw_lines),
+                    "updated_at": health.checked_at,
+                }
+            )
+            if health.ok:
+                self.summary["last_verified_at"] = health.checked_at
+            snapshot = dict(self.summary)
+        if transition:
+            LOGGER.info(
+                "pico health role=%s status=%s serial=%s port=%s error=%s",
+                self.role,
+                health.status,
+                health.serial,
+                health.port,
+                error,
+            )
+        self.publish("status", snapshot)
+
+    def health_for_exchange(self, result: Any) -> PicoHealth:
+        raw_lines = tuple(
+            raw.decode("utf-8", errors="replace").strip()
+            for raw in result.raw_lines
+        )
+        return PicoHealth(
+            ok=True,
+            status="OK",
+            checked_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            serial=self.pico_serial,
+            port=result.port,
+            report=result.message,
+            raw_lines=raw_lines,
+            error=None,
+        )
+
+    def handle_usb_event(self, event: UsbSerialEvent) -> None:
+        if event.serial != self.pico_serial:
+            return
+        if event.action == "remove":
+            self.update_health(
+                failed_health(
+                    self.pico_serial,
+                    kind="unavailable",
+                    step="discover",
+                    message=f"configured Pico is not connected: {self.pico_serial}",
+                    port=event.port,
+                )
+            )
+        else:
+            self.wake()
 
     def find_port(self) -> str | None:
         for pico in enumerate_picos():
@@ -1011,20 +1103,26 @@ class PicoMonitor:
         except LockTimeout as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PicoFlashError as exc:
+            self.update_health(failed_health(self.pico_serial, kind="protocol", step=f"flash:{exc.step}", message=str(exc)))
             self.update_status("error", connected=False, error=exc.detail())
             raise HTTPException(status_code=502, detail=exc.detail()) from exc
         except PicoUnavailable as exc:
+            self.update_health(failed_health(self.pico_serial, kind="unavailable", step="discover", message=str(exc)))
             self.update_status("disconnected", connected=False, error=str(exc))
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PicoReportTimeout as exc:
+            raw_lines = tuple(raw.decode("utf-8", errors="replace").strip() for raw in exc.raw_lines)
+            self.update_health(failed_health(self.pico_serial, kind="protocol" if raw_lines else "timeout", step="report", message=str(exc), raw_lines=raw_lines))
             self.update_status("error", connected=False, error=str(exc))
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except (OSError, serial.SerialException) as exc:
+            self.update_health(failed_health(self.pico_serial, kind="serial", step="report", message=str(exc)))
             self.update_status("disconnected", connected=False, error=str(exc))
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         self.record_exchange("r", result)
         self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
+        self.update_health(self.health_for_exchange(result))
         self.update_status("connected", connected=True, port=result.port, error=None)
         return {
             "role": self.role,
@@ -1039,27 +1137,32 @@ class PicoMonitor:
         except LockTimeout as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PicoUnavailable as exc:
+            self.update_health(failed_health(self.pico_serial, kind="unavailable", step="discover", message=str(exc)))
             self.update_status("disconnected", connected=False, error=str(exc))
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PicoReportTimeout as exc:
             self.record_timeout(text, exc)
+            raw_lines = tuple(raw.decode("utf-8", errors="replace").strip() for raw in exc.raw_lines)
+            self.update_health(failed_health(self.pico_serial, kind="protocol" if raw_lines else "timeout", step="report", message=str(exc), raw_lines=raw_lines))
             raise HTTPException(status_code=504, detail=str(exc)) from exc
         except (OSError, serial.SerialException) as exc:
+            self.update_health(failed_health(self.pico_serial, kind="serial", step="report", message=str(exc)))
             self.update_status("disconnected", connected=False, error=str(exc))
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         self.record_exchange(text, result)
         if result.message.get("type") == "error":
             raise HTTPException(status_code=409, detail=result.message.get("content"))
         self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
+        self.update_health(self.health_for_exchange(result))
         self.update_status("connected", connected=True, port=result.port, error=None)
         return {"role": self.role, "serial": self.pico_serial, "command": text}
 
-    def record_exchange(self, command: str, result: Any) -> None:
-        self.record_serial("tx", command)
+    def record_exchange(self, command: str, result: Any, *, journal: bool = True) -> None:
+        self.record_serial("tx", command, journal=journal)
         for raw in result.raw_lines:
             text = raw.decode("utf-8", errors="replace").strip()
             if text:
-                self.record_serial("rx", text)
+                self.record_serial("rx", text, journal=journal)
 
     def record_timeout(self, command: str, exc: PicoReportTimeout) -> None:
         self.record_serial("tx", command)
@@ -1069,11 +1172,37 @@ class PicoMonitor:
                 self.record_serial("rx", text)
         self.record_serial("err", str(exc))
 
-    def collect_report(self, timeout: float = 3.0) -> None:
-        result = self.client.report(timeout=timeout)
-        self.record_exchange("r", result)
-        self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
-        self.update_status("connected", connected=True, port=result.port, error=None)
+    def collect_report(self, timeout: float = 3.0) -> PicoHealth:
+        health = probe_pico(self.client, timeout=timeout)
+        self.record_serial("tx", "r", journal=False)
+        for text in health.raw_lines:
+            if text:
+                self.record_serial("rx", text, journal=False)
+        if health.ok and health.report is not None:
+            self.handle_line(json.dumps(health.report).encode("utf-8"), record=False)
+        elif health.error is not None:
+            self.record_serial("err", health.error.message)
+        self.update_health(health)
+        return health
+
+    def require_fresh_report(self, timeout: float = 3.0) -> dict[str, Any]:
+        health = self.collect_report(timeout=timeout)
+        if health.ok and health.report is not None:
+            return health.report
+        error = health.error
+        status_code = {
+            "unavailable": 409,
+            "timeout": 504,
+            "serial": 502,
+            "protocol": 502,
+        }.get(error.kind if error else "", 502)
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "message": error.message if error else "Pico health check failed",
+                "health": health.as_dict(),
+            },
+        )
 
     def run(self) -> None:
         while not self.stop_event.is_set():
@@ -1083,17 +1212,9 @@ class PicoMonitor:
             except LockTimeout:
                 # Another local process owns the Pico; that is normal, not a fault.
                 pass
-            except PicoUnavailable as exc:
-                self.update_status("disconnected", connected=False, error=str(exc))
-            except PicoReportTimeout as exc:
-                self.record_timeout("r", exc)
-                self.update_status("error", connected=False, error=str(exc))
-            except (OSError, serial.SerialException) as exc:
-                self.update_status("disconnected", connected=False, error=str(exc))
             except Exception as exc:
                 self.update_status("error", connected=False, error=str(exc))
-            period = configured_timer_report_periods().get(self.role, 10)
-            self.wake_event.wait(max(0.0, period - (time.monotonic() - started)))
+            self.wake_event.wait(max(0.0, PICO_HEALTH_INTERVAL_SECONDS - (time.monotonic() - started)))
             self.wake_event.clear()
         self.update_status("stopped", connected=False)
 
@@ -1118,6 +1239,27 @@ def start_configured_monitors() -> None:
         return
     for role in roles:
         get_or_start_monitor(role)
+
+
+def dispatch_usb_event(event: UsbSerialEvent) -> None:
+    with monitors_lock:
+        active = list(monitors.values())
+    for monitor in active:
+        monitor.handle_usb_event(event)
+
+
+def start_usb_observer() -> None:
+    global usb_observer
+    if usb_observer is None:
+        usb_observer = start_usb_serial_observer(dispatch_usb_event)
+
+
+def stop_usb_observer() -> None:
+    global usb_observer
+    observer = usb_observer
+    usb_observer = None
+    if observer is not None:
+        observer.stop()
 
 
 def reconcile_configured_monitors() -> None:
