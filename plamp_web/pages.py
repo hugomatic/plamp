@@ -2537,7 +2537,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <h2>Pico scheduler</h2>
-  <p>The Pico is silent until commanded; the host requests a report every five seconds. Schedules are committed only after a verified flash, so failure leaves desired config unchanged.</p>
+  <p>The Pico is silent until commanded; the host requests a report every five seconds. Schedules are committed only after a verified Pico apply, so failure leaves desired config unchanged.</p>
   <fieldset>
     <legend>GET /api/controllers/{{controller}}</legend>
     <p>Reads the controller's current API view, including the latest reported Pico state.</p>
@@ -2559,7 +2559,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
   <fieldset>
     <legend>POST /api/controllers/{{controller}}/schedule</legend>
-    <p>Loads one controller from desired config, flashes its complete schedule once, waits for a valid report, then commits config and applied state.</p>
+    <p>Loads one controller from desired config, upgrades firmware only when needed, applies its complete schedule, then commits config and applied state. The response includes <code>firmware_upgraded</code> and the verified firmware identity.</p>
     <button id="scheduler-schedule-load" type="button">Load current controller</button>
     <label>Request body
       <textarea id="scheduler-schedule-payload" class="compact-json">{{}}</textarea>
@@ -2937,8 +2937,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         result.textContent = String(error);
         return;
       }}
-      if (!window.confirm(`Flash and commit the complete ${{schedulerController}} schedule?`)) return;
-      status.textContent = "Flashing and verifying...";
+      if (!window.confirm(`Apply and commit the complete ${{schedulerController}} schedule?`)) return;
+      status.textContent = "Applying and verifying...";
       result.textContent = "";
       try {{
         const response = await fetch(`/api/controllers/${{encodeURIComponent(schedulerController)}}/schedule`, {{

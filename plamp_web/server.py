@@ -31,8 +31,11 @@ from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
 from plamp.context import resolve_context
 from plamp.locks import LockTimeout
+from plamp.pico_firmware import firmware_revision, render_scheduler_firmware
 from plamp.pico_health import PicoHealth, failed_health, probe_pico
-from plamp.pico_transport import PicoClient, PicoFlashError, PicoReportTimeout, PicoUnavailable
+from plamp.pico_scheduler import SchedulerApplyResult, apply_scheduler_state
+from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, PicoFlashError, PicoReportTimeout, PicoUnavailable
+from plamp.scheduler_state import EXPECTED_FIRMWARE_PROTOCOL, FirmwareIdentity, firmware_identity, normalize_scheduler_state
 from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
 from plamp_web import camera_capture, hardware_inventory
 from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page, set_app_revision
@@ -332,82 +335,14 @@ def timer_state_as_events(state: Any) -> dict[str, Any]:
 def validate_timer_state(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise HTTPException(status_code=422, detail="top-level JSON must be an object")
-    if "report_every" not in raw:
-        raise HTTPException(status_code=422, detail="missing top-level field: report_every")
-
-    report_every = require_int(raw["report_every"], "report_every must be an integer")
+    report_every = require_int(raw.get("report_every", 1), "report_every must be an integer")
     if report_every <= 0:
         raise HTTPException(status_code=422, detail="report_every must be > 0")
-
-    if "devices" in raw:
-        raw_items = raw["devices"]
-        if not isinstance(raw_items, list):
-            raise HTTPException(status_code=422, detail="devices must be a list")
-    elif "events" in raw:
-        raw_items = raw["events"]
-        if not isinstance(raw_items, list):
-            raise HTTPException(status_code=422, detail="events must be a list")
-    else:
-        raise HTTPException(status_code=422, detail="missing top-level field: devices")
-
-    devices = []
-    for i, src in enumerate(raw_items):
-        if not isinstance(src, dict):
-            raise HTTPException(status_code=422, detail=f"device {i} must be an object")
-        for name in ["type", "pin", "current_t", "reschedule", "pattern"]:
-            if name not in src:
-                raise HTTPException(status_code=422, detail=f"device {i} missing field: {name}")
-
-        event_type = src["type"]
-        if event_type not in {"gpio", "pwm"}:
-            raise HTTPException(status_code=422, detail=f"device {i} type must be gpio or pwm")
-        pin = require_int(src["pin"], f"device {i} pin must be an integer")
-        current_t = require_int(src["current_t"], f"device {i} current_t must be an integer")
-        reschedule = 1 if require_int(src["reschedule"], f"device {i} reschedule must be an integer") else 0
-        if pin < 0 or pin > 29:
-            raise HTTPException(status_code=422, detail=f"device {i} pin must be in range 0..29")
-        if current_t < 0:
-            raise HTTPException(status_code=422, detail=f"device {i} current_t must be >= 0")
-
-        pattern_src = src["pattern"]
-        if not isinstance(pattern_src, list) or not pattern_src:
-            raise HTTPException(status_code=422, detail=f"device {i} pattern must be a non-empty list")
-
-        pattern = []
-        total_t = 0
-        for j, step in enumerate(pattern_src):
-            if not isinstance(step, dict):
-                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} must be an object")
-            if "val" not in step or "dur" not in step:
-                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} missing val or dur")
-            val = require_int(step["val"], f"device {i} pattern step {j} val must be an integer")
-            dur = require_int(step["dur"], f"device {i} pattern step {j} dur must be an integer")
-            if dur <= 0:
-                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} dur must be > 0")
-            if event_type == "gpio" and val not in {0, 1}:
-                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} gpio val must be 0 or 1")
-            if event_type == "pwm" and (val < 0 or val > 65535):
-                raise HTTPException(status_code=422, detail=f"device {i} pattern step {j} pwm val must be in range 0..65535")
-            pattern.append({"val": val, "dur": dur})
-            total_t += dur
-
-        if not reschedule and current_t > total_t:
-            current_t = total_t
-
-        device = {
-            "type": event_type,
-            "pin": pin,
-            "current_t": current_t,
-            "reschedule": reschedule,
-            "pattern": pattern,
-        }
-        if "id" in src:
-            if not isinstance(src["id"], str) or not src["id"]:
-                raise HTTPException(status_code=422, detail=f"device {i} id must be a non-empty string")
-            device["id"] = src["id"]
-        devices.append(device)
-
-    return {"report_every": report_every, "devices": devices}
+    try:
+        pico_state = normalize_scheduler_state(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"report_every": report_every, "devices": pico_state["devices"]}
 
 
 def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
@@ -835,6 +770,37 @@ def stop_camera_worker() -> None:
         active.join()
 
 
+def identity_payload(identity: FirmwareIdentity | None) -> dict[str, Any] | None:
+    if identity is None:
+        return None
+    return {
+        "name": identity.name,
+        "revision": identity.revision,
+        "protocol": identity.protocol,
+    }
+
+
+def expected_scheduler_identity() -> FirmwareIdentity:
+    return FirmwareIdentity(
+        "pico_scheduler",
+        firmware_revision(REPO_ROOT),
+        EXPECTED_FIRMWARE_PROTOCOL,
+    )
+
+
+def scheduler_firmware_status(report: Any) -> dict[str, Any]:
+    expected = expected_scheduler_identity()
+    try:
+        observed = firmware_identity(report)
+    except ValueError:
+        observed = None
+    return {
+        "current": observed == expected,
+        "expected": identity_payload(expected),
+        "observed": identity_payload(observed),
+    }
+
+
 class PicoMonitor:
     def __init__(self, role: str, pico_serial: str):
         self.role = role
@@ -970,6 +936,7 @@ class PicoMonitor:
     def update_health(self, health: PicoHealth) -> None:
         error = health.error.as_dict() if health.error else None
         state = "connected" if health.ok else ("disconnected" if health.error and health.error.kind == "unavailable" else "error")
+        firmware = scheduler_firmware_status(health.report) if health.ok else None
         with self.lock:
             transition = any(
                 (
@@ -993,6 +960,8 @@ class PicoMonitor:
                     "updated_at": health.checked_at,
                 }
             )
+            if firmware is not None:
+                self.summary["firmware"] = firmware
             if health.ok:
                 self.summary["last_verified_at"] = health.checked_at
             snapshot = dict(self.summary)
@@ -1022,6 +991,14 @@ class PicoMonitor:
             raw_lines=raw_lines,
             error=None,
         )
+
+    def record_apply_result(self, result: SchedulerApplyResult) -> None:
+        """Publish one completed transaction through the normal health/report path."""
+        exchange = PicoExchange(result.report, result.port, result.raw_lines)
+        self.record_exchange("configure", exchange)
+        self.handle_line(json.dumps(result.report).encode("utf-8"), record=False)
+        self.update_health(self.health_for_exchange(exchange))
+        self.update_status("connected", connected=True, port=result.port, error=None)
 
     def handle_usb_event(self, event: UsbSerialEvent) -> None:
         if event.serial != self.pico_serial:
@@ -2383,6 +2360,8 @@ def post_timer_channel_schedule(role: str, channel_id: str, schedule: dict[str, 
         "channel": channel_id,
         "success": applied["success"],
         "message": applied["message"],
+        "firmware": applied.get("firmware"),
+        "firmware_upgraded": applied.get("firmware_upgraded", False),
         "pico": applied.get("pico"),
         "state": applied.get("state"),
     }
@@ -2446,24 +2425,93 @@ def controller_schedule_candidate(
     return candidate
 
 
-def flash_and_commit_controller_schedule(
+def scheduler_failure_health(monitor: PicoMonitor, exc: BaseException) -> tuple[int, PicoHealth]:
+    raw_bytes = getattr(exc, "raw_lines", ())
+    raw_lines = tuple(
+        raw.decode("utf-8", errors="replace").strip()
+        for raw in raw_bytes
+    )
+    if isinstance(exc, PicoUnavailable):
+        status_code, kind, step = 409, "unavailable", "discover"
+    elif isinstance(exc, LockTimeout):
+        status_code, kind, step = 409, "unavailable", "lock"
+    elif isinstance(exc, PicoReportTimeout):
+        status_code, kind, step = 504, "protocol" if raw_lines else "timeout", "report"
+    elif isinstance(exc, PicoFlashError):
+        status_code, kind, step = 502, "upgrade", f"upgrade:{exc.step}"
+    elif isinstance(exc, PicoCommandError):
+        status_code, kind, step = 502, "protocol", "configure"
+    elif isinstance(exc, (OSError, serial.SerialException)):
+        status_code, kind, step = 502, "serial", "configure"
+    else:
+        status_code, kind, step = 422, "validation", "configure"
+    health = failed_health(
+        monitor.pico_serial,
+        kind=kind,
+        step=step,
+        message=str(exc),
+        raw_lines=raw_lines,
+    )
+    return status_code, health
+
+
+def configure_and_commit_controller_schedule(
     controller: str,
     candidate: dict[str, Any],
-    state: dict[str, Any],
-) -> dict[str, Any]:
+    current_state: dict[str, Any],
+    proposed_state: dict[str, Any],
+    monitor: PicoMonitor,
+) -> SchedulerApplyResult:
     ensure_data_dir()
-    final_state_path = TIMERS_DIR / f"{controller}.json"
-    with tempfile.TemporaryDirectory(dir=DATA_DIR, prefix=f".{controller}-schedule-") as staging_dir:
+    revision, firmware_source = render_scheduler_firmware(REPO_ROOT)
+    expected = FirmwareIdentity("pico_scheduler", revision, EXPECTED_FIRMWARE_PROTOCOL)
+    with tempfile.TemporaryDirectory(dir=DATA_DIR, prefix=f".{controller}-upgrade-") as staging_dir:
         staging_path = Path(staging_dir)
-        staged_config = staging_path / "config.json"
-        staged_state = staging_path / f"{controller}.json"
-        write_config_file(staged_config, candidate)
-        atomic_write_json(staged_state, state)
+        firmware_path = staging_path / "main.py"
+        current_path = staging_path / f"{controller}.json"
+        firmware_path.write_text(firmware_source, encoding="utf-8")
+        current_path.write_text(
+            json.dumps(normalize_scheduler_state(current_state), separators=(",", ":")),
+            encoding="utf-8",
+        )
+        mpremote = shutil.which("mpremote")
 
-        sent = apply_timer_state(controller, staged_state)
-        os.replace(staged_config, CONFIG_FILE)
-        os.replace(staged_state, final_state_path)
-        return sent
+        def upgrade(operation: Any, state: dict[str, Any], identity: FirmwareIdentity) -> PicoExchange:
+            if not mpremote:
+                raise PicoFlashError("prepare", None, "", "mpremote not found")
+            if normalize_scheduler_state(state) != normalize_scheduler_state(current_state):
+                raise ValueError("upgrade state must be the committed scheduler state")
+            return operation.upgrade_scheduler(
+                firmware_path,
+                current_path,
+                identity,
+                command_runner=lambda args, budget: run_command(args, timeout=budget),
+                interrupter=interrupt_pico_program,
+                mpremote=mpremote,
+                sleeper=monitor.stop_event.wait,
+            )
+
+        try:
+            result = apply_scheduler_state(
+                client=monitor.client,
+                current_state=current_state,
+                proposed_state=proposed_state,
+                expected=expected,
+                upgrade=upgrade,
+                timeout=60.0,
+            )
+        except (ValueError, LockTimeout, PicoUnavailable, PicoReportTimeout, PicoFlashError, PicoCommandError, OSError, serial.SerialException) as exc:
+            status_code, health = scheduler_failure_health(monitor, exc)
+            monitor.update_health(health)
+            raise HTTPException(
+                status_code=status_code,
+                detail={"message": str(exc), "health": health.as_dict()},
+            ) from exc
+
+    monitor.record_apply_result(result)
+    write_config_file(CONFIG_FILE, candidate)
+    atomic_write_json(TIMERS_DIR / f"{controller}.json", proposed_state)
+    return result
 
 
 @app.post("/api/controllers/{controller}/schedule")
@@ -2472,22 +2520,33 @@ def post_controller_schedule(controller: str, proposed_controller: dict[str, Any
         raise HTTPException(status_code=422, detail="controller schedule must be an object")
 
     with lock_for(role_locks, controller), config_lock:
-        candidate = controller_schedule_candidate(load_raw_config(), controller, proposed_controller)
-        get_or_start_monitor(controller).require_fresh_report(timeout=3.0)
-        validated_state = validate_timer_state(
-            compiled_timer_state_for_controller(controller, config=candidate, now=datetime.now().time())
+        current_config = load_raw_config()
+        candidate = controller_schedule_candidate(current_config, controller, proposed_controller)
+        captured_time = datetime.now().time()
+        current_state = validate_timer_state(
+            compiled_timer_state_for_controller(controller, config=current_config, now=captured_time)
         )
-        sent = flash_and_commit_controller_schedule(controller, candidate, validated_state)
+        proposed_state = validate_timer_state(
+            compiled_timer_state_for_controller(controller, config=candidate, now=captured_time)
+        )
+        result = configure_and_commit_controller_schedule(
+            controller,
+            candidate,
+            current_state,
+            proposed_state,
+            get_or_start_monitor(controller),
+        )
 
     reconcile_configured_monitors()
     reconcile_camera_worker()
     return {
         "controller": controller,
-        "firmware": "pico_scheduler",
+        "firmware": identity_payload(result.identity),
+        "firmware_upgraded": result.upgraded,
         "success": True,
-        "message": "schedule verified, saved, and sent to Pico",
-        "pico": sent,
-        "state": state_with_current_values(validated_state),
+        "message": "schedule verified, saved, and applied",
+        "pico": {"serial": pico_serial_for_role(controller), "port": result.port},
+        "state": state_with_current_values(proposed_state),
     }
 
 

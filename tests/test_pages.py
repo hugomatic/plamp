@@ -614,7 +614,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('&quot;mode&quot;:&quot;cycle&quot;', html)
         self.assertIn('&quot;mode&quot;:&quot;clock_window&quot;', html)
         self.assertIn('&quot;on_time&quot;:&quot;06:00&quot;', html)
-        self.assertIn("Schedules are committed only after a verified flash", html)
+        self.assertIn("Schedules are committed only after a verified Pico apply", html)
+        self.assertIn("firmware_upgraded", html)
+        self.assertIn("firmware identity", html)
+        self.assertIn("Apply and commit the complete", html)
+        self.assertIn("Applying and verifying...", html)
+        self.assertNotIn("Flash and commit the complete", html)
         self.assertNotIn("Normal workflow: save desired config once, then apply the controller once.", html)
         self.assertIn("Compatibility endpoint for changing one channel", html)
 

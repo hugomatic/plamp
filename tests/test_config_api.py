@@ -119,7 +119,20 @@ class ConfigApiTests(unittest.TestCase):
 
     def healthy_monitor(self):
         return SimpleNamespace(
-            require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}})
+            pico_serial="abc",
+            client=object(),
+            stop_event=SimpleNamespace(wait=Mock()),
+            record_apply_result=Mock(),
+            update_health=Mock(),
+            require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}),
+        )
+
+    def scheduler_apply_result(self, *, upgraded: bool = False):
+        identity = server.FirmwareIdentity("pico_scheduler", "newrev", 2)
+        return SimpleNamespace(
+            report={"type": "report", "content": {"firmware": server.identity_payload(identity), "devices": []}},
+            port="/dev/ttyACM0", upgraded=upgraded, previous_identity=None,
+            identity=identity, raw_lines=(),
         )
 
     def test_get_config_returns_config_without_detected_hardware(self):
@@ -1172,7 +1185,8 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "latest_timer_state", return_value=live_state),
                 patch.object(server, "live_events_for_role", side_effect=AssertionError("old helper should not be used")),
                 patch.object(server, "live_devices_for_role", side_effect=AssertionError("semantic schedule must not use live devices"), create=True),
-                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=self.scheduler_apply_result()),
             ):
                 server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
 
@@ -1560,7 +1574,8 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "reconcile_configured_monitors"),
                 patch.object(server, "reconcile_camera_worker"),
                 patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
-                patch.object(server, "apply_timer_state", return_value={"serial": "abc"}) as apply_controller,
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=self.scheduler_apply_result()) as apply_controller,
             ):
                 response = server.post_timer_channel_schedule(
                     "pump_lights",
@@ -1574,6 +1589,8 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(editor, {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"})
         self.assertEqual(response["role"], "pump_lights")
         self.assertEqual(response["channel"], "lights")
+        self.assertFalse(response["firmware_upgraded"])
+        self.assertEqual(response["firmware"]["revision"], "newrev")
         apply_controller.assert_called_once()
 
     def test_post_timer_channel_schedule_validates_before_saving_config(self):
@@ -1735,7 +1752,8 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=stale_live),
-                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=self.scheduler_apply_result()),
             ):
                 server.post_timer_channel_schedule("pump_lights", "lights", {"mode": "clock_window", "on_time": "06:00", "off_time": "18:00"})
 
@@ -1769,15 +1787,14 @@ class ConfigApiTests(unittest.TestCase):
                 "off_seconds": 20,
                 "start_at_seconds": 0,
             }
-            monitor = SimpleNamespace(
-                require_fresh_report=Mock(side_effect=HTTPException(status_code=409, detail="configured Pico is not connected: abc"))
-            )
+            monitor = self.healthy_monitor()
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
-                patch.object(server, "apply_timer_state") as apply_timer_state,
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", side_effect=server.PicoUnavailable("configured Pico is not connected: abc")) as apply_transaction,
             ):
                 with self.assertRaises(HTTPException) as raised:
                     server.post_controller_schedule("pump_lights", proposed)
@@ -1786,9 +1803,9 @@ class ConfigApiTests(unittest.TestCase):
             self.assertEqual(timer_file.read_bytes(), original_state)
 
         self.assertEqual(raised.exception.status_code, 409)
-        apply_timer_state.assert_not_called()
+        apply_transaction.assert_called_once()
 
-    def test_post_controller_schedule_commits_after_verified_flash(self):
+    def test_controller_schedule_uses_runtime_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1810,33 +1827,91 @@ class ConfigApiTests(unittest.TestCase):
                 "off_seconds": 20,
                 "start_at_seconds": 0,
             }
-            monitor = SimpleNamespace(require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}))
-            staged_states = []
-
-            def verified_apply(role, path):
-                self.assertEqual(role, "pump_lights")
-                self.assertNotEqual(Path(path), timer_file)
-                staged_states.append(json.loads(Path(path).read_text(encoding="utf-8")))
-                return {"serial": "abc", "port": "/dev/ttyACM0"}
+            result = SimpleNamespace(
+                report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+                port="/dev/ttyACM0",
+                upgraded=False,
+                previous_identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2),
+                identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2),
+                raw_lines=(b'{"type":"report"}\n',),
+            )
+            monitor = SimpleNamespace(
+                client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
+                record_apply_result=Mock(), update_health=Mock(),
+            )
+            order = Mock()
 
             with (
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
-                patch.object(server, "apply_timer_state", side_effect=verified_apply),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=result) as apply,
+                patch.object(server, "write_config_file") as write_config,
+                patch.object(server, "atomic_write_json") as write_state,
             ):
+                order.attach_mock(apply, "apply")
+                order.attach_mock(write_config, "write_config")
+                order.attach_mock(write_state, "write_state")
                 response = server.post_controller_schedule("pump_lights", proposed)
 
-            saved_config = json.loads(config_file.read_text(encoding="utf-8"))
-            saved_state = json.loads(timer_file.read_text(encoding="utf-8"))
-
-        monitor.require_fresh_report.assert_called_once_with(timeout=3.0)
         self.assertTrue(response["success"])
-        self.assertEqual(saved_config["controllers"]["pump_lights"]["settings"]["devices"]["pump"]["editor"]["on_seconds"], 10)
-        self.assertEqual(saved_state, staged_states[0])
+        self.assertFalse(response["firmware_upgraded"])
+        self.assertEqual(response["message"], "schedule verified, saved, and applied")
+        apply.assert_called_once()
+        ordered_names = [item[0] for item in order.mock_calls]
+        self.assertLess(ordered_names.index("apply"), ordered_names.index("write_config"))
+        self.assertLess(ordered_names.index("apply"), ordered_names.index("write_state"))
+        monitor.record_apply_result.assert_called_once_with(result)
 
-    def test_post_controller_schedule_leaves_files_unchanged_when_flash_fails(self):
+    def test_controller_schedule_upgrades_current_state_before_proposal(self):
+        current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
+        proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
+        operation = Mock()
+        upgraded = SimpleNamespace(message={"type": "report"}, port="/dev/ttyACM0", raw_lines=())
+        upgraded_state = []
+
+        def capture_upgrade(main_path, state_path, expected, **kwargs):
+            upgraded_state.append(json.loads(Path(state_path).read_text(encoding="utf-8")))
+            return upgraded
+
+        operation.upgrade_scheduler.side_effect = capture_upgrade
+        monitor = SimpleNamespace(
+            client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
+            record_apply_result=Mock(), update_health=Mock(),
+        )
+        result = SimpleNamespace(
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": proposed_state["devices"]}},
+            port="/dev/ttyACM0", upgraded=True, previous_identity=None,
+            identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2), raw_lines=(),
+        )
+
+        def apply_transaction(**kwargs):
+            self.assertEqual(kwargs["current_state"], current)
+            self.assertEqual(kwargs["proposed_state"], proposed_state)
+            kwargs["upgrade"](operation, kwargs["current_state"], kwargs["expected"])
+            return result
+
+        with (
+            patch.object(server, "load_raw_config", return_value={"controllers": {"pump_lights": self.scheduler_controller(serial="abc")}, "cameras": {}}),
+            patch.object(server, "controller_schedule_candidate", return_value={"controllers": {"pump_lights": self.scheduler_controller(serial="abc")}, "cameras": {}}),
+            patch.object(server, "compiled_timer_state_for_controller", side_effect=[current, proposed_state]) as compile_state,
+            patch.object(server, "get_or_start_monitor", return_value=monitor),
+            patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+            patch.object(server, "apply_scheduler_state", side_effect=apply_transaction),
+            patch.object(server, "write_config_file"),
+            patch.object(server, "atomic_write_json"),
+        ):
+            response = server.post_controller_schedule("pump_lights", self.scheduler_controller(serial="abc"))
+
+        self.assertEqual(compile_state.call_count, 2)
+        self.assertIs(compile_state.call_args_list[0].kwargs["now"], compile_state.call_args_list[1].kwargs["now"])
+        operation.upgrade_scheduler.assert_called_once()
+        self.assertEqual(upgraded_state, [{"devices": current["devices"]}])
+        self.assertTrue(response["firmware_upgraded"])
+
+    def test_controller_schedule_failure_leaves_files_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.make_config(
@@ -1865,8 +1940,12 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "DATA_DIR", root / "data"),
                 patch.object(server, "TIMERS_DIR", timers_dir),
-                patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
-                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=502, detail="no valid report after flash")),
+                patch.object(server, "get_or_start_monitor", return_value=SimpleNamespace(
+                    client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
+                    record_apply_result=Mock(), update_health=Mock(),
+                )),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", side_effect=server.PicoReportTimeout("no valid report", [b"booting\n"])),
             ):
                 with self.assertRaises(HTTPException) as raised:
                     server.post_controller_schedule("pump_lights", proposed)
@@ -1874,7 +1953,44 @@ class ConfigApiTests(unittest.TestCase):
             self.assertEqual(config_file.read_bytes(), original_config)
             self.assertEqual(timer_file.read_bytes(), original_state)
 
-        self.assertEqual(raised.exception.status_code, 502)
+        self.assertEqual(raised.exception.status_code, 504)
+        self.assertEqual(raised.exception.detail["health"]["raw_lines"], ["booting"])
+
+    def test_controller_schedule_maps_transaction_failures_without_host_writes(self):
+        failures = [
+            (server.PicoUnavailable("missing"), 409, "unavailable"),
+            (server.PicoFlashError("firmware", 1, "", "copy failed", raw_lines=(b"flash raw\n",)), 502, "upgrade"),
+            (server.PicoCommandError("configure rejected", raw_lines=(b"configure raw\n",)), 502, "protocol"),
+            (ValueError("invalid state"), 422, "validation"),
+        ]
+        for failure, status_code, kind in failures:
+            with self.subTest(kind=kind):
+                monitor = self.healthy_monitor()
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    config_file = root / "config.json"
+                    config_file.write_text('{"controllers":{},"cameras":{}}', encoding="utf-8")
+                    with (
+                        patch.object(server, "DATA_DIR", root),
+                        patch.object(server, "CONFIG_FILE", config_file),
+                        patch.object(server, "TIMERS_DIR", root / "timers"),
+                        patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                        patch.object(server, "apply_scheduler_state", side_effect=failure),
+                        patch.object(server, "write_config_file") as write_config,
+                        patch.object(server, "atomic_write_json") as write_state,
+                    ):
+                        with self.assertRaises(HTTPException) as raised:
+                            server.configure_and_commit_controller_schedule(
+                                "pump_lights", {"controllers": {}, "cameras": {}},
+                                {"devices": []}, {"devices": []}, monitor,
+                            )
+
+                self.assertEqual(raised.exception.status_code, status_code)
+                self.assertEqual(raised.exception.detail["health"]["error"]["kind"], kind)
+                self.assertIn("raw_lines", raised.exception.detail["health"])
+                write_config.assert_not_called()
+                write_state.assert_not_called()
+                monitor.record_apply_result.assert_not_called()
 
     def test_post_controller_schedule_rejects_pico_serial_change(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1920,7 +2036,8 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=None),
-                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=self.scheduler_apply_result()),
             ):
                 response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
 
@@ -1950,7 +2067,8 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "TIMERS_DIR", timers_dir),
                 patch.object(server, "get_or_start_monitor", return_value=self.healthy_monitor()),
                 patch.object(server, "latest_timer_state", return_value=None),
-                patch.object(server, "apply_timer_state", return_value={"ok": True}),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=self.scheduler_apply_result()),
             ):
                 response = server.post_timer_channel_schedule("pump_lights", "pump", {"mode": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0})
 
@@ -2041,6 +2159,72 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(snapshot["status"], "OK")
         self.assertEqual(snapshot["last_verified_at"], health.checked_at)
         self.assertEqual(status["data"]["port"], "/dev/ttyACM0")
+
+    def test_pico_monitor_reports_firmware_currency_without_upgrading(self):
+        monitor = server.PicoMonitor("pump_lights", "abc")
+        expected = server.FirmwareIdentity("pico_scheduler", "newrev", 2)
+        reports = [
+            {"type": "report", "content": {"devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "oldrev", "protocol": 2}, "devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+        ]
+
+        with (
+            patch.object(server, "expected_scheduler_identity", return_value=expected),
+            patch.object(server, "apply_scheduler_state") as apply,
+        ):
+            statuses = []
+            for report in reports:
+                health = PicoHealth(
+                    ok=True, status="OK", checked_at="2026-07-16T12:00:00+00:00",
+                    serial="abc", port="/dev/ttyACM0", report=report,
+                    raw_lines=(json.dumps(report),), error=None,
+                )
+                with patch.object(server, "probe_pico", return_value=health):
+                    monitor.collect_report()
+                statuses.append(monitor.snapshot())
+
+        self.assertTrue(all(status["ok"] and status["status"] == "OK" for status in statuses))
+        self.assertEqual(statuses[0]["firmware"], {
+            "current": False,
+            "expected": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2},
+            "observed": None,
+        })
+        self.assertFalse(statuses[1]["firmware"]["current"])
+        self.assertEqual(statuses[1]["firmware"]["observed"]["revision"], "oldrev")
+        self.assertTrue(statuses[2]["firmware"]["current"])
+        apply.assert_not_called()
+
+    def test_current_firmware_schedule_does_not_run_upgrade_tools(self):
+        monitor = SimpleNamespace(
+            client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
+            record_apply_result=Mock(), update_health=Mock(),
+        )
+        result = SimpleNamespace(
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+            port="/dev/ttyACM0", upgraded=False, previous_identity=None,
+            identity=server.FirmwareIdentity("pico_scheduler", "newrev", 2), raw_lines=(),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(server, "DATA_DIR", root),
+                patch.object(server, "CONFIG_FILE", root / "config.json"),
+                patch.object(server, "TIMERS_DIR", root / "timers"),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=result),
+                patch.object(server, "run_command") as run_command,
+                patch.object(server, "interrupt_pico_program") as interrupt,
+                patch.object(server, "write_config_file"),
+                patch.object(server, "atomic_write_json"),
+            ):
+                server.configure_and_commit_controller_schedule(
+                    "pump_lights", {"controllers": {}, "cameras": {}},
+                    {"devices": []}, {"devices": []}, monitor,
+                )
+
+        run_command.assert_not_called()
+        interrupt.assert_not_called()
 
     def test_pico_monitor_handles_usb_events(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
