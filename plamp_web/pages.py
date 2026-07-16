@@ -1048,8 +1048,8 @@ def render_system_info_page(system: dict[str, Any], logs_text: str = "", control
     pyserial_value = str(system.get("tools", {}).get("pyserial") or "-")
     pyserial_display = pyserial_value if pyserial_value in {"-", "unknown"} else f"version {pyserial_value}"
     storage_rows = (
-        "<tr><th scope=\"row\">Root folder</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code></td></tr>"
-        "<tr><th scope=\"row\">Data dir</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code></td></tr>"
+        "<tr><th scope=\"row\">Root folder</th>" f"<td><code>{html.escape(str(paths.get('repo_root') or software.get('path') or '-'))}</code> <span class=\"muted\">PLAMP_ROOT</span></td></tr>"
+        "<tr><th scope=\"row\">Data dir</th>" f"<td><code>{html.escape(str(paths.get('data_dir') or '-'))}</code> <span class=\"muted\">PLAMP_DATA_DIR</span></td></tr>"
         "<tr><th scope=\"row\">Free disk space</th>" f"<td>{html.escape(str(storage.get('free') or '-'))}</td></tr>"
         "<tr><th scope=\"row\">Used disk space</th>" f"<td>{html.escape(str(storage.get('used') or '-'))}</td></tr>"
         "<tr><th scope=\"row\">Total disk space</th>" f"<td>{html.escape(str(storage.get('total') or '-'))}</td></tr>"

@@ -606,6 +606,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Storage</h2>", html)
         self.assertIn("<th scope=\"row\">Root folder</th>", html)
         self.assertIn("<th scope=\"row\">Data dir</th>", html)
+        self.assertIn("PLAMP_ROOT", html)
+        self.assertIn("PLAMP_DATA_DIR", html)
         self.assertNotIn("<th scope=\"row\">Storage path</th>", html)
         self.assertIn("<th scope=\"row\">Free disk space</th>", html)
         self.assertIn("<th scope=\"row\">Used disk space</th>", html)

@@ -10,6 +10,9 @@ from plamp.config import ConfigError, controller_pico_serial
 
 
 class DirectCliTests(unittest.TestCase):
+    def runtime_env(self, root):
+        return {"PLAMP_ROOT": str(root), "PLAMP_DATA_DIR": str(root)}
+
     def write_config(self, root):
         path = root / "config.json"
         path.write_text(json.dumps({
@@ -42,7 +45,8 @@ class DirectCliTests(unittest.TestCase):
                 return {"type": "report", "content": {"devices": []}}
 
             rc = main(
-                ["--config", str(config), "--lock-dir", str(root / "locks"), "pico", "report", "tower"],
+                ["--lock-dir", str(root / "locks"), "pico", "report", "tower"],
+                env=self.runtime_env(root),
                 stdout=stdout,
                 stderr=stderr,
                 report_func=fake_report,
@@ -62,7 +66,8 @@ class DirectCliTests(unittest.TestCase):
                 raise ConnectionError("Pico unplugged")
 
             rc = main(
-                ["--config", str(config), "--lock-dir", str(root / "locks"), "pico", "report", "tower"],
+                ["--lock-dir", str(root / "locks"), "pico", "report", "tower"],
+                env=self.runtime_env(root),
                 stdout=stdout,
                 stderr=stderr,
                 report_func=fail,
@@ -81,7 +86,8 @@ class DirectCliTests(unittest.TestCase):
                     with contextlib.redirect_stderr(stderr):
                         with self.assertRaises(SystemExit) as caught:
                             main(
-                                ["--config", str(config), "--timeout", timeout, "pico", "report", "tower"],
+                                ["--timeout", timeout, "pico", "report", "tower"],
+                                env=self.runtime_env(config.parent),
                                 report_func=lambda *args, **kwargs: calls.append((args, kwargs)),
                             )
                     self.assertEqual(caught.exception.code, 2)
@@ -93,7 +99,8 @@ class DirectCliTests(unittest.TestCase):
             config = self.write_config(Path(tmp))
             calls = []
             rc = main(
-                ["--config", str(config), "--timeout", "0", "pico", "report", "tower"],
+                ["--timeout", "0", "pico", "report", "tower"],
+                env=self.runtime_env(config.parent),
                 stdout=io.StringIO(), stderr=io.StringIO(),
                 report_func=lambda serial, **kwargs: calls.append(kwargs) or {"type": "report"},
             )
@@ -112,7 +119,8 @@ class DirectCliTests(unittest.TestCase):
                 return {"type": "report", "content": {"devices": []}}
 
             rc = main(
-                ["--config", str(config), "--lock-dir", str(root / "locks"), "pico", "pulse", "tower", "21", "5"],
+                ["--lock-dir", str(root / "locks"), "pico", "pulse", "tower", "21", "5"],
+                env=self.runtime_env(root),
                 stdout=stdout,
                 stderr=stderr,
                 pulse_func=fake_pulse,
@@ -135,7 +143,8 @@ class DirectCliTests(unittest.TestCase):
                 return {"camera_id": camera_id, "image_path": "data/pic.jpg"}
 
             rc = main(
-                ["--config", str(config), "--lock-dir", str(root / "locks"), "camera", "capture", "cam0"],
+                ["--lock-dir", str(root / "locks"), "camera", "capture", "cam0"],
+                env=self.runtime_env(root),
                 stdout=stdout,
                 stderr=stderr,
                 camera_capture_func=fake_capture,
@@ -146,3 +155,47 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["config_file"], config)
         self.assertEqual(json.loads(stdout.getvalue())["camera_id"], "cam0")
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_context_prints_resolved_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+
+            rc = main(["context"], env=self.runtime_env(root), stdout=stdout, stderr=io.StringIO())
+
+            self.assertEqual(rc, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["root"], str(root.resolve()))
+            self.assertEqual(payload["data_dir"], str(root.resolve()))
+            self.assertEqual(payload["config_file"], str((root / "config.json").resolve()))
+
+    def test_config_get_prints_validated_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            stdout = io.StringIO()
+
+            rc = main(["config", "get"], env=self.runtime_env(root), stdout=stdout, stderr=io.StringIO())
+
+            self.assertEqual(rc, 0)
+            self.assertIn("tower", json.loads(stdout.getvalue())["controllers"])
+
+    def test_config_write_reads_stdin_and_replaces_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            replacement = {"controllers": {}, "cameras": {}}
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            rc = main(
+                ["config", "write", "-"],
+                env=self.runtime_env(root),
+                stdin=io.StringIO(json.dumps(replacement)),
+                stdout=stdout,
+                stderr=stderr,
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads((root / "config.json").read_text(encoding="utf-8")), replacement)
+            self.assertEqual(json.loads(stdout.getvalue()), replacement)
+            self.assertEqual(stderr.getvalue(), "")

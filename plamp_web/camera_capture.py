@@ -16,10 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from plamp.context import resolve_context
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data"
-CONFIG_FILE = DATA_DIR / "config.json"
+
+RUNTIME_CONTEXT = resolve_context()
+REPO_ROOT = RUNTIME_CONTEXT.root
+DATA_DIR = RUNTIME_CONTEXT.data_dir
+CONFIG_FILE = RUNTIME_CONTEXT.config_file
 GROWS_DIR = DATA_DIR / "grow" / "grows"
 
 

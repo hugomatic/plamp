@@ -28,6 +28,8 @@ from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp.camera import CameraError, capture_camera
+from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
+from plamp.context import resolve_context
 from plamp.locks import LockTimeout
 from plamp.pico_transport import PicoClient, PicoFlashError, PicoReportTimeout, PicoUnavailable
 from plamp_web import camera_capture, hardware_inventory
@@ -42,11 +44,12 @@ from plamp_web.hardware_config import (
 from plamp_web.timer_schedule import channel_metadata_for_role, compile_controller_state
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_CONTEXT = resolve_context()
+REPO_ROOT = RUNTIME_CONTEXT.root
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 HOSTS_FILE = Path("/etc/hosts")
-DATA_DIR = REPO_ROOT / "data"
-CONFIG_FILE = DATA_DIR / "config.json"
+DATA_DIR = RUNTIME_CONTEXT.data_dir
+CONFIG_FILE = RUNTIME_CONTEXT.config_file
 TIMERS_DIR = DATA_DIR / "timers"
 PICO_GENERATOR_FILE = REPO_ROOT / "pico_scheduler" / "generator.py"
 PICO_TEMPLATES_DIR = REPO_ROOT / "pico_scheduler" / "templates"
@@ -105,7 +108,7 @@ def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     TIMERS_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
-        atomic_write_json(CONFIG_FILE, empty_config())
+        write_config_file(CONFIG_FILE, empty_config())
 
 
 def configure_logging() -> None:
@@ -166,14 +169,10 @@ def atomic_write_json(path: Path, data: Any) -> None:
 
 def load_raw_config() -> dict[str, Any]:
     ensure_data_dir()
-    data = load_json_file(CONFIG_FILE)
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=500, detail="config.json must be an object")
-    for section in ("controllers", "cameras"):
-        value = data.get(section, {})
-        if not isinstance(value, dict):
-            raise HTTPException(status_code=500, detail=f"config.json {section} must be an object")
-    return data
+    try:
+        return read_config_file(CONFIG_FILE)
+    except ConfigError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 def load_config() -> dict[str, Any]:
@@ -768,7 +767,7 @@ class CameraWorker:
             try:
                 result = capture_camera(
                     command.camera_id or "camera",
-                    lock_dir=camera_capture.DATA_DIR / "locks",
+                    lock_dir=RUNTIME_CONTEXT.lock_dir,
                     timeout=60.0,
                     capture_func=self.capture_func,
                     repo_root=camera_capture.REPO_ROOT,
@@ -834,7 +833,7 @@ class PicoMonitor:
     def __init__(self, role: str, pico_serial: str):
         self.role = role
         self.pico_serial = pico_serial
-        self.client = PicoClient(pico_serial, lock_dir=DATA_DIR / "locks")
+        self.client = PicoClient(pico_serial, lock_dir=RUNTIME_CONTEXT.lock_dir)
         self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
         self.lock = threading.Lock()
         self.serial_entries = deque(maxlen=200)
@@ -2031,7 +2030,7 @@ def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         saved = dict(raw_config)
         saved.update(updated)
-        atomic_write_json(CONFIG_FILE, saved)
+        write_config_file(CONFIG_FILE, saved)
     reconcile_configured_monitors()
     reconcile_camera_worker()
     return config_response()
@@ -2047,7 +2046,7 @@ def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         saved = dict(raw_config)
         saved.update(updated)
-        atomic_write_json(CONFIG_FILE, saved)
+        write_config_file(CONFIG_FILE, saved)
     reconcile_configured_monitors()
     reconcile_camera_worker()
     return config_response()

@@ -3,13 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import subprocess
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
 from plamp.camera import CameraError, capture_camera
-from plamp.config import ConfigError, controller_pico_serial
+from plamp.config import ConfigError, controller_pico_serial, load_config, save_config
+from plamp.context import resolve_context
 from plamp.locks import LockTimeout
 from plamp.pico_transport import PicoCommandError, PicoReportTimeout, PicoUnavailable, pulse_gpio, request_report
 
@@ -25,8 +27,7 @@ def _non_negative_finite_timeout(value: str) -> float:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m plamp")
-    parser.add_argument("--config", type=Path, default=REPO_ROOT / "data" / "config.json")
-    parser.add_argument("--lock-dir", type=Path, default=REPO_ROOT / "data" / "locks")
+    parser.add_argument("--lock-dir", type=Path)
     parser.add_argument(
         "--timeout",
         type=_non_negative_finite_timeout,
@@ -37,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     areas = parser.add_subparsers(dest="area", required=True)
+    areas.add_parser("context")
+    config = areas.add_parser("config")
+    config_actions = config.add_subparsers(dest="action", required=True)
+    config_actions.add_parser("get")
+    config_write = config_actions.add_parser("write")
+    config_write.add_argument("file")
     pico = areas.add_parser("pico")
     actions = pico.add_subparsers(dest="action", required=True)
     report = actions.add_parser("report")
@@ -55,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(
     argv: Sequence[str] | None = None,
     *,
+    env: Mapping[str, str] | None = None,
+    stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
     report_func: Callable[..., dict[str, Any]] = request_report,
@@ -62,27 +71,56 @@ def main(
     camera_capture_func: Callable[..., dict[str, Any]] = capture_camera,
 ) -> int:
     args = build_parser().parse_args(argv)
+    context = resolve_context(env=env)
+    lock_dir = args.lock_dir or context.lock_dir
     try:
-        if args.area == "camera":
+        if args.area == "context":
+            revision = "unknown"
+            try:
+                revision = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=context.root,
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+            except (OSError, subprocess.SubprocessError):
+                pass
+            result = {
+                "config_file": str(context.config_file),
+                "data_dir": str(context.data_dir),
+                "revision": revision,
+                "root": str(context.root),
+            }
+        elif args.area == "config":
+            if args.action == "get":
+                result = load_config(context.config_file)
+            else:
+                try:
+                    raw = stdin.read() if args.file == "-" else Path(args.file).read_text(encoding="utf-8")
+                    submitted = json.loads(raw)
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise ConfigError(f"cannot read submitted configuration: {exc}") from exc
+                result = save_config(context.config_file, submitted)
+        elif args.area == "camera":
             result = camera_capture_func(
                 args.camera_id,
-                lock_dir=args.lock_dir,
+                lock_dir=lock_dir,
                 timeout=args.timeout,
-                repo_root=args.config.parent.parent,
-                data_dir=args.config.parent,
-                config_file=args.config,
+                repo_root=context.root,
+                data_dir=context.data_dir,
+                config_file=context.config_file,
                 capture_kind="manual",
             )
         else:
-            pico_serial = controller_pico_serial(args.config, args.controller)
+            pico_serial = controller_pico_serial(context.config_file, args.controller)
             if args.action == "report":
-                result = report_func(pico_serial, lock_dir=args.lock_dir, timeout=args.timeout)
+                result = report_func(pico_serial, lock_dir=lock_dir, timeout=args.timeout)
             else:
                 result = pulse_func(
                     pico_serial,
                     args.pin,
                     args.seconds,
-                    lock_dir=args.lock_dir,
+                    lock_dir=lock_dir,
                     timeout=args.timeout,
                 )
     except ConfigError as exc:
