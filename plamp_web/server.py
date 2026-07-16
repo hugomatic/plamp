@@ -2589,11 +2589,19 @@ def reject_pulse_if_reported_on(controller: str, pin: int) -> None:
             raise HTTPException(status_code=409, detail=f"pin {pin} is already on")
 
 
+def schedule_pulse_completion_report(controller: str, seconds: int) -> None:
+    monitor = get_or_start_monitor(controller)
+    timer = threading.Timer(seconds + 0.1, monitor.wake)
+    timer.daemon = True
+    timer.start()
+
+
 @app.post("/api/controllers/{controller}/channels/{channel_id}/pulse")
 def post_controller_channel_pulse(controller: str, channel_id: str, payload: dict[str, Any] = Body(default_factory=dict)) -> dict[str, Any]:
     command, pin, seconds = pulse_channel_command(controller, channel_id, payload)
     reject_pulse_if_reported_on(controller, pin)
     result = send_timer_command(controller, command)
+    schedule_pulse_completion_report(controller, seconds)
     response = {
         "controller": controller,
         "channel": channel_id,
@@ -2611,6 +2619,7 @@ def post_controller_pin_pulse(controller: str, pin: int, payload: dict[str, Any]
     command, channel_id, command_pin, seconds = pulse_pin_command(controller, pin, payload)
     reject_pulse_if_reported_on(controller, command_pin)
     result = send_timer_command(controller, command)
+    schedule_pulse_completion_report(controller, seconds)
     response = {
         "controller": controller,
         "channel": channel_id,
