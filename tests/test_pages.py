@@ -410,6 +410,10 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('}).join("\n");', html)
         self.assertIn("<h2>Diagnostics</h2>", html)
         self.assertIn('id="controller-diagnostics"', html)
+        self.assertIn('<button id="refresh-diagnostics" type="button">Refresh diagnostics</button>', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}`)', html)
+        self.assertIn("diagnosticsNode.textContent = JSON.stringify(data.telemetry || data, null, 2);", html)
+        self.assertIn('setStatus("Diagnostics refreshed.");', html)
         self.assertIn(html_module.escape(json.dumps(status, indent=2, sort_keys=True)), html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):

@@ -2288,6 +2288,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
   </section>
   <section>
     <h2>Diagnostics</h2>
+    <button id="refresh-diagnostics" type="button">Refresh diagnostics</button>
     <pre id="controller-diagnostics" class="diagnostics">{html.escape(diagnostics_text)}</pre>
   </section>
   <section>
@@ -2299,6 +2300,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     const controller = {json.dumps(controller)};
     const configuredPins = {json.dumps(channels)};
     const statusNode = document.getElementById("command-status");
+    const diagnosticsNode = document.getElementById("controller-diagnostics");
     const logNode = document.getElementById("serial-log");
     const pulsePinInput = document.getElementById("pulse-pin");
     const pulseSecondsInput = document.getElementById("pulse-seconds");
@@ -2321,6 +2323,12 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
       if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
       logNode.textContent = logText(data.entries);
     }}
+    async function refreshDiagnostics() {{
+      const response = await fetch(`/api/controllers/${{encodeURIComponent(controller)}}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      diagnosticsNode.textContent = JSON.stringify(data.telemetry || data, null, 2);
+    }}
     async function postCommand(url, body) {{
       setStatus("Sending...");
       const options = {{method: "POST"}};
@@ -2340,6 +2348,10 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     }});
     document.getElementById("refresh-log").addEventListener("click", async () => {{
       try {{ await refreshLog(); setStatus("Log refreshed."); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    document.getElementById("refresh-diagnostics").addEventListener("click", async () => {{
+      try {{ await refreshDiagnostics(); setStatus("Diagnostics refreshed."); }}
       catch (error) {{ setStatus(String(error.message || error)); }}
     }});
     for (const button of document.querySelectorAll(".use-pin")) {{
