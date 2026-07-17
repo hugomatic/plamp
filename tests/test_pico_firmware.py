@@ -22,7 +22,14 @@ class PicoFirmwareTests(unittest.TestCase):
             calls,
             [
                 (
-                    ["git", "log", "-1", "--format=%h", "--", "pico_scheduler/src"],
+                    [
+                        "git",
+                        "log",
+                        "--max-count=1",
+                        "--format=%h",
+                        "--",
+                        "pico_scheduler/src",
+                    ],
                     Path("/repo"),
                 )
             ],

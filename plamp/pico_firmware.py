@@ -15,7 +15,14 @@ def run_git(args: list[str], cwd: Path) -> str:
 def firmware_revision(repo_root: Path, *, git_runner=run_git) -> str:
     try:
         value = git_runner(
-            ["git", "log", "-1", "--format=%h", "--", "pico_scheduler/src"],
+            [
+                "git",
+                "log",
+                "--max-count=1",
+                "--format=%h",
+                "--",
+                "pico_scheduler/src",
+            ],
             repo_root,
         ).strip()
     except (OSError, subprocess.SubprocessError):
