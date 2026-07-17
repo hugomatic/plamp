@@ -18,26 +18,28 @@ explicit groups:
      `avahi-daemon`, `avahi-utils`, and `libnss-mdns` support installation,
      cameras, and network discovery.
 2. `Installing tools for agentic efficiency`
-   - `ripgrep`, `gh`, `shellcheck`, `jq`, `usbutils`, `lsof`, and `strace` make
-     source, JSON, GitHub, Bash, USB, process, and system-call diagnosis readily
-     available.
+   - `ripgrep`, `gh`, `shellcheck`, `jq`, `usbutils`, `lsof`, `strace`, and
+     `openscad` make source, JSON, GitHub, Bash, USB, process, system-call, and
+     CAD work readily available.
 
 Both groups install by default. There is no opt-in flag and no machine role.
 Optional nginx installation remains controlled by `--public`.
 
-## Heavy Tools
+## Heavy CAD Tool
 
-OpenSCAD is not installed by the Plamp bootstrap. It remains supported and is
-documented as an optional CAD-host tool because CGAL rendering is expensive on
-a Raspberry Pi. Tower may retain OpenSCAD; controller-only Pis do not need it.
+OpenSCAD installs on every Plamp Pi so any human or cloud agent can edit and
+render the repository's CAD without machine roles. Documentation must state
+that CGAL rendering is CPU- and memory-heavy on a Raspberry Pi. Headless STL
+generation is supported; graphical image preview may require a display server.
 
 ## Documentation
 
-Add `docs/host-tools.md` with three tables: runtime dependencies, agentic tools,
-and optional heavy tools. Each row names the Debian package, command, and reason
-it exists. Agentic-tool examples must be read-only or preserve a backup; the
-`sed` examples demonstrate previewing before `sed -i.bak`.
+Add `docs/host-tools.md` with tables for runtime dependencies and agentic tools,
+including an explicit heavy-tool note for OpenSCAD. Each row names the Debian
+package, command, and reason it exists. Agentic-tool examples must be read-only
+or preserve a backup; the `sed` examples demonstrate previewing before
+`sed -i.bak`.
 
 Link the tool contract from the README installation section. Installer tests
-must enforce both headings, both exact package groups, default installation of
-agentic tools, and exclusion of OpenSCAD.
+must enforce both headings, both exact package groups, and default installation
+of agentic tools including OpenSCAD.
