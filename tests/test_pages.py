@@ -573,13 +573,15 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("message?.content?.events", html)
         self.assertNotIn("message?.events", html)
 
-    def test_api_test_page_generates_timer_payloads_with_devices(self):
+    def test_api_test_page_does_not_offer_compiled_scheduler_state_put(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 
-        self.assertIn("report_every: 10,\n        devices: [{", html)
-        self.assertIn("report_every: 10,\n        devices: [", html)
-        self.assertNotIn("report_every: 10,\n        events: [{", html)
-        self.assertNotIn("report_every: 10,\n        events: [", html)
+        self.assertNotIn("PUT /api/controllers/{role}", html)
+        self.assertNotIn('id="put-state"', html)
+        self.assertNotIn('id="put-role"', html)
+        self.assertNotIn('id="generate-quick"', html)
+        self.assertNotIn('id="generate-pump-lights"', html)
+        self.assertNotIn("async function putState", html)
 
     def test_api_test_page_includes_pico_scheduler_pulse_request(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
@@ -622,6 +624,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("Flash and commit the complete", html)
         self.assertNotIn("Normal workflow: save desired config once, then apply the controller once.", html)
         self.assertIn("Compatibility endpoint for changing one channel", html)
+        self.assertIn("<strong>Recovery:</strong> reapplies the current desired controller config", html)
+        self.assertNotIn("desired config plus controller apply", html)
 
 
     def test_settings_page_includes_storage_summary(self):
@@ -1305,7 +1309,6 @@ class PageRenderTests(unittest.TestCase):
             "GET /api/camera/captures",
             "GET /api/status",
             "GET /api/status?stream=true",
-            "PUT /api/controllers/{role}",
         ]:
             self.assertIn(f"<legend>{title}</legend>", html)
         self.assertIn("Captures a new image and returns capture metadata.", html)
@@ -1333,18 +1336,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {', html)
         self.assertIn('streamStatus.textContent = "Stream disconnected.";', html)
         self.assertNotIn("Stream error or reconnecting...", html)
-        self.assertIn("Writes controller state JSON and sends it to the Pico.", html)
-        self.assertIn('<p class="helper-title">Helper: Generate 5s pin test</p>', html)
-        self.assertIn('<p class="helper-title">Helper: Generate pump/lights</p>', html)
-        self.assertNotIn("Payload helpers", html)
-        self.assertNotIn("<h3>Generate 5s pin test</h3>", html)
-        self.assertNotIn("<h3>PUT curl</h3>", html)
+        self.assertNotIn("Writes controller state JSON and sends it to the Pico.", html)
+        self.assertNotIn("Helper: Generate 5s pin test", html)
+        self.assertNotIn("Helper: Generate pump/lights", html)
         self.assertNotIn("GET /api/controllers/{role}", html)
         self.assertNotIn("GET /api/controllers/{role}?stream=true", html)
-        self.assertLess(
-            html.index('<p class="helper-title">Helper: Generate 5s pin test</p>'),
-            html.index("<label>JSON payload"),
-        )
 
     def test_pages_link_favicon_svg(self):
         settings_html = render_settings_page(
@@ -1439,7 +1435,6 @@ class PageRenderTests(unittest.TestCase):
             "list-captures-curl-command",
             "get-status-curl-command",
             "stream-status-curl-command",
-            "put-curl-command",
         ]:
             self.assertIn(f'data-copy-target="{target}"', html)
         self.assertIn('id="list-captures-limit"', html)
@@ -1460,7 +1455,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="status-path-list"', html)
         self.assertIn('id="get-status-curl-command"', html)
         self.assertIn('id="stream-status-curl-command"', html)
-        self.assertIn('id="put-curl-command"', html)
+        self.assertNotIn('id="put-curl-command"', html)
 
 
 if __name__ == "__main__":

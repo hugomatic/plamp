@@ -2377,13 +2377,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         f'<div class="row status-path-row"><label>Path <input class="status-path-input" value="{html.escape(path, quote=True)}" placeholder="controllers.{html.escape(default_role, quote=True)}.telemetry"></label><button type="button" class="remove-status-path">Remove</button></div>'
         for path in default_status_paths
     )
-    default_put_curl = "\n".join([
-        f"curl -X PUT 'http://localhost:8000/api/controllers/{default_role}' " + chr(92),
-        "  -H 'content-type: application/json' " + chr(92),
-        "  --data-binary @- <<'JSON'",
-        default_payload,
-        "JSON",
-    ])
     cycle_schedule_example = html.escape(json.dumps({"mode": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0}, separators=(",", ":")))
     clock_schedule_example = html.escape(json.dumps({"mode": "clock_window", "on_time": "06:00", "off_time": "23:00"}, separators=(",", ":")))
     return f"""<!doctype html>
@@ -2406,7 +2399,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
     .helper-title {{ font-weight: 700; margin: .75rem 0 .25rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
-    #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
+    #stream-curl-command {{ white-space: pre-wrap; }}
     #camera-capture-preview {{ display: block; margin-top: 1rem; max-width: min(100%, 720px); }}
     #camera-capture-preview[hidden] {{ display: none; }}
     #stream-result {{ max-height: 18rem; white-space: pre-wrap; }}
@@ -2571,7 +2564,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
   <fieldset>
     <legend>POST /api/controllers/{{controller}}/apply</legend>
-    <p>Reapplies already-saved semantic settings. Normal schedule changes use the transactional schedule endpoint above.</p>
+    <p><strong>Recovery:</strong> reapplies the current desired controller config through the same verified transaction. Normal schedule changes use the schedule endpoint above.</p>
     <pre id="scheduler-apply-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/apply</pre>
     <button class="copy-curl" type="button" data-copy-target="scheduler-apply-curl-command">Copy curl</button>
     <button class="scheduler-request" type="button" data-method="POST" data-path="/api/controllers/{html.escape(default_role)}/apply" data-status="scheduler-apply-status" data-result="scheduler-apply-result">Run request</button>
@@ -2613,47 +2606,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="pulse-result">POST response will appear here.</pre>
   </fieldset>
 
-  <fieldset>
-    <legend>PUT /api/controllers/{{role}}</legend>
-    <p><strong>Low-level compiled-state API.</strong> Writes controller state JSON and sends it to the Pico. Normal schedule editing should use desired config plus controller apply.</p>
-    <label>Role
-      <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
-    </label>
-
-    <section>
-      <p class="helper-title">Helper: Generate 5s pin test</p>
-      <p>Builds a small GPIO payload in the PUT JSON editor.</p>
-      <label>Test pin <input id="test-pin" type="number" min="0" max="29" value="25"></label>
-      <button id="generate-quick" type="button">Generate pin test</button>
-    </section>
-
-    <section>
-      <p class="helper-title">Helper: Generate pump/lights</p>
-      <p>Builds a pump/lights payload in the PUT JSON editor.</p>
-      <div class="row">
-        <label>Pump pin <input id="pump-pin" type="number" min="0" max="29" value="15"></label>
-        <label>Pump on minutes <input id="pump-on" type="number" min="1" value="5"></label>
-        <label>Pump off minutes <input id="pump-off" type="number" min="1" value="30"></label>
-        <label>Lights pin <input id="lights-pin" type="number" min="0" max="29" value="2"></label>
-        <label>Lights on <input id="lights-on" type="time" step="1" value="06:00:00"></label>
-        <label>Lights off <input id="lights-off" type="time" step="1" value="18:00:00"></label>
-      </div>
-      <button id="generate-pump-lights" type="button">Generate pump/lights</button>
-    </section>
-
-    <label>JSON payload
-      <textarea id="payload">{html.escape(default_payload)}</textarea>
-    </label>
-    <pre id="put-curl-command">{html.escape(default_put_curl)}</pre>
-    <button class="copy-curl" type="button" data-copy-target="put-curl-command">Copy curl</button>
-    <button id="put-state" type="button">Run request</button>
-    <div><span id="put-status">Ready.</span></div>
-    <pre id="put-result">PUT response will appear here.</pre>
-  </fieldset>
-
   <script>
-    const payload = document.getElementById("payload");
-    const putRoleInput = document.getElementById("put-role");
     const statusPathList = document.getElementById("status-path-list");
     const cameraCaptureCameraIdInput = document.getElementById("camera-capture-camera-id");
     const listCapturesCameraIdInput = document.getElementById("list-captures-camera-id");
@@ -2670,10 +2623,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     let timerEventSource = null;
     let controllerEventSource = null;
     const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
-
-    function putRole() {{
-      return putRoleInput.value.trim();
-    }}
 
     function pulseController() {{
       return pulseControllerInput.value.trim();
@@ -2708,7 +2657,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const row = document.createElement("div");
       row.className = "row status-path-row";
       row.innerHTML = `
-        <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{putRoleInput.value.trim() || ""}}.telemetry"></label>
+        <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{schedulerController}}.telemetry"></label>
         <button type="button" class="remove-status-path">Remove</button>
       `;
       bindStatusPathRow(row);
@@ -2748,41 +2697,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return cameraCaptureCameraIdInput.value.trim();
     }}
 
-    function secondsSinceMidnight() {{
-      const now = new Date();
-      return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    }}
-
-    function timeToSeconds(value) {{
-      const [h, m, s] = value.split(":").map(Number);
-      return h * 3600 + m * 60 + (s || 0);
-    }}
-
-    function currentTForWindow(start, stop) {{
-      const startSeconds = timeToSeconds(start);
-      const stopSeconds = timeToSeconds(stop);
-      let onDur = (stopSeconds - startSeconds + 86400) % 86400;
-      if (onDur === 0) onDur = 86400;
-      let offDur = 86400 - onDur;
-      if (offDur === 0) offDur = 1;
-      return (secondsSinceMidnight() - startSeconds + onDur + offDur) % (onDur + offDur);
-    }}
-
     function doubleQuote(value) {{
       return JSON.stringify(value);
-    }}
-
-    function putCurlCommand() {{
-      const url = `${{window.location.origin}}/api/controllers/${{encodeURIComponent(putRole())}}`;
-      const slash = String.fromCharCode(92);
-      const newline = String.fromCharCode(10);
-      return [
-        "curl -X PUT " + doubleQuote(url) + " " + slash,
-        "  -H " + doubleQuote("content-type: application/json") + " " + slash,
-        "  --data-binary @- <<'JSON'",
-        payload.value,
-        "JSON",
-      ].join(newline);
     }}
 
     function cameraCaptureCurlCommand() {{
@@ -2816,18 +2732,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     function updateCurl() {{
       document.getElementById("get-status-curl-command").textContent = "curl " + doubleQuote(statusUrl(false));
       document.getElementById("stream-status-curl-command").textContent = "curl -N " + doubleQuote(statusUrl(true));
-      document.getElementById("put-curl-command").textContent = putCurlCommand();
       document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
       document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
       document.getElementById("pulse-curl-command").textContent = pulseCurlCommand();
       document.getElementById("scheduler-schedule-request").textContent = schedulerSchedulePayload.value;
-    }}
-
-    function setPayload(state) {{
-      payload.value = JSON.stringify(state, null, 2);
-      document.getElementById("put-status").textContent = "Payload generated. Edit it, then PUT.";
-      document.getElementById("put-result").textContent = "";
-      updateCurl();
     }}
 
     async function copyCurlCommand(event) {{
@@ -3169,50 +3077,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
     updateCurl();
 
-    async function putState() {{
-      const putStatus = document.getElementById("put-status");
-      const putResult = document.getElementById("put-result");
-      putStatus.textContent = "";
-      putResult.textContent = "";
-      const url = `/api/controllers/${{encodeURIComponent(putRole())}}`;
-      if (!window.confirm(`PUT ${{url}}?`)) {{
-        putStatus.textContent = "Cancelled.";
-        return;
-      }}
-      let parsed;
-      try {{
-        parsed = JSON.parse(payload.value);
-      }} catch (error) {{
-        putStatus.textContent = "Invalid JSON.";
-        putResult.textContent = String(error);
-        return;
-      }}
-      putStatus.textContent = "Saving...";
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 30000);
-      try {{
-        const response = await fetch(url, {{
-          method: "PUT",
-          headers: {{"content-type": "application/json"}},
-          body: JSON.stringify(parsed),
-          signal: controller.signal,
-        }});
-        const text = await response.text();
-        let display = text;
-        try {{
-          display = JSON.stringify(JSON.parse(text), null, 2);
-        }} catch (error) {{
-        }}
-        putStatus.textContent = `${{response.status}} ${{response.statusText}}`;
-        putResult.textContent = display;
-      }} catch (error) {{
-        putStatus.textContent = "Request failed.";
-        putResult.textContent = String(error);
-      }} finally {{
-        window.clearTimeout(timeout);
-      }}
-    }}
-
     async function listCameraCaptures() {{
       const status = document.getElementById("list-captures-status");
       const result = document.getElementById("list-captures-result");
@@ -3298,53 +3162,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }}
     }}
 
-    document.getElementById("generate-quick").addEventListener("click", () => {{
-      setPayload({{
-        report_every: 10,
-        devices: [{{
-          id: "test_pin",
-          type: "gpio",
-          pin: Number(document.getElementById("test-pin").value),
-          current_t: 0,
-          reschedule: 1,
-          pattern: [{{val: 1, dur: 5}}, {{val: 0, dur: 5}}],
-        }}],
-      }});
-    }});
-
-    document.getElementById("generate-pump-lights").addEventListener("click", () => {{
-      const lightsOn = document.getElementById("lights-on").value;
-      const lightsOff = document.getElementById("lights-off").value;
-      let lightsOnDur = (timeToSeconds(lightsOff) - timeToSeconds(lightsOn) + 86400) % 86400;
-      if (lightsOnDur === 0) lightsOnDur = 86400;
-      let lightsOffDur = 86400 - lightsOnDur;
-      if (lightsOffDur === 0) lightsOffDur = 1;
-      setPayload({{
-        report_every: 10,
-        devices: [
-          {{
-            id: "pump",
-            type: "gpio",
-            pin: Number(document.getElementById("pump-pin").value),
-            current_t: 0,
-            reschedule: 1,
-            pattern: [
-              {{val: 1, dur: Number(document.getElementById("pump-on").value) * 60}},
-              {{val: 0, dur: Number(document.getElementById("pump-off").value) * 60}},
-            ],
-          }},
-          {{
-            id: "lights",
-            type: "gpio",
-            pin: Number(document.getElementById("lights-pin").value),
-            current_t: currentTForWindow(lightsOn, lightsOff),
-            reschedule: 1,
-            pattern: [{{val: 1, dur: lightsOnDur}}, {{val: 0, dur: lightsOffDur}}],
-          }},
-        ],
-      }});
-    }});
-
     document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
     document.getElementById("get-system").addEventListener("click", () => runConfigRequest("system"));
     document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
@@ -3353,7 +3170,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("get-status").addEventListener("click", getStatus);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
-    document.getElementById("put-state").addEventListener("click", putState);
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
     document.getElementById("pulse-request").addEventListener("click", pulsePinRequest);
@@ -3374,10 +3190,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     for (const button of document.querySelectorAll(".copy-curl")) {{
       button.addEventListener("click", copyCurlCommand);
     }}
-    putRoleInput.addEventListener("input", updateCurl);
     listCapturesLimitInput.addEventListener("input", updateCurl);
     listCapturesOffsetInput.addEventListener("input", updateCurl);
-    payload.addEventListener("input", updateCurl);
     schedulerSchedulePayload.addEventListener("input", updateCurl);
     window.addEventListener("beforeunload", () => {{ stopTimerStream(); stopControllerStream(); }});
     updateCurl();

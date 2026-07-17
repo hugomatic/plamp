@@ -35,23 +35,46 @@ def apply_scheduler_state(
     with client.operation(timeout=timeout) as operation:
         before = operation.report()
         raw_lines = list(before.raw_lines)
-        previous = firmware_identity(before.message)
+        try:
+            previous = firmware_identity(before.message)
+        except ValueError as exc:
+            raise PicoCommandError(
+                f"invalid firmware identity in Pico report: {exc}",
+                raw_lines=tuple(raw_lines),
+            ) from exc
         upgraded = previous != expected
         if upgraded:
             active = upgrade(operation, current_state, expected)
             raw_lines.extend(active.raw_lines)
         else:
             active = before
-        if firmware_identity(active.message) != expected:
+        try:
+            active_identity = firmware_identity(active.message)
+        except ValueError as exc:
             raise PicoCommandError(
-                "Pico firmware identity does not match expected firmware"
+                f"invalid firmware identity in Pico report: {exc}",
+                raw_lines=tuple(raw_lines),
+            ) from exc
+        if active_identity != expected:
+            raise PicoCommandError(
+                "Pico firmware identity does not match expected firmware",
+                raw_lines=tuple(raw_lines),
             )
 
         configured = operation.configure(proposed_state)
         raw_lines.extend(configured.raw_lines)
-        identity = firmware_identity(configured.message)
+        try:
+            identity = firmware_identity(configured.message)
+        except ValueError as exc:
+            raise PicoCommandError(
+                f"invalid firmware identity in Pico report: {exc}",
+                raw_lines=tuple(raw_lines),
+            ) from exc
         if identity != expected:
-            raise PicoCommandError("Pico firmware changed during configuration")
+            raise PicoCommandError(
+                "Pico firmware changed during configuration",
+                raw_lines=tuple(raw_lines),
+            )
 
         return SchedulerApplyResult(
             report=configured.message,

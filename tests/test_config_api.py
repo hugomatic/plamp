@@ -669,6 +669,30 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(payload["firmware"], "pico_doser")
         self.assertEqual(saved, {"report_every": 5, "message": "hello"})
 
+    def test_put_controller_rejects_compiled_scheduler_state_without_side_effects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "pump_lights.json"
+            state_path.write_text('{"devices":[{"id":"committed"}]}', encoding="utf-8")
+            original = state_path.read_bytes()
+            with (
+                patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+                patch.object(server, "controller_state_path", return_value=state_path),
+                patch.object(server, "atomic_write_json") as write_state,
+                patch.object(server, "apply_scheduler_state") as apply,
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    server.put_controller(
+                        "pump_lights",
+                        {"devices": [{"id": "new", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]},
+                    )
+
+            self.assertEqual(state_path.read_bytes(), original)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("POST /api/controllers/pump_lights/schedule", str(raised.exception.detail))
+        write_state.assert_not_called()
+        apply.assert_not_called()
+
     def test_settings_summary_includes_config_status_and_host_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1049,26 +1073,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(validated["devices"][0]["id"], "test_pin")
         self.assertNotIn("events", validated)
 
-    def test_timer_state_for_pico_uses_devices(self):
-        state = {
-            "report_every": 10,
-            "devices": [
-                {
-                    "id": "test_pin",
-                    "type": "gpio",
-                    "pin": 25,
-                    "current_t": 3,
-                    "reschedule": 1,
-                    "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
-                }
-            ],
-        }
-
-        with patch.object(server, "timer_role", return_value={"payload": {"report_every": 7}}):
-            timer_state = server.timer_state_for_pico("timer", state)
-
-        self.assertEqual(timer_state, {"report_every": 7, "devices": state["devices"]})
-
     def test_latest_timer_state_reads_devices_from_last_report(self):
         monitor = DummyMonitor("abc")
         monitor.snapshot = lambda: {
@@ -1426,33 +1430,6 @@ class ConfigApiTests(unittest.TestCase):
             },
         )
 
-    def test_timer_state_for_pico_excludes_disabled_and_hidden_devices(self):
-        raw_state = {
-            "report_every": 1,
-            "devices": [
-                {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
-                {"id": "lights", "type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
-                {"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]},
-            ],
-        }
-        config = {
-            "controllers": {
-                "sprouter": self.scheduler_controller(
-                    devices={
-                        "pump": self.scheduled_output(2, programming="disabled"),
-                        "lights": self.scheduled_output(3, visibility="hidden"),
-                        "fan": self.scheduled_output(4),
-                    }
-                )
-            },
-            "cameras": {},
-        }
-
-        with patch.object(server, "load_config", return_value=config):
-            state = server.timer_state_for_pico("sprouter", raw_state)
-
-        self.assertEqual([device["id"] for device in state["devices"]], ["fan"])
-
     def test_compiled_timer_state_for_controller_uses_semantic_config(self):
         config = server.config_view(
             {
@@ -1485,68 +1462,25 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(state["devices"][1]["pattern"], [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}])
         self.assertEqual(state["devices"][1]["current_t"], 12600)
 
-    def test_post_controller_apply_compiles_and_writes_complete_state_once(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(
-                root,
-                {
-                    "controllers": {"sprouter": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2, programming="disabled")})},
-                    "cameras": {},
-                },
-            )
-            timers_dir = root / "data" / "timers"
-            timers_dir.mkdir(parents=True)
-            timer_path = timers_dir / "sprouter.json"
-            timer_path.write_text(
-                json.dumps(
-                    {
-                        "report_every": 1,
-                        "devices": [
-                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
+    def test_post_controller_apply_delegates_current_desired_config_once(self):
+        desired = self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(2)})
+        applied = {
+            "controller": "sprouter", "success": True,
+            "message": "schedule verified, saved, and applied",
+            "firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2},
+            "firmware_upgraded": False,
+        }
+        with (
+            patch.object(server, "controller_firmware", return_value="pico_scheduler"),
+            patch.object(server, "controller_item", return_value=desired),
+            patch.object(server, "post_controller_schedule", return_value=applied) as schedule,
+            patch.object(server, "atomic_write_json") as write_state,
+        ):
+            response = server.post_controller_apply("sprouter")
 
-            compiled = {
-                "report_every": 10,
-                "devices": [
-                    {"id": "lights", "type": "gpio", "pin": 2, "current_t": 12600, "reschedule": 1, "pattern": [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}]}
-                ],
-            }
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "TIMERS_DIR", timers_dir),
-                patch.object(server, "compiled_timer_state_for_controller", return_value=compiled),
-                patch.object(server, "apply_timer_state", return_value={"ok": True}) as apply_timer_state,
-            ):
-                response = server.post_controller_apply("sprouter")
-
-            saved = json.loads(timer_path.read_text(encoding="utf-8"))
-
-        self.assertTrue(response["success"])
-        self.assertEqual(response["message"], "state sent to Pico")
-        self.assertEqual(saved, compiled)
-        apply_timer_state.assert_called_once_with("sprouter", timer_path)
-
-    def test_post_controller_apply_propagates_pico_failure(self):
-        compiled = {"report_every": 5, "devices": []}
-        with tempfile.TemporaryDirectory() as tmp:
-            timers_dir = Path(tmp)
-            with (
-                patch.object(server, "TIMERS_DIR", timers_dir),
-                patch.object(server, "controller_firmware", return_value="pico_scheduler"),
-                patch.object(server, "timer_state_path", return_value=timers_dir / "sprouter.json"),
-                patch.object(server, "compiled_timer_state_for_controller", return_value=compiled),
-                patch.object(server, "apply_timer_state", side_effect=HTTPException(status_code=409, detail="configured Pico is not connected: abc")),
-            ):
-                with self.assertRaises(HTTPException) as raised:
-                    server.post_controller_apply("sprouter")
-
-        self.assertEqual(raised.exception.status_code, 409)
-        self.assertIn("not connected", str(raised.exception.detail))
+        schedule.assert_called_once_with("sprouter", desired)
+        write_state.assert_not_called()
+        self.assertIs(response, applied)
 
     def test_post_timer_channel_schedule_updates_semantic_config_and_applies_once(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1958,12 +1892,12 @@ class ConfigApiTests(unittest.TestCase):
 
     def test_controller_schedule_maps_transaction_failures_without_host_writes(self):
         failures = [
-            (server.PicoUnavailable("missing"), 409, "unavailable"),
-            (server.PicoFlashError("firmware", 1, "", "copy failed", raw_lines=(b"flash raw\n",)), 502, "upgrade"),
-            (server.PicoCommandError("configure rejected", raw_lines=(b"configure raw\n",)), 502, "protocol"),
-            (ValueError("invalid state"), 422, "validation"),
+            (server.PicoUnavailable("missing"), 409, "unavailable", []),
+            (server.PicoFlashError("firmware", 1, "", "copy failed", raw_lines=(b"flash raw\n",)), 502, "upgrade", ["flash raw"]),
+            (server.PicoCommandError("invalid firmware identity", raw_lines=(b"before raw\n", b"identity raw\n")), 502, "protocol", ["before raw", "identity raw"]),
+            (ValueError("invalid state"), 422, "validation", []),
         ]
-        for failure, status_code, kind in failures:
+        for failure, status_code, kind, raw_lines in failures:
             with self.subTest(kind=kind):
                 monitor = self.healthy_monitor()
                 with tempfile.TemporaryDirectory() as tmp:
@@ -1987,7 +1921,7 @@ class ConfigApiTests(unittest.TestCase):
 
                 self.assertEqual(raised.exception.status_code, status_code)
                 self.assertEqual(raised.exception.detail["health"]["error"]["kind"], kind)
-                self.assertIn("raw_lines", raised.exception.detail["health"])
+                self.assertEqual(raised.exception.detail["health"]["raw_lines"], raw_lines)
                 write_config.assert_not_called()
                 write_state.assert_not_called()
                 monitor.record_apply_result.assert_not_called()
@@ -2275,75 +2209,3 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail["health"]["error"]["kind"], "unavailable")
-
-    def test_apply_timer_state_rejects_nonempty_state_before_hardware_mutation(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(
-                root,
-                {
-                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", report_every=42, devices={"pump": self.scheduled_output(2)})},
-                    "cameras": {},
-                },
-            )
-            timer_path = root / "data" / "timers" / "pump_lights.json"
-            timer_path.parent.mkdir(parents=True)
-            timer_path.write_text(
-                json.dumps(
-                    {
-                        "report_every": 1,
-                        "devices": [
-                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "get_or_start_monitor") as get_monitor,
-            ):
-                with self.assertRaisesRegex(ValueError, "persistent state seeding is unavailable"):
-                    server.apply_timer_state("pump_lights", timer_path)
-
-        get_monitor.assert_not_called()
-
-    def test_apply_timer_state_writes_generated_main_py_text(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(
-                root,
-                {
-                    "controllers": {"pump_lights": self.scheduler_controller(serial="abc", report_every=42, devices={"pump": self.scheduled_output(2)})},
-                    "cameras": {},
-                },
-            )
-            timer_path = root / "data" / "timers" / "pump_lights.json"
-            timer_path.parent.mkdir(parents=True)
-            timer_path.write_text(
-                json.dumps(
-                    {
-                        "report_every": 1,
-                        "devices": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            generated_files = []
-            generated_sources = []
-
-            class FakeMonitor:
-                def apply(self, path):
-                    generated_files.append(Path(path))
-                    generated_sources.append(Path(path).read_text(encoding="utf-8"))
-                    return {"ok": True}
-
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "get_or_start_monitor", return_value=FakeMonitor()),
-            ):
-                response = server.apply_timer_state("pump_lights", timer_path)
-
-        self.assertEqual(response, {"ok": True})
-        self.assertEqual(generated_files[0].suffix, ".py")
-        self.assertIn('FIRMWARE_NAME = "pico_scheduler"', generated_sources[0])

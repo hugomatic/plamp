@@ -188,10 +188,11 @@ class SchedulerApplyTests(unittest.TestCase):
             active=exchange(old, "/dev/pico", b"upgraded\n"),
         )
 
-        with self.assertRaisesRegex(PicoCommandError, "does not match expected"):
+        with self.assertRaisesRegex(PicoCommandError, "does not match expected") as raised:
             self.apply(operation)
 
         self.assertEqual(operation.calls, ["report", "upgrade"])
+        self.assertEqual(raised.exception.raw_lines, (b"legacy\n", b"upgraded\n"))
 
     def test_configure_identity_mismatch_is_rejected(self):
         changed = FirmwareIdentity("pico_scheduler", "otherrev", 2)
@@ -200,10 +201,57 @@ class SchedulerApplyTests(unittest.TestCase):
             exchange(changed, "/dev/pico", b"configured\n"),
         )
 
-        with self.assertRaisesRegex(PicoCommandError, "changed during configuration"):
+        with self.assertRaisesRegex(PicoCommandError, "changed during configuration") as raised:
             self.apply(operation)
 
         self.assertEqual(operation.calls, ["report", "configure"])
+        self.assertEqual(raised.exception.raw_lines, (b"before\n", b"configured\n"))
+
+    def test_malformed_initial_firmware_identity_is_protocol_error_with_raw_evidence(self):
+        malformed = report(EXPECTED)
+        malformed["content"]["firmware"]["protocol"] = "two"
+        operation = FakeOperation(
+            PicoExchange(malformed, "/dev/pico", (b"malformed before\n",)),
+            exchange(EXPECTED, "/dev/pico", b"configured\n"),
+        )
+
+        with self.assertRaisesRegex(PicoCommandError, "invalid firmware identity") as raised:
+            self.apply(operation)
+
+        self.assertEqual(operation.calls, ["report"])
+        self.assertEqual(raised.exception.raw_lines, (b"malformed before\n",))
+
+    def test_malformed_post_upgrade_identity_preserves_all_raw_evidence(self):
+        malformed = report(EXPECTED)
+        malformed["content"]["firmware"]["name"] = 42
+        operation = FakeOperation(
+            exchange(None, "/dev/pico", b"legacy\n"),
+            exchange(EXPECTED, "/dev/pico", b"configured\n"),
+            active=PicoExchange(malformed, "/dev/pico", (b"malformed upgrade\n",)),
+        )
+
+        with self.assertRaisesRegex(PicoCommandError, "invalid firmware identity") as raised:
+            self.apply(operation)
+
+        self.assertEqual(operation.calls, ["report", "upgrade"])
+        self.assertEqual(raised.exception.raw_lines, (b"legacy\n", b"malformed upgrade\n"))
+
+    def test_malformed_configured_identity_preserves_all_raw_evidence(self):
+        malformed = report(EXPECTED)
+        malformed["content"]["firmware"]["revision"] = None
+        operation = FakeOperation(
+            exchange(EXPECTED, "/dev/pico", b"before\n"),
+            PicoExchange(malformed, "/dev/pico", (b"malformed configured\n",)),
+        )
+
+        with self.assertRaisesRegex(PicoCommandError, "invalid firmware identity") as raised:
+            self.apply(operation)
+
+        self.assertEqual(operation.calls, ["report", "configure"])
+        self.assertEqual(
+            raised.exception.raw_lines,
+            (b"before\n", b"malformed configured\n"),
+        )
 
 
 if __name__ == "__main__":

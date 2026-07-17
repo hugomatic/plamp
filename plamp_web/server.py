@@ -26,7 +26,6 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from pico_scheduler.generator import GeneratorOptions, generate_main_py
 from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
 from plamp.context import resolve_context
@@ -343,40 +342,6 @@ def validate_timer_state(raw: Any) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"report_every": report_every, "devices": pico_state["devices"]}
-
-
-def timer_state_for_pico(role: str, raw_state: Any) -> dict[str, Any]:
-    state = validate_timer_state(raw_state)
-    role_config = timer_role(role)
-    report_every = require_int(role_config.get("payload", {}).get("report_every", 10), "report_every must be an integer")
-    if report_every <= 0:
-        raise HTTPException(status_code=422, detail="report_every must be > 0")
-    disabled = disabled_timer_device_keys(role)
-    devices = [
-        device
-        for device in state["devices"]
-        if (device.get("id"), int(device.get("pin"))) not in disabled
-        and (None, int(device.get("pin"))) not in disabled
-    ]
-    return {"report_every": report_every, "devices": devices}
-
-
-def disabled_timer_device_keys(role: str) -> set[tuple[str | None, int]]:
-    disabled: set[tuple[str | None, int]] = set()
-    config = load_config()
-    devices = scheduler_devices_for_controller(config, role)
-    for device_id, device in devices.items():
-        if not isinstance(device_id, str) or not isinstance(device, dict):
-            continue
-        if device.get("programming") != "disabled" and device.get("visibility") != "hidden":
-            continue
-        try:
-            pin = int(device.get("pin"))
-        except (TypeError, ValueError):
-            continue
-        disabled.add((device_id, pin))
-        disabled.add((None, pin))
-    return disabled
 
 
 def empty_timer_state() -> dict[str, Any]:
@@ -1276,31 +1241,6 @@ def monitor_summaries() -> dict[str, dict[str, Any]]:
     with monitors_lock:
         active = dict(monitors)
     return {role: monitor.snapshot() for role, monitor in active.items()}
-
-
-def rendered_pico_main(role: str, raw_state: Any) -> str:
-    state = timer_state_for_pico(role, raw_state)
-    if state["devices"]:
-        raise ValueError("non-empty scheduler state cannot be flashed: persistent state seeding is unavailable")
-    git_version = git_output(["git", "rev-parse", "--short", "HEAD"], repo_root=REPO_ROOT) or "unknown"
-    return generate_main_py(
-        firmware_revision=git_version,
-        options=GeneratorOptions(),
-    )
-
-
-def apply_timer_state(role: str, path: Path) -> dict[str, Any]:
-    generated = rendered_pico_main(role, load_json_file(path))
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".py", delete=False) as temp:
-        temp_path = Path(temp.name)
-        temp.write(generated)
-    try:
-        return get_or_start_monitor(role).apply(temp_path)
-    finally:
-        try:
-            temp_path.unlink()
-        except OSError:
-            pass
 
 
 def send_timer_command(role: str, command: str) -> dict[str, Any]:
@@ -2209,6 +2149,14 @@ def get_controller(controller: str, stream: bool = False) -> Any:
 @app.put("/api/controllers/{controller}")
 def put_controller(controller: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     firmware = controller_firmware(controller)
+    if firmware == "pico_scheduler":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "compiled scheduler state PUT is not supported; submit the desired "
+                f"controller config to POST /api/controllers/{controller}/schedule"
+            ),
+        )
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="top-level JSON must be an object")
     payload_controller = payload.get("controller")
@@ -2221,22 +2169,6 @@ def put_controller(controller: str, payload: dict[str, Any] = Body(...)) -> dict
     content = dict(payload)
     content.pop("controller", None)
     content.pop("firmware", None)
-
-    if firmware == "pico_scheduler":
-        path = timer_state_path(controller)
-        validated = validate_timer_state(content)
-        with lock_for(role_locks, controller):
-            atomic_write_json(path, validated)
-            sent = apply_timer_state(controller, path)
-        response = {
-            "controller": controller,
-            "firmware": firmware,
-            "success": True,
-            "message": "state saved and sent to Pico",
-            "pico": sent,
-        }
-        response.update(validated)
-        return response
 
     path = controller_state_path(controller)
     with lock_for(role_locks, controller):
@@ -2554,21 +2486,7 @@ def post_controller_schedule(controller: str, proposed_controller: dict[str, Any
 def post_controller_apply(controller: str) -> dict[str, Any]:
     if controller_firmware(controller) != "pico_scheduler":
         raise HTTPException(status_code=422, detail="apply is only supported for pico_scheduler controllers")
-    path = timer_state_path(controller)
-    with lock_for(role_locks, controller):
-        validated = validate_timer_state(
-            compiled_timer_state_for_controller(controller, now=datetime.now().time())
-        )
-        atomic_write_json(path, validated)
-        sent = apply_timer_state(controller, path)
-    return {
-        "controller": controller,
-        "firmware": "pico_scheduler",
-        "success": True,
-        "message": "state sent to Pico",
-        "pico": sent,
-        "state": state_with_current_values(validated),
-    }
+    return post_controller_schedule(controller, controller_item(controller))
 
 
 @app.post("/api/controllers/{controller}/commands/report")
