@@ -860,3 +860,41 @@ When hardware is available, use `plampctl` to deploy and `plamp-cli`/direct `pla
 7. Five-second successful health reports remain quiet at INFO.
 
 Only after this evidence passes should the stacked controller-health and runtime-config branches be considered for merge and production deployment.
+
+## Sprout hardware evidence
+
+Validated `feature/runtime-pico-config` commit `7ef9615` on Sprout on
+2026-07-16 (HST), using controller `octo_relay` and Pico serial
+`9d480174e373e801`:
+
+- The first no-semantic-change schedule transaction replaced the legacy
+  firmware once and returned a matching report for firmware
+  `pico_scheduler`, protocol 2, revision `56278f8`, while preserving the
+  committed schedule. A second transaction completed without a firmware
+  upgrade or USB reset and retained the same tty device.
+- A later runtime schedule change applied and reported the complete new state:
+  ch1 remained a 43,200-second on/off cycle and ch8 became a 600-second on,
+  300-second off cycle. Ordinary schedule changes did not flash firmware.
+- After removal and reconnection, udev changed health immediately but did not
+  claim `OK` until a fresh valid Pico report arrived. While disconnected, the
+  dashboard froze the last reported pin values and did not animate inferred
+  schedule state.
+- A USB power cycle re-enumerated the Pico as bus 001 device 008. The first
+  direct report after boot contained the persisted ch1 and ch8 programs,
+  firmware identity `56278f8`, and no overlays. Stored phase resumed, but time
+  spent without power was not reconstructed; daily wall-clock drift detection
+  and correction remain future work.
+- A live configure document containing duplicate pin 21 was rejected with
+  `duplicate pin: 21`. SHA-256 hashes of `data/config.json` and
+  `data/timers/octo_relay.json` were identical before and after, and the next
+  direct report retained both active programs.
+- A two-second pulse of pin 21 was accepted only after a valid report showed
+  it OFF. A later report showed pin 21 OFF, no overlays, and the unchanged ch1
+  base program.
+- The service journal over a 15-minute interval contained only user-initiated
+  HTTP requests. Successful five-second background health reports produced no
+  INFO-level journal noise.
+
+These observations satisfy the deferred non-production hardware gate. They do
+not authorize production deployment, automatic drift correction, or automatic
+reconciliation when the Pico and host persisted states differ.
