@@ -7,6 +7,21 @@ from pathlib import Path
 
 from plamp.cli import main
 from plamp.config import ConfigError, controller_pico_serial
+from plamp.pico_transport import PicoFlashError
+
+
+STATE = {
+    "devices": [
+        {
+            "id": "lights",
+            "type": "gpio",
+            "pin": 2,
+            "current_t": 0,
+            "reschedule": 1,
+            "pattern": [{"val": 1, "dur": 10}],
+        }
+    ]
+}
 
 
 class DirectCliTests(unittest.TestCase):
@@ -130,6 +145,146 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(calls[0][:3], ("PICO-A", 21, 5))
         self.assertEqual(json.loads(stdout.getvalue())["type"], "report")
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_pico_configure_normalizes_state_before_calling_library(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            state_file = root / "state.json"
+            state_file.write_text(json.dumps({**STATE, "report_every": 5}), encoding="utf-8")
+            stdout, stderr = io.StringIO(), io.StringIO()
+            calls = []
+
+            def fake_configure(serial, state, **kwargs):
+                calls.append((serial, state, kwargs))
+                return {"type": "report", "content": {"devices": state["devices"]}}
+
+            rc = main(
+                ["pico", "configure", "tower", str(state_file)],
+                env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                configure_func=fake_configure,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][0], "PICO-A")
+        self.assertEqual(calls[0][1], STATE)
+        self.assertEqual(calls[0][2]["repo_root"], root.resolve())
+        self.assertEqual(calls[0][2]["data_dir"], root.resolve())
+        self.assertEqual(json.loads(stdout.getvalue())["type"], "report")
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_pico_configure_reads_state_from_stdin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            calls = []
+
+            rc = main(
+                ["pico", "configure", "tower", "-"],
+                env=self.runtime_env(root), stdin=io.StringIO(json.dumps(STATE)),
+                stdout=io.StringIO(), stderr=io.StringIO(),
+                configure_func=lambda serial, state, **kwargs: calls.append((serial, state)) or {},
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls, [("PICO-A", STATE)])
+
+    def test_pico_state_errors_return_usage_error_before_hardware_access(self):
+        invalid_cases = (
+            ("missing.json", None),
+            ("invalid.json", "{"),
+            ("invalid-state.json", '{"devices":"wrong"}'),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            for filename, content in invalid_cases:
+                with self.subTest(filename=filename):
+                    path = root / filename
+                    if content is not None:
+                        path.write_text(content, encoding="utf-8")
+                    calls = []
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    rc = main(
+                        ["pico", "configure", "tower", str(path)],
+                        env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                        configure_func=lambda *args, **kwargs: calls.append((args, kwargs)),
+                    )
+                    self.assertEqual(rc, 2)
+                    self.assertEqual(calls, [])
+                    self.assertEqual(stdout.getvalue(), "")
+                    self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_pico_configure_hardware_error_returns_four_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            state_file = root / "state.json"
+            state_file.write_text(json.dumps(STATE), encoding="utf-8")
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            rc = main(
+                ["pico", "configure", "tower", str(state_file)],
+                env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                configure_func=lambda *args, **kwargs: (_ for _ in ()).throw(ConnectionError("Pico unplugged")),
+            )
+
+        self.assertEqual(rc, 4)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "Pico unplugged\n")
+
+    def test_pico_upgrade_prints_stable_identity_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            calls = []
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            result = {
+                "report": {"type": "report", "content": {"devices": []}},
+                "previous_identity": {"revision": "old", "protocol": 2, "name": "pico_scheduler"},
+                "identity": {"revision": "new", "protocol": 2, "name": "pico_scheduler"},
+            }
+            rc = main(
+                ["pico", "upgrade", "tower", "-"],
+                env=self.runtime_env(root), stdin=io.StringIO(json.dumps(STATE)),
+                stdout=stdout, stderr=stderr,
+                upgrade_func=lambda serial, state, **kwargs: calls.append((serial, state, kwargs)) or result,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0][0:2], ("PICO-A", STATE))
+        self.assertEqual(json.loads(stdout.getvalue()), result)
+        self.assertEqual(stdout.getvalue(), json.dumps(result, sort_keys=True) + "\n")
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_pico_upgrade_failure_returns_four_without_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            def fail(*args, **kwargs):
+                raise PicoFlashError("firmware", 7, "", "copy failed")
+
+            rc = main(
+                ["pico", "upgrade", "tower", "-"],
+                env=self.runtime_env(root), stdin=io.StringIO(json.dumps(STATE)),
+                stdout=stdout, stderr=stderr, upgrade_func=fail,
+            )
+
+        self.assertEqual(rc, 4)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("copy failed", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_pico_help_lists_direct_configuration_commands(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
+            main(["pico", "--help"])
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("configure", stdout.getvalue())
+        self.assertIn("upgrade", stdout.getvalue())
 
     def test_camera_capture_calls_shared_library_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
