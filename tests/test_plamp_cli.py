@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from plamp_cli.http import ApiError, NetworkError
 from plamp_cli.io import InputError
-from plamp_cli.main import build_parser, main
+from plamp_cli.main import _generate_firmware_source, build_parser, main
 
 
 class PlampCliBootstrapTests(unittest.TestCase):
@@ -295,8 +295,7 @@ class PlampCliTimerTests(unittest.TestCase):
     def test_controllers_list_groups_pico_scheduler_ids(self, request_json):
         request_json.return_value = {
             "controllers": {
-                "pump_lights": {"firmware": "pico_scheduler"},
-                "hello_doser": {"firmware": "pico_doser"},
+                "pump_lights": {"firmware": "pico_scheduler"}
             }
         }
         stdout = StringIO()
@@ -307,7 +306,7 @@ class PlampCliTimerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             stdout.getvalue(),
-            '{"controllers": {"hello_doser": {"firmware": "pico_doser"}, "pump_lights": {"firmware": "pico_scheduler"}}}\n',
+            '{"controllers": {"pump_lights": {"firmware": "pico_scheduler"}}}\n',
         )
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/controllers")
@@ -316,8 +315,7 @@ class PlampCliTimerTests(unittest.TestCase):
     def test_pico_scheduler_list_returns_ids_only(self, request_json):
         request_json.return_value = {
             "controllers": {
-                "pump_lights": {"firmware": "pico_scheduler"},
-                "hello_doser": {"firmware": "pico_doser"},
+                "pump_lights": {"firmware": "pico_scheduler"}
             }
         }
         stdout = StringIO()
@@ -539,6 +537,69 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliFirmwareTests(unittest.TestCase):
+    def test_firmware_families_lists_only_scheduler(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["firmware", "families"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"families": ["pico_scheduler"]}\n')
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_unimplemented_doser_generation_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported firmware family"):
+            _generate_firmware_source("pico_doser", {}, None)
+
+    def test_scheduler_generation_rejects_nonempty_payload_until_state_seeding_exists(self):
+        payload = {
+            "devices": [
+                {
+                    "id": "lights",
+                    "type": "gpio",
+                    "pin": 2,
+                    "current_t": 0,
+                    "reschedule": 1,
+                    "pattern": [{"val": 1, "dur": 10}],
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "persistent state seeding is unavailable"):
+            _generate_firmware_source("pico_scheduler", payload, "tower")
+
+    def test_scheduler_generation_allows_empty_generic_firmware(self):
+        source = _generate_firmware_source("pico_scheduler", {"devices": []}, "tower")
+
+        self.assertIn('FIRMWARE_REVISION = "local-cli"', source)
+
+    @patch("plamp_cli.main.subprocess.Popen")
+    @patch("plamp_cli.main._run_command")
+    @patch("plamp_cli.main.load_json_input")
+    def test_scheduler_flash_rejects_nonempty_payload_before_hardware_mutation(self, load_json_input, run_command, popen):
+        load_json_input.return_value = {
+            "devices": [{"id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+                         "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(
+            ["firmware", "flash", "--firmware", "pico_scheduler", "--controller", "tower", "payload.json", "--port", "/dev/ttyACM0"],
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("persistent state seeding is unavailable", stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), "")
+        popen.assert_not_called()
+        run_command.assert_not_called()
+
+    def test_scheduler_generation_rejects_invalid_payload_before_rendering(self):
+        with self.assertRaisesRegex(ValueError, "devices must be a list"):
+            _generate_firmware_source("pico_scheduler", {"devices": "bad"}, "tower")
+
     @patch("plamp_cli.main._run_command")
     def test_firmware_pull_defaults_to_stdout(self, run_command):
         run_command.return_value = (0, "print('hello')\n", "")

@@ -350,31 +350,26 @@ def _run_command(args: list[str]) -> tuple[int, str, str]:
 
 def _generate_firmware_source(firmware: str, payload: object, controller: str | None) -> str:
     if firmware == "pico_scheduler":
+        from plamp.scheduler_state import normalize_scheduler_state
         from pico_scheduler.generator import GeneratorOptions, generate_main_py
 
         if not controller:
             raise ValueError("--controller is required for pico_scheduler")
         if not isinstance(payload, dict):
             raise ValueError("pico_scheduler payload must be a JSON object")
+        normalized = normalize_scheduler_state(payload)
+        if normalized["devices"]:
+            raise ValueError("non-empty scheduler state cannot be flashed: persistent state seeding is unavailable")
         return generate_main_py(
-            controller_id=controller,
-            state=payload,
-            git_version="local-cli",
-            generated_at="local-cli",
+            firmware_revision="local-cli",
             options=GeneratorOptions(),
         )
-    if firmware == "pico_doser":
-        from pico_doser.generator import generate_main_py as generate_doser_main_py
-
-        if not isinstance(payload, dict):
-            raise ValueError("pico_doser payload must be a JSON object")
-        return generate_doser_main_py(payload)
     raise ValueError(f"unsupported firmware family: {firmware}")
 
 
 def _handle_firmware(args: argparse.Namespace, stderr: TextIO) -> object | bytes | None:
     if args.firmware_action == "families":
-        return {"families": ["pico_scheduler", "pico_doser"]}
+        return {"families": ["pico_scheduler"]}
 
     if args.firmware_action == "generate":
         payload = load_json_input(args.payload)

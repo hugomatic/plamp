@@ -1,5 +1,9 @@
 # Firmware Family API and CLI Design
 
+> **Superseded 2026-07-16:** The `pico_doser` placeholder described here was
+> removed before deployment. `pico_scheduler` is the only implemented family;
+> future measurement-MCU firmware requires a new hardware-backed design.
+
 ## Goal
 
 Evolve the controller API and CLI so they support multiple firmware families cleanly, keep JSON as the source input for firmware generation, and allow direct local firmware generation and flashing for power users and agents.

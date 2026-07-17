@@ -84,14 +84,18 @@ ssh localhost /home/hugo/.local/bin/plamp pics get <image_key> --stdout > latest
 
 ## Direct library CLI
 
-`python -m plamp` calls the shared library without REST. This first slice supports fresh Pico reports:
+`python -m plamp` calls the shared library without REST and shares the same
+per-device filesystem locks as `plamp-web`:
 
 ```bash
-sudo systemctl stop plamp-web
 uv run python -m plamp pico report pump_lights
-sudo systemctl start plamp-web
+uv run python -m plamp pico pulse pump_lights 21 5
+uv run python -m plamp pico configure pump_lights compiled-state.json
+uv run python -m plamp pico upgrade pump_lights compiled-state.json
+uv run python -m plamp camera capture rpicam_cam0
 ```
 
-Output is one report JSON object. `--config`, `--lock-dir`, and `--timeout` control local paths and the operation budget.
-
-Until the web monitor migrates to the same filesystem locks, do not run direct serial commands concurrently with `plamp-web`.
+Commands emit JSON on stdout and diagnostics on stderr. `--config`,
+`--lock-dir`, and `--timeout` control local paths and operation budgets. Direct
+hardware commands may run while the service is active because access is
+serialized through shared locks.

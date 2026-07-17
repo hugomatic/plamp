@@ -550,14 +550,12 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
             '<td><input class="controller-id" placeholder="pump_lights" value="{controller_id}"></td>'
             '<td><input class="controller-label" placeholder="Pump and lights" value="{label}"></td>'
             '<td><select class="controller-pico-serial">{pico_options_html}</select></td>'
-            '<td><input class="controller-report-every" type="number" min="1" value="{report_every}"></td>'
             '<td style="display:none"><select class="controller-type">{type_options}</select></td>'
             '</tr>'.format(
                 new_row_class=" new-row" if new_row else "",
                 controller_id=html.escape(controller_id, quote=True),
                 label=html.escape(str(settings.get("label") or ""), quote=True),
                 pico_options_html=pico_options(setup_picos, str(payload.get("pico_serial") or "")),
-                report_every=html.escape(str(payload.get("report_every") or controller.get("settings", {}).get("report_every") or 10), quote=True),
                 type_options=controller_type_options(str(controller.get("type") or "pico_scheduler")),
             )
         )
@@ -584,7 +582,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
 
     create_scheduler_block = (
         '<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">'
-        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
+        '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead>'
         '<tbody>{controller_row}</tbody></table>'
         '<div class="subsection-indent"><h4>Devices</h4>'
         '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -601,7 +599,7 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         device_rows.append(render_scheduler_device_row("", {}, controller_id, new_row=True))
         scheduler_blocks.append(
             '<div class="pico-scheduler-block" data-controller-key="{controller_id}">'
-            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Pico poll interval (seconds)</th></tr></thead>'
+            '<table><thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead>'
             '<tbody>{controller_row}</tbody></table>'
             '<div class="subsection-indent"><h4>Devices</h4>'
             '<table><thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>'
@@ -838,9 +836,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
       const picoSerialSelect = row.querySelector(".controller-pico-serial");
       picoSerialSelect.value = hiddenPayload.pico_serial || "";
       picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";
-      const reportEveryInput = row.querySelector(".controller-report-every");
-      reportEveryInput.value = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");
-      reportEveryInput.defaultValue = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");
     }}
     const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{{}}");
     const repoRootPath = {repo_root_path_json};
@@ -870,8 +865,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         const labelInput = row.querySelector(".controller-label");
         const label = labelInput.value.trim();
         const type = row.querySelector(".controller-type").value;
-        const reportEveryInput = row.querySelector(".controller-report-every");
-        const reportEvery = reportEveryInput.value;
         const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {{}});
         const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;
         const payload = isHiddenReuse ? existingController : {{type, payload: {{}}, settings: {{}}}};
@@ -881,13 +874,6 @@ def render_settings_page(summary: dict[str, Any], controller_ids: list[str] | No
         payload.settings = payload.settings || {{}};
         if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;
         if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;
-        if (type === "pico_scheduler") {{
-          if (reportEvery === "") {{
-            if (!isHiddenReuse) throw new Error(`Report interval required for controller ${{key}}.`);
-          }} else {{
-            if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.payload.report_every = Number(reportEvery);
-          }}
-        }}
         payload.settings = cleanObject(payload.settings);
         payload.payload = cleanObject(payload.payload);
         result[key] = payload;
@@ -1261,7 +1247,6 @@ def render_timer_dashboard_page(
     host_seconds_since_midnight: int = 0,
     camera_ids: list[str] | None = None,
     hostname: str = "",
-    report_periods_by_role: dict[str, int] | None = None,
 ) -> str:
     page_name = f"{hostname} Plamp" if hostname else "Plamp"
     camera_options = "".join(
@@ -1286,11 +1271,15 @@ def render_timer_dashboard_page(
     .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
     .status-board { display: grid; gap: 1rem; margin: 1rem 0; max-width: 980px; }
     .controller-card { border: 1px solid #bbb; border-radius: 8px; display: grid; gap: .75rem; padding: .9rem; }
+    .controller-card-error { background: #eee; border-color: #999; color: #555; }
+    .controller-card-error button { background: #e5e5e5; color: #777; }
+    .controller-card-error .timer-value, .controller-card-error .timer-bar, .controller-card-error .timer-fill { background: #ccc; }
     .controller-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .controller-name { font-size: 1.1rem; font-weight: 700; }
     .controller-devices { display: grid; gap: .75rem; }
     .controller-actions { border-top: 1px solid #ddd; margin-top: .25rem; padding-top: .65rem; }
     .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
+    .timer-card-stale { opacity: .65; }
     .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .timer-name { font-weight: 700; }
     .timer-value { border-radius: 6px; padding: .15rem .45rem; }
@@ -1365,7 +1354,6 @@ def render_timer_dashboard_page(
     const clockTimeFormat = __TIME_FORMAT__;
     const timerRoles = __ROLES__;
     const timerChannels = __CHANNELS__;
-    const timerReportPeriods = __REPORT_PERIODS__;
     let timerHostSecondsAtLoad = __HOST_SECONDS__;
     let timerHostLoadedAt = Date.now();
     const timerStatus = document.getElementById("timer-stream-status");
@@ -1388,6 +1376,8 @@ def render_timer_dashboard_page(
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
+    const timerStatuses = new Map();
+    const timerMessageTimes = new Map();
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
@@ -1498,7 +1488,7 @@ def render_timer_dashboard_page(
       hostClock.textContent = secondsToClock(hostSecondsNow());
     }
 
-    function currentTimerStep(event) {
+    function currentTimerStep(event, ageSeconds = 0) {
       const pattern = Array.isArray(event.pattern) ? event.pattern : [];
       if (!pattern.length) return null;
       const durations = pattern.map((step) => Number(step.dur));
@@ -1506,6 +1496,7 @@ def render_timer_dashboard_page(
       const total = durations.reduce((sum, duration) => sum + duration, 0);
       let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
       if (!Number.isFinite(cycleT)) cycleT = 0;
+      cycleT += Math.max(0, Number(ageSeconds) || 0);
       if (Number(event.reschedule ?? 1)) {
         cycleT = ((cycleT % total) + total) % total;
       } else {
@@ -1641,6 +1632,23 @@ def render_timer_dashboard_page(
       message.textContent = text;
     }
 
+    function responseErrorMessage(payload, fallback) {
+      const detail = payload?.detail;
+      if (typeof detail === "string") return detail;
+      if (typeof detail?.message === "string") return detail.message;
+      if (typeof detail?.health?.error?.message === "string") return detail.health.error.message;
+      return fallback;
+    }
+
+    function formatAge(timestamp) {
+      const milliseconds = Date.now() - Date.parse(timestamp || "");
+      if (!Number.isFinite(milliseconds) || milliseconds < 0) return "unknown";
+      const seconds = Math.floor(milliseconds / 1000);
+      if (seconds < 2) return "just now";
+      if (seconds < 60) return `${seconds}s ago`;
+      return `${Math.floor(seconds / 60)}m ago`;
+    }
+
     function escapeHtml(value) {
       return String(value).replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -1715,10 +1723,27 @@ def render_timer_dashboard_page(
       `;
     }
 
-    function openControllerScheduleEditor(role) {
+    async function openControllerScheduleEditor(role) {
       stopPageAutoRefresh();
-      activeEditor = {role};
-      renderTimerStatus(true);
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"});
+        const text = await response.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (error) {}
+        if (!response.ok) {
+          throw new Error(responseErrorMessage(parsed, text || `${response.status} ${response.statusText}`));
+        }
+        const health = timerStatuses.get(role) || {};
+        const verifiedAt = new Date().toISOString();
+        timerStatuses.set(role, {...health, ok: true, status: "OK", checked_at: verifiedAt, last_verified_at: verifiedAt, error: null});
+        activeEditor = {role};
+        renderTimerStatus(true);
+      } catch (error) {
+        const health = timerStatuses.get(role) || {};
+        timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {...(health.error || {}), message: String(error.message || error)}});
+        activeEditor = null;
+        renderTimerStatus(true);
+      }
     }
 
     function syncEditorMode(block) {
@@ -1743,14 +1768,8 @@ def render_timer_dashboard_page(
         if (!configResponse.ok) {
           throw new Error(configPayload?.detail || `config: ${configResponse.status} ${configResponse.statusText}`);
         }
-        const controllers = structuredClone(configPayload?.config?.controllers || {});
-        const controller = structuredClone(controllers[role] || {});
-        const reportPeriodInput = form.querySelector(".controller-report-period");
-        controller.payload = structuredClone(controller.payload || {});
-        controller.payload.report_every = Number(reportPeriodInput.value);
+        const controller = structuredClone(configPayload?.config?.controllers?.[role] || {});
         controller.settings = structuredClone(controller.settings || {});
-        controller.settings.report_every = Number(reportPeriodInput.value);
-        timerReportPeriods[role] = Number(reportPeriodInput.value);
         controller.settings.devices = structuredClone(controller.settings.devices || {});
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
@@ -1782,26 +1801,18 @@ def render_timer_dashboard_page(
           }
           controller.settings.devices[channelId] = device;
         }
-        controllers[role] = controller;
-        const saveConfigResponse = await fetch("/api/config/controllers", {
-          method: "PUT",
+        const scheduleResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/schedule`, {
+          method: "POST",
           headers: {"content-type": "application/json"},
-          body: JSON.stringify(controllers),
+          body: JSON.stringify(controller),
         });
-        const saveConfigText = await saveConfigResponse.text();
-        let saveConfigParsed = null;
-        try { saveConfigParsed = JSON.parse(saveConfigText); } catch (error) {}
-        if (!saveConfigResponse.ok) {
-          throw new Error(saveConfigParsed?.detail || saveConfigText || `config save: ${saveConfigResponse.status} ${saveConfigResponse.statusText}`);
+        const scheduleText = await scheduleResponse.text();
+        let scheduleParsed = null;
+        try { scheduleParsed = JSON.parse(scheduleText); } catch (error) {}
+        if (!scheduleResponse.ok) {
+          throw new Error(responseErrorMessage(scheduleParsed, scheduleText || `${scheduleResponse.status} ${scheduleResponse.statusText}`));
         }
-        const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});
-        const applyConfigText = await applyConfigResponse.text();
-        let applyConfigParsed = null;
-        try { applyConfigParsed = JSON.parse(applyConfigText); } catch (error) {}
-        if (!applyConfigResponse.ok) {
-          throw new Error(applyConfigParsed?.detail || applyConfigText || `apply config: ${applyConfigResponse.status} ${applyConfigResponse.statusText}`);
-        }
-        lastMessage = applyConfigParsed?.message || "Schedule settings saved.";
+        lastMessage = scheduleParsed?.message || "Schedule settings saved.";
         for (const block of blocks) {
           const channelId = block.dataset.channelId;
           syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
@@ -1826,6 +1837,8 @@ def render_timer_dashboard_page(
       let rendered = 0;
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
+        const health = timerStatuses.get(role);
+        const ok = health?.ok === true;
         const devices = timerDevicesFromMessage(message);
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
@@ -1836,22 +1849,26 @@ def render_timer_dashboard_page(
         const items = channels.length
           ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
           : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
-        const isEditing = activeEditor && activeEditor.role === role;
+        if (!ok && activeEditor?.role === role) activeEditor = null;
+        const isEditing = ok && activeEditor && activeEditor.role === role;
         const controllerCard = document.createElement(isEditing ? "form" : "section");
         if (isEditing) {
           controllerCard.id = "timer-schedule-form";
           controllerCard.dataset.role = role;
         }
         controllerCard.className = "controller-card";
+        controllerCard.classList.toggle("controller-card-error", !ok);
         const controllerTop = document.createElement("div");
         controllerTop.className = "controller-top";
         const controllerName = document.createElement("span");
         controllerName.className = "controller-name";
         controllerName.textContent = role;
-        const controllerMeta = document.createElement("span");
-        controllerMeta.className = "editor-note";
-        controllerMeta.textContent = items.length + " device" + (items.length === 1 ? "" : "s");
-        controllerTop.append(controllerName, controllerMeta);
+        const status = document.createElement("span");
+        status.className = ok ? "editor-success" : "editor-error";
+        status.textContent = ok
+          ? `OK — last verified ${formatAge(health.last_verified_at || health.checked_at)}`
+          : `ERROR: ${health?.error?.message || "no valid report"}`;
+        controllerTop.append(controllerName, status);
         const devicesGrid = document.createElement("div");
         devicesGrid.className = "controller-devices";
         let configurableCount = items.length;
@@ -1860,12 +1877,14 @@ def render_timer_dashboard_page(
           const disabled = channel.default_editor === "disabled";
           const hidden = channel.default_editor === "hidden";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
-          const step = currentTimerStep(event);
-          const value = Number(step?.step?.val ?? event.current_value ?? 0);
+          const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
+          const step = currentTimerStep(event, messageAge);
+          const value = Number(event.current_value ?? 0);
           const isOn = value > 0;
           const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
           const card = document.createElement("div");
           card.className = "timer-card";
+          card.classList.toggle("timer-card-stale", !ok);
           const top = document.createElement("div");
           top.className = "timer-top";
           const name = document.createElement("span");
@@ -1877,7 +1896,7 @@ def render_timer_dashboard_page(
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
+          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -1895,17 +1914,13 @@ def render_timer_dashboard_page(
                 card.append(block);
               }
             }
-            rendered += 1;
           }
         }
         controllerCard.append(controllerTop, devicesGrid);
+        const diagnostics = document.createElement("a");
+        diagnostics.href = `/controllers/${encodeURIComponent(role)}`;
+        diagnostics.textContent = "Diagnostics";
         if (isEditing) {
-          const reportPeriodRow = document.createElement("div");
-          reportPeriodRow.className = "editor-row";
-          reportPeriodRow.innerHTML = `
-            <label>Pico poll interval (seconds) <input class="controller-report-period" type="number" min="1" step="1" value="${escapeHtml(timerReportPeriods[role] ?? 10)}"></label>
-          `;
-          controllerCard.insertBefore(reportPeriodRow, devicesGrid);
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
           actions.innerHTML = `
@@ -1919,6 +1934,7 @@ def render_timer_dashboard_page(
           }
           controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
           controllerCard.addEventListener("submit", submitScheduleEditor);
+          actions.append(diagnostics);
           controllerCard.append(actions);
           actions.querySelector('[name="cancel"]').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
         } else {
@@ -1928,17 +1944,20 @@ def render_timer_dashboard_page(
             const edit = document.createElement("button");
             edit.type = "button";
             edit.textContent = "Edit schedule";
+            edit.disabled = !ok;
             edit.addEventListener("click", () => openControllerScheduleEditor(role));
             actions.append(edit);
           } else {
             actions.textContent = "No configured device schedules.";
           }
+          actions.append(diagnostics);
           controllerCard.append(actions);
         }
         if (isEditing) {
           controllerCard.classList.add("controller-card-editing");
         }
         timerBoard.append(controllerCard);
+        rendered += 1;
       }
       restoreEditorFocus(focusState);
       if (!rendered) {
@@ -2099,6 +2118,8 @@ def render_timer_dashboard_page(
     function startTimerStreams() {
       stopTimerStreams();
       timerMessages.clear();
+      timerStatuses.clear();
+      timerMessageTimes.clear();
       renderTimerStatus();
       if (!timerRoles.length) {
         timerStatus.textContent = "No timers configured.";
@@ -2110,11 +2131,24 @@ def render_timer_dashboard_page(
         timerEventSources.set(role, source);
         for (const eventName of ["snapshot", "report"]) {
           source.addEventListener(eventName, (event) => {
-            timerMessages.set(role, JSON.parse(event.data));
+            const data = JSON.parse(event.data);
+            timerMessages.set(role, data);
+            timerMessageTimes.set(role, Date.now());
+            if (eventName === "snapshot") timerStatuses.set(role, data);
             renderTimerStatus();
           });
         }
+        source.addEventListener("status", (event) => {
+          const data = JSON.parse(event.data);
+          timerStatuses.set(role, data);
+          timerMessages.set(role, data);
+          timerMessageTimes.set(role, Date.now());
+          renderTimerStatus();
+        });
         source.onerror = () => {
+          const health = timerStatuses.get(role) || {};
+          timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {message: "controller status stream disconnected"}});
+          renderTimerStatus(true);
           if (source.readyState === EventSource.CLOSED) {
             timerStatus.textContent = "Stream disconnected.";
           }
@@ -2150,6 +2184,7 @@ def render_timer_dashboard_page(
     window.addEventListener("beforeunload", stopTimerStreams);
     refreshHostClock();
     setInterval(refreshHostClock, 30000);
+    setInterval(() => renderTimerStatus(), 1000);
     let pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
     resumeRefreshButton.addEventListener("click", startPageAutoRefresh);
     startTimerStreams();
@@ -2164,7 +2199,6 @@ def render_timer_dashboard_page(
         .replace("__TIME_FORMAT__", json.dumps(time_format))
         .replace("__ROLES__", json.dumps(roles))
         .replace("__CHANNELS__", json.dumps(channels_by_role or {}))
-        .replace("__REPORT_PERIODS__", json.dumps(report_periods_by_role or {}))
         .replace("__CAMERA_OPTIONS__", camera_options)
         .replace("__HOST_SECONDS__", json.dumps(host_seconds_since_midnight))
     )
@@ -2204,6 +2238,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
         ).strip()
         for entry in reversed(serial_entries)
     ) or "No serial lines captured."
+    diagnostics_text = json.dumps(status, indent=2, sort_keys=True)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2223,6 +2258,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     .command-form label {{ display: grid; gap: .25rem; }}
     input {{ border: 1px solid #aaa; border-radius: 6px; font: inherit; padding: .4rem .5rem; width: 8rem; }}
     .status, .muted {{ color: #555; }}
+    .diagnostics {{ background: #f7f7f7; font-size: .8rem; max-height: 32rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
     .serial-log {{ background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
   </style>
 </head>
@@ -2251,6 +2287,11 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     </table>
   </section>
   <section>
+    <h2>Diagnostics</h2>
+    <button id="refresh-diagnostics" type="button">Refresh diagnostics</button>
+    <pre id="controller-diagnostics" class="diagnostics">{html.escape(diagnostics_text)}</pre>
+  </section>
+  <section>
     <h2>Serial log</h2>
     <button id="refresh-log" type="button">Refresh log</button>
     <pre id="serial-log" class="serial-log">{html.escape(log_text)}</pre>
@@ -2259,6 +2300,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     const controller = {json.dumps(controller)};
     const configuredPins = {json.dumps(channels)};
     const statusNode = document.getElementById("command-status");
+    const diagnosticsNode = document.getElementById("controller-diagnostics");
     const logNode = document.getElementById("serial-log");
     const pulsePinInput = document.getElementById("pulse-pin");
     const pulseSecondsInput = document.getElementById("pulse-seconds");
@@ -2281,6 +2323,12 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
       if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
       logNode.textContent = logText(data.entries);
     }}
+    async function refreshDiagnostics() {{
+      const response = await fetch(`/api/controllers/${{encodeURIComponent(controller)}}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `${{response.status}} ${{response.statusText}}`);
+      diagnosticsNode.textContent = JSON.stringify(data.telemetry || data, null, 2);
+    }}
     async function postCommand(url, body) {{
       setStatus("Sending...");
       const options = {{method: "POST"}};
@@ -2300,6 +2348,10 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     }});
     document.getElementById("refresh-log").addEventListener("click", async () => {{
       try {{ await refreshLog(); setStatus("Log refreshed."); }}
+      catch (error) {{ setStatus(String(error.message || error)); }}
+    }});
+    document.getElementById("refresh-diagnostics").addEventListener("click", async () => {{
+      try {{ await refreshDiagnostics(); setStatus("Diagnostics refreshed."); }}
       catch (error) {{ setStatus(String(error.message || error)); }}
     }});
     for (const button of document.querySelectorAll(".use-pin")) {{
@@ -2343,13 +2395,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         f'<div class="row status-path-row"><label>Path <input class="status-path-input" value="{html.escape(path, quote=True)}" placeholder="controllers.{html.escape(default_role, quote=True)}.telemetry"></label><button type="button" class="remove-status-path">Remove</button></div>'
         for path in default_status_paths
     )
-    default_put_curl = "\n".join([
-        f"curl -X PUT 'http://localhost:8000/api/controllers/{default_role}' " + chr(92),
-        "  -H 'content-type: application/json' " + chr(92),
-        "  --data-binary @- <<'JSON'",
-        default_payload,
-        "JSON",
-    ])
     cycle_schedule_example = html.escape(json.dumps({"mode": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0}, separators=(",", ":")))
     clock_schedule_example = html.escape(json.dumps({"mode": "clock_window", "on_time": "06:00", "off_time": "23:00"}, separators=(",", ":")))
     return f"""<!doctype html>
@@ -2366,12 +2411,13 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     label {{ display: block; margin: .6rem 0; }}
     input, textarea {{ box-sizing: border-box; padding: .35rem; }}
     textarea {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 28rem; width: min(100%, 980px); }}
+    textarea.compact-json {{ min-height: 12rem; }}
     button {{ border: 1px solid #222; border-radius: 6px; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; background: #fff; }}
     .row {{ display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }}
     .radio-row label {{ display: inline-block; margin-right: 1rem; }}
     .helper-title {{ font-weight: 700; margin: .75rem 0 .25rem; }}
     pre {{ background: #f4f4f4; padding: 1rem; overflow: auto; }}
-    #put-curl-command, #stream-curl-command {{ white-space: pre-wrap; }}
+    #stream-curl-command {{ white-space: pre-wrap; }}
     #camera-capture-preview {{ display: block; margin-top: 1rem; max-width: min(100%, 720px); }}
     #camera-capture-preview[hidden] {{ display: none; }}
     #stream-result {{ max-height: 18rem; white-space: pre-wrap; }}
@@ -2502,7 +2548,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
   </fieldset>
 
   <h2>Pico scheduler</h2>
-  <p>Normal workflow: save desired config once, then apply the controller once. The apply compiles every configured channel and flashes the complete controller state.</p>
+  <p>The Pico is silent until commanded; the host requests a report every five seconds. Schedules are committed only after a verified Pico apply, so failure leaves desired config unchanged.</p>
   <fieldset>
     <legend>GET /api/controllers/{{controller}}</legend>
     <p>Reads the controller's current API view, including the latest reported Pico state.</p>
@@ -2513,8 +2559,30 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="scheduler-get-result">GET response will appear here.</pre>
   </fieldset>
   <fieldset>
+    <legend>GET /api/controllers/{{controller}}?stream=true</legend>
+    <p>Streams <code>snapshot</code>, <code>status</code>, <code>report</code>, and <code>error</code> events. <code>OK</code> requires a valid report.</p>
+    <pre id="controller-stream-curl-command">{html.escape(default_stream_curl)}</pre>
+    <button class="copy-curl" type="button" data-copy-target="controller-stream-curl-command">Copy curl</button>
+    <button id="controller-stream-start" type="button">Start stream</button>
+    <button id="controller-stream-stop" type="button">Stop stream</button>
+    <div><span id="controller-stream-status">Not streaming.</span></div>
+    <pre id="controller-stream-result">Controller health events will appear here.</pre>
+  </fieldset>
+  <fieldset>
+    <legend>POST /api/controllers/{{controller}}/schedule</legend>
+    <p>Loads one controller from desired config, upgrades firmware only when needed, applies its complete schedule, then commits config and applied state. The response includes <code>firmware_upgraded</code> and the verified firmware identity.</p>
+    <button id="scheduler-schedule-load" type="button">Load current controller</button>
+    <label>Request body
+      <textarea id="scheduler-schedule-payload" class="compact-json">{{}}</textarea>
+    </label>
+    <pre id="scheduler-schedule-request">{{}}</pre>
+    <button id="scheduler-schedule-request-button" type="button">Run request</button>
+    <div><span id="scheduler-schedule-status">Ready.</span></div>
+    <pre id="scheduler-schedule-result">POST response will appear here.</pre>
+  </fieldset>
+  <fieldset>
     <legend>POST /api/controllers/{{controller}}/apply</legend>
-    <p>Compiles saved semantic settings for all channels, writes one complete state, and flashes once.</p>
+    <p><strong>Recovery:</strong> reapplies the current desired controller config through the same verified transaction. Normal schedule changes use the schedule endpoint above.</p>
     <pre id="scheduler-apply-curl-command">curl -X POST http://localhost:8000/api/controllers/{html.escape(default_role)}/apply</pre>
     <button class="copy-curl" type="button" data-copy-target="scheduler-apply-curl-command">Copy curl</button>
     <button class="scheduler-request" type="button" data-method="POST" data-path="/api/controllers/{html.escape(default_role)}/apply" data-status="scheduler-apply-status" data-result="scheduler-apply-result">Run request</button>
@@ -2556,47 +2624,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     <pre id="pulse-result">POST response will appear here.</pre>
   </fieldset>
 
-  <fieldset>
-    <legend>PUT /api/controllers/{{role}}</legend>
-    <p><strong>Low-level compiled-state API.</strong> Writes controller state JSON and sends it to the Pico. Normal schedule editing should use desired config plus controller apply.</p>
-    <label>Role
-      <input id="put-role" list="timer-roles" value="{html.escape(default_role)}">
-    </label>
-
-    <section>
-      <p class="helper-title">Helper: Generate 5s pin test</p>
-      <p>Builds a small GPIO payload in the PUT JSON editor.</p>
-      <label>Test pin <input id="test-pin" type="number" min="0" max="29" value="25"></label>
-      <button id="generate-quick" type="button">Generate pin test</button>
-    </section>
-
-    <section>
-      <p class="helper-title">Helper: Generate pump/lights</p>
-      <p>Builds a pump/lights payload in the PUT JSON editor.</p>
-      <div class="row">
-        <label>Pump pin <input id="pump-pin" type="number" min="0" max="29" value="15"></label>
-        <label>Pump on minutes <input id="pump-on" type="number" min="1" value="5"></label>
-        <label>Pump off minutes <input id="pump-off" type="number" min="1" value="30"></label>
-        <label>Lights pin <input id="lights-pin" type="number" min="0" max="29" value="2"></label>
-        <label>Lights on <input id="lights-on" type="time" step="1" value="06:00:00"></label>
-        <label>Lights off <input id="lights-off" type="time" step="1" value="18:00:00"></label>
-      </div>
-      <button id="generate-pump-lights" type="button">Generate pump/lights</button>
-    </section>
-
-    <label>JSON payload
-      <textarea id="payload">{html.escape(default_payload)}</textarea>
-    </label>
-    <pre id="put-curl-command">{html.escape(default_put_curl)}</pre>
-    <button class="copy-curl" type="button" data-copy-target="put-curl-command">Copy curl</button>
-    <button id="put-state" type="button">Run request</button>
-    <div><span id="put-status">Ready.</span></div>
-    <pre id="put-result">PUT response will appear here.</pre>
-  </fieldset>
-
   <script>
-    const payload = document.getElementById("payload");
-    const putRoleInput = document.getElementById("put-role");
     const statusPathList = document.getElementById("status-path-list");
     const cameraCaptureCameraIdInput = document.getElementById("camera-capture-camera-id");
     const listCapturesCameraIdInput = document.getElementById("list-captures-camera-id");
@@ -2607,13 +2635,12 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     const pulseControllerInput = document.getElementById("pulse-controller");
     const pulsePinInput = document.getElementById("pulse-pin");
     const pulseSecondsInput = document.getElementById("pulse-seconds");
+    const schedulerController = {json.dumps(default_role)};
+    const schedulerSchedulePayload = document.getElementById("scheduler-schedule-payload");
     const clockTimeFormat = {json.dumps(time_format)};
     let timerEventSource = null;
+    let controllerEventSource = null;
     const defaultStatusPaths = {json.dumps([f"config.controllers.{default_role}", f"controllers.{default_role}.telemetry"] if default_role else [])};
-
-    function putRole() {{
-      return putRoleInput.value.trim();
-    }}
 
     function pulseController() {{
       return pulseControllerInput.value.trim();
@@ -2648,7 +2675,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       const row = document.createElement("div");
       row.className = "row status-path-row";
       row.innerHTML = `
-        <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{putRoleInput.value.trim() || ""}}.telemetry"></label>
+        <label>Path <input class="status-path-input" value="${{value || ""}}" placeholder="controllers.${{schedulerController}}.telemetry"></label>
         <button type="button" class="remove-status-path">Remove</button>
       `;
       bindStatusPathRow(row);
@@ -2688,41 +2715,8 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       return cameraCaptureCameraIdInput.value.trim();
     }}
 
-    function secondsSinceMidnight() {{
-      const now = new Date();
-      return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    }}
-
-    function timeToSeconds(value) {{
-      const [h, m, s] = value.split(":").map(Number);
-      return h * 3600 + m * 60 + (s || 0);
-    }}
-
-    function currentTForWindow(start, stop) {{
-      const startSeconds = timeToSeconds(start);
-      const stopSeconds = timeToSeconds(stop);
-      let onDur = (stopSeconds - startSeconds + 86400) % 86400;
-      if (onDur === 0) onDur = 86400;
-      let offDur = 86400 - onDur;
-      if (offDur === 0) offDur = 1;
-      return (secondsSinceMidnight() - startSeconds + onDur + offDur) % (onDur + offDur);
-    }}
-
     function doubleQuote(value) {{
       return JSON.stringify(value);
-    }}
-
-    function putCurlCommand() {{
-      const url = `${{window.location.origin}}/api/controllers/${{encodeURIComponent(putRole())}}`;
-      const slash = String.fromCharCode(92);
-      const newline = String.fromCharCode(10);
-      return [
-        "curl -X PUT " + doubleQuote(url) + " " + slash,
-        "  -H " + doubleQuote("content-type: application/json") + " " + slash,
-        "  --data-binary @- <<'JSON'",
-        payload.value,
-        "JSON",
-      ].join(newline);
     }}
 
     function cameraCaptureCurlCommand() {{
@@ -2756,17 +2750,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     function updateCurl() {{
       document.getElementById("get-status-curl-command").textContent = "curl " + doubleQuote(statusUrl(false));
       document.getElementById("stream-status-curl-command").textContent = "curl -N " + doubleQuote(statusUrl(true));
-      document.getElementById("put-curl-command").textContent = putCurlCommand();
       document.getElementById("camera-capture-curl-command").textContent = cameraCaptureCurlCommand();
       document.getElementById("list-captures-curl-command").textContent = listCapturesCurlCommand();
       document.getElementById("pulse-curl-command").textContent = pulseCurlCommand();
-    }}
-
-    function setPayload(state) {{
-      payload.value = JSON.stringify(state, null, 2);
-      document.getElementById("put-status").textContent = "Payload generated. Edit it, then PUT.";
-      document.getElementById("put-result").textContent = "";
-      updateCurl();
+      document.getElementById("scheduler-schedule-request").textContent = schedulerSchedulePayload.value;
     }}
 
     async function copyCurlCommand(event) {{
@@ -2842,6 +2829,81 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         status.textContent = "Request failed.";
         result.textContent = String(error);
       }}
+    }}
+
+    async function loadControllerSchedule() {{
+      const status = document.getElementById("scheduler-schedule-status");
+      const result = document.getElementById("scheduler-schedule-result");
+      status.textContent = "Loading current config...";
+      result.textContent = "";
+      try {{
+        const response = await fetch("/api/config");
+        const text = await response.text();
+        const parsed = JSON.parse(text);
+        if (!response.ok) throw new Error(parsed?.detail || text);
+        const controller = parsed?.config?.controllers?.[schedulerController];
+        if (!controller) throw new Error(`unknown controller: ${{schedulerController}}`);
+        schedulerSchedulePayload.value = JSON.stringify(controller, null, 2);
+        updateCurl();
+        status.textContent = "Current controller loaded.";
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error.message || error);
+      }}
+    }}
+
+    async function runControllerSchedule() {{
+      const status = document.getElementById("scheduler-schedule-status");
+      const result = document.getElementById("scheduler-schedule-result");
+      let body;
+      try {{
+        body = JSON.parse(schedulerSchedulePayload.value);
+      }} catch (error) {{
+        status.textContent = "Invalid JSON.";
+        result.textContent = String(error);
+        return;
+      }}
+      if (!window.confirm(`Apply and commit the complete ${{schedulerController}} schedule?`)) return;
+      status.textContent = "Applying and verifying...";
+      result.textContent = "";
+      try {{
+        const response = await fetch(`/api/controllers/${{encodeURIComponent(schedulerController)}}/schedule`, {{
+          method: "POST",
+          headers: {{"content-type": "application/json"}},
+          body: JSON.stringify(body),
+        }});
+        const text = await response.text();
+        status.textContent = `${{response.status}} ${{response.statusText}}`;
+        result.textContent = prettyResponseText(text);
+      }} catch (error) {{
+        status.textContent = "Request failed.";
+        result.textContent = String(error);
+      }}
+    }}
+
+    function stopControllerStream() {{
+      if (controllerEventSource) {{
+        controllerEventSource.close();
+        controllerEventSource = null;
+      }}
+      document.getElementById("controller-stream-status").textContent = "Not streaming.";
+    }}
+
+    function startControllerStream() {{
+      stopControllerStream();
+      const status = document.getElementById("controller-stream-status");
+      const result = document.getElementById("controller-stream-result");
+      result.textContent = "";
+      controllerEventSource = new EventSource(`/api/controllers/${{encodeURIComponent(schedulerController)}}?stream=true`);
+      controllerEventSource.onopen = () => {{ status.textContent = "Streaming controller health."; }};
+      for (const eventName of ["snapshot", "status", "report", "error"]) {{
+        controllerEventSource.addEventListener(eventName, (event) => {{
+          const timestamp = new Date().toLocaleTimeString();
+          result.textContent += `[${{timestamp}}] ${{eventName}}\n${{prettyResponseText(event.data)}}\n\n`;
+          result.scrollTop = result.scrollHeight;
+        }});
+      }}
+      controllerEventSource.onerror = () => {{ status.textContent = "Stream disconnected or reconnecting."; }};
     }}
 
     async function getStatus() {{
@@ -3033,50 +3095,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     }}
     updateCurl();
 
-    async function putState() {{
-      const putStatus = document.getElementById("put-status");
-      const putResult = document.getElementById("put-result");
-      putStatus.textContent = "";
-      putResult.textContent = "";
-      const url = `/api/controllers/${{encodeURIComponent(putRole())}}`;
-      if (!window.confirm(`PUT ${{url}}?`)) {{
-        putStatus.textContent = "Cancelled.";
-        return;
-      }}
-      let parsed;
-      try {{
-        parsed = JSON.parse(payload.value);
-      }} catch (error) {{
-        putStatus.textContent = "Invalid JSON.";
-        putResult.textContent = String(error);
-        return;
-      }}
-      putStatus.textContent = "Saving...";
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 30000);
-      try {{
-        const response = await fetch(url, {{
-          method: "PUT",
-          headers: {{"content-type": "application/json"}},
-          body: JSON.stringify(parsed),
-          signal: controller.signal,
-        }});
-        const text = await response.text();
-        let display = text;
-        try {{
-          display = JSON.stringify(JSON.parse(text), null, 2);
-        }} catch (error) {{
-        }}
-        putStatus.textContent = `${{response.status}} ${{response.statusText}}`;
-        putResult.textContent = display;
-      }} catch (error) {{
-        putStatus.textContent = "Request failed.";
-        putResult.textContent = String(error);
-      }} finally {{
-        window.clearTimeout(timeout);
-      }}
-    }}
-
     async function listCameraCaptures() {{
       const status = document.getElementById("list-captures-status");
       const result = document.getElementById("list-captures-result");
@@ -3162,53 +3180,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
       }}
     }}
 
-    document.getElementById("generate-quick").addEventListener("click", () => {{
-      setPayload({{
-        report_every: 10,
-        devices: [{{
-          id: "test_pin",
-          type: "gpio",
-          pin: Number(document.getElementById("test-pin").value),
-          current_t: 0,
-          reschedule: 1,
-          pattern: [{{val: 1, dur: 5}}, {{val: 0, dur: 5}}],
-        }}],
-      }});
-    }});
-
-    document.getElementById("generate-pump-lights").addEventListener("click", () => {{
-      const lightsOn = document.getElementById("lights-on").value;
-      const lightsOff = document.getElementById("lights-off").value;
-      let lightsOnDur = (timeToSeconds(lightsOff) - timeToSeconds(lightsOn) + 86400) % 86400;
-      if (lightsOnDur === 0) lightsOnDur = 86400;
-      let lightsOffDur = 86400 - lightsOnDur;
-      if (lightsOffDur === 0) lightsOffDur = 1;
-      setPayload({{
-        report_every: 10,
-        devices: [
-          {{
-            id: "pump",
-            type: "gpio",
-            pin: Number(document.getElementById("pump-pin").value),
-            current_t: 0,
-            reschedule: 1,
-            pattern: [
-              {{val: 1, dur: Number(document.getElementById("pump-on").value) * 60}},
-              {{val: 0, dur: Number(document.getElementById("pump-off").value) * 60}},
-            ],
-          }},
-          {{
-            id: "lights",
-            type: "gpio",
-            pin: Number(document.getElementById("lights-pin").value),
-            current_t: currentTForWindow(lightsOn, lightsOff),
-            reschedule: 1,
-            pattern: [{{val: 1, dur: lightsOnDur}}, {{val: 0, dur: lightsOffDur}}],
-          }},
-        ],
-      }});
-    }});
-
     document.getElementById("get-config").addEventListener("click", () => runConfigRequest("get"));
     document.getElementById("get-system").addEventListener("click", () => runConfigRequest("system"));
     document.getElementById("put-config").addEventListener("click", () => runConfigRequest("full"));
@@ -3217,10 +3188,13 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     document.getElementById("get-status").addEventListener("click", getStatus);
     document.getElementById("start-stream").addEventListener("click", startTimerStream);
     document.getElementById("stop-stream").addEventListener("click", stopTimerStream);
-    document.getElementById("put-state").addEventListener("click", putState);
     document.getElementById("camera-capture").addEventListener("click", captureCameraImage);
     document.getElementById("list-captures").addEventListener("click", listCameraCaptures);
     document.getElementById("pulse-request").addEventListener("click", pulsePinRequest);
+    document.getElementById("controller-stream-start").addEventListener("click", startControllerStream);
+    document.getElementById("controller-stream-stop").addEventListener("click", stopControllerStream);
+    document.getElementById("scheduler-schedule-load").addEventListener("click", loadControllerSchedule);
+    document.getElementById("scheduler-schedule-request-button").addEventListener("click", runControllerSchedule);
     for (const button of document.querySelectorAll(".scheduler-request")) {{
       button.addEventListener("click", runSchedulerRequest);
     }}
@@ -3234,10 +3208,10 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     for (const button of document.querySelectorAll(".copy-curl")) {{
       button.addEventListener("click", copyCurlCommand);
     }}
-    putRoleInput.addEventListener("input", updateCurl);
     listCapturesLimitInput.addEventListener("input", updateCurl);
     listCapturesOffsetInput.addEventListener("input", updateCurl);
-    payload.addEventListener("input", updateCurl);
+    schedulerSchedulePayload.addEventListener("input", updateCurl);
+    window.addEventListener("beforeunload", () => {{ stopTimerStream(); stopControllerStream(); }});
     updateCurl();
   </script>
 </body>
