@@ -125,6 +125,7 @@ xt60_face_w = 35;
 xt60_face_h = 16;
 xt60_screw_spacing = 25;
 xt60_screw_d = 3.2;
+xt60_nut_clearance_d = 7;
 
 usb_c_panel_w = 44;
 usb_c_panel_h = 34;
@@ -279,6 +280,7 @@ sub_panel_socket_rim_relief_w = sub_panel_socket_w;
 sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
+sub_panel_revision_depth = 0.6;
 ph_ledge_gap_clearance = 5;
 ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 
@@ -527,6 +529,19 @@ module sub_panel_barrel_channel_negative() {
         rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
 }
 
+module sub_panel_left_xt60_nut_clearances_negative() {
+    for (i = [0, 2])
+        translate([
+            dc_channel_x(i) + dc_connector_x() - xt60_screw_spacing / 2,
+            dc_channel_y(i),
+            sub_panel_base_h
+        ])
+            cylinder(
+                h = sub_panel_h - sub_panel_base_h + 0.1,
+                d = xt60_nut_clearance_d
+            );
+}
+
 module sub_panel_usb_c_negative() {
     rect_cutout(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h);
 
@@ -562,6 +577,8 @@ module sub_panel_8ch_negative() {
         translate([dc_channel_x(i), dc_channel_y(i), 0])
             sub_panel_barrel_channel_negative();
 
+    sub_panel_left_xt60_nut_clearances_negative();
+
     translate([usb_c_panel_x, usb_c_panel_y, 0])
         sub_panel_usb_c_negative();
 
@@ -571,7 +588,7 @@ module sub_panel_8ch_negative() {
     panel_corner_screw_holes();
 
     translate([revision_x, revision_y, sub_panel_base_h])
-        write_text(revision_string, 4, -0.01);
+        write_text(revision_string, 4, -sub_panel_revision_depth);
 }
 
 // ---------------- final ----------------

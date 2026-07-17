@@ -49,6 +49,21 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("xt60_nut_clearance_d = 7;", source)
+        self.assertIn("sub_panel_revision_depth = 0.6;", source)
+        self.assertRegex(
+            source,
+            r"module sub_panel_left_xt60_nut_clearances_negative\(\) \{[\s\S]*?for \(i = \[0, 2\]\)[\s\S]*?dc_channel_x\(i\) \+ dc_connector_x\(\) - xt60_screw_spacing / 2[\s\S]*?sub_panel_base_h[\s\S]*?cylinder\([\s\S]*?h = sub_panel_h - sub_panel_base_h \+ 0\.1,[\s\S]*?d = xt60_nut_clearance_d",
+        )
+        self.assertIn("sub_panel_left_xt60_nut_clearances_negative();", source)
+        self.assertIn(
+            "write_text(revision_string, 4, -sub_panel_revision_depth);",
+            source,
+        )
+
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         usb_unit = source.split("module usb_c_panel_unit", 1)[1].split("module c13_inlet_negative", 1)[0]
