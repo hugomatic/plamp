@@ -49,6 +49,51 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        usb_unit = source.split("module usb_c_panel_unit", 1)[1].split("module c13_inlet_negative", 1)[0]
+
+        self.assertIn("usb_c_cutout_w = 12;", source)
+        self.assertIn("usb_c_cutout_h = 10;", source)
+        self.assertIn("usb_c_cutout_r = 1.5;", source)
+        self.assertIn("usb_c_screw_spacing = 17;", source)
+        self.assertIn("sub_panel_usb_c_cutout_w = 13;", source)
+        self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
+        self.assertRegex(
+            source,
+            r"module usb_c_panel_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+        )
+        self.assertRegex(
+            source,
+            r"module sub_panel_usb_c_negative\(\) \{\s*rect_cutout\(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h\);",
+        )
+        self.assertIn('panel_screw_size = "M3";', source)
+        self.assertIn("panel_screw_length = 20;", source)
+        self.assertIn("panel_screw_tip_protrusion = 1;", source)
+        self.assertIn("panel_screw_land_d = 9.5;", source)
+        self.assertIn("usb_c_screw_d = 3.4;", source)
+        self.assertIn("usb_c_screw_head_d = 5.61;", source)
+        self.assertIn("usb_c_screw_surface_z = plate_t - 0.5;", source)
+        self.assertIn(
+            "topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z)",
+            source,
+        )
+        self.assertIn("module topside_countersunk_screw_hole", source)
+        self.assertNotIn("module underside_countersunk_screw_hole", source)
+        self.assertIn("fit_plate(usb_c_panel_w, usb_c_panel_h);", usb_unit)
+        self.assertNotIn("alignment_walls", usb_unit)
+        self.assertIn("module panel_corner_screw_lands", source)
+        self.assertIn("module panel_corner_fastener_bosses", source)
+        self.assertIn("module side_loaded_panel_nut_traps", source)
+        self.assertIn("panel_nut_entry_detent", source)
+        self.assertIn("module self_supporting_nut_trap_roof", source)
+        self.assertRegex(
+            source,
+            r"module side_loaded_panel_nut_trap\(direction = 1\)[\s\S]*?self_supporting_nut_trap_roof",
+        )
+        self.assertIn("module panel_corner_fastener_test", source)
+        self.assertIn('view == "panel_corner_fastener_test"', source)
+
     def test_template_bash_can_select_scad_template(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -85,7 +130,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn("Available templates:", result.stderr)
             self.assertIn("basic", result.stderr)
 
-    def test_generate_bash_defaults_to_head_and_uses_ordered_scad_views(self):
+    def test_generate_bash_defaults_to_latest_part_commit_and_uses_ordered_views(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             repo = tmp_path / "repo"
@@ -102,22 +147,27 @@ class ThingsCadScriptsTest(unittest.TestCase):
             )
             run(["git", "add", "."], repo, check=True)
             run(["git", "commit", "-m", "add cad part"], repo, check=True)
+            part_commit = run(
+                ["git", "rev-parse", "--short", "HEAD"], repo, check=True
+            ).stdout.strip()
+            (repo / "README.md").write_text("unrelated change\n")
+            run(["git", "add", "README.md"], repo, check=True)
+            run(["git", "commit", "-m", "change unrelated file"], repo, check=True)
             fake_openscad = tmp_path / "openscad"
             make_fake_openscad(fake_openscad)
             log = tmp_path / "openscad.log"
             target = tmp_path / "rendered"
 
             env = {**os.environ, "OPENSCAD_BIN": str(fake_openscad), "OPENSCAD_LOG": str(log)}
-            result = run(["./generate.bash", str(target), "HEAD"], part, env=env)
+            result = run(["./generate.bash", str(target)], part, env=env)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            short_head = run(["git", "rev-parse", "--short", "HEAD"], repo, check=True).stdout.strip()
             self.assertEqual(
                 [p.name for p in sorted(target.glob("*.stl"))],
                 [
-                    f"multi_part_assembly_{short_head}.stl",
-                    f"multi_part_camera_clip_{short_head}.stl",
-                    f"multi_part_plate_{short_head}.stl",
+                    f"multi_part_assembly_{part_commit}.stl",
+                    f"multi_part_camera_clip_{part_commit}.stl",
+                    f"multi_part_plate_{part_commit}.stl",
                 ],
             )
             rendered_views = [

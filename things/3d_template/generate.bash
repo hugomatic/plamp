@@ -65,8 +65,7 @@ find_openscad() {
 }
 
 usage() {
-  local last_commit today
-  last_commit="$(git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCAD_REPO_DIR/$SCAD_FILE" 2>/dev/null || true)"
+  local today
   today="$(date +%b%d | tr 'A-Z' 'a-z')"
   cat <<EOF
 
@@ -76,8 +75,8 @@ usage:
   $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
-  $name prints/$today HEAD
-  $name prints/$today ${last_commit:-HEAD}
+  $name /tmp/${cad}_$today
+  $name ../stl_examples/${cad}_$today HEAD
   $name --revision fit-test-1 /tmp/${cad}_fit HEAD
   $name --revision layout --preview --view top_panel /tmp/${cad}_preview HEAD
 
@@ -112,7 +111,7 @@ extract_views() {
 }
 
 target_directory=""
-commit="HEAD"
+commit=""
 revision_text=""
 preview=0
 extra_defines=()
@@ -169,7 +168,7 @@ while [[ "$#" -gt 0 ]]; do
     *)
       if [[ -z "$target_directory" ]]; then
         target_directory="$1"
-      elif [[ "$commit" == "HEAD" ]]; then
+      elif [[ -z "$commit" ]]; then
         commit="$1"
       else
         echo "Unexpected argument: $1" >&2
@@ -202,10 +201,7 @@ fi
 
 OPENSCAD_CMD="$(find_openscad)" || exit 1
 
-part_status="$(
-  git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR" |
-    grep -Ev '^[?MADRCU ][?MADRCU ] '"$SCAD_REPO_DIR"'/prints(/|$)' || true
-)"
+part_status="$(git -C "$REPO_ROOT" status --porcelain -- "$SCAD_REPO_DIR")"
 dirty_part=0
 [[ -n "$part_status" ]] && dirty_part=1
 
@@ -220,7 +216,16 @@ if [[ "$dirty_part" -eq 1 && -z "$revision_text" ]]; then
 fi
 
 if [[ "$dirty_part" -eq 0 ]]; then
-  resolved_commit="$(git -C "$REPO_ROOT" rev-parse --verify "$commit^{commit}")"
+  if [[ -z "$commit" ]]; then
+    resolved_commit="$(git -C "$REPO_ROOT" log --max-count=1 --format=%H -- "$SCAD_REPO_DIR")"
+    [[ -n "$resolved_commit" ]] || {
+      echo "No commit found for $SCAD_REPO_DIR" >&2
+      exit 1
+    }
+    commit="$resolved_commit"
+  else
+    resolved_commit="$(git -C "$REPO_ROOT" rev-parse --verify "$commit^{commit}")"
+  fi
   revision_label="$(git -C "$REPO_ROOT" rev-parse --short "$resolved_commit")"
 else
   resolved_commit="$(git -C "$REPO_ROOT" rev-parse --verify HEAD)"

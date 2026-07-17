@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -54,10 +54,6 @@ outlet_group_w = 104;
 outlet_group_h = 56;
 
 screw_d = 4;
-panel_screw_countersink_d = 8;
-panel_screw_countersink_h = plate_t;
-panel_nut_d = 7.4;
-panel_nut_h = 3.4;
 screw_spacing = 84;
 
 // Modular box-builder dimensions. Keep these near the top for fit tuning.
@@ -67,6 +63,9 @@ psu_screw_size = "M5";       // [M3, M4, M5]
 converter_screw_size = "M5"; // [M3, M4, M5]
 relay_screw_size = "M5";     // [M3, M4, M5]
 floor_screw_size = "M5";     // [M3, M4, M5]
+panel_screw_size = "M3";
+panel_screw_length = 20;
+panel_screw_tip_protrusion = 1;
 
 function screw_clearance_d(size) =
     size == "M5" ? 5.5 :
@@ -87,6 +86,18 @@ function screw_nut_trap_h(size) =
     size == "M5" ? 4.4 :
     size == "M4" ? 3.4 :
     2.8;
+
+panel_screw_d = screw_clearance_d(panel_screw_size);
+panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
+panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
+panel_screw_land_d = 9.5;
+panel_nut_d = screw_nut_trap_d(panel_screw_size);
+panel_nut_h = screw_nut_trap_h(panel_screw_size);
+panel_nut_clearance = 0.3;
+panel_nut_entry_l = 12;
+panel_nut_entry_detent = 0.35;
+panel_nut_entry_detent_l = 1.5;
+panel_fastener_boss_d = 11;
 
 
 /* [components dimensions] */
@@ -122,12 +133,15 @@ usb_c_label_h = 9;
 usb_c_group_y = -4;
 usb_c_group_w = 36;
 usb_c_group_h = 28;
-usb_c_cutout_w = 14;
-usb_c_cutout_h = 10.25;
+usb_c_cutout_w = 12;
+usb_c_cutout_h = 10;
+usb_c_cutout_r = 1.5;
 usb_c_wire_cutout_w = 10;
 usb_c_wire_cutout_h = 16;
-usb_c_screw_d = 3.2;
-usb_c_screw_spacing = 20;
+usb_c_screw_d = 3.4;
+usb_c_screw_head_d = 5.61;
+usb_c_screw_spacing = 17;
+usb_c_screw_surface_z = plate_t - 0.5;
 
 c13_panel_w = 72;
 c13_panel_h = 68;
@@ -258,8 +272,8 @@ sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
-sub_panel_usb_c_cutout_w = usb_c_cutout_w;
-sub_panel_usb_c_cutout_h = usb_c_cutout_h;
+sub_panel_usb_c_cutout_w = 13;
+sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
 sub_panel_socket_rim_relief_w = sub_panel_socket_w;
 sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
@@ -287,6 +301,9 @@ revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
 top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
 ledge_top_z = -(plate_t + sub_panel_h);
+panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
+panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
+panel_fastener_boss_h = ledge_top_z - panel_fastener_boss_bottom_z;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -596,9 +613,27 @@ module screw_hole(d, depth = 30) {
         cylinder(h = depth, d = d);
 }
 
+module topside_countersunk_screw_hole(hole_d, head_d, surface_z = plate_t, depth = 30) {
+    countersink_h = (head_d - hole_d) / 2;
+    screw_hole(hole_d, depth);
+    translate([0, 0, surface_z - countersink_h])
+        cylinder(h = countersink_h + 0.1, d1 = hole_d, d2 = head_d);
+}
+
 module rect_cutout(w, h, depth = 30) {
     translate([0, 0, plate_t / 2])
         cube([w, h, depth], center = true);
+}
+
+module rounded_rect_cutout(w, h, r, depth = 30) {
+    translate([0, 0, plate_t / 2])
+        hull()
+            for (
+                x = [-w / 2 + r, w / 2 - r],
+                y = [-h / 2 + r, h / 2 - r]
+            )
+                translate([x, y, 0])
+                    cylinder(h = depth, r = r, center = true);
 }
 
 module fit_plate(w, h) {
@@ -692,11 +727,11 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
 }
 
 module usb_c_panel_negative() {
-    rect_cutout(usb_c_cutout_w, usb_c_cutout_h);
+    rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
-            screw_hole(usb_c_screw_d);
+            topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
 
     translate([0, usb_c_group_y, 0])
         label_pocket(usb_c_group_w, usb_c_group_h);
@@ -709,10 +744,8 @@ module usb_c_revision_negative() {
 
 module usb_c_panel_unit(include_revision = true) {
     difference() {
-        union() {
-            fit_plate(usb_c_panel_w, usb_c_panel_h);
-            alignment_walls(usb_c_panel_w - 8, usb_c_panel_h - 8);
-        }
+        // Flat coupon: the connector mounts directly under the 3 mm panel.
+        fit_plate(usb_c_panel_w, usb_c_panel_h);
         usb_c_panel_negative();
         if (include_revision)
             usb_c_revision_negative();
@@ -809,32 +842,38 @@ function top_ledge_gap_end(i, length) = min(length, top_ledge_gap_center_for_dc_
 module top_panel_8ch(include_revision = true) {
     translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
-            translate([-layout_offset_x, -layout_offset_y, 0])
-                fit_plate_from_origin(top_panel_w, top_panel_h);
+            union() {
+                difference() {
+                    translate([-layout_offset_x, -layout_offset_y, 0])
+                        fit_plate_from_origin(top_panel_w, top_panel_h);
 
-            translate([left_ac_x, ac_row_y, 0])
-                outlet_cover_negative(false);
-            translate([right_ac_x, ac_row_y, 0])
-                outlet_cover_negative(false);
+                    translate([left_ac_x, ac_row_y, 0])
+                        outlet_cover_negative(false);
+                    translate([right_ac_x, ac_row_y, 0])
+                        outlet_cover_negative(false);
 
-            for (i = [0:3])
-                translate([dc_channel_x(i), dc_channel_y(i), 0])
-                    barrel_channel_negative();
+                    for (i = [0:3])
+                        translate([dc_channel_x(i), dc_channel_y(i), 0])
+                            barrel_channel_negative();
 
-            translate([usb_c_panel_x, usb_c_panel_y, 0])
-                usb_c_panel_negative();
+                    translate([usb_c_panel_x, usb_c_panel_y, 0])
+                        usb_c_panel_negative();
 
-            translate([c13_panel_x, service_row_y, 0])
-                c13_inlet_negative();
+                    translate([c13_panel_x, service_row_y, 0])
+                        c13_inlet_negative();
+
+                    if (include_revision) {
+                        translate([revision_x, revision_y, 0])
+                            label_pocket(top_panel_revision_label_w, revision_label_h);
+                        translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
+                            label_pocket(top_panel_revision_label_w, revision_label_h);
+                    }
+                }
+
+                panel_corner_screw_lands();
+            }
 
             panel_corner_screw_holes(include_countersink = true);
-
-            if (include_revision) {
-                translate([revision_x, revision_y, 0])
-                    label_pocket(top_panel_revision_label_w, revision_label_h);
-                translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
-                    label_pocket(top_panel_revision_label_w, revision_label_h);
-            }
         }
 
         translate([left_ac_x, ac_row_y, 0])
@@ -889,12 +928,13 @@ module walls_context() {
                     side_wall_psu_vents();
                 }
                 if (feature_ledge) top_panel_ledge();
+                if (feature_ledge) panel_corner_fastener_bosses();
                 floor_wall_tabs();
                 if (feature_psu_tie_wrap_anchors_wall)
                     psu_right_wall_tie_wrap_anchors_in_box();
             }
             panel_corner_screw_holes_in_box();
-            panel_corner_nut_traps_in_box();
+            side_loaded_panel_nut_traps();
             floor_wall_tab_negatives();
             wall_revision_negative();
         }
@@ -1360,15 +1400,30 @@ module top_panel_outline() {
 }
 
 module panel_corner_screw_hole(include_countersink = false) {
-    screw_hole(screw_d);
+    screw_hole(panel_screw_d);
 
     if (include_countersink)
         translate([0, 0, plate_t - panel_screw_countersink_h])
             cylinder(
                 h = panel_screw_countersink_h + 0.1,
-                d1 = screw_d,
+                d1 = panel_screw_d,
                 d2 = panel_screw_countersink_d
             );
+}
+
+module panel_corner_screw_lands() {
+    intersection() {
+        union()
+            for (
+                x = [panel_screw_inset, top_panel_w - panel_screw_inset],
+                y = [panel_screw_inset, top_panel_h - panel_screw_inset]
+            )
+                translate([x - layout_offset_x, y - layout_offset_y, plate_t - 0.5])
+                    cylinder(h = 0.5, d = panel_screw_land_d);
+
+        translate([-layout_offset_x, -layout_offset_y, plate_t - 0.5])
+            cube([top_panel_w, top_panel_h, 0.5]);
+    }
 }
 
 module panel_corner_screw_holes(include_countersink = false) {
@@ -1385,17 +1440,107 @@ module panel_corner_screw_holes_in_box() {
         x = [box_inner_x + panel_screw_inset, box_inner_x + top_panel_w - panel_screw_inset],
         y = [box_inner_y + panel_screw_inset, box_inner_y + top_panel_h - panel_screw_inset]
     )
-        translate([x, y, ledge_top_z - ledge_r - 1])
-            cylinder(h = ledge_r + plate_t + 2, d = screw_d);
+        translate([x, y, panel_fastener_boss_bottom_z - 1])
+            cylinder(h = -panel_fastener_boss_bottom_z + 2, d = panel_screw_d);
 }
 
-module panel_corner_nut_traps_in_box() {
-    for (
-        x = [box_inner_x + panel_screw_inset, box_inner_x + top_panel_w - panel_screw_inset],
-        y = [box_inner_y + panel_screw_inset, box_inner_y + top_panel_h - panel_screw_inset]
-    )
-        translate([x, y, ledge_top_z - ledge_r - 0.1])
-            cylinder(h = panel_nut_h + 0.1, d = panel_nut_d, $fn = 6);
+module panel_corner_fastener_boss(direction = 1) {
+    union() {
+        translate([0, 0, panel_fastener_boss_bottom_z])
+            cylinder(h = panel_fastener_boss_h, d = panel_fastener_boss_d);
+        translate([
+            direction < 0 ? -panel_nut_entry_l : 0,
+            -panel_fastener_boss_d / 2,
+            panel_fastener_boss_bottom_z
+        ])
+            cube([panel_nut_entry_l, panel_fastener_boss_d, panel_fastener_boss_h]);
+    }
+}
+
+module panel_corner_fastener_bosses() {
+    for (sx = [-1, 1], sy = [-1, 1]) {
+        x = sx < 0
+            ? box_inner_x + panel_screw_inset
+            : box_inner_x + top_panel_w - panel_screw_inset;
+        y = sy < 0
+            ? box_inner_y + panel_screw_inset
+            : box_inner_y + top_panel_h - panel_screw_inset;
+        direction = sx < 0 ? 1 : -1;
+
+        translate([x, y, 0])
+            panel_corner_fastener_boss(direction);
+    }
+}
+
+module self_supporting_nut_trap_roof(x0, length, width, z0, tip_w = 1) {
+    roof_h = (width - tip_w) / 2;
+
+    hull() {
+        translate([x0, -width / 2, z0 - 0.01])
+            cube([length, width, 0.02]);
+        translate([x0, -tip_w / 2, z0 + roof_h])
+            cube([length, tip_w, 0.02]);
+    }
+}
+
+module side_loaded_panel_nut_trap(direction = 1) {
+    slot_w = panel_nut_d + panel_nut_clearance;
+    slot_h = panel_nut_h + panel_nut_clearance;
+    main_l = panel_nut_entry_l - panel_nut_entry_detent_l;
+    throat_w = slot_w - 2 * panel_nut_entry_detent;
+    roof_l = panel_nut_entry_l + panel_nut_d / 2;
+    roof_x = direction < 0 ? -panel_nut_entry_l : -panel_nut_d / 2;
+
+    rotate([0, 0, 30])
+        cylinder(h = slot_h, d = panel_nut_d + panel_nut_clearance, $fn = 6);
+
+    translate([direction < 0 ? -main_l : 0, -slot_w / 2, 0])
+        cube([main_l, slot_w, slot_h]);
+    translate([
+        direction < 0 ? -panel_nut_entry_l : main_l,
+        -throat_w / 2,
+        0
+    ])
+        cube([panel_nut_entry_detent_l, throat_w, slot_h]);
+
+    self_supporting_nut_trap_roof(roof_x, roof_l, slot_w, slot_h);
+}
+
+module side_loaded_panel_nut_traps() {
+    for (sx = [-1, 1], sy = [-1, 1]) {
+        x = sx < 0
+            ? box_inner_x + panel_screw_inset
+            : box_inner_x + top_panel_w - panel_screw_inset;
+        y = sy < 0
+            ? box_inner_y + panel_screw_inset
+            : box_inner_y + top_panel_h - panel_screw_inset;
+        direction = sx < 0 ? 1 : -1;
+
+        translate([x, y, panel_nut_trap_z])
+            side_loaded_panel_nut_trap(direction);
+    }
+}
+
+module panel_corner_fastener_test() {
+    test_w = 18;
+
+    translate([0, 0, -panel_fastener_boss_bottom_z])
+        difference() {
+            union() {
+                translate([-test_w / 2, -test_w / 2, -plate_t])
+                    cube([test_w, test_w, plate_t]);
+                translate([-test_w / 2, -test_w / 2, ledge_top_z])
+                    cube([test_w, test_w, sub_panel_h]);
+                panel_corner_fastener_boss(1);
+            }
+
+            translate([0, 0, -plate_t])
+                panel_corner_screw_hole(include_countersink = true);
+            translate([0, 0, panel_fastener_boss_bottom_z - 1])
+                cylinder(h = -panel_fastener_boss_bottom_z + 2, d = panel_screw_d);
+            translate([0, 0, panel_nut_trap_z])
+                side_loaded_panel_nut_trap(1);
+        }
 }
 
 // ---------------- views ----------------
@@ -1573,6 +1718,8 @@ if (view == "relay_footprint") {
     usb_c_panel();
 } else if (view == "c13_inlet") {
     c13_inlet();
+} else if (view == "panel_corner_fastener_test") {
+    panel_corner_fastener_test();
 } else if (view == "top_panel") {
     top_panel();
 } else if (view == "sub_panel") {

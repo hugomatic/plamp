@@ -16,7 +16,7 @@ pico_scheduler/state.json
 # Generated 3D outputs / docs
 things/plamp_stand/doc/*
 !things/plamp_stand/doc/stand.jpg
-things/plamp_stand/prints/
+things/*/prints/
 
 # Runtime grow data (all grow instances are local host data)
 grow/grows/
