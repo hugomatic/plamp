@@ -65,9 +65,9 @@ find_openscad() {
 }
 
 usage() {
-  local source_revision today
+  local source_date source_revision
   source_revision="$(git -C "$REPO_ROOT" log --max-count=1 --format=%h -- "$SCAD_REPO_DIR" 2>/dev/null || true)"
-  today="$(date +%b%d | tr 'A-Z' 'a-z')"
+  source_date="$(git -C "$REPO_ROOT" log --max-count=1 --date=format:%b%d --format=%cd -- "$SCAD_REPO_DIR" 2>/dev/null | tr 'A-Z' 'a-z' || true)"
   cat <<EOF
 
 $cad stl generator
@@ -76,8 +76,8 @@ usage:
   $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
-  $name /tmp/${today}_${source_revision:-unknown}
-  $name ../stl_examples/${cad}_${source_revision:-unknown}
+  $name /tmp/${source_date:-unknown}_${source_revision:-unknown}
+  $name ../stl_examples/${cad}_${source_date:-unknown}_${source_revision:-unknown}
   $name /tmp/${cad}_old COMMIT
   $name --revision fit-test-1 /tmp/${cad}_fit
   $name --revision layout --preview --view top_panel /tmp/${cad}_preview
