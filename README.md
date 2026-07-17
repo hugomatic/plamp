@@ -25,6 +25,9 @@ curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstr
 curl -fsSL https://raw.githubusercontent.com/hugomatic/plamp/main/deploy/bootstrap/install-plamp.sh | bash -s -- --plamp-dir ~/code/plamp
 ```
 
+The installer labels required runtime dependencies separately from the tools
+included for humans and agents. See [Host tools](./docs/host-tools.md).
+
 Host lifecycle commands use `plampctl`:
 
 ```bash

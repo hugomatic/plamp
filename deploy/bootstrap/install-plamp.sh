@@ -51,12 +51,46 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo "==> Installing system packages"
+runtime_packages=(
+  bash
+  coreutils
+  findutils
+  grep
+  sed
+  tar
+  cron
+  git
+  curl
+  ca-certificates
+  ffmpeg
+  python3-picamera2
+  avahi-daemon
+  avahi-utils
+  libnss-mdns
+)
+
+agentic_efficiency_packages=(
+  ripgrep
+  gh
+  shellcheck
+  jq
+  usbutils
+  lsof
+  strace
+  openscad
+)
+
 sudo apt-get update
 if [[ "${update_os}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade
 fi
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates ffmpeg python3-picamera2 avahi-daemon avahi-utils libnss-mdns
+
+echo "==> Installing Plamp runtime dependencies"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${runtime_packages[@]}"
+
+echo "==> Installing tools for agentic efficiency"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${agentic_efficiency_packages[@]}"
+
 if [[ "${public_mode}" -eq 1 ]]; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
 fi
