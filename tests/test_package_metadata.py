@@ -15,7 +15,13 @@ class PackageMetadataTests(unittest.TestCase):
             config["build-system"]["build-backend"],
             "setuptools.build_meta",
         )
-        self.assertIn("setuptools", config["build-system"]["requires"])
+        self.assertIn("setuptools>=80", config["build-system"]["requires"])
+        self.assertIn(
+            "setuptools-scm[simple]>=8",
+            config["build-system"]["requires"],
+        )
+        self.assertNotIn("version", config["project"])
+        self.assertIn("version", config["project"]["dynamic"])
         self.assertEqual(
             config["project"]["scripts"]["plamp"],
             "plamp_cli.main:run",
