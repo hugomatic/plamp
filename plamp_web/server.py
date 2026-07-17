@@ -2108,24 +2108,12 @@ def controller_discovery_payload() -> dict[str, Any]:
 
 def controller_state_payload(controller: str) -> dict[str, Any]:
     firmware = controller_firmware(controller)
-    if firmware == "pico_scheduler":
-        state = state_for_role(controller)
-        state = dict(state)
-        state["report_every"] = require_int(
-            timer_role(controller).get("payload", {}).get("report_every", 10),
-            "report_every must be an integer",
-        )
-    else:
-        path = controller_state_path(controller)
-        try:
-            state = load_json_file(path)
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                state = {}
-            else:
-                raise
-    if not isinstance(state, dict):
-        state = {}
+    state = state_for_role(controller)
+    state = dict(state)
+    state["report_every"] = require_int(
+        timer_role(controller).get("payload", {}).get("report_every", 10),
+        "report_every must be an integer",
+    )
     payload = dict(state)
     payload["controller"] = controller
     payload["firmware"] = firmware
@@ -2148,34 +2136,14 @@ def get_controller(controller: str, stream: bool = False) -> Any:
 
 @app.put("/api/controllers/{controller}")
 def put_controller(controller: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    firmware = controller_firmware(controller)
-    if firmware == "pico_scheduler":
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "compiled scheduler state PUT is not supported; submit the desired "
-                f"controller config to POST /api/controllers/{controller}/schedule"
-            ),
-        )
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="top-level JSON must be an object")
-    payload_controller = payload.get("controller")
-    if payload_controller not in (None, controller):
-        raise HTTPException(status_code=422, detail="controller payload mismatch")
-    payload_firmware = payload.get("firmware")
-    if payload_firmware not in (None, firmware):
-        raise HTTPException(status_code=422, detail="firmware payload mismatch")
-
-    content = dict(payload)
-    content.pop("controller", None)
-    content.pop("firmware", None)
-
-    path = controller_state_path(controller)
-    with lock_for(role_locks, controller):
-        atomic_write_json(path, content)
-    response = {"controller": controller, "firmware": firmware, "success": True}
-    response.update(content)
-    return response
+    controller_firmware(controller)
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "compiled scheduler state PUT is not supported; submit the desired "
+            f"controller config to POST /api/controllers/{controller}/schedule"
+        ),
+    )
 
 
 @app.get("/api/timer-config")

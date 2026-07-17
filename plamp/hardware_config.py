@@ -10,12 +10,12 @@ import re
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _SCHEDULE_KINDS = {"cycle", "daily_window", "events"}
 _PIN_TYPES = {"gpio", "pwm"}
-_CONTROLLER_TYPES = {"pico_scheduler", "pico_doser"}
+_CONTROLLER_TYPES = {"pico_scheduler"}
 _DEVICE_TYPES = {"scheduled_output"}
 _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"
 _DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "cameras")
-_RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler", "pico_doser"}
+_RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler"}
 _AUTOFOCUS_MODES = {"auto", "continuous", "manual", "off"}
 
 
@@ -116,53 +116,32 @@ def validate_controllers(value):
             raise ValueError(f"controller {controller_id} pico_serial must be a non-empty string")
         legacy_label = _optional_label(config, f"controller {controller_id}")
         settings_label = _optional_label(settings, f"controller {controller_id}")
-        if controller_type == "pico_scheduler":
-            if "devices" in settings:
-                semantic_devices = _validate_semantic_devices(settings["devices"], controller_id)
-                legacy_devices = None
-            else:
-                legacy_devices = validate_controller_devices(
-                    controller_value.get("devices", {}),
-                    controller_id,
-                    "pico_scheduler",
-                )
-                semantic_devices = _semantic_devices_from_legacy(legacy_devices)
-            controller = {
-                "type": controller_type,
-                "payload": {
-                    "report_every": _required_positive_int(
-                        payload.get("report_every", settings.get("report_every", _DEFAULT_REPORT_EVERY)),
-                        f"controller {controller_id} report_every",
-                    ),
-                    "devices": _scheduler_payload_devices(payload.get("devices"), semantic_devices, legacy_devices, controller_id),
-                },
-                "settings": {"devices": semantic_devices},
-            }
-            label = settings_label or legacy_label
-            if label:
-                controller["settings"]["label"] = label
-            if pico_serial is not None:
-                controller["payload"]["pico_serial"] = pico_serial
+        if "devices" in settings:
+            semantic_devices = _validate_semantic_devices(settings["devices"], controller_id)
+            legacy_devices = None
         else:
-            controller = {"type": controller_type, "config": {}, "settings": {}, "devices": {}}
-            if payload:
-                raise ValueError(f"controller {controller_id} payload is only valid for pico_scheduler")
-            if settings_label:
-                raise ValueError(f"controller {controller_id} settings label is only valid for pico_scheduler")
-            if "devices" in settings:
-                raise ValueError(f"controller {controller_id} settings devices are only valid for pico_scheduler")
-            if controller_value.get("devices", {}):
-                validate_controller_devices(
-                    controller_value.get("devices", {}),
-                    controller_id,
-                    controller_type,
-                )
-            if pico_serial is not None:
-                controller["config"]["pico_serial"] = pico_serial
-            if legacy_label:
-                controller["config"]["label"] = legacy_label
-        if controller_type != "pico_scheduler" and "report_every" in settings:
-            raise ValueError(f"controller {controller_id} report_every is only valid for pico_scheduler")
+            legacy_devices = validate_controller_devices(
+                controller_value.get("devices", {}),
+                controller_id,
+                "pico_scheduler",
+            )
+            semantic_devices = _semantic_devices_from_legacy(legacy_devices)
+        controller = {
+            "type": controller_type,
+            "payload": {
+                "report_every": _required_positive_int(
+                    payload.get("report_every", settings.get("report_every", _DEFAULT_REPORT_EVERY)),
+                    f"controller {controller_id} report_every",
+                ),
+                "devices": _scheduler_payload_devices(payload.get("devices"), semantic_devices, legacy_devices, controller_id),
+            },
+            "settings": {"devices": semantic_devices},
+        }
+        label = settings_label or legacy_label
+        if label:
+            controller["settings"]["label"] = label
+        if pico_serial is not None:
+            controller["payload"]["pico_serial"] = pico_serial
         controllers[controller_id] = controller
     return controllers
 

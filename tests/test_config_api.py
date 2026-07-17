@@ -585,8 +585,7 @@ class ConfigApiTests(unittest.TestCase):
                             "config": {"pico_serial": "abc"},
                             "settings": {"report_every": 10},
                             "devices": {},
-                        },
-                        "hello_doser": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}},
+                        }
                     },
                     "cameras": {},
                 },
@@ -598,8 +597,7 @@ class ConfigApiTests(unittest.TestCase):
             payload,
             {
                 "controllers": {
-                    "pump_lights": {"firmware": "pico_scheduler"},
-                    "hello_doser": {"firmware": "pico_doser"},
+                    "pump_lights": {"firmware": "pico_scheduler"}
                 }
             },
         )
@@ -642,32 +640,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(payload["controller"], "pump_lights")
         self.assertEqual(payload["firmware"], "pico_scheduler")
         self.assertIn("devices", payload)
-
-    def test_put_controller_for_non_scheduler_persists_json(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config_file = self.make_config(
-                root,
-                {
-                    "controllers": {"hello_doser": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}}},
-                    "cameras": {},
-                },
-            )
-            timers_dir = root / "data" / "timers"
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "TIMERS_DIR", timers_dir),
-            ):
-                payload = server.put_controller(
-                    "hello_doser",
-                    {"controller": "hello_doser", "firmware": "pico_doser", "report_every": 5, "message": "hello"},
-                )
-
-            saved = json.loads((timers_dir / "hello_doser.json").read_text(encoding="utf-8"))
-
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["firmware"], "pico_doser")
-        self.assertEqual(saved, {"report_every": 5, "message": "hello"})
 
     def test_put_controller_rejects_compiled_scheduler_state_without_side_effects(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1549,24 +1521,6 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 422)
         save_schedule.assert_not_called()
-
-    def test_timer_runtime_excludes_non_scheduler_controllers(self):
-        config = server.config_view({
-            "controllers": {
-                "timer": self.scheduler_controller(serial="TIMER"),
-                "future": {"type": "pico_doser", "config": {"pico_serial": "FUTURE"}, "settings": {}, "devices": {}},
-            },
-            "cameras": {},
-        })
-        with patch.object(server, "load_config", return_value=config):
-            roles = server.configured_timer_roles()
-            serials = server.configured_monitor_serials()
-            timer_config = server.get_timer_config()
-
-        self.assertEqual(roles, ["timer"])
-        self.assertEqual(serials, {"timer": "TIMER"})
-        self.assertEqual(timer_config["roles"], ["timer"])
-        self.assertNotIn("future", timer_config["channels"])
 
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:

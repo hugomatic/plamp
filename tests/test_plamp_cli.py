@@ -295,8 +295,7 @@ class PlampCliTimerTests(unittest.TestCase):
     def test_controllers_list_groups_pico_scheduler_ids(self, request_json):
         request_json.return_value = {
             "controllers": {
-                "pump_lights": {"firmware": "pico_scheduler"},
-                "hello_doser": {"firmware": "pico_doser"},
+                "pump_lights": {"firmware": "pico_scheduler"}
             }
         }
         stdout = StringIO()
@@ -307,7 +306,7 @@ class PlampCliTimerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             stdout.getvalue(),
-            '{"controllers": {"hello_doser": {"firmware": "pico_doser"}, "pump_lights": {"firmware": "pico_scheduler"}}}\n',
+            '{"controllers": {"pump_lights": {"firmware": "pico_scheduler"}}}\n',
         )
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with("GET", "http://127.0.0.1:8000", "/api/controllers")
@@ -316,8 +315,7 @@ class PlampCliTimerTests(unittest.TestCase):
     def test_pico_scheduler_list_returns_ids_only(self, request_json):
         request_json.return_value = {
             "controllers": {
-                "pump_lights": {"firmware": "pico_scheduler"},
-                "hello_doser": {"firmware": "pico_doser"},
+                "pump_lights": {"firmware": "pico_scheduler"}
             }
         }
         stdout = StringIO()
@@ -539,6 +537,20 @@ class PlampCliPictureTests(unittest.TestCase):
 
 
 class PlampCliFirmwareTests(unittest.TestCase):
+    def test_firmware_families_lists_only_scheduler(self):
+        stdout = StringIO()
+        stderr = StringIO()
+
+        code = main(["firmware", "families"], stdout=stdout, stderr=stderr)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue(), '{"families": ["pico_scheduler"]}\n')
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_unimplemented_doser_generation_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported firmware family"):
+            _generate_firmware_source("pico_doser", {}, None)
+
     def test_scheduler_generation_rejects_nonempty_payload_until_state_seeding_exists(self):
         payload = {
             "devices": [

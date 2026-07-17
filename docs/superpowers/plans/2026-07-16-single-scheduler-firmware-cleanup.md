@@ -32,10 +32,10 @@
 - Consumes: controller configuration and `plamp firmware` CLI requests.
 - Produces: one accepted/listed family, `pico_scheduler`; explicit rejection of `pico_doser`.
 
-- [ ] Update tests so controller validation rejects `pico_doser`, firmware-family listing returns only `pico_scheduler`, and unsupported generation fails without importing a doser package.
-- [ ] Run `UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest tests.test_hardware_config tests.test_config_api tests.test_plamp_cli -v` and verify the old implementation fails the new expectations.
-- [ ] Delete the package and remove doser branches, accepted types, reserved names, and doser-only generic-controller fixtures.
-- [ ] Run the focused command again and require all tests to pass.
+- [x] Update tests so controller validation rejects `pico_doser`, firmware-family listing returns only `pico_scheduler`, and unsupported generation fails without importing a doser package.
+- [x] Run `UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest tests.test_hardware_config tests.test_config_api tests.test_plamp_cli -v` and verify the old implementation fails the new expectations.
+- [x] Delete the package and remove doser branches, accepted types, reserved names, and doser-only generic-controller fixtures.
+- [x] Run the focused command again and require all tests to pass.
 
 ### Task 2: Correct the current contract and historical status
 
@@ -49,10 +49,9 @@
 - Consumes: the shipped runtime configuration and pulse behavior.
 - Produces: documentation that distinguishes generic firmware, runtime state, maintenance upgrades, and future measurement hardware.
 
-- [ ] Replace controller-specific generation and schedule-time flashing claims with the generic runtime firmware contract and build-time option defaults.
-- [ ] Mark the May multi-family documents superseded without rewriting their historical contents.
-- [ ] Verify no active code or current documentation contains `pico_doser` with `rg -n "pico_doser" plamp plamp_cli plamp_web pico_scheduler README.md docs/spec-current.md tests`.
-- [ ] Run `python3 -m py_compile plamp/*.py pico_scheduler/*.py plamp_cli/*.py plamp_web/*.py tests/*.py`.
-- [ ] Run `UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest discover -s tests -q`, `git diff --check`, and inspect `git status --short`.
-- [ ] Commit and push the cleanup on `feature/runtime-pico-config`.
-
+- [x] Replace controller-specific generation and schedule-time flashing claims with the generic runtime firmware contract and build-time option defaults.
+- [x] Mark the May multi-family documents superseded without rewriting their historical contents.
+- [x] Verify no runtime code or current documentation contains `pico_doser` with `rg -n "pico_doser" plamp plamp_cli plamp_web pico_scheduler README.md docs/spec-current.md`; rejection tests may name the removed value.
+- [x] Run `python3 -m py_compile plamp/*.py pico_scheduler/*.py plamp_cli/*.py plamp_web/*.py tests/*.py`.
+- [x] Run `UV_CACHE_DIR=/tmp/uv-cache uv run python -m unittest discover -s tests -q`, `git diff --check`, and inspect `git status --short`.
+- [x] Commit and push the cleanup on `feature/runtime-pico-config`.

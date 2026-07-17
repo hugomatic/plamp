@@ -1,31 +1,24 @@
 # Pico Scheduler
 
-`pico_scheduler` generates one controller-specific MicroPython `main.py` for a Raspberry Pi Pico.
+`pico_scheduler` generates one generic MicroPython `main.py` for Raspberry Pi
+Picos that run Plamp schedules. For a given firmware source revision and build
+options, every controller receives the same application.
 
-## Host state
+## Generation
 
-Generator input contains the complete device list:
+The generator accepts a firmware revision and two build-time options:
 
-```json
-{
-  "report_every": 10,
-  "devices": [
-    {
-      "id": "pump",
-      "type": "gpio",
-      "pin": 15,
-      "current_t": 0,
-      "reschedule": 1,
-      "pattern": [
-        {"val": 1, "dur": 300},
-        {"val": 0, "dur": 1800}
-      ]
-    }
-  ]
-}
+```python
+GeneratorOptions(loop_sleep_ms=20, pwm_freq=1000)
 ```
 
-`report_every` remains in the host state schema but is not copied into firmware and does not control health checks. The host requests reports every five seconds.
+Automatic rendering uses these defaults. Controller IDs, pins, device lists,
+and schedules are not generator inputs. The embedded revision identifies the
+firmware sources that produced the application.
+
+`plamp firmware generate` can render the generic source for inspection. The
+normal upgrade path is `python -m plamp pico upgrade`, which also seeds both
+persistent state slots and verifies the report after reset.
 
 ## Firmware contract
 
@@ -34,10 +27,19 @@ Generated firmware:
 - runs GPIO and PWM schedules without the host;
 - stays silent during routine schedule transitions;
 - answers `r` with one newline-delimited JSON report;
+- accepts one complete JSON `configure` document, persists it in alternating
+  generation-numbered state files, applies it, and returns a matching report;
 - answers `p <pin> <seconds>` with a report or error;
 - rejects a pulse when the GPIO is already on;
 - applies a pulse as a temporary overlay, then restores the scheduler's value.
 
-The host copies generated code to `:main.py` with `mpremote` and resets the Pico. USB serial may disappear and return during this operation. Flash success requires a valid report after it returns; port presence alone is not success.
+The host requests a report before a schedule transaction. If the reported
+firmware identity is missing or outdated, it seeds the committed state, copies
+the generated application with `mpremote`, resets once, rediscovers USB, and
+requires a valid matching report. Otherwise it sends the proposed state without
+flashing or resetting the Pico.
 
-Normal schedule changes are compiled and flashed by `plamp-web`. See [the current contract](../docs/spec-current.md).
+The Pico reloads its newest valid persisted state after power loss. It resumes
+the stored phase but cannot reconstruct time spent without power, so the host
+must not claim wall-clock alignment without later clock reconciliation. See
+[the current contract](../docs/spec-current.md).

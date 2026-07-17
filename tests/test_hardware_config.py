@@ -92,11 +92,9 @@ class HardwareConfigTests(unittest.TestCase):
             {"ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 30, "devices": []}, "settings": {"devices": {}}}},
         )
 
-    def test_validate_controllers_accepts_pico_doser_type(self):
-        self.assertEqual(
-            validate_controllers({"doser_a": {"type": "pico_doser"}}),
-            {"doser_a": {"type": "pico_doser", "config": {}, "settings": {}, "devices": {}}},
-        )
+    def test_validate_controllers_rejects_unimplemented_doser_type(self):
+        with self.assertRaisesRegex(ValueError, "type must be one of"):
+            validate_controllers({"doser_a": {"type": "pico_doser"}})
 
     def test_validate_controllers_rejects_reserved_controller_ids(self):
         with self.assertRaisesRegex(ValueError, "reserved"):
@@ -144,7 +142,7 @@ class HardwareConfigTests(unittest.TestCase):
             validate_controller_devices(
                 {"pump": {"type": "scheduled_output", "config": {"pin": 3}}},
                 "future",
-                "pico_doser",
+                "future_sensor",
             )
 
     def test_scheduler_controller_ids_returns_only_pico_scheduler_controllers(self):

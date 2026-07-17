@@ -364,18 +364,12 @@ def _generate_firmware_source(firmware: str, payload: object, controller: str | 
             firmware_revision="local-cli",
             options=GeneratorOptions(),
         )
-    if firmware == "pico_doser":
-        from pico_doser.generator import generate_main_py as generate_doser_main_py
-
-        if not isinstance(payload, dict):
-            raise ValueError("pico_doser payload must be a JSON object")
-        return generate_doser_main_py(payload)
     raise ValueError(f"unsupported firmware family: {firmware}")
 
 
 def _handle_firmware(args: argparse.Namespace, stderr: TextIO) -> object | bytes | None:
     if args.firmware_action == "families":
-        return {"families": ["pico_scheduler", "pico_doser"]}
+        return {"families": ["pico_scheduler"]}
 
     if args.firmware_action == "generate":
         payload = load_json_input(args.payload)
