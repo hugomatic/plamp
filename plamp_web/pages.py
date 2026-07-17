@@ -1312,7 +1312,6 @@ def render_timer_dashboard_page(
     .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
     .manual-controls input { width: 5rem; }
     .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 12rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
-    .controller-diagnostics pre { background: #f7f7f7; font-size: .8rem; overflow: auto; padding: .5rem; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -1918,10 +1917,9 @@ def render_timer_dashboard_page(
           }
         }
         controllerCard.append(controllerTop, devicesGrid);
-        const diagnostics = document.createElement("details");
-        diagnostics.className = "controller-diagnostics";
-        diagnostics.innerHTML = `<summary>Diagnostics</summary><pre>${escapeHtml(JSON.stringify(health || {status: "ERROR", error: {message: "no valid report"}}, null, 2))}</pre>`;
-        controllerCard.append(diagnostics);
+        const diagnostics = document.createElement("a");
+        diagnostics.href = `/controllers/${encodeURIComponent(role)}`;
+        diagnostics.textContent = "Diagnostics";
         if (isEditing) {
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
@@ -1936,6 +1934,7 @@ def render_timer_dashboard_page(
           }
           controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
           controllerCard.addEventListener("submit", submitScheduleEditor);
+          actions.append(diagnostics);
           controllerCard.append(actions);
           actions.querySelector('[name="cancel"]').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
         } else {
@@ -1951,6 +1950,7 @@ def render_timer_dashboard_page(
           } else {
             actions.textContent = "No configured device schedules.";
           }
+          actions.append(diagnostics);
           controllerCard.append(actions);
         }
         if (isEditing) {
@@ -2238,6 +2238,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
         ).strip()
         for entry in reversed(serial_entries)
     ) or "No serial lines captured."
+    diagnostics_text = json.dumps(status, indent=2, sort_keys=True)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2257,6 +2258,7 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
     .command-form label {{ display: grid; gap: .25rem; }}
     input {{ border: 1px solid #aaa; border-radius: 6px; font: inherit; padding: .4rem .5rem; width: 8rem; }}
     .status, .muted {{ color: #555; }}
+    .diagnostics {{ background: #f7f7f7; font-size: .8rem; max-height: 32rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
     .serial-log {{ background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }}
   </style>
 </head>
@@ -2283,6 +2285,10 @@ def render_controller_page(controller: str, channels: list[dict[str, Any]], stat
       <thead><tr><th>Name</th><th>Channel</th><th>Pin</th><th>Type</th><th>Visibility</th><th>Programming</th><th></th></tr></thead>
       <tbody>{channel_rows}</tbody>
     </table>
+  </section>
+  <section>
+    <h2>Diagnostics</h2>
+    <pre id="controller-diagnostics" class="diagnostics">{html.escape(diagnostics_text)}</pre>
   </section>
   <section>
     <h2>Serial log</h2>

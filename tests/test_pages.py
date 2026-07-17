@@ -1,3 +1,4 @@
+import html as html_module
 import json
 import re
 import unittest
@@ -261,7 +262,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('status.textContent = ok', html)
         self.assertIn('`ERROR: ${health?.error?.message || "no valid report"}`', html)
         self.assertIn("last verified", html)
-        self.assertIn("controller-diagnostics", html)
+        self.assertNotIn("controller-diagnostics", html)
+        self.assertIn('diagnostics.href = `/controllers/${encodeURIComponent(role)}`;', html)
+        self.assertIn('diagnostics.textContent = "Diagnostics";', html)
         self.assertIn("edit.disabled = !ok;", html)
         self.assertIn("timer-card-stale", html)
         self.assertIn("setInterval(() => renderTimerStatus(), 1000);", html)
@@ -371,6 +374,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('textContent = "Pico";', html)
 
     def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
+        status = {
+            "state": "connected",
+            "serial": "abc",
+            "firmware": {"current": True},
+            "raw_lines": ["report evidence"],
+        }
         html = render_controller_page(
             "pump_lights",
             [
@@ -378,7 +387,7 @@ class PageRenderTests(unittest.TestCase):
                 {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible"},
                 {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden"},
             ],
-            {"state": "connected", "serial": "abc"},
+            status,
             [{"at": "now", "direction": "tx", "text": "r"}],
         )
 
@@ -399,6 +408,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}/serial-log`', html)
         self.assertIn('}).join("\\n");', html)
         self.assertNotIn('}).join("\n");', html)
+        self.assertIn("<h2>Diagnostics</h2>", html)
+        self.assertIn('id="controller-diagnostics"', html)
+        self.assertIn(html_module.escape(json.dumps(status, indent=2, sort_keys=True)), html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
