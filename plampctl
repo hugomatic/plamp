@@ -11,7 +11,7 @@ Usage: ./plampctl [status|logs|restart|upgrade|reinstall|remote-install|set-host
 Without an action, prompts interactively.
 
 Actions:
-  status                   Show systemd service state and HTTP readiness
+  status                   Show host, deployment identity, service state, and HTTP readiness
   logs [--lines N] [--follow]
                            Show recent plamp-web journal lines (default 100)
   restart                  Restart plamp-web and wait for HTTP readiness
@@ -75,10 +75,54 @@ wait_for_http() {
 }
 
 status_plamp() {
-  local service_state
+  local branch=""
+  local data_dir=""
+  local dirty=""
+  local environment=""
+  local host=""
+  local revision=""
+  local service_state=""
+  local working_dir=""
+
+  print_command hostname
+  host="$(hostname 2>/dev/null || true)"
+  echo "host: ${host:-unknown}"
+
   print_command systemctl is-active plamp-web
   service_state="$(systemctl is-active plamp-web 2>/dev/null || true)"
   echo "service: ${service_state:-unknown}"
+
+  print_command systemctl show plamp-web --property=WorkingDirectory --value
+  working_dir="$(systemctl show plamp-web --property=WorkingDirectory --value 2>/dev/null || true)"
+  echo "working directory: ${working_dir:-unknown}"
+
+  print_command systemctl show plamp-web --property=Environment --value
+  environment="$(systemctl show plamp-web --property=Environment --value 2>/dev/null || true)"
+  local environment_item
+  for environment_item in ${environment}; do
+    case "${environment_item}" in
+      PLAMP_DATA_DIR=*) data_dir="${environment_item#PLAMP_DATA_DIR=}" ;;
+    esac
+  done
+  echo "data directory: ${data_dir:-unknown}"
+
+  if [[ -n "${working_dir}" ]]; then
+    print_command git -C "${working_dir}" branch --show-current
+    branch="$(git -C "${working_dir}" branch --show-current 2>/dev/null || true)"
+    print_command git -C "${working_dir}" rev-parse --short HEAD
+    revision="$(git -C "${working_dir}" rev-parse --short HEAD 2>/dev/null || true)"
+    print_command git -C "${working_dir}" status --porcelain
+    dirty="$(git -C "${working_dir}" status --porcelain 2>/dev/null || true)"
+  fi
+  echo "deployed revision: ${branch:-HEAD}@${revision:-unknown}"
+  if [[ -z "${revision}" ]]; then
+    echo "git state: unknown"
+  elif [[ -n "${dirty}" ]]; then
+    echo "git state: dirty"
+  else
+    echo "git state: clean"
+  fi
+
   [[ "${service_state}" == "active" ]] || return 1
 
   print_command curl -fsS --max-time 1 "${health_url}"

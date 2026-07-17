@@ -40,6 +40,12 @@ class PlampctlTests(unittest.TestCase):
                     printf '%s\\n' "{local_commit}"
                   fi
                 fi
+                if [[ "$1" == "rev-parse" && "$2" == "--short" ]]; then
+                  printf '%s\n' "abc1234"
+                fi
+                if [[ "$1" == "branch" && "$2" == "--show-current" ]]; then
+                  printf '%s\n' "main"
+                fi
                 if [[ "$1" == "status" && "$2" == "--porcelain" ]]; then
                   exit 0
                 fi
@@ -76,12 +82,22 @@ class PlampctlTests(unittest.TestCase):
                 """
             )
             self.make_script(bin_dir / "curl", curl_stub)
+            self.make_script(
+                bin_dir / "hostname",
+                "#!/usr/bin/env bash\nprintf '%s\\n' tower-test\n",
+            )
             systemctl_stub = textwrap.dedent(
                 f"""\
                 #!/usr/bin/env bash
                 printf '%s\n' "$(basename "$0") $*" >> {log}
                 if [[ "$1" == "is-active" ]]; then
                   printf '%s\n' active
+                fi
+                if [[ "$1" == "show" && "$3" == "--property=WorkingDirectory" ]]; then
+                  printf '%s\n' {repo}
+                fi
+                if [[ "$1" == "show" && "$3" == "--property=Environment" ]]; then
+                  printf '%s\n' 'PLAMP_ROOT={repo} PLAMP_DATA_DIR={root}/runtime-data'
                 fi
                 """
             )
@@ -119,7 +135,12 @@ class PlampctlTests(unittest.TestCase):
         self.assertIn("systemctl is-active plamp-web", calls)
         self.assertIn("curl -fsS --max-time 1 http://127.0.0.1:8000/", calls)
         self.assertIn("+ systemctl is-active plamp-web", result.stdout)
+        self.assertIn("host: tower-test", result.stdout)
         self.assertIn("service: active", result.stdout)
+        self.assertRegex(result.stdout, r"working directory: .*/repo")
+        self.assertRegex(result.stdout, r"data directory: .*/runtime-data")
+        self.assertIn("deployed revision: main@abc1234", result.stdout)
+        self.assertIn("git state: clean", result.stdout)
         self.assertIn("HTTP: OK", result.stdout)
 
     def test_logs_defaults_to_100_lines_and_can_follow(self):
