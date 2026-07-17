@@ -268,6 +268,16 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("currentTimerStep(event, messageAge)", html)
         self.assertIn('error: {message: "controller status stream disconnected"}', html)
 
+    def test_timer_dashboard_freezes_stale_pin_animation(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn(
+            "const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;",
+            html,
+        )
+        self.assertIn("const value = Number(event.current_value ?? 0);", html)
+        self.assertNotIn("const value = Number(step?.step?.val ?? event.current_value ?? 0);", html)
+
     def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 

@@ -1878,9 +1878,9 @@ def render_timer_dashboard_page(
           const disabled = channel.default_editor === "disabled";
           const hidden = channel.default_editor === "hidden";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
-          const messageAge = item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
+          const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
           const step = currentTimerStep(event, messageAge);
-          const value = Number(step?.step?.val ?? event.current_value ?? 0);
+          const value = Number(event.current_value ?? 0);
           const isOn = value > 0;
           const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
           const card = document.createElement("div");
