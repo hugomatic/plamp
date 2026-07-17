@@ -65,7 +65,8 @@ find_openscad() {
 }
 
 usage() {
-  local today
+  local source_revision today
+  source_revision="$(git -C "$REPO_ROOT" log --max-count=1 --format=%h -- "$SCAD_REPO_DIR" 2>/dev/null || true)"
   today="$(date +%b%d | tr 'A-Z' 'a-z')"
   cat <<EOF
 
@@ -75,9 +76,10 @@ usage:
   $name [--revision TEXT] [--scad FILE] target_directory [commit]
 
 examples:
-  $name /tmp/${cad}_$today
-  $name ../stl_examples/${cad}_$today HEAD
-  $name --revision fit-test-1 /tmp/${cad}_fit HEAD
+  $name /tmp/${cad}_${today}_${source_revision:-unknown}
+  $name ../stl_examples/${cad}_${source_revision:-unknown}
+  $name /tmp/${cad}_old COMMIT
+  $name --revision fit-test-1 /tmp/${cad}_fit
 
 EOF
 }

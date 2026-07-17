@@ -153,6 +153,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
             (repo / "README.md").write_text("unrelated change\n")
             run(["git", "add", "README.md"], repo, check=True)
             run(["git", "commit", "-m", "change unrelated file"], repo, check=True)
+
+            help_result = run(["./generate.bash", "--help"], part)
+            self.assertEqual(help_result.returncode, 0, help_result.stderr)
+            self.assertIn(part_commit, help_result.stdout)
+            self.assertNotIn(" HEAD", help_result.stdout)
+
             fake_openscad = tmp_path / "openscad"
             make_fake_openscad(fake_openscad)
             log = tmp_path / "openscad.log"

@@ -65,9 +65,9 @@ find_openscad() {
 }
 
 usage() {
-  local suggested_dir today
+  local source_revision today
+  source_revision="$(git -C "$REPO_ROOT" log --max-count=1 --format=%h -- "$SCAD_REPO_DIR" 2>/dev/null || true)"
   today="$(date +%b%d | tr 'A-Z' 'a-z')"
-  suggested_dir="${today}_plamp8"
   cat <<EOF
 
 $cad stl generator
@@ -76,10 +76,11 @@ usage:
   $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
-  $name /tmp/$suggested_dir
-  $name ../stl_examples/$suggested_dir HEAD
-  $name --revision fit-test-1 /tmp/${cad}_fit HEAD
-  $name --revision layout --preview --view top_panel /tmp/${cad}_preview HEAD
+  $name /tmp/${today}_${source_revision:-unknown}
+  $name ../stl_examples/${cad}_${source_revision:-unknown}
+  $name /tmp/${cad}_old COMMIT
+  $name --revision fit-test-1 /tmp/${cad}_fit
+  $name --revision layout --preview --view top_panel /tmp/${cad}_preview
 
 EOF
 }
