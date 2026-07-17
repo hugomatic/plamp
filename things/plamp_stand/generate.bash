@@ -67,7 +67,7 @@ find_openscad() {
 usage() {
   local source_date source_revision
   source_revision="$(git -C "$REPO_ROOT" log --max-count=1 --format=%h -- "$SCAD_REPO_DIR" 2>/dev/null || true)"
-  source_date="$(git -C "$REPO_ROOT" log --max-count=1 --date=format:%b%d --format=%cd -- "$SCAD_REPO_DIR" 2>/dev/null | tr 'A-Z' 'a-z' || true)"
+  source_date="$(git -C "$REPO_ROOT" log --max-count=1 --date=format:%B%d --format=%cd -- "$SCAD_REPO_DIR" 2>/dev/null | tr 'A-Z' 'a-z' || true)"
   cat <<EOF
 
 $cad stl generator
@@ -76,10 +76,14 @@ usage:
   $name [--revision TEXT] [--scad FILE] target_directory [commit]
 
 examples:
-  $name /tmp/${cad}_${source_date:-unknown}_${source_revision:-unknown}
-  $name ../stl_examples/${cad}_${source_date:-unknown}_${source_revision:-unknown}
-  $name /tmp/${cad}_old COMMIT
-  $name --revision fit-test-1 /tmp/${cad}_fit
+  # Generate every view from the latest committed part source.
+  $name prints/${cad}_${source_date:-unknown}
+
+  # Reproduce a broken part from its engraved commit hash.
+  $name prints/${cad}_${source_date:-unknown}_replacement ${source_revision:-COMMIT}
+
+  # Render uncommitted fit-test changes with an honest temporary label.
+  $name --revision fit-test-1 prints/${cad}_fit
 
 EOF
 }

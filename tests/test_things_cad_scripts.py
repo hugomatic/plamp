@@ -148,8 +148,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             run(["git", "add", "."], repo, check=True)
             source_commit_env = {
                 **os.environ,
-                "GIT_AUTHOR_DATE": "2020-01-02T03:04:05+00:00",
-                "GIT_COMMITTER_DATE": "2020-01-02T03:04:05+00:00",
+                "GIT_AUTHOR_DATE": "2020-09-02T03:04:05+00:00",
+                "GIT_COMMITTER_DATE": "2020-09-02T03:04:05+00:00",
             }
             run(
                 ["git", "commit", "-m", "add cad part"],
@@ -166,7 +166,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
             help_result = run(["./generate.bash", "--help"], part)
             self.assertEqual(help_result.returncode, 0, help_result.stderr)
-            self.assertIn(f"jan02_{part_commit}", help_result.stdout)
+            self.assertIn("prints/multi_part_september02", help_result.stdout)
+            self.assertIn(
+                f"prints/multi_part_september02_replacement {part_commit}",
+                help_result.stdout,
+            )
+            self.assertIn("not for printing", help_result.stdout)
             self.assertNotIn(" HEAD", help_result.stdout)
 
             fake_openscad = tmp_path / "openscad"
