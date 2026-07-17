@@ -8,7 +8,7 @@ from plamp.pico_firmware import firmware_revision, render_scheduler_firmware
 
 
 class PicoFirmwareTests(unittest.TestCase):
-    def test_revision_is_latest_commit_touching_scheduler(self):
+    def test_revision_is_latest_commit_touching_scheduler_source_directory(self):
         calls = []
 
         self.assertEqual(
@@ -22,7 +22,7 @@ class PicoFirmwareTests(unittest.TestCase):
             calls,
             [
                 (
-                    ["git", "log", "-1", "--format=%h", "--", "pico_scheduler"],
+                    ["git", "log", "-1", "--format=%h", "--", "pico_scheduler/src"],
                     Path("/repo"),
                 )
             ],

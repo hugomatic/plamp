@@ -1,7 +1,7 @@
 import inspect
 import unittest
 
-from pico_scheduler.generator import GeneratorOptions, generate_main_py
+from pico_scheduler.src.generator import GeneratorOptions, generate_main_py
 
 
 class PicoSchedulerGeneratorTests(unittest.TestCase):

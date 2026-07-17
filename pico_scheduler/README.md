@@ -12,6 +12,10 @@ The generator accepts a firmware revision and two build-time options:
 GeneratorOptions(loop_sleep_ms=20, pwm_freq=1000)
 ```
 
+All inputs that can change the rendered application live under `src/`. The
+firmware revision is the latest Git commit touching that directory; README and
+example changes at the package root do not change firmware identity.
+
 Automatic rendering uses these defaults. Controller IDs, pins, device lists,
 and schedules are not generator inputs. The embedded revision identifies the
 firmware sources that produced the application.

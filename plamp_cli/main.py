@@ -351,7 +351,7 @@ def _run_command(args: list[str]) -> tuple[int, str, str]:
 def _generate_firmware_source(firmware: str, payload: object, controller: str | None) -> str:
     if firmware == "pico_scheduler":
         from plamp.scheduler_state import normalize_scheduler_state
-        from pico_scheduler.generator import GeneratorOptions, generate_main_py
+        from pico_scheduler.src.generator import GeneratorOptions, generate_main_py
 
         if not controller:
             raise ValueError("--controller is required for pico_scheduler")

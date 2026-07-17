@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from pico_scheduler.generator import GeneratorOptions, generate_main_py
+from pico_scheduler.src.generator import GeneratorOptions, generate_main_py
 from plamp.scheduler_state import report_matches_state
 
 

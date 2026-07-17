@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from pico_scheduler.generator import GeneratorOptions, generate_main_py
+from pico_scheduler.src.generator import GeneratorOptions, generate_main_py
 
 
 def run_git(args: list[str], cwd: Path) -> str:
@@ -15,7 +15,7 @@ def run_git(args: list[str], cwd: Path) -> str:
 def firmware_revision(repo_root: Path, *, git_runner=run_git) -> str:
     try:
         value = git_runner(
-            ["git", "log", "-1", "--format=%h", "--", "pico_scheduler"],
+            ["git", "log", "-1", "--format=%h", "--", "pico_scheduler/src"],
             repo_root,
         ).strip()
     except (OSError, subprocess.SubprocessError):
