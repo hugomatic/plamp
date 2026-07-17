@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import re
+import tempfile
 import time
 from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import serial
 
 from plamp.locks import exclusive_lock
 from plamp.pico_discovery import find_pico_port
-from plamp.pico_protocol import PicoProtocolError, decode_report_line
+from plamp.pico_protocol import PicoProtocolError, decode_message_line, decode_report_line
+from plamp.scheduler_state import (
+    FirmwareIdentity,
+    firmware_identity,
+    normalize_scheduler_state,
+    report_matches_state,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,10 +32,51 @@ class PicoUnavailable(ConnectionError):
     pass
 
 
+class PicoCommandError(RuntimeError):
+    def __init__(self, message: str, raw_lines: tuple[bytes, ...] = ()):
+        super().__init__(message)
+        self.raw_lines = tuple(raw_lines)
+
+
+class PicoFlashError(RuntimeError):
+    def __init__(
+        self,
+        step: str,
+        returncode: int | None,
+        stdout: str,
+        stderr: str,
+        *,
+        raw_lines: tuple[bytes, ...] = (),
+    ):
+        super().__init__(f"Pico flash {step} failed: {stderr or stdout or returncode}")
+        self.step = step
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.raw_lines = tuple(raw_lines)
+
+    def detail(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "returncode": self.returncode,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "raw_lines": tuple(
+                raw.decode("utf-8", errors="replace").strip()
+                for raw in self.raw_lines
+            ),
+        }
+
+
 class PicoReportTimeout(TimeoutError):
     def __init__(self, message: str, raw_lines: list[bytes]):
         super().__init__(message)
         self.raw_lines = tuple(raw_lines)
+
+
+def _error_message(message: dict[str, Any]) -> str:
+    content = message.get("content", "Pico rejected command")
+    return content if isinstance(content, str) else str(content)
 
 
 def _lock_name(pico_serial: str) -> str:
@@ -45,6 +96,342 @@ def _remaining_or_timeout(
     return remaining
 
 
+@dataclass(frozen=True)
+class PicoExchange:
+    message: dict[str, Any]
+    port: str
+    raw_lines: tuple[bytes, ...]
+
+
+class PicoOperation:
+    """A deadline-bound operation that already owns one Pico's process lock."""
+
+    def __init__(
+        self,
+        pico_serial: str,
+        deadline: float,
+        *,
+        serial_factory: Callable[..., Any],
+        port_finder: Callable[[str], str | None],
+    ):
+        self.pico_serial = pico_serial
+        self.deadline = deadline
+        self.serial_factory = serial_factory
+        self.port_finder = port_finder
+
+    def remaining(self, raw_lines: list[bytes] | None = None) -> float:
+        return _remaining_or_timeout(self.deadline, self.pico_serial, raw_lines or [])
+
+    def find_port(self) -> str:
+        self.remaining()
+        port = self.port_finder(self.pico_serial)
+        self.remaining()
+        if port is None:
+            raise PicoUnavailable(f"configured Pico is not connected: {self.pico_serial}")
+        return port
+
+    def exchange(
+        self,
+        command: str,
+        *,
+        accepted_types: set[str],
+        timeout: float | None = None,
+    ) -> PicoExchange:
+        raw_lines: list[bytes] = []
+        deadline = self.deadline
+        if timeout is not None:
+            if not math.isfinite(timeout) or timeout < 0:
+                raise ValueError("timeout must be finite and non-negative")
+            deadline = min(deadline, time.monotonic() + timeout)
+
+        def remaining() -> float:
+            return _remaining_or_timeout(deadline, self.pico_serial, raw_lines)
+
+        remaining()
+        port = self.port_finder(self.pico_serial)
+        remaining_value = remaining()
+        if port is None:
+            raise PicoUnavailable(f"configured Pico is not connected: {self.pico_serial}")
+        conn = self.serial_factory(
+            port,
+            baudrate=115200,
+            timeout=min(0.05, remaining_value),
+            write_timeout=remaining_value,
+            exclusive=True,
+        )
+        try:
+            remaining()
+            conn.reset_input_buffer()
+            remaining_value = remaining()
+            conn.write_timeout = remaining_value
+            # The empty line terminates bytes left in the Pico's command buffer.
+            conn.write(("\n" + command.strip() + "\n").encode("utf-8"))
+            remaining()
+            conn.flush()
+            buffered = b""
+            while True:
+                remaining_value = remaining()
+                conn.timeout = min(0.05, remaining_value)
+                raw = conn.readline()
+                if not raw:
+                    continue
+                raw_lines.append(raw)
+                buffered += raw
+                while b"\n" in buffered:
+                    line, buffered = buffered.split(b"\n", 1)
+                    line += b"\n"
+                    LOGGER.debug(
+                        "pico raw serial=%s len=%d newline=%s repr=%r",
+                        self.pico_serial,
+                        len(line),
+                        True,
+                        line,
+                    )
+                    try:
+                        message = decode_message_line(line)
+                        if message["type"] not in accepted_types:
+                            raise PicoProtocolError(
+                                f"unexpected message type: {message['type']}"
+                            )
+                        if message["type"] == "report":
+                            message = decode_report_line(line)
+                        return PicoExchange(message, port, tuple(raw_lines))
+                    except PicoProtocolError:
+                        LOGGER.warning(
+                            "ignored invalid Pico line serial=%s repr=%r",
+                            self.pico_serial,
+                            line,
+                        )
+        finally:
+            conn.close()
+
+    def report(self, *, timeout: float | None = None) -> PicoExchange:
+        return self.exchange("r", accepted_types={"report"}, timeout=timeout)
+
+    def configure(self, state: dict[str, Any]) -> PicoExchange:
+        normalized = normalize_scheduler_state(state)
+        command = json.dumps(
+            {"type": "configure", "content": normalized}, separators=(",", ":")
+        )
+        try:
+            result = self.exchange(
+                command,
+                accepted_types={"report", "error"},
+                timeout=min(0.5, self.remaining() / 2),
+            )
+        except PicoReportTimeout as first:
+            try:
+                proof = self.exchange("r", accepted_types={"report", "error"})
+            except PicoReportTimeout as recovery:
+                raise PicoReportTimeout(
+                    str(recovery), list(first.raw_lines + recovery.raw_lines)
+                ) from None
+            result = PicoExchange(
+                proof.message, proof.port, first.raw_lines + proof.raw_lines
+            )
+        if result.message.get("type") == "error":
+            raise PicoCommandError(
+                _error_message(result.message), raw_lines=result.raw_lines
+            )
+        if not report_matches_state(result.message, normalized):
+            raise PicoCommandError(
+                "Pico report does not match configured state",
+                raw_lines=result.raw_lines,
+            )
+        return result
+
+    def _reconnect_report(
+        self, *, sleeper: Callable[[float], Any] = time.sleep
+    ) -> PicoExchange:
+        attempted_lines: list[bytes] = []
+        while True:
+            try:
+                result = self.report(timeout=min(0.5, self.remaining()))
+                return PicoExchange(
+                    result.message,
+                    result.port,
+                    tuple(attempted_lines) + result.raw_lines,
+                )
+            except PicoReportTimeout as exc:
+                attempted_lines.extend(exc.raw_lines)
+            except (PicoUnavailable, OSError, serial.SerialException):
+                pass
+            try:
+                remaining = self.remaining(attempted_lines)
+            except PicoReportTimeout:
+                raise PicoReportTimeout(
+                    f"timed out waiting for report from {self.pico_serial}",
+                    attempted_lines,
+                ) from None
+            sleeper(min(0.05, remaining))
+
+    def upgrade_scheduler(
+        self,
+        main_path: Path,
+        state_path: Path | None,
+        expected: FirmwareIdentity | None,
+        *,
+        command_runner: Callable[[list[str], float], tuple[int | None, str, str]],
+        interrupter: Callable[[str], None],
+        mpremote: str,
+        sleeper: Callable[[float], Any] = time.sleep,
+    ) -> PicoExchange:
+        """Seed state, copy firmware, reset once, and verify after reconnect."""
+        if expected is not None and expected.revision == "unknown":
+            raise ValueError("unknown firmware revision cannot be used for an upgrade")
+        if (state_path is None) != (expected is None):
+            raise ValueError("scheduler state and expected identity must be provided together")
+
+        normalized = None
+        if state_path is not None:
+            normalized = normalize_scheduler_state(
+                json.loads(state_path.read_text(encoding="utf-8"))
+            )
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            seed_path = Path(temporary_dir) / "plamp_state_seed.json"
+            if normalized is not None:
+                seed_path.write_text(
+                    json.dumps(
+                        {"generation": 1, "devices": normalized["devices"]},
+                        separators=(",", ":"),
+                    ),
+                    encoding="utf-8",
+                )
+
+            port = self.find_port()
+            interrupter(port)
+            commands: list[tuple[str, list[str], float]] = []
+            if normalized is not None:
+                commands.extend(
+                    [
+                        (
+                            "state-a",
+                            [
+                                mpremote, "connect", port, "resume", "cp",
+                                str(seed_path), ":plamp_state_a.json",
+                            ],
+                            30,
+                        ),
+                        (
+                            "state-b",
+                            [
+                                mpremote, "connect", port, "resume", "cp",
+                                str(seed_path), ":plamp_state_b.json",
+                            ],
+                            30,
+                        ),
+                    ]
+                )
+            commands.extend(
+                [
+                    (
+                        "firmware",
+                        [
+                            mpremote, "connect", port, "resume", "cp",
+                            str(main_path), ":main.py",
+                        ],
+                        30,
+                    ),
+                    ("reset", [mpremote, "connect", port, "reset"], 15),
+                ]
+            )
+            for step, command, maximum in commands:
+                returncode, stdout, stderr = command_runner(
+                    command, min(maximum, self.remaining())
+                )
+                if returncode != 0:
+                    raise PicoFlashError(step, returncode, stdout, stderr)
+
+            result = self._reconnect_report(sleeper=sleeper)
+
+        if expected is not None and normalized is not None:
+            try:
+                identity = firmware_identity(result.message)
+            except ValueError as exc:
+                raise PicoFlashError(
+                    "verify", None, "", str(exc), raw_lines=result.raw_lines
+                ) from None
+            if identity != expected or not report_matches_state(
+                result.message, normalized
+            ):
+                raise PicoFlashError(
+                    "verify",
+                    None,
+                    "",
+                    "reconnected report does not match expected firmware and state",
+                    raw_lines=result.raw_lines,
+                )
+        return result
+
+
+class PicoClient:
+    def __init__(
+        self,
+        pico_serial: str,
+        *,
+        lock_dir: Path,
+        serial_factory: Callable[..., Any] = serial.Serial,
+        port_finder: Callable[[str], str | None] = find_pico_port,
+    ):
+        self.pico_serial = pico_serial
+        self.lock_dir = lock_dir
+        self.serial_factory = serial_factory
+        self.port_finder = port_finder
+
+    @contextmanager
+    def operation(self, *, timeout: float) -> Iterator[PicoOperation]:
+        if not math.isfinite(timeout) or timeout < 0:
+            raise ValueError("timeout must be finite and non-negative")
+        deadline = time.monotonic() + timeout
+        with exclusive_lock(
+            self.lock_dir / _lock_name(self.pico_serial),
+            timeout=max(deadline - time.monotonic(), 0.0),
+        ):
+            yield PicoOperation(
+                self.pico_serial,
+                deadline,
+                serial_factory=self.serial_factory,
+                port_finder=self.port_finder,
+            )
+
+    def report(self, *, timeout: float = 3.0) -> PicoExchange:
+        with self.operation(timeout=timeout) as operation:
+            return operation.report()
+
+    def command(self, text: str, *, timeout: float = 3.0) -> PicoExchange:
+        with self.operation(timeout=timeout) as operation:
+            return operation.exchange(text, accepted_types={"report", "error"})
+
+    def configure(
+        self, state: dict[str, Any], *, timeout: float = 3.0
+    ) -> PicoExchange:
+        with self.operation(timeout=timeout) as operation:
+            return operation.configure(state)
+
+    def flash_main(
+        self,
+        path: Path,
+        *,
+        timeout: float,
+        mpremote: str,
+        command_runner: Callable[[list[str], float], tuple[int | None, str, str]],
+        interrupter: Callable[[str], None],
+        sleeper: Callable[[float], Any] = time.sleep,
+    ) -> PicoExchange:
+        """Copy, reset, rediscover, and verify firmware under one Pico lock."""
+        with self.operation(timeout=timeout) as operation:
+            return operation.upgrade_scheduler(
+                path,
+                None,
+                None,
+                command_runner=command_runner,
+                interrupter=interrupter,
+                mpremote=mpremote,
+                sleeper=sleeper,
+            )
+
+
 def request_report(
     pico_serial: str,
     *,
@@ -60,57 +447,36 @@ def request_report(
     Synchronous OS and driver calls cannot be preempted, so this is not a hard interrupt
     guarantee for those calls.
     """
-    if not math.isfinite(timeout) or timeout < 0:
-        raise ValueError("timeout must be finite and non-negative")
-    deadline = time.monotonic() + timeout
-    lock_timeout = max(deadline - time.monotonic(), 0.0)
-    with exclusive_lock(lock_dir / _lock_name(pico_serial), timeout=lock_timeout):
-        raw_lines: list[bytes] = []
-        _remaining_or_timeout(deadline, pico_serial, raw_lines)
-        port = port_finder(pico_serial)
-        remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
-        if port is None:
-            raise PicoUnavailable(f"configured Pico is not connected: {pico_serial}")
-        conn = serial_factory(
-            port,
-            baudrate=115200,
-            timeout=min(0.05, remaining),
-            write_timeout=remaining,
-            exclusive=True,
+    return PicoClient(
+        pico_serial,
+        lock_dir=lock_dir,
+        serial_factory=serial_factory,
+        port_finder=port_finder,
+    ).report(timeout=timeout).message
+
+
+def pulse_gpio(
+    pico_serial: str,
+    pin: int,
+    seconds: int,
+    *,
+    lock_dir: Path,
+    timeout: float = 3.0,
+    serial_factory: Callable[..., Any] = serial.Serial,
+    port_finder: Callable[[str], str | None] = find_pico_port,
+) -> dict[str, Any]:
+    if isinstance(pin, bool) or not isinstance(pin, int) or pin < 0 or pin > 29:
+        raise ValueError("pin must be an integer in range 0..29")
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise ValueError("seconds must be a positive integer")
+    result = PicoClient(
+        pico_serial,
+        lock_dir=lock_dir,
+        serial_factory=serial_factory,
+        port_finder=port_finder,
+    ).command(f"p {pin} {seconds}", timeout=timeout)
+    if result.message.get("type") == "error":
+        raise PicoCommandError(
+            _error_message(result.message), raw_lines=result.raw_lines
         )
-        try:
-            _remaining_or_timeout(deadline, pico_serial, raw_lines)
-            conn.reset_input_buffer()
-            remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
-            conn.write_timeout = remaining
-            conn.write(b"r\n")
-            _remaining_or_timeout(deadline, pico_serial, raw_lines)
-            conn.flush()
-            buffered = b""
-            while True:
-                remaining = _remaining_or_timeout(deadline, pico_serial, raw_lines)
-                conn.timeout = min(0.05, remaining)
-                raw = conn.readline()
-                if raw:
-                    raw_lines.append(raw)
-                    buffered += raw
-                    while b"\n" in buffered:
-                        line, buffered = buffered.split(b"\n", 1)
-                        line += b"\n"
-                        LOGGER.debug(
-                            "pico raw serial=%s len=%d newline=%s repr=%r",
-                            pico_serial,
-                            len(line),
-                            True,
-                            line,
-                        )
-                        try:
-                            return decode_report_line(line)
-                        except PicoProtocolError:
-                            LOGGER.warning(
-                                "ignored invalid Pico line serial=%s repr=%r",
-                                pico_serial,
-                                line,
-                            )
-        finally:
-            conn.close()
+    return result.message

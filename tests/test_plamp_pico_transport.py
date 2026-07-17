@@ -1,3 +1,4 @@
+import json
 import math
 import tempfile
 import time
@@ -5,9 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from plamp import LockTimeout as ExportedLockTimeout
+import plamp
+from plamp import FirmwareIdentity, LockTimeout as ExportedLockTimeout
 from plamp.locks import LockTimeout
-from plamp.pico_transport import PicoReportTimeout, PicoUnavailable, _lock_name, request_report
+from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, PicoFlashError, PicoOperation, PicoReportTimeout, PicoUnavailable, _lock_name, pulse_gpio, request_report
 
 
 class FakeSerial:
@@ -51,8 +53,126 @@ class FakeSerial:
 
 
 class PicoTransportTests(unittest.TestCase):
+    CONFIGURED_STATE = {"devices": [{
+        "id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+        "reschedule": 1, "pattern": [{"val": 1, "dur": 10}],
+    }]}
+    MATCHING_REPORT = b'{"type":"report","content":{"devices":[{"id":"lights","type":"gpio","pin":2,"elapsed_t":0,"cycle_t":0,"current_value":1,"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
+
     def test_package_exports_lock_timeout(self):
         self.assertIs(ExportedLockTimeout, LockTimeout)
+
+    def test_package_exports_transport_operation_types(self):
+        self.assertIs(plamp.PicoExchange, PicoExchange)
+        self.assertIs(plamp.PicoOperation, PicoOperation)
+
+    def test_configure_writes_one_json_document(self):
+        conn = FakeSerial([self.MATCHING_REPORT])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A", lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: "/dev/ttyACM0",
+            ).configure(self.CONFIGURED_STATE, timeout=0.2)
+
+        self.assertEqual(
+            json.loads(conn.writes[0].strip()),
+            {"type": "configure", "content": self.CONFIGURED_STATE},
+        )
+        self.assertEqual(result.message["type"], "report")
+
+    def test_configure_recovers_lost_reply_with_report(self):
+        first = FakeSerial([b"first attempt noise\n"])
+        second = FakeSerial([self.MATCHING_REPORT])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A", lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: next(connections),
+                port_finder=lambda serial: "/dev/ttyACM0",
+            ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
+        self.assertEqual(
+            result.raw_lines, (b"first attempt noise\n", self.MATCHING_REPORT)
+        )
+
+    def test_configure_rejects_mismatched_recovery_report(self):
+        first = FakeSerial([b"first attempt noise\n"])
+        mismatch = b'{"type":"report","content":{"devices":[]}}\n'
+        second = FakeSerial([mismatch])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "does not match") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(second.writes, [b"\nr\n"])
+        self.assertEqual(
+            caught.exception.raw_lines, (b"first attempt noise\n", mismatch)
+        )
+
+    def test_configure_raises_concise_structured_error_with_raw_evidence(self):
+        raw = b'{"type":"error","content":"invalid scheduler state"}\n'
+        conn = FakeSerial([raw])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "invalid scheduler state") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: conn,
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.2)
+
+        self.assertEqual(str(caught.exception), "invalid scheduler state")
+        self.assertEqual(caught.exception.raw_lines, (raw,))
+
+    def test_configure_recovery_returns_structured_error_with_all_evidence(self):
+        first_raw = b"first attempt noise\n"
+        proof_noise = b"proof attempt noise\n"
+        error_raw = b'{"type":"error","content":"configure rejected"}\n'
+        first = FakeSerial([first_raw])
+        second = FakeSerial([proof_noise, error_raw])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "configure rejected") as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(str(caught.exception), "configure rejected")
+        self.assertEqual(
+            caught.exception.raw_lines, (first_raw, proof_noise, error_raw)
+        )
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
+
+    def test_configure_recovery_timeout_retains_both_attempts_evidence(self):
+        first_raw = b"first attempt noise\n"
+        proof_raw = b"proof attempt noise\n"
+        first = FakeSerial([first_raw])
+        second = FakeSerial([proof_raw])
+        connections = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(PicoReportTimeout) as caught:
+                PicoClient(
+                    "PICO-A", lock_dir=Path(tmp),
+                    serial_factory=lambda *args, **kwargs: next(connections),
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                ).configure(self.CONFIGURED_STATE, timeout=0.04)
+
+        self.assertEqual(caught.exception.raw_lines, (first_raw, proof_raw))
+        self.assertEqual(len(first.writes), 1)
+        self.assertEqual(json.loads(first.writes[0].strip())["type"], "configure")
+        self.assertEqual(second.writes, [b"\nr\n"])
 
     def test_rejects_invalid_timeouts_before_side_effects(self):
         discovery_calls = []
@@ -119,9 +239,259 @@ class PicoTransportTests(unittest.TestCase):
             )
         self.assertEqual(report["type"], "report")
         self.assertTrue(conn.input_reset)
-        self.assertEqual(conn.writes, [b"r\n"])
+        self.assertEqual(conn.writes, [b"\nr\n"])
         self.assertTrue(conn.flushed)
         self.assertTrue(conn.closed)
+
+    def test_client_command_returns_error_or_report_and_releases_serial(self):
+        conn = FakeSerial([b'{"type":"error","content":"pulse pin is already on"}\n'])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: "/dev/ttyACM7",
+            ).command("p 21 5", timeout=0.1)
+
+        self.assertEqual(result.message["type"], "error")
+        self.assertEqual(result.port, "/dev/ttyACM7")
+        self.assertEqual(conn.writes, [b"\np 21 5\n"])
+        self.assertTrue(conn.closed)
+
+    def test_focused_pulse_raises_firmware_error(self):
+        conn = FakeSerial([b'{"type":"error","content":"pulse pin is already on"}\n'])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(PicoCommandError, "already on"):
+                pulse_gpio(
+                    "PICO-A", 21, 5, lock_dir=Path(tmp), timeout=0.1,
+                    serial_factory=lambda *args, **kwargs: conn,
+                    port_finder=lambda serial: "/dev/ttyACM7",
+                )
+
+    def test_one_locked_operation_can_rediscover_after_usb_reconnect(self):
+        ports = iter(["/dev/ttyACM0", "/dev/ttyACM1"])
+        first = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        second = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        serials = iter([first, second])
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: next(serials),
+                port_finder=lambda serial: next(ports),
+            )
+            with client.operation(timeout=0.2) as operation:
+                before = operation.report()
+                after = operation.report()
+
+        self.assertEqual(before.port, "/dev/ttyACM0")
+        self.assertEqual(after.port, "/dev/ttyACM1")
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
+
+    def test_flash_holds_operation_until_reconnected_valid_report(self):
+        conn = FakeSerial([b'{"type":"report","content":{"devices":[]}}\n'])
+        ports = iter(["/dev/ttyACM0", "/dev/ttyACM1"])
+        commands = []
+        interrupts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: next(ports),
+            )
+            result = client.flash_main(
+                Path(tmp) / "main.py",
+                timeout=0.2,
+                mpremote="/usr/bin/mpremote",
+                command_runner=lambda args, timeout: commands.append(args) or (0, "", ""),
+                interrupter=lambda port: interrupts.append(port),
+                sleeper=lambda seconds: None,
+            )
+
+        self.assertEqual(interrupts, ["/dev/ttyACM0"])
+        self.assertIn("resume", commands[0])
+        self.assertIn(":main.py", commands[0])
+        self.assertEqual(commands[1][-1], "reset")
+        self.assertEqual(result.port, "/dev/ttyACM1")
+        self.assertEqual(result.message["type"], "report")
+
+    def test_flash_failure_identifies_failed_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=Path(tmp),
+                port_finder=lambda serial: "/dev/ttyACM0",
+            )
+            with self.assertRaises(PicoFlashError) as caught:
+                client.flash_main(
+                    Path(tmp) / "main.py",
+                    timeout=0.2,
+                    mpremote="/usr/bin/mpremote",
+                    command_runner=lambda args, timeout: (7, "out", "bad"),
+                    interrupter=lambda port: None,
+                )
+
+        self.assertEqual(caught.exception.step, "firmware")
+        self.assertEqual(caught.exception.returncode, 7)
+
+    def test_scheduler_upgrade_copies_state_before_firmware(self):
+        report = (
+            b'{"type":"report","content":{"firmware":{"name":"pico_scheduler",'
+            b'"revision":"newrev","protocol":2},"devices":[{"id":"lights",'
+            b'"type":"gpio","pin":2,"elapsed_t":4,"cycle_t":0,"current_value":1,'
+            b'"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
+        )
+        conn = FakeSerial([b"boot noise\n", report])
+        events = []
+        discovery_count = 0
+
+        def find_port(serial):
+            nonlocal discovery_count
+            discovery_count += 1
+            if discovery_count == 2:
+                events.append("rediscover")
+                return "/dev/ttyACM1"
+            return "/dev/ttyACM0"
+
+        def run(args, timeout):
+            if "cp" in args and args[-1].startswith(":plamp_state_"):
+                seed = json.loads(Path(args[-2]).read_text(encoding="utf-8"))
+                self.assertEqual(
+                    seed, {"generation": 1, "devices": self.CONFIGURED_STATE["devices"]}
+                )
+                self.assertEqual(Path(args[-2]).name, "plamp_state_seed.json")
+            events.append(args)
+            return 0, "", ""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / "current.json"
+            state_path.write_text(
+                json.dumps({**self.CONFIGURED_STATE, "report_every": 5}),
+                encoding="utf-8",
+            )
+            main_path = root / "main.py"
+            main_path.write_text("# generic firmware\n", encoding="utf-8")
+            client = PicoClient(
+                "PICO-A",
+                lock_dir=root,
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=find_port,
+            )
+            with client.operation(timeout=0.2) as operation:
+                result = operation.upgrade_scheduler(
+                    main_path,
+                    state_path,
+                    FirmwareIdentity("pico_scheduler", "newrev", 2),
+                    command_runner=run,
+                    interrupter=lambda port: events.append(("interrupt", port)),
+                    mpremote="/usr/bin/mpremote",
+                    sleeper=lambda seconds: None,
+                )
+
+        self.assertEqual(
+            events,
+            [
+                ("interrupt", "/dev/ttyACM0"),
+                ["/usr/bin/mpremote", "connect", "/dev/ttyACM0", "resume", "cp", events[1][-2], ":plamp_state_a.json"],
+                ["/usr/bin/mpremote", "connect", "/dev/ttyACM0", "resume", "cp", events[2][-2], ":plamp_state_b.json"],
+                ["/usr/bin/mpremote", "connect", "/dev/ttyACM0", "resume", "cp", str(main_path), ":main.py"],
+                ["/usr/bin/mpremote", "connect", "/dev/ttyACM0", "reset"],
+                "rediscover",
+            ],
+        )
+        self.assertEqual(events[1][-2], events[2][-2])
+        self.assertEqual(conn.writes, [b"\nr\n"])
+        self.assertEqual(result.port, "/dev/ttyACM1")
+        self.assertEqual(result.raw_lines, (b"boot noise\n", report))
+
+    def test_scheduler_upgrade_rejects_wrong_identity(self):
+        wrong = (
+            b'{"type":"report","content":{"firmware":{"name":"pico_scheduler",'
+            b'"revision":"oldrev","protocol":2},"devices":[]}}\n'
+        )
+        conn = FakeSerial([b"reconnect noise\n", wrong])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / "state.json"
+            state_path.write_text('{"devices":[]}', encoding="utf-8")
+            main_path = root / "main.py"
+            main_path.write_text("# firmware\n", encoding="utf-8")
+            operation = PicoOperation(
+                "PICO-A",
+                time.monotonic() + 0.2,
+                serial_factory=lambda *args, **kwargs: conn,
+                port_finder=lambda serial: "/dev/ttyACM0",
+            )
+            with self.assertRaises(PicoFlashError) as caught:
+                operation.upgrade_scheduler(
+                    main_path,
+                    state_path,
+                    FirmwareIdentity("pico_scheduler", "newrev", 2),
+                    command_runner=lambda args, timeout: (0, "", ""),
+                    interrupter=lambda port: None,
+                    mpremote="mpremote",
+                    sleeper=lambda seconds: None,
+                )
+
+        self.assertEqual(caught.exception.step, "verify")
+        self.assertEqual(caught.exception.raw_lines, (b"reconnect noise\n", wrong))
+
+    def test_scheduler_upgrade_identifies_each_failed_command_stage(self):
+        stages = ("state-a", "state-b", "firmware", "reset")
+        for failed_index, expected_stage in enumerate(stages):
+            with self.subTest(stage=expected_stage), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                state_path = root / "state.json"
+                state_path.write_text('{"devices":[]}', encoding="utf-8")
+                main_path = root / "main.py"
+                main_path.write_text("# firmware\n", encoding="utf-8")
+                calls = 0
+
+                def run(args, timeout):
+                    nonlocal calls
+                    index = calls
+                    calls += 1
+                    return (7, "out", "bad") if index == failed_index else (0, "", "")
+
+                operation = PicoOperation(
+                    "PICO-A", time.monotonic() + 0.2,
+                    serial_factory=lambda *args, **kwargs: None,
+                    port_finder=lambda serial: "/dev/ttyACM0",
+                )
+                with self.assertRaises(PicoFlashError) as caught:
+                    operation.upgrade_scheduler(
+                        main_path, state_path,
+                        FirmwareIdentity("pico_scheduler", "newrev", 2),
+                        command_runner=run, interrupter=lambda port: None,
+                        mpremote="mpremote", sleeper=lambda seconds: None,
+                    )
+
+                self.assertEqual(caught.exception.step, expected_stage)
+                self.assertEqual(caught.exception.returncode, 7)
+
+    def test_scheduler_upgrade_rejects_unknown_expected_revision_before_interrupt(self):
+        interrupts = []
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_path = root / "state.json"
+            state_path.write_text('{"devices":[]}', encoding="utf-8")
+            operation = PicoOperation(
+                "PICO-A", time.monotonic() + 0.2,
+                serial_factory=lambda *args, **kwargs: None,
+                port_finder=lambda serial: "/dev/ttyACM0",
+            )
+            with self.assertRaisesRegex(ValueError, "unknown"):
+                operation.upgrade_scheduler(
+                    root / "main.py", state_path,
+                    FirmwareIdentity("pico_scheduler", "unknown", 2),
+                    command_runner=lambda args, timeout: (0, "", ""),
+                    interrupter=interrupts.append, mpremote="mpremote",
+                )
+
+        self.assertEqual(interrupts, [])
 
     def test_logs_malformed_line_in_timeout_and_keeps_reading(self):
         conn = FakeSerial([b'bad\n', b'{"type":"report","content":{"devices":[]}}\n'])

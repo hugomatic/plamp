@@ -1,5 +1,9 @@
 # Firmware Family API and CLI Implementation Plan
 
+> **Superseded 2026-07-16:** The `pico_doser` placeholder described here was
+> removed before deployment. `pico_scheduler` is the only implemented family;
+> future measurement-MCU firmware requires a new hardware-backed design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace timer-named controller APIs with controller-oriented APIs, add multi-firmware family abstraction, and add direct local firmware generate/flash/pull/show CLI workflows with JSON input.

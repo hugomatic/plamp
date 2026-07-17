@@ -6,11 +6,11 @@ Plamp is local-first hydroponics automation designed for humans and agents. Core
 
 - `plamp_web`: one FastAPI service providing REST, SSE, scheduled camera captures, Pico monitoring, and the fallback website.
 - `plamp_cli`: JSON-first REST client installed as `plamp`.
-- `plamp`: emerging shared library and direct CLI; the first direct operation is `python -m plamp pico report`.
-- `pico_scheduler`: host-generated MicroPython firmware.
+- `plamp`: shared hardware/domain library and direct CLI used by the REST service and local operations.
+- `pico_scheduler`: one generic, persistent, runtime-configurable MicroPython application.
 - `data/`: desired configuration, generated controller state, logs, pictures, and other runtime data.
 
-The current web monitor keeps Pico serial ports open. Direct CLI serial operations therefore require stopping `plamp-web`. This is a migration constraint, not the target architecture.
+The web collector and direct CLI share per-device filesystem locks. Each transaction discovers the current tty, opens it, exchanges a complete message, and closes it.
 
 ## Configuration and State
 
@@ -48,10 +48,13 @@ Observed reports describe runtime state. They do not replace desired configurati
 
 Agents should receive machine-readable JSON on stdout and diagnostics on stderr.
 
-Current REST-backed operations use `python -m plamp_cli` or the installed `plamp` command. The direct path uses:
+Current REST-backed operations use `python -m plamp_cli` or the installed `plamp` command. The direct path includes:
 
 ```bash
 python -m plamp pico report <controller>
+python -m plamp pico pulse <controller> <pin> <seconds>
+python -m plamp pico configure <controller> <compiled-state.json>
+python -m plamp pico upgrade <controller> <compiled-state.json>
 ```
 
 Primary HTTP surfaces:
@@ -66,9 +69,21 @@ The web pages are replaceable REST/SSE clients, not the source of domain behavio
 
 ## Firmware
 
-The host validates scheduler state, generates controller-specific `main.py`, copies it with `mpremote`, resets the Pico, and reads reports over USB serial. Current schedule changes still regenerate and flash application code.
+The scheduler generator renders one generic `main.py` for a firmware source
+revision. Controller identity, pins, devices, and schedules are not compiled
+into it. Its build-time options are `loop_sleep_ms` (default `20`) and
+`pwm_freq` (default `1000`); automatic rendering uses those defaults.
 
-Provisioning MicroPython on a blank Pico, upgrading application code, and changing runtime configuration are distinct operations in the target design.
+Schedule changes send and verify one complete persistent runtime state. A
+legacy or outdated Pico is upgraded once during the next mutating schedule
+transaction, using the committed state before applying the proposal. Read-only
+reports never upgrade firmware, and ordinary schedule changes do not reset USB.
+
+`pico_scheduler` is the only implemented firmware family. Dosing pumps attached
+to Plamp8 use bounded GPIO pulses requested by a human, host algorithm, or
+agent; the Pico ends each pulse locally and restores the configured base state.
+A future pH, EC, or PPM measurement MCU requires a separate hardware-backed
+protocol design rather than a placeholder family.
 
 ## Direction
 
@@ -78,8 +93,9 @@ The approved target is agent-first:
 - short cross-process-locked Pico and camera transactions;
 - CLI usable locally or through SSH without the service;
 - demand-driven full Pico reports with host-controlled polling;
-- runtime schedule updates without reflashing;
 - first-class MicroPython provisioning and application recovery;
+- daily clock-drift detection and explicit reconciliation policy;
+- a hardware-backed contract for any future measurement MCU;
 - optional web apps using REST and SSE.
 
 See [Agent-First Plamp Architecture](./superpowers/specs/2026-07-14-agent-first-plamp-architecture-design.md).

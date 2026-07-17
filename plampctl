@@ -6,12 +6,15 @@ install_script="${script_dir}/deploy/bootstrap/install-plamp.sh"
 
 usage() {
   cat <<'USAGE'
-Usage: ./plampctl [restart|upgrade|reinstall|remote-install|set-hostname] [args...]
+Usage: ./plampctl [status|logs|restart|upgrade|reinstall|remote-install|set-hostname] [args...]
 
 Without an action, prompts interactively.
 
 Actions:
-  restart                  Restart plamp-web and show status
+  status                   Show systemd service state and HTTP readiness
+  logs [--lines N] [--follow]
+                           Show recent plamp-web journal lines (default 100)
+  restart                  Restart plamp-web and wait for HTTP readiness
   upgrade [BRANCH]         Pull latest code from origin/BRANCH (default main), sync Python deps, and restart
   reinstall [options...]   Run deploy/bootstrap/install-plamp.sh with --plamp-dir set to this repo root
   remote-install HOST REMOTE_DIR [options...]
@@ -20,6 +23,8 @@ Actions:
 
 Examples:
   ./plampctl
+  ./plampctl status
+  ./plampctl logs --follow
   ./plampctl restart
   ./plampctl upgrade
   ./plampctl upgrade feature-timer-visibility-modes
@@ -30,12 +35,93 @@ Examples:
 
 Help:
   ./plampctl -h
+
+Unix equivalents:
+  systemctl is-active plamp-web
+  journalctl -u plamp-web -n 100 --no-pager
+  curl -fsS http://127.0.0.1:8000/
 USAGE
 }
 
+health_url="${PLAMP_HEALTH_URL:-http://127.0.0.1:8000/}"
+
+print_command() {
+  printf '+'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+run_command() {
+  print_command "$@"
+  "$@"
+}
+
+check_http() {
+  curl -fsS --max-time 1 "${health_url}" >/dev/null 2>&1
+}
+
+wait_for_http() {
+  local attempt
+  print_command curl -fsS --max-time 1 "${health_url}"
+  for attempt in {1..60}; do
+    if check_http; then
+      echo "HTTP: OK (${health_url})"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "HTTP: unavailable after 15 seconds (${health_url})" >&2
+  return 1
+}
+
+status_plamp() {
+  local service_state
+  print_command systemctl is-active plamp-web
+  service_state="$(systemctl is-active plamp-web 2>/dev/null || true)"
+  echo "service: ${service_state:-unknown}"
+  [[ "${service_state}" == "active" ]] || return 1
+
+  print_command curl -fsS --max-time 1 "${health_url}"
+  if check_http; then
+    echo "HTTP: OK (${health_url})"
+  else
+    echo "HTTP: unavailable (${health_url})" >&2
+    return 1
+  fi
+}
+
+logs_plamp() {
+  local lines=100
+  local follow=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --lines)
+        [[ $# -ge 2 && "$2" =~ ^[1-9][0-9]*$ ]] || {
+          echo "--lines requires a positive integer." >&2
+          exit 2
+        }
+        lines="$2"
+        shift 2
+        ;;
+      --follow|-f)
+        follow=1
+        shift
+        ;;
+      *)
+        echo "unknown logs option: $1" >&2
+        exit 2
+        ;;
+    esac
+  done
+
+  local command=(sudo journalctl -u plamp-web -n "${lines}" --no-pager)
+  [[ "${follow}" -eq 1 ]] && command+=(-f)
+  run_command "${command[@]}"
+}
+
 restart_plamp() {
-  sudo systemctl restart plamp-web
-  sudo systemctl status plamp-web --no-pager
+  run_command sudo systemctl restart plamp-web
+  wait_for_http
 }
 
 upgrade_plamp() {
@@ -63,6 +149,7 @@ upgrade_plamp() {
   remote_commit="$(git -C "${script_dir}" rev-parse --verify "origin/${branch}")"
   if [[ -n "${local_commit}" && "${local_commit}" == "${remote_commit}" ]]; then
     echo "origin/${branch} is already up to date."
+    wait_for_http
     return 0
   fi
   if [[ -n "${local_commit}" ]]; then
@@ -73,8 +160,13 @@ upgrade_plamp() {
   git -C "${script_dir}" switch "${branch}"
   git -C "${script_dir}" pull --ff-only origin "${branch}"
 
-  if command -v uv >/dev/null 2>&1; then
-    uv sync --project "${script_dir}"
+  local uv_bin
+  uv_bin="$(command -v uv 2>/dev/null || true)"
+  if [[ -z "${uv_bin}" && -x "${HOME}/.local/bin/uv" ]]; then
+    uv_bin="${HOME}/.local/bin/uv"
+  fi
+  if [[ -n "${uv_bin}" ]]; then
+    "${uv_bin}" sync --project "${script_dir}"
   else
     echo "uv not found; skipping Python dependency sync." >&2
   fi
@@ -118,7 +210,8 @@ reinstall_plamp() {
     echo "install script not found: ${install_script}" >&2
     exit 1
   fi
-  bash "${install_script}" --plamp-dir "${script_dir}" "$@"
+  run_command bash "${install_script}" --plamp-dir "${script_dir}" "$@"
+  wait_for_http
 }
 
 remote_install_plamp() {
@@ -156,9 +249,15 @@ remote_install_plamp() {
 
 prompt_action() {
   local reply
-  printf 'Choose action: [r]estart, [u]pgrade, re[i]nstall, remote-[s]sh install, set-[h]ostname, [c]ancel: '
+  printf 'Choose action: s[t]atus, [l]ogs, [r]estart, [u]pgrade, re[i]nstall, remote-[s]sh install, set-[h]ostname, [c]ancel: '
   read -r reply
   case "${reply}" in
+    t|T|status|Status)
+      status_plamp
+      ;;
+    l|L|logs|Logs)
+      logs_plamp
+      ;;
     r|R|restart|Restart)
       restart_plamp
       ;;
@@ -200,6 +299,15 @@ case "${1-}" in
     ;;
   -h|--help)
     usage
+    ;;
+  status)
+    shift
+    [[ $# -eq 0 ]] || { echo "status does not accept arguments." >&2; exit 2; }
+    status_plamp
+    ;;
+  logs)
+    shift
+    logs_plamp "$@"
     ;;
   restart)
     shift

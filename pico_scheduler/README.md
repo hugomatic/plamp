@@ -1,49 +1,45 @@
 # Pico Scheduler
 
-`pico_scheduler` generates one controller-specific MicroPython `main.py` for a Raspberry Pi Pico.
+`pico_scheduler` generates one generic MicroPython `main.py` for Raspberry Pi
+Picos that run Plamp schedules. For a given firmware source revision and build
+options, every controller receives the same application.
 
-## Inputs
+## Generation
 
-Host scheduler state contains report cadence and devices:
+The generator accepts a firmware revision and two build-time options:
 
-```json
-{
-  "report_every": 10,
-  "devices": [
-    {
-      "id": "pump",
-      "type": "gpio",
-      "pin": 15,
-      "current_t": 0,
-      "reschedule": 1,
-      "pattern": [
-        {"val": 1, "dur": 300},
-        {"val": 0, "dur": 1800}
-      ]
-    }
-  ]
-}
+```python
+GeneratorOptions(loop_sleep_ms=20, pwm_freq=1000)
 ```
 
-The Pi is authoritative. This JSON is generator input and is not copied to the Pico.
+Automatic rendering uses these defaults. Controller IDs, pins, device lists,
+and schedules are not generator inputs. The embedded revision identifies the
+firmware sources that produced the application.
 
-## Generated firmware
+`plamp firmware generate` can render the generic source for inspection. The
+normal upgrade path is `python -m plamp pico upgrade`, which also seeds both
+persistent state slots and verifies the report after reset.
 
-`generator.py` renders `templates/` into a readable `main.py` containing provenance and only the helpers required by configured device types. The host copies that file to `:main.py` with `mpremote` and resets the Pico.
+## Firmware contract
 
-Current firmware:
+Generated firmware:
 
-- runs GPIO/PWM patterns independently of the host;
-- emits newline-delimited `type: report` and `type: error` JSON;
-- answers the `r` command with a full report;
-- also emits startup, changed-state, and periodic reports.
+- runs GPIO and PWM schedules without the host;
+- stays silent during routine schedule transitions;
+- answers `r` with one newline-delimited JSON report;
+- accepts one complete JSON `configure` document, persists it in alternating
+  generation-numbered state files, applies it, and returns a matching report;
+- answers `p <pin> <seconds>` with a report or error;
+- rejects a pulse when the GPIO is already on;
+- applies a pulse as a temporary overlay, then restores the scheduler's value.
 
-Demand-only full reports and runtime schedule updates without reflashing are target architecture, not current firmware behavior.
+The host requests a report before a schedule transaction. If the reported
+firmware identity is missing or outdated, it seeds the committed state, copies
+the generated application with `mpremote`, resets once, rediscovers USB, and
+requires a valid matching report. Otherwise it sends the proposed state without
+flashing or resetting the Pico.
 
-## Tools
-
-```bash
-python3 -m pip install --user mpremote
-```
-
-Normal generation and deployment happen through `plamp-web`. See [current contract](../docs/spec-current.md).
+The Pico reloads its newest valid persisted state after power loss. It resumes
+the stored phase but cannot reconstruct time spent without power, so the host
+must not claim wall-clock alignment without later clock reconciliation. See
+[the current contract](../docs/spec-current.md).

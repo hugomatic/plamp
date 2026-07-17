@@ -44,15 +44,22 @@ plamp pico-scheduler list
 plamp pics list
 ```
 
-The new direct library CLI can request a Pico report without `plamp-web`:
+The direct library CLI shares short hardware locks with `plamp-web`:
 
 ```bash
-sudo systemctl stop plamp-web
+source ./setup.sh
+uv run python -m plamp context
+uv run python -m plamp config get
 uv run python -m plamp pico report pump_lights
-sudo systemctl start plamp-web
+uv run python -m plamp pico pulse pump_lights 21 5
+uv run python -m plamp pico configure pump_lights compiled-state.json
+uv run python -m plamp pico upgrade pump_lights compiled-state.json
+uv run python -m plamp camera capture rpicam_cam0
 ```
 
-Do not run direct serial commands while the current web monitor is running; service and CLI locking converge in a later slice. Remote agents can use either the REST CLI or direct CLI over SSH.
+Use `-` instead of `compiled-state.json` to read the complete compiled scheduler state from stdin. Configure sends that state through the shared locked Pico protocol. Upgrade renders the current generic scheduler firmware, seeds both state slots, resets once, and verifies the reconnected report. These commands work while the service is running or stopped and do not contact `plamp-web`. Remote agents can use either the REST CLI or direct CLI over SSH.
+
+`setup.sh [DATA_DIR]` selects the checkout and instance for the current shell. It exports `PLAMP_ROOT` and `PLAMP_DATA_DIR`; without an argument, data defaults to `$PLAMP_ROOT/data`. Source another checkout's setup script to switch versions without leaving its executable paths behind.
 
 See [CLI reference](./plamp_cli/README.md).
 
@@ -71,7 +78,7 @@ The browser receives live updates through SSE. See [web service notes](./plamp_w
 
 ## Configuration
 
-Runtime configuration lives in `data/config.json`; generated scheduler state lives in `data/timers/`. Both are local runtime data.
+Runtime configuration lives in `$PLAMP_DATA_DIR/config.json`; generated scheduler state lives beside it in `$PLAMP_DATA_DIR/timers/`. Both are local runtime data. The web system page shows the effective root and data paths.
 
 Controllers contain desired device behavior, display settings, and a stable Pico USB serial. `/dev/ttyACM*` paths are rediscovered. See the [current contract](./docs/spec-current.md) for the normalized shape.
 

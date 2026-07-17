@@ -1,3 +1,4 @@
+import html as html_module
 import json
 import re
 import unittest
@@ -120,7 +121,7 @@ class PageRenderTests(unittest.TestCase):
     def test_timer_dashboard_page_uses_server_schedule_success_message(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('lastMessage = applyConfigParsed?.message || "Schedule settings saved.";', html)
+        self.assertIn('lastMessage = scheduleParsed?.message || "Schedule settings saved.";', html)
         self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
 
     def test_system_info_page_shows_actions_and_no_hostname_editor(self):
@@ -188,7 +189,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Controllers</h2>", html)
         self.assertNotIn("<h2>Timers</h2>", html)
         self.assertIn("let activeEditor = null;", html)
-        self.assertIn("function openControllerScheduleEditor(role) {", html)
+        self.assertIn("async function openControllerScheduleEditor(role) {", html)
         self.assertIn("activeEditor = {role};", html)
         self.assertIn("stopPageAutoRefresh();", html)
         self.assertIn('controllerCard.dataset.role = role;', html)
@@ -216,7 +217,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('message?.telemetry?.report?.content?.devices,', html)
         self.assertIn('const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);', html)
         self.assertIn('for (const eventName of ["snapshot", "report"]) {', html)
-        self.assertIn('timerMessages.set(role, JSON.parse(event.data));', html)
+        self.assertIn('source.addEventListener("status"', html)
+        self.assertIn('const data = JSON.parse(event.data);', html)
+        self.assertIn('timerMessages.set(role, data);', html)
         self.assertIn('"value" in message[0]', html)
         self.assertIn("return message[0].value;", html)
         self.assertIn('const cycleUnit = block.querySelector(".editor-cycle-unit").value;', html)
@@ -226,8 +229,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('controller.settings.devices = structuredClone(controller.settings.devices || {});', html)
         self.assertIn('controller.settings.devices[channelId] = device;', html)
         self.assertIn('data-channel-pin="${escapeHtml(channel.pin ?? "")}"', html)
-        self.assertIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
-        self.assertIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`, {method: "POST"});', html)
+        self.assertIn('const scheduleResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/schedule`, {', html)
+        self.assertNotIn('const saveConfigResponse = await fetch("/api/config/controllers", {', html)
+        self.assertNotIn('const applyConfigResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/apply`', html)
         self.assertIn("function clockValuesForEvent(channel, event) {", html)
         self.assertIn('if (editor?.kind === "daily_window" && editor.on_time && editor.off_time)', html)
         self.assertNotIn('/channels/${encodeURIComponent(channelId)}/schedule', html)
@@ -242,6 +246,40 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("function openScheduleEditor(role, channel, event) {", html)
         self.assertNotIn("timerEditorPanel", html)
         self.assertNotIn("controllerScheduleForm", html)
+
+        report_request = html.index('await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"})')
+        open_editor = html.index("activeEditor = {role};", report_request)
+        self.assertLess(report_request, open_editor)
+        rejected_schedule = html.index("if (!scheduleResponse.ok)")
+        sync_metadata = html.index("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);")
+        self.assertLess(rejected_schedule, sync_metadata)
+
+    def test_timer_dashboard_renders_binary_controller_health(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("const timerStatuses = new Map();", html)
+        self.assertIn("controller-card-error", html)
+        self.assertIn('status.textContent = ok', html)
+        self.assertIn('`ERROR: ${health?.error?.message || "no valid report"}`', html)
+        self.assertIn("last verified", html)
+        self.assertNotIn("controller-diagnostics", html)
+        self.assertIn('diagnostics.href = `/controllers/${encodeURIComponent(role)}`;', html)
+        self.assertIn('diagnostics.textContent = "Diagnostics";', html)
+        self.assertIn("edit.disabled = !ok;", html)
+        self.assertIn("timer-card-stale", html)
+        self.assertIn("setInterval(() => renderTimerStatus(), 1000);", html)
+        self.assertIn("currentTimerStep(event, messageAge)", html)
+        self.assertIn('error: {message: "controller status stream disconnected"}', html)
+
+    def test_timer_dashboard_freezes_stale_pin_animation(self):
+        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn(
+            "const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;",
+            html,
+        )
+        self.assertIn("const value = Number(event.current_value ?? 0);", html)
+        self.assertNotIn("const value = Number(step?.step?.val ?? event.current_value ?? 0);", html)
 
     def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -310,7 +348,7 @@ class PageRenderTests(unittest.TestCase):
     def test_timer_dashboard_updates_local_editor_metadata_after_save(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn("timerReportPeriods[role] = Number(reportPeriodInput.value);", html)
+        self.assertNotIn("timerReportPeriods[role]", html)
         self.assertIn("function syncSavedEditorMetadata(role, block, device) {", html)
         self.assertIn("channel.default_editor = block.querySelector(\".editor-mode\").value;", html)
         self.assertIn("channel.editor = structuredClone(device.editor);", html)
@@ -336,6 +374,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('textContent = "Pico";', html)
 
     def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
+        status = {
+            "state": "connected",
+            "serial": "abc",
+            "firmware": {"current": True},
+            "raw_lines": ["report evidence"],
+        }
         html = render_controller_page(
             "pump_lights",
             [
@@ -343,7 +387,7 @@ class PageRenderTests(unittest.TestCase):
                 {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible"},
                 {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden"},
             ],
-            {"state": "connected", "serial": "abc"},
+            status,
             [{"at": "now", "direction": "tx", "text": "r"}],
         )
 
@@ -364,6 +408,13 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}/serial-log`', html)
         self.assertIn('}).join("\\n");', html)
         self.assertNotIn('}).join("\n");', html)
+        self.assertIn("<h2>Diagnostics</h2>", html)
+        self.assertIn('id="controller-diagnostics"', html)
+        self.assertIn('<button id="refresh-diagnostics" type="button">Refresh diagnostics</button>', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}`)', html)
+        self.assertIn("diagnosticsNode.textContent = JSON.stringify(data.telemetry || data, null, 2);", html)
+        self.assertIn('setStatus("Diagnostics refreshed.");', html)
+        self.assertIn(html_module.escape(json.dumps(status, indent=2, sort_keys=True)), html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -455,26 +506,23 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const disabled = channel.default_editor === "disabled";', html)
         self.assertIn('const hidden = channel.default_editor === "hidden";', html)
         self.assertIn('badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));', html)
-        self.assertIn('const isEditing = activeEditor && activeEditor.role === role;', html)
+        self.assertIn('const isEditing = ok && activeEditor && activeEditor.role === role;', html)
         self.assertIn('if (!hidden || isEditing) {', html)
         self.assertIn('if (configurableCount > 0) {', html)
         self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role));', html)
         self.assertIn('actions.textContent = "No configured device schedules.";', html)
 
-    def test_timer_dashboard_edit_schedule_includes_report_period(self):
+    def test_timer_dashboard_edit_schedule_excludes_report_period(self):
         html = render_timer_dashboard_page(
             ["pump_lights"],
             "12h",
             {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "cycle"}]},
             0,
-            report_periods_by_role={"pump_lights": 17},
         )
 
-        self.assertIn("const timerReportPeriods = {\"pump_lights\": 17};", html)
-        self.assertIn('class="controller-report-period"', html)
-        self.assertIn('value="${escapeHtml(timerReportPeriods[role] ?? 10)}"', html)
-        self.assertIn('const reportPeriodInput = form.querySelector(".controller-report-period");', html)
-        self.assertIn("controller.payload.report_every = Number(reportPeriodInput.value);", html)
+        self.assertNotIn("Pico poll interval (seconds)", html)
+        self.assertNotIn('class="controller-report-period"', html)
+        self.assertNotIn('const reportPeriodInput = form.querySelector(".controller-report-period");', html)
 
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
         html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -551,13 +599,15 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("message?.content?.events", html)
         self.assertNotIn("message?.events", html)
 
-    def test_api_test_page_generates_timer_payloads_with_devices(self):
+    def test_api_test_page_does_not_offer_compiled_scheduler_state_put(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
 
-        self.assertIn("report_every: 10,\n        devices: [{", html)
-        self.assertIn("report_every: 10,\n        devices: [", html)
-        self.assertNotIn("report_every: 10,\n        events: [{", html)
-        self.assertNotIn("report_every: 10,\n        events: [", html)
+        self.assertNotIn("PUT /api/controllers/{role}", html)
+        self.assertNotIn('id="put-state"', html)
+        self.assertNotIn('id="put-role"', html)
+        self.assertNotIn('id="generate-quick"', html)
+        self.assertNotIn('id="generate-pump-lights"', html)
+        self.assertNotIn("async function putState", html)
 
     def test_api_test_page_includes_pico_scheduler_pulse_request(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
@@ -578,14 +628,30 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn("GET /api/controllers/{controller}", html)
         self.assertIn("PUT /api/config/controllers", html)
-        self.assertIn("POST /api/controllers/{controller}/apply", html)
+        self.assertIn("GET /api/controllers/{controller}?stream=true", html)
+        self.assertIn("POST /api/controllers/{controller}/schedule", html)
         self.assertIn("POST /api/controllers/{controller}/commands/report", html)
         self.assertIn("POST /api/controllers/{controller}/channels/{channel}/schedule", html)
+        self.assertIn('id="controller-stream-start"', html)
+        self.assertIn('id="controller-stream-result"', html)
+        self.assertIn('id="scheduler-schedule-payload"', html)
+        self.assertIn('id="scheduler-schedule-request"', html)
+        self.assertIn('id="scheduler-schedule-result"', html)
+        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(schedulerController)}/schedule`', html)
+        self.assertIn('for (const eventName of ["snapshot", "status", "report", "error"])', html)
         self.assertIn('&quot;mode&quot;:&quot;cycle&quot;', html)
         self.assertIn('&quot;mode&quot;:&quot;clock_window&quot;', html)
         self.assertIn('&quot;on_time&quot;:&quot;06:00&quot;', html)
-        self.assertIn("Normal workflow: save desired config once, then apply the controller once.", html)
+        self.assertIn("Schedules are committed only after a verified Pico apply", html)
+        self.assertIn("firmware_upgraded", html)
+        self.assertIn("firmware identity", html)
+        self.assertIn("Apply and commit the complete", html)
+        self.assertIn("Applying and verifying...", html)
+        self.assertNotIn("Flash and commit the complete", html)
+        self.assertNotIn("Normal workflow: save desired config once, then apply the controller once.", html)
         self.assertIn("Compatibility endpoint for changing one channel", html)
+        self.assertIn("<strong>Recovery:</strong> reapplies the current desired controller config", html)
+        self.assertNotIn("desired config plus controller apply", html)
 
 
     def test_settings_page_includes_storage_summary(self):
@@ -606,6 +672,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h2>Storage</h2>", html)
         self.assertIn("<th scope=\"row\">Root folder</th>", html)
         self.assertIn("<th scope=\"row\">Data dir</th>", html)
+        self.assertIn("PLAMP_ROOT", html)
+        self.assertIn("PLAMP_DATA_DIR", html)
         self.assertNotIn("<th scope=\"row\">Storage path</th>", html)
         self.assertIn("<th scope=\"row\">Free disk space</th>", html)
         self.assertIn("<th scope=\"row\">Used disk space</th>", html)
@@ -775,7 +843,7 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('class="camera-row new-row" data-camera-key=""', html)
 
-    def test_settings_page_edits_controller_type_and_report_interval(self):
+    def test_settings_page_does_not_offer_obsolete_report_interval(self):
         html = render_settings_page(
             {
                 "config": {
@@ -798,10 +866,9 @@ class PageRenderTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("<th>Report every seconds</th>", html)
-        self.assertIn('class="controller-report-every"', html)
-        self.assertIn('value="15"', html)
-        self.assertIn("payload.payload.report_every = Number(reportEvery);", html)
+        self.assertNotIn("Pico poll interval (seconds)", html)
+        self.assertNotIn('class="controller-report-every"', html)
+        self.assertNotIn("payload.payload.report_every", html)
 
     def test_settings_page_groups_scheduler_settings_by_controller(self):
         html = render_settings_page(
@@ -849,7 +916,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('data-controller-key="unused"', html)
         self.assertIn("<th>Assigned peripheral</th>", html)
         self.assertIn("Pump lights", html)
-        self.assertIn('value="10"', html)
         self.assertIn("/dev/ttyACM0", html)
         self.assertIn("<h4>Devices</h4>", html)
         self.assertIn("<th>Output type</th>", html)
@@ -1030,7 +1096,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('const payload = isHiddenReuse ? existingController : {type, payload: {}, settings: {}};', html)
         self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;', html)
         self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;', html)
-        self.assertIn('if (!isHiddenReuse || reportEvery !== reportEveryInput.defaultValue) payload.payload.report_every = Number(reportEvery);', html)
+        self.assertNotIn("reportEveryInput", html)
 
     def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
         html = render_settings_page(
@@ -1174,7 +1240,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('labelInput.defaultValue = hiddenSettings.label || "";', html)
         self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
         self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";', html)
-        self.assertIn('reportEveryInput.defaultValue = String((hiddenPayload.report_every ?? reportEveryInput.defaultValue) || "");', html)
+        self.assertNotIn("reportEveryInput", html)
         self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
 
     def test_settings_page_no_longer_renders_hostname_confirm_apply_controls(self):
@@ -1269,7 +1335,6 @@ class PageRenderTests(unittest.TestCase):
             "GET /api/camera/captures",
             "GET /api/status",
             "GET /api/status?stream=true",
-            "PUT /api/controllers/{role}",
         ]:
             self.assertIn(f"<legend>{title}</legend>", html)
         self.assertIn("Captures a new image and returns capture metadata.", html)
@@ -1297,18 +1362,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (timerEventSource && timerEventSource.readyState === EventSource.CLOSED) {', html)
         self.assertIn('streamStatus.textContent = "Stream disconnected.";', html)
         self.assertNotIn("Stream error or reconnecting...", html)
-        self.assertIn("Writes controller state JSON and sends it to the Pico.", html)
-        self.assertIn('<p class="helper-title">Helper: Generate 5s pin test</p>', html)
-        self.assertIn('<p class="helper-title">Helper: Generate pump/lights</p>', html)
-        self.assertNotIn("Payload helpers", html)
-        self.assertNotIn("<h3>Generate 5s pin test</h3>", html)
-        self.assertNotIn("<h3>PUT curl</h3>", html)
+        self.assertNotIn("Writes controller state JSON and sends it to the Pico.", html)
+        self.assertNotIn("Helper: Generate 5s pin test", html)
+        self.assertNotIn("Helper: Generate pump/lights", html)
         self.assertNotIn("GET /api/controllers/{role}", html)
         self.assertNotIn("GET /api/controllers/{role}?stream=true", html)
-        self.assertLess(
-            html.index('<p class="helper-title">Helper: Generate 5s pin test</p>'),
-            html.index("<label>JSON payload"),
-        )
 
     def test_pages_link_favicon_svg(self):
         settings_html = render_settings_page(
@@ -1403,7 +1461,6 @@ class PageRenderTests(unittest.TestCase):
             "list-captures-curl-command",
             "get-status-curl-command",
             "stream-status-curl-command",
-            "put-curl-command",
         ]:
             self.assertIn(f'data-copy-target="{target}"', html)
         self.assertIn('id="list-captures-limit"', html)
@@ -1424,7 +1481,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="status-path-list"', html)
         self.assertIn('id="get-status-curl-command"', html)
         self.assertIn('id="stream-status-curl-command"', html)
-        self.assertIn('id="put-curl-command"', html)
+        self.assertNotIn('id="put-curl-command"', html)
 
 
 if __name__ == "__main__":
