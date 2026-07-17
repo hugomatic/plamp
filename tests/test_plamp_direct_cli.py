@@ -258,6 +258,29 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), json.dumps(result, sort_keys=True) + "\n")
         self.assertEqual(stderr.getvalue(), "")
 
+    def test_pico_upgrade_prints_null_previous_identity_for_legacy_pico(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            result = {
+                "report": {"type": "report", "content": {"devices": []}},
+                "previous_identity": None,
+                "identity": {"revision": "new", "protocol": 2, "name": "pico_scheduler"},
+            }
+
+            rc = main(
+                ["pico", "upgrade", "tower", "-"],
+                env=self.runtime_env(root), stdin=io.StringIO(json.dumps(STATE)),
+                stdout=stdout, stderr=stderr,
+                upgrade_func=lambda *args, **kwargs: result,
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertIsNone(json.loads(stdout.getvalue())["previous_identity"])
+        self.assertEqual(stdout.getvalue(), json.dumps(result, sort_keys=True) + "\n")
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_pico_upgrade_failure_returns_four_without_traceback(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

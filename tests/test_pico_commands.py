@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from plamp.pico_commands import configure_scheduler, upgrade_scheduler
-from plamp.pico_transport import PicoExchange
+from plamp.pico_transport import PicoCommandError, PicoExchange
 from plamp.scheduler_state import FirmwareIdentity
 
 from tests.test_plamp_direct_cli import STATE
@@ -118,6 +118,60 @@ class PicoCommandTests(unittest.TestCase):
         self.assertEqual(result["identity"]["revision"], "newrev")
         self.assertEqual(result["port"], "/dev/ttyACM1")
         self.assertEqual(result["report"], report("newrev"))
+
+    def test_upgrade_accepts_legacy_initial_report_with_null_previous_identity(self):
+        class LegacyOperation(FakeOperation):
+            def report(self):
+                self.calls.append("report")
+                message = {"type": "report", "content": {"devices": STATE["devices"]}}
+                return PicoExchange(message, "/dev/ttyACM0", (b"legacy\n",))
+
+        class LegacyClient(FakeClient):
+            def __init__(self, serial, *, lock_dir):
+                super().__init__(serial, lock_dir=lock_dir)
+                self.active = LegacyOperation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = upgrade_scheduler(
+                "PICO-A", STATE,
+                lock_dir=root / "locks", timeout=60,
+                repo_root=root, data_dir=root / "data",
+                client_factory=LegacyClient,
+                render_func=lambda repo_root: ("newrev", "# generic firmware\n"),
+                mpremote_finder=lambda name: "/usr/bin/mpremote",
+                command_runner=object(), interrupter=object(),
+            )
+
+        self.assertIsNone(result["previous_identity"])
+        self.assertEqual(
+            result["identity"],
+            {"name": "pico_scheduler", "revision": "newrev", "protocol": 2},
+        )
+
+    def test_upgrade_converts_missing_verified_identity_to_protocol_error(self):
+        class MissingIdentityOperation(FakeOperation):
+            def upgrade_scheduler(self, main_path, state_path, expected, **kwargs):
+                message = {"type": "report", "content": {"devices": STATE["devices"]}}
+                return PicoExchange(message, "/dev/ttyACM1", (b"missing\n",))
+
+        class MissingIdentityClient(FakeClient):
+            def __init__(self, serial, *, lock_dir):
+                super().__init__(serial, lock_dir=lock_dir)
+                self.active = MissingIdentityOperation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaisesRegex(PicoCommandError, "upgraded.*identity"):
+                upgrade_scheduler(
+                    "PICO-A", STATE,
+                    lock_dir=root / "locks", timeout=60,
+                    repo_root=root, data_dir=root / "data",
+                    client_factory=MissingIdentityClient,
+                    render_func=lambda repo_root: ("newrev", "# generic firmware\n"),
+                    mpremote_finder=lambda name: "/usr/bin/mpremote",
+                    command_runner=object(), interrupter=object(),
+                )
 
 
 if __name__ == "__main__":

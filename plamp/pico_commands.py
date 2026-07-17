@@ -16,6 +16,7 @@ from plamp.pico_firmware import render_scheduler_firmware
 from plamp.pico_transport import (
     PicoClient,
     PicoCommandError,
+    PicoExchange,
     PicoFlashError,
 )
 from plamp.scheduler_state import (
@@ -95,6 +96,31 @@ def configure_scheduler(
     ).message
 
 
+def _report_identity(
+    exchange: PicoExchange, *, label: str, required: bool
+) -> FirmwareIdentity | None:
+    try:
+        identity = firmware_identity(exchange.message)
+    except (TypeError, ValueError) as exc:
+        raise PicoCommandError(
+            f"invalid firmware identity in {label} Pico report: {exc}",
+            raw_lines=exchange.raw_lines,
+        ) from exc
+    if identity is None:
+        if required:
+            raise PicoCommandError(
+                f"{label} Pico report has no firmware identity",
+                raw_lines=exchange.raw_lines,
+            )
+        return None
+    if not isinstance(identity, FirmwareIdentity):
+        raise PicoCommandError(
+            f"invalid firmware identity in {label} Pico report",
+            raw_lines=exchange.raw_lines,
+        )
+    return identity
+
+
 def upgrade_scheduler(
     pico_serial: str,
     state: dict[str, Any],
@@ -133,13 +159,7 @@ def upgrade_scheduler(
         client = client_factory(pico_serial, lock_dir=lock_dir)
         with client.operation(timeout=timeout) as operation:
             before = operation.report()
-            try:
-                previous = firmware_identity(before.message)
-            except ValueError as exc:
-                raise PicoCommandError(
-                    f"invalid firmware identity in Pico report: {exc}",
-                    raw_lines=before.raw_lines,
-                ) from exc
+            previous = _report_identity(before, label="initial", required=False)
             upgraded = operation.upgrade_scheduler(
                 firmware_path,
                 state_path,
@@ -149,16 +169,10 @@ def upgrade_scheduler(
                 mpremote=mpremote,
             )
 
-    try:
-        identity = firmware_identity(upgraded.message)
-    except ValueError as exc:
-        raise PicoCommandError(
-            f"invalid firmware identity in upgraded Pico report: {exc}",
-            raw_lines=upgraded.raw_lines,
-        ) from exc
+    identity = _report_identity(upgraded, label="upgraded", required=True)
     return {
         "identity": asdict(identity),
         "port": upgraded.port,
-        "previous_identity": asdict(previous),
+        "previous_identity": None if previous is None else asdict(previous),
         "report": upgraded.message,
     }
