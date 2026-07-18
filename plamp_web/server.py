@@ -38,7 +38,7 @@ from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, Pic
 from plamp.scheduler_state import EXPECTED_FIRMWARE_PROTOCOL, FirmwareIdentity, firmware_identity, normalize_scheduler_state
 from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_system_info_page, set_app_revision
+from plamp_web.pages import render_api_test_page, set_app_revision
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -2036,9 +2036,9 @@ def get_system() -> dict[str, Any]:
     return system_response()
 
 
-@app.get("/system", response_class=HTMLResponse)
-def get_system_page() -> str:
-    return render_system_info_page(system_response(), read_log_tail(200), configured_timer_roles())
+@app.get("/system", response_class=FileResponse)
+def get_system_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "system.html", media_type="text/html")
 
 
 def get_status(path: list[str] | None = None, stream: bool = False) -> Any:

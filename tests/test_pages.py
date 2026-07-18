@@ -3,7 +3,7 @@ import json
 import unittest
 from pathlib import Path
 
-from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_system_info_page
+from plamp_web.pages import json_script_text, main_nav, render_api_test_page
 
 
 def static_timer_dashboard(*args, **kwargs) -> str:
@@ -199,12 +199,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h1>nurse-plamp API test</h1>", html)
 
 
-    def test_pages_use_same_nav_with_system_link(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
-        html = render_system_info_page({"host": {"hostname": "sprout"}})
-        self.assertIn(expected, html)
-        self.assertEqual(html.count("<nav>"), 1)
-
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
@@ -217,65 +211,6 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertIn('lastMessage = scheduleParsed?.message || "Schedule settings saved.";', html)
         self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
-
-    def test_system_info_page_shows_actions_and_no_hostname_editor(self):
-        html = render_system_info_page(
-            {
-                "host": {"hostname": "sprout", "hardware_model": "Raspberry Pi Zero 2 W Rev 1.0"},
-                "host_time": {"display": "10:15 AM"},
-                "software": {
-                    "git_branch": "main",
-                    "git_short_commit": "6e2cf82",
-                    "git_dirty": False,
-                    "git_commit_timestamp": "2026-05-20T10:15:00-07:00",
-                    "os_name": "Debian GNU/Linux",
-                    "os_version": "12",
-                    "os_arch": "aarch64",
-                    "user_name": "hugo",
-                    "user_is_sudoer": True,
-                    "user_has_serial_access": True,
-                    "user_has_video_access": True,
-                },
-                "paths": {"repo_root": "/home/hugo/plamp", "data_dir": "/home/hugo/plamp/data"},
-                "storage": {"path": "/home/hugo/plamp", "free": "2.0 GB", "used": "1.0 GB", "total": "3.0 GB"},
-                "log": {"path": "/var/log/plamp-web.log"},
-                "detected": {"picos": [{"port": "/dev/ttyACM0", "serial": "abc", "vendor_id": "1234", "product_id": "abcd"}], "cameras": [{"connector": "cam0", "model": "Camera Module 3 Wide", "sensor": "imx708", "lens": "wide", "path": "/dev/video0"}]},
-                "camera_worker": {"state": "idle", "available": True, "queue_depth": 0, "last_capture_at": "2026-05-20T10:15:00", "last_error": None, "scheduled_cameras": ["cam0"]},
-                "monitors": {"pump_lights": {"serial": "abc", "state": "idle", "connected": True, "port": "/dev/ttyACM0", "last_seen": "2026-05-20T10:14:59", "last_error": None}},
-            }
-        , "plamp-web started")
-
-        self.assertIn("<h2>System info</h2>", html)
-        self.assertIn("<h2>Storage</h2>", html)
-        self.assertIn("<h2>Camera worker</h2>", html)
-        self.assertIn("<h2>Controller workers</h2>", html)
-        self.assertIn('class="host-clock"', html)
-        self.assertIn("<strong>Host time:</strong> 10:15 AM", html)
-        self.assertEqual(html.count("Git commit</th>"), 1)
-        self.assertEqual(html.count("Root folder</th>"), 1)
-        self.assertEqual(html.count("Repo root</th>"), 0)
-        self.assertEqual(html.count("Data dir</th>"), 1)
-        self.assertEqual(html.count("Storage path</th>"), 0)
-        self.assertEqual(html.count("Plamp root"), 0)
-        self.assertEqual(html.count("Plamp data"), 0)
-        self.assertEqual(html.count("Operating system</th>"), 1)
-        self.assertEqual(html.count("User name</th>"), 1)
-        self.assertEqual(html.count("Computer hardware model</th>"), 1)
-        self.assertIn("Raspberry Pi Zero 2 W Rev 1.0", html)
-        self.assertEqual(html.count("Log file</th>"), 1)
-        self.assertNotIn("<th scope=\"row\">Log file</th><td>/var/log/plamp-web.log</td>", html)
-        self.assertNotIn("Detected picos", html)
-        self.assertNotIn("Detected cameras", html)
-        self.assertIn("Restart", html)
-        self.assertIn("Reinstall", html)
-        self.assertIn("Upgrade", html)
-        self.assertIn("Logs", html)
-        self.assertIn("plamp-web started", html)
-        self.assertNotIn('id="hostname-input"', html)
-        self.assertIn("2.0 GB", html)
-        self.assertIn("3.0 GB", html)
-        self.assertIn("cam0", html)
-        self.assertIn("pump_lights", html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -688,80 +623,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("desired config plus controller apply", html)
 
 
-    def test_settings_page_includes_storage_summary(self):
-        html = render_system_info_page({
-            "host_time": {"display": "1:23 PM"},
-            "host": {"hostname": "plamp", "network": []},
-            "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
-            "storage": {
-                "path": "/path/to/plamp",
-                "free": "42.0 GB",
-                "used": "10.0 GB",
-                "total": "52.0 GB",
-            },
-            "log": {"path": "/repo/plamp/data/plamp.log"},
-        })
-
-        self.assertIn("System info", html)
-        self.assertIn("<h2>Storage</h2>", html)
-        self.assertIn("<th scope=\"row\">Root folder</th>", html)
-        self.assertIn("<th scope=\"row\">Data dir</th>", html)
-        self.assertIn("PLAMP_ROOT", html)
-        self.assertIn("PLAMP_DATA_DIR", html)
-        self.assertNotIn("<th scope=\"row\">Storage path</th>", html)
-        self.assertIn("<th scope=\"row\">Free disk space</th>", html)
-        self.assertIn("<th scope=\"row\">Used disk space</th>", html)
-        self.assertIn("<th scope=\"row\">Total disk space</th>", html)
-        self.assertIn("<th scope=\"row\">Log file</th>", html)
-        self.assertNotIn("<th>Path</th><th>Free</th><th>Used</th><th>Total</th>", html)
-        self.assertIn("/repo/plamp", html)
-        self.assertIn("/repo/plamp/data", html)
-        self.assertIn("/repo/plamp/data/plamp.log", html)
-        self.assertNotIn("/path/to/plamp", html)
-        self.assertIn("42.0 GB", html)
-        self.assertIn("10.0 GB", html)
-        self.assertIn("52.0 GB", html)
-
-
-    def test_settings_page_includes_git_software_identity(self):
-        html = render_system_info_page({
-            "host_time": {"display": "1:23 PM"},
-            "host": {"hostname": "plamp", "network": []},
-            "software": {
-                "git_commit": "d5883da4abcdef",
-                "git_short_commit": "d5883da",
-                "git_branch": "main",
-                "git_commit_timestamp": "2026-05-04T10:41:12-10:00",
-                "git_dirty": True,
-            },
-        })
-
-        self.assertIn("System info", html)
-        self.assertIn("Git commit", html)
-        self.assertIn("d5883da", html)
-        self.assertIn("main", html)
-        self.assertIn("Git commit time", html)
-        self.assertIn("ago", html)
-        self.assertIn("Git dirty", html)
-
-    def test_settings_page_includes_detected_raspberry_pi_cameras(self):
-        html = render_system_info_page({
-            "host_time": {"display": "1:23 PM"},
-            "host": {"hostname": "plamp", "network": []},
-            "detected": {"picos": [], "cameras": [{"key": "rpicam:cam0", "connector": "cam0", "index": 0, "sensor": "imx708", "model": "imx708_wide", "lens": "wide", "path": "/base/imx708@1a"}]},
-        })
-
-        self.assertIn("System info", html)
-        self.assertIn("<h2>Hardware</h2>", html)
-        self.assertIn("<h3>Serial USB peripherals</h3>", html)
-        self.assertIn("<h3>Cameras</h3>", html)
-        self.assertNotIn("Detected hardware", html)
-        self.assertNotIn("<h3>Peripherals</h3>", html)
-        self.assertNotIn("<h3>Raspberry Pi cameras</h3>", html)
-        self.assertNotIn("Detected cameras", html)
-        self.assertNotIn("Detected picos", html)
-        self.assertIn("cam0", html)
-
     def test_json_script_text_preserves_payload_and_escapes_script_end_tag(self):
         payload = {
             "unused": {
@@ -854,36 +715,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("Helper: Generate pump/lights", html)
         self.assertNotIn("GET /api/controllers/{role}", html)
         self.assertNotIn("GET /api/controllers/{role}?stream=true", html)
-
-    def test_settings_page_shows_short_git_dirty_reason(self):
-        html = render_system_info_page(
-            {
-                "host": {"hostname": "plamp", "network": []},
-                "software": {
-                    "path": "/repo/plamp",
-                    "user_name": "hugo",
-                    "user_is_sudoer": True,
-                    "user_has_serial_access": True,
-                    "user_has_video_access": True,
-                    "os_name": "Debian GNU/Linux",
-                    "os_arch": "aarch64",
-                    "os_version": "12 (bookworm)",
-                    "git_short_commit": "abc123",
-                    "git_branch": "main",
-                    "git_dirty": True,
-                    "git_dirty_files": ["plamp_web/server.py", "tests/test_pages.py", "deploy/bootstrap/install-plamp.sh"],
-                    "git_commit_timestamp": "2026-05-08T09:00:00+00:00",
-                    "mpremote_path": "/home/hugo/.local/bin/mpremote",
-                    "mpremote_version": "mpremote 1.28.0",
-                },
-                "storage": {"path": "/repo/plamp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-                "tools": {"pyserial": "3.5"},
-                "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
-            }
-        )
-
-        self.assertIn("Git dirty", html)
-        self.assertIn("yes: plamp_web/server.py, tests/test_pages.py, ...", html)
 
     def test_api_test_page_has_copyable_curl_commands_and_camera_paging_inputs(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")

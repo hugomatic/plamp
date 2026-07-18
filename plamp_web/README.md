@@ -15,6 +15,7 @@ Useful pages:
 - `/` - static main Pico scheduler and camera client; it loads all runtime state through REST and SSE
 - `/settings` — static hardware and configuration client; it loads and saves through REST
 - `/controllers/{controller}` — static controller diagnostics and command client using REST and SSE
+- `/system` — static host diagnostics and service-action client; logs load on demand through REST
 - `/api/test` — runnable API examples
 - `/openapi.json` — machine-readable API
 

@@ -68,6 +68,18 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_system_route_is_static_file(self):
+        fail = AssertionError("system route must not touch runtime state")
+        with (
+            patch.object(server, "system_response", side_effect=fail),
+            patch.object(server, "read_log_tail", side_effect=fail),
+            patch.object(server, "configured_timer_roles", side_effect=fail),
+        ):
+            response = server.get_system_page()
+
+        self.assertIsInstance(response, FileResponse)
+        self.assertEqual(Path(response.path), server.STATIC_DIR / "system.html")
+
     def test_controller_route_is_static_file(self):
         fail = AssertionError("controller route must not touch runtime state")
         with (
