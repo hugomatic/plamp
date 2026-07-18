@@ -16,6 +16,22 @@ def static_text(name: str) -> str:
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_settings_static_client_bootstraps_only_from_rest(self):
+        html = static_text("settings.html")
+        script = static_text("settings.js")
+
+        self.assertIn("data-plamp-nav", html)
+        self.assertIn('fetch("/api/config")', script)
+        self.assertIn("PlampWeb.bootstrapShell", script)
+        self.assertNotIn("pump_lights", html)
+        self.assertNotIn("abc123", html)
+
+    def test_settings_load_failure_disables_saves(self):
+        script = static_text("settings.js")
+
+        self.assertIn("setSaveDisabled(true)", script)
+        self.assertIn("Settings setup failed:", script)
+
     def test_shared_shell_discovers_navigation_from_rest(self):
         shell = static_text("app.js")
         dashboard = static_text("index.html")

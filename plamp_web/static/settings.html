@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    section { border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 1rem; }
+    table { border-collapse: collapse; margin: 1rem 0 1.5rem; max-width: 1100px; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+    th { background: #f4f4f4; }
+    input, select { box-sizing: border-box; max-width: 100%; padding: .35rem; }
+    button { margin: .4rem .4rem .4rem 0; }
+    code { background: #f4f4f4; padding: .1rem .25rem; }
+    .subsection-indent { margin-left: 1.5rem; max-width: 1050px; }
+    .pico-scheduler-block { margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <nav data-plamp-nav aria-label="Plamp"></nav>
+  <h1 id="settings-heading">Settings</h1>
+  <p id="settings-load-status" class="status">Loading settings...</p>
+  <p><a href="https://github.com/hugomatic/plamp/issues/new">Report an issue</a></p>
+
+  <section aria-label="Plamp config">
+    <h2>Plamp config</h2>
+    <p class="muted">Configure controllers, Pico scheduler devices, and cameras.</p>
+    <h3>Pico schedulers</h3>
+    <div id="scheduler-blocks"></div>
+    <button id="save-controllers" type="button" disabled>Save controllers</button>
+    <span id="controllers-status" class="status">Loading.</span>
+    <button id="save-devices" type="button" disabled>Save devices</button>
+    <span id="devices-status" class="status">Loading.</span>
+
+    <h3>Cameras</h3>
+    <p class="muted">Capture dir must stay inside Plamp root. Use a repo-relative path like <code>data/grow/grows/&lt;grow-id&gt;/captures</code>; absolute paths are rejected.</p>
+    <p class="muted">Automatic capture uses <code>Every seconds</code>. Set it to <code>0</code> to disable scheduling for that camera.</p>
+    <table>
+      <thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th><th>Capture dir</th><th>Every seconds</th><th>Autofocus</th><th>Autofocus delay ms</th></tr></thead>
+      <tbody id="camera-rows"></tbody>
+    </table>
+    <button id="save-cameras" type="button" disabled>Save cameras</button>
+    <span id="cameras-status" class="status">Loading.</span>
+  </section>
+
+  <script src="/static/app.js"></script>
+  <script src="/static/settings.js"></script>
+</body>
+</html>
