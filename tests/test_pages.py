@@ -2,11 +2,34 @@ import html as html_module
 import json
 import re
 import unittest
+from pathlib import Path
 
-from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, render_timer_dashboard_page
+from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page
+
+
+def static_timer_dashboard(*args, **kwargs) -> str:
+    return Path("plamp_web/static/index.html").read_text(encoding="utf-8")
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_timer_dashboard_static_file_bootstraps_only_through_rest(self):
+        path = Path("plamp_web/static/index.html")
+        self.assertTrue(path.is_file())
+        html = path.read_text(encoding="utf-8")
+
+        for endpoint in ("/api/timer-config", "/api/host-time", "/api/config", "/api/system"):
+            self.assertIn(f'fetch("{endpoint}")', html)
+        self.assertIn("let clockTimeFormat", html)
+        self.assertIn("let timerRoles", html)
+        self.assertIn("let timerChannels", html)
+        self.assertIn("let timerHostSecondsAtLoad", html)
+        self.assertIn("function renderMainNav", html)
+        self.assertIn("function populateCameraSelectors", html)
+        self.assertIn("async function bootstrapDashboard", html)
+        bootstrap = html.split("async function bootstrapDashboard()", 1)[1].split("function formatChangeTime", 1)[0]
+        self.assertLess(bootstrap.index('fetch("/api/system")'), bootstrap.index("startTimerStreams();"))
+        self.assertIn("await bootstrapDashboard()", html)
+
     def test_nav_uses_single_link_to_running_revision(self):
         nav = main_nav(revision="ebaf545")
 
@@ -46,16 +69,18 @@ class PageRenderTests(unittest.TestCase):
         return re.findall(r'<div class="pico-scheduler-block[^"]*" data-controller-key=".*?">.*?</div>', html, re.DOTALL)
 
     def test_timer_dashboard_page_links_to_settings(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('<a href="/settings">Settings</a>', html)
+        self.assertIn('navLink("/settings", "Settings")', html)
         self.assertNotIn('href="/config"', html)
 
     def test_timer_dashboard_page_uses_hostname_in_title_and_heading(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0, hostname="nurse-plamp")
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0, hostname="nurse-plamp")
 
-        self.assertIn("<title>nurse-plamp Plamp</title>", html)
-        self.assertIn("<h1>nurse-plamp Plamp</h1>", html)
+        self.assertIn('const hostname = String(systemPayload?.host?.hostname || "");', html)
+        self.assertIn('document.title = pageName;', html)
+        self.assertIn('document.getElementById("page-name").textContent = pageName;', html)
+        self.assertNotIn("nurse-plamp", html)
 
     def test_api_test_page_uses_hostname_in_title_and_heading(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h", hostname="nurse-plamp")
@@ -76,13 +101,15 @@ class PageRenderTests(unittest.TestCase):
         }
 
         pages = [
-            render_timer_dashboard_page([], "12h", {}, 0),
             render_settings_page(settings_summary),
             render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h"),
         ]
 
         for html in pages:
             self.assertIn(expected, html)
+        dashboard = static_timer_dashboard()
+        for link in ('navLink("/", "Plamp")', 'navLink("/settings", "Settings")', 'navLink("/system", "System")', 'navLink("/api/test", "API test")'):
+            self.assertIn(link, dashboard)
 
     def test_pages_use_same_nav_with_system_link(self):
         expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
@@ -102,7 +129,6 @@ class PageRenderTests(unittest.TestCase):
         }
 
         pages = [
-            render_timer_dashboard_page(["octo_relay"], "12h", {"octo_relay": []}, 0),
             render_settings_page(settings_summary, ["octo_relay"]),
             render_system_info_page({"host": {"hostname": "sprout"}}, controller_ids=["octo_relay"]),
             render_api_test_page(["octo_relay"], "octo_relay", "{}", "12h", controller_ids=["octo_relay"]),
@@ -110,16 +136,18 @@ class PageRenderTests(unittest.TestCase):
 
         for page in pages:
             self.assertIn(expected, page)
+        dashboard = static_timer_dashboard()
+        self.assertIn('navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId)', dashboard)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('id="refresh-countdown"', html)
         self.assertIn("let refreshSeconds = 30;", html)
         self.assertIn("window.location.reload();", html)
 
     def test_timer_dashboard_page_uses_server_schedule_success_message(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('lastMessage = scheduleParsed?.message || "Schedule settings saved.";', html)
         self.assertIn('showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");', html)
@@ -184,7 +212,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("pump_lights", html)
 
     def test_timer_dashboard_page_groups_devices_by_controller_and_edits_as_one_schedule(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("<h2>Controllers</h2>", html)
         self.assertNotIn("<h2>Timers</h2>", html)
@@ -255,7 +283,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertLess(rejected_schedule, sync_metadata)
 
     def test_timer_dashboard_renders_binary_controller_health(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("const timerStatuses = new Map();", html)
         self.assertIn("controller-card-error", html)
@@ -272,7 +300,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('error: {message: "controller status stream disconnected"}', html)
 
     def test_timer_dashboard_freezes_stale_pin_animation(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn(
             "const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;",
@@ -282,7 +310,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("const value = Number(step?.step?.val ?? event.current_value ?? 0);", html)
 
     def test_timer_dashboard_page_preserves_editor_focus_on_timer_updates(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("let pendingTimerRender = false;", html)
         self.assertIn("function flushPendingTimerRender() {", html)
@@ -294,7 +322,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));', html)
 
     def test_timer_dashboard_editor_prefers_saved_cycle_values_over_live_progress(self):
-        html = render_timer_dashboard_page(
+        html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
             {
@@ -321,7 +349,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('value="${cycleValues.startAtValue}"', html)
 
     def test_timer_dashboard_saves_cycle_editor_values_and_unit_to_config(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('device.editor = {kind: "cycle", on_seconds: onSeconds, off_seconds: offSeconds, start_at_seconds: startAtSeconds, unit: cycleUnit};', html)
         self.assertIn("const cycleUnit = block.querySelector(\".editor-cycle-unit\").value;", html)
@@ -330,7 +358,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("const startAtSeconds = Number(block.querySelector(\".editor-start-at\").value) * multiplier;", html)
 
     def test_timer_dashboard_formats_change_time_from_server_clock(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 90)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 90)
 
         self.assertIn("function formatDuration(secondsValue) {", html)
         self.assertIn('return parts.length ? parts.join(" ") : "0s";', html)
@@ -339,14 +367,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";', html)
 
     def test_timer_dashboard_does_not_treat_schedule_response_as_live_state(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertNotIn("function applyScheduleResponseState(role, parsed) {", html)
         self.assertNotIn("timerMessages.set(role, {devices: parsed.state.devices});", html)
         self.assertNotIn("applyScheduleResponseState(role, parsed);", html)
 
     def test_timer_dashboard_updates_local_editor_metadata_after_save(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertNotIn("timerReportPeriods[role]", html)
         self.assertIn("function syncSavedEditorMetadata(role, block, device) {", html)
@@ -355,7 +383,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
     def test_timer_dashboard_keeps_manual_controls_off_cards(self):
-        html = render_timer_dashboard_page(
+        html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
             {
@@ -368,7 +396,7 @@ class PageRenderTests(unittest.TestCase):
             0,
         )
 
-        self.assertIn('<a href="/controllers/pump_lights">pump_lights</a>', html)
+        self.assertIn('diagnostics.href = `/controllers/${encodeURIComponent(role)}`;', html)
         self.assertNotIn('textContent = "Report now";', html)
         self.assertNotIn('textContent = "Refresh log";', html)
         self.assertNotIn('textContent = "Pico";', html)
@@ -417,7 +445,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn(html_module.escape(json.dumps(status, indent=2, sort_keys=True)), html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("<h2>Camera</h2>", html)
         self.assertIn('id="camera-capture"', html)
@@ -439,7 +467,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("thumbnailCaptures", html)
 
     def test_timer_dashboard_places_take_picture_button_below_image(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertLess(
             html.index('<img id="camera-viewer"'),
@@ -448,10 +476,12 @@ class PageRenderTests(unittest.TestCase):
 
 
     def test_timer_dashboard_camera_controls_include_camera_selector_and_total(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0, ["rpicam_cam0", "rpicam_cam1"])
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0, ["rpicam_cam0", "rpicam_cam1"])
 
-        self.assertIn('<option value="rpicam_cam0">rpicam_cam0</option>', html)
-        self.assertIn('<option value="rpicam_cam1">rpicam_cam1</option>', html)
+        self.assertIn("function populateCameraSelectors(cameraIds)", html)
+        self.assertIn("option.value = cameraId;", html)
+        self.assertIn("option.textContent = cameraId;", html)
+        self.assertIn("Object.keys(cameras)", html)
         self.assertIn('params.set("camera_id", cameraCaptureCamera.value);', html)
         self.assertIn('const total = Number(data.total ?? 0);', html)
         self.assertIn('cameraCapturePageStatus.textContent = `Page ${currentPage} of ${cameraCaptureTotalPages} | Showing ${start}-${end} of ${cameraCaptureTotal}`;', html)
@@ -460,7 +490,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (capture.camera_id) parts.push("camera " + capture.camera_id);', html)
 
     def test_timer_dashboard_capture_list_is_compact_and_scrollable(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn(".capture-list {", html)
         self.assertIn("max-height: 22rem;", html)
@@ -474,7 +504,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("padding: .35rem .5rem;", html)
 
     def test_timer_dashboard_buttons_pin_readable_mobile_text_style(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("appearance: none;", html)
         self.assertIn("-webkit-appearance: none;", html)
@@ -501,7 +531,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<option value="hidden">hidden</option>', html)
 
     def test_timer_dashboard_renders_disabled_and_hidden_channels_in_editor_flow(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
         self.assertIn('const disabled = channel.default_editor === "disabled";', html)
         self.assertIn('const hidden = channel.default_editor === "hidden";', html)
@@ -513,7 +543,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('actions.textContent = "No configured device schedules.";', html)
 
     def test_timer_dashboard_edit_schedule_excludes_report_period(self):
-        html = render_timer_dashboard_page(
+        html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
             {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "cycle"}]},
@@ -525,7 +555,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('const reportPeriodInput = form.querySelector(".controller-report-period");', html)
 
     def test_timer_dashboard_page_pauses_and_resumes_auto_reload_for_camera_interaction(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('id="refresh-status"', html)
         self.assertIn('id="resume-refresh"', html)
@@ -541,14 +571,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("stopPageAutoRefresh();", html)
 
     def test_timer_dashboard_filter_change_resets_capture_paging(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn('cameraCaptureFilter.addEventListener("change", () => {', html)
         self.assertIn("cameraCaptureOffset = 0;", html)
         self.assertIn("refreshCameraCaptures();", html)
 
     def test_timer_dashboard_capture_filter_is_applied_before_paging(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("function cameraCaptureRequestUrl()", html)
         self.assertIn('params.set("camera_id", filter.slice(7));', html)
@@ -558,7 +588,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("visibleCameraCaptures", html)
 
     def test_timer_dashboard_page_ignores_unconfigured_runtime_pins(self):
-        html = render_timer_dashboard_page(
+        html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
             {
@@ -576,7 +606,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || \"gpio\"};", html)
 
     def test_timer_dashboard_page_reads_devices_from_runtime_messages(self):
-        html = render_timer_dashboard_page(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("message?.report?.content?.devices", html)
         self.assertIn("message?.last_report?.content?.devices", html)
@@ -1372,7 +1402,7 @@ class PageRenderTests(unittest.TestCase):
         settings_html = render_settings_page(
             {"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}}
         )
-        dashboard_html = render_timer_dashboard_page(
+        dashboard_html = static_timer_dashboard(
             [],
             "pump_n_lights",
             {"host_time": {"display": "-"}, "host": {"hostname": "plamp"}, "captures": {"items": []}, "timer_states": []},

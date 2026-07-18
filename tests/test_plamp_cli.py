@@ -659,7 +659,8 @@ class PlampCliDocsTests(unittest.TestCase):
         self.assertNotIn("data/timers/<controller>.json", root_readme)
         self.assertNotIn("schedule events", root_readme)
 
-        self.assertIn("- `/` - main Pico scheduler page", web_readme)
+        self.assertIn("- `/` - static main Pico scheduler and camera client", web_readme)
+        self.assertIn("runtime state through REST and SSE", web_readme)
         self.assertIn("## Pico Scheduler State", web_readme)
         self.assertIn("state files keep device state", web_readme)
         self.assertNotIn("timers and camera", web_readme)

@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plamp</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
+    nav { margin-bottom: 1.5rem; }
+    a { color: #174ea6; }
+    button { -webkit-appearance: none; appearance: none; background: #fff; border: 1px solid #222; border-radius: 6px; color: #111; font: inherit; margin: .25rem .25rem .25rem 0; padding: .45rem .7rem; }
+    input, select { box-sizing: border-box; padding: .35rem; }
+    .host-clock { color: #555; font-size: .95rem; margin: -.5rem 0 1rem; }
+    .status-board { display: grid; gap: 1rem; margin: 1rem 0; max-width: 980px; }
+    .controller-card { border: 1px solid #bbb; border-radius: 8px; display: grid; gap: .75rem; padding: .9rem; }
+    .controller-card-error { background: #eee; border-color: #999; color: #555; }
+    .controller-card-error button { background: #e5e5e5; color: #777; }
+    .controller-card-error .timer-value, .controller-card-error .timer-bar, .controller-card-error .timer-fill { background: #ccc; }
+    .controller-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
+    .controller-name { font-size: 1.1rem; font-weight: 700; }
+    .controller-devices { display: grid; gap: .75rem; }
+    .controller-actions { border-top: 1px solid #ddd; margin-top: .25rem; padding-top: .65rem; }
+    .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
+    .timer-card-stale { opacity: .65; }
+    .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
+    .timer-name { font-weight: 700; }
+    .timer-value { border-radius: 6px; padding: .15rem .45rem; }
+    .timer-value.on { background: #d9f7d9; }
+    .timer-value.off { background: #eee; }
+    .timer-meta { color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }
+    .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
+    .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
+    .timer-fill.off { background: #888; }
+    .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
+    .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
+    .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
+    .camera-viewer { max-width: min(100%, 820px); }
+    .camera-viewer[hidden] { display: none; }
+    .capture-list { border: 1px solid #d0d0d0; display: grid; gap: 0; max-height: 22rem; max-width: 980px; overflow-y: auto; }
+    .capture-list button { background: #fff; border: 0; border-left: 4px solid transparent; border-radius: 0; display: block; margin: 0; padding: .35rem .5rem; text-align: left; width: 100%; }
+    .capture-list button:nth-child(odd) { background: #fff; }
+    .capture-list button:nth-child(even) { background: #f6f7f8; }
+    .capture-list button:hover { background: #e9f2ff; }
+    .capture-list button.selected { background: #dcecff; border-left: 4px solid #174ea6; font-weight: 700; }
+    .capture-pager { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }
+    .timer-editor[hidden] { display: none; }
+    .editor-row[hidden] { display: none; }
+    .editor-row { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; }
+    .editor-row label { display: grid; gap: .25rem; }
+    .editor-row select, .editor-row input { min-width: 8rem; }
+    .editor-note { color: #555; font-size: .9rem; }
+    .editor-error { color: #9a3412; font-weight: 600; }
+    .editor-success { color: #166534; font-weight: 600; }
+    .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
+    .manual-controls input { width: 5rem; }
+    .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 12rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <nav id="main-nav"></nav>
+  <h1 id="page-name">Plamp</h1>
+  <h2>Controllers</h2>
+  <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
+  <p id="timer-stream-status">Connecting...</p>
+  <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
+
+  <h2>Camera</h2>
+  <section class="camera-panel" aria-label="Camera captures">
+    <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
+    <div class="camera-actions">
+      <label>Camera <select id="camera-capture-camera"><option value="">Default camera</option></select></label>
+      <button id="camera-capture" type="button">Take picture</button>
+      <span id="camera-capture-status">Ready.</span>
+    </div>
+    <label>Show
+      <select id="camera-capture-filter">
+        <option value="all">All cameras</option>
+      </select>
+    </label>
+    <div id="camera-capture-list" class="capture-list">Loading captures...</div>
+    <div class="capture-pager">
+      <label>Page <input id="camera-capture-page" type="number" min="1" step="1" value="1"></label>
+      <button id="camera-capture-go" type="button">Go</button>
+      <button id="camera-capture-prev" type="button">Previous</button>
+      <button id="camera-capture-next" type="button">Next</button>
+      <span id="camera-capture-page-status"></span>
+    </div>
+  </section>
+
+  <footer>
+    <span id="refresh-status">Refreshing in <span id="refresh-countdown">30</span>s.</span>
+    <button id="resume-refresh" type="button" hidden>Resume auto-refresh</button>
+  </footer>
+
+  <script>
+    let clockTimeFormat = "12h";
+    let timerRoles = [];
+    let timerChannels = {};
+    let timerHostSecondsAtLoad = 0;
+    let timerHostLoadedAt = Date.now();
+    const timerStatus = document.getElementById("timer-stream-status");
+    const timerBoard = document.getElementById("timer-status-board");
+    const hostClock = document.getElementById("host-clock");
+    const refreshCountdown = document.getElementById("refresh-countdown");
+    const refreshStatus = document.getElementById("refresh-status");
+    const resumeRefreshButton = document.getElementById("resume-refresh");
+    const cameraCaptureButton = document.getElementById("camera-capture");
+    const cameraCaptureCamera = document.getElementById("camera-capture-camera");
+    const cameraCaptureStatus = document.getElementById("camera-capture-status");
+    const cameraViewer = document.getElementById("camera-viewer");
+    const cameraCaptureFilter = document.getElementById("camera-capture-filter");
+    const cameraCaptureList = document.getElementById("camera-capture-list");
+    const cameraCapturePage = document.getElementById("camera-capture-page");
+    const cameraCaptureGo = document.getElementById("camera-capture-go");
+    const cameraCapturePrev = document.getElementById("camera-capture-prev");
+    const cameraCaptureNext = document.getElementById("camera-capture-next");
+    const cameraCapturePageStatus = document.getElementById("camera-capture-page-status");
+    let refreshSeconds = 30;
+    const timerEventSources = new Map();
+    const timerMessages = new Map();
+    const timerStatuses = new Map();
+    const timerMessageTimes = new Map();
+    let cameraCaptures = [];
+    let cameraCaptureHasMore = false;
+    let cameraCaptureOffset = 0;
+    let cameraCaptureTotal = 0;
+    let cameraCaptureTotalPages = 1;
+    const cameraCapturePageSize = 30;
+    let selectedCameraImageUrl = "";
+    let activeEditor = null;
+    let pendingTimerRender = false;
+
+    function appendNavItem(nav, item) {
+      if (nav.childNodes.length) nav.append(" | ");
+      nav.append(item);
+    }
+
+    function navLink(href, label) {
+      const link = document.createElement("a");
+      link.href = href;
+      link.textContent = label;
+      return link;
+    }
+
+    function renderMainNav(controllerIds, revision) {
+      const nav = document.getElementById("main-nav");
+      nav.replaceChildren();
+      appendNavItem(nav, navLink("/", "Plamp"));
+      for (const controllerId of controllerIds) {
+        appendNavItem(nav, navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId));
+      }
+      appendNavItem(nav, navLink("/settings", "Settings"));
+      appendNavItem(nav, navLink("/system", "System"));
+      appendNavItem(nav, navLink("/api/test", "API test"));
+      if (revision && revision !== "unknown") {
+        appendNavItem(nav, navLink(`https://github.com/hugomatic/plamp/commit/${encodeURIComponent(revision)}`, `[rev ${revision}]`));
+      } else {
+        appendNavItem(nav, document.createTextNode("[rev unknown]"));
+      }
+    }
+
+    function populateCameraSelectors(cameraIds) {
+      cameraCaptureCamera.replaceChildren();
+      if (!cameraIds.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Default camera";
+        cameraCaptureCamera.append(option);
+        return;
+      }
+      for (const cameraId of cameraIds) {
+        const option = document.createElement("option");
+        option.value = cameraId;
+        option.textContent = cameraId;
+        cameraCaptureCamera.append(option);
+      }
+    }
+
+    async function responseJson(response, label) {
+      if (!response.ok) throw new Error(`${label}: ${response.status} ${response.statusText}`);
+      return response.json();
+    }
+
+    async function bootstrapDashboard() {
+      const [timerResponse, hostTimeResponse, configResponse, systemResponse] = await Promise.all([
+        fetch("/api/timer-config"),
+        fetch("/api/host-time"),
+        fetch("/api/config"),
+        fetch("/api/system"),
+      ]);
+      const [timerPayload, hostTimePayload, configPayload, systemPayload] = await Promise.all([
+        responseJson(timerResponse, "timer config"),
+        responseJson(hostTimeResponse, "host time"),
+        responseJson(configResponse, "config"),
+        responseJson(systemResponse, "system"),
+      ]);
+
+      timerRoles = Array.isArray(timerPayload.roles) ? timerPayload.roles : [];
+      timerChannels = timerPayload.channels && typeof timerPayload.channels === "object" ? timerPayload.channels : {};
+      clockTimeFormat = timerPayload.time_format === "24h" ? "24h" : "12h";
+      timerHostSecondsAtLoad = Number(hostTimePayload.seconds_since_midnight || 0);
+      timerHostLoadedAt = Date.now();
+
+      const hostname = String(systemPayload?.host?.hostname || "");
+      const pageName = hostname ? `${hostname} Plamp` : "Plamp";
+      document.title = pageName;
+      document.getElementById("page-name").textContent = pageName;
+      const revision = String(systemPayload?.software?.git_short_commit || systemPayload?.software?.git_commit || "unknown");
+      renderMainNav(timerRoles, revision);
+      const cameras = configPayload?.config?.cameras;
+      populateCameraSelectors(cameras && typeof cameras === "object" ? Object.keys(cameras) : []);
+
+      refreshHostClock();
+      startTimerStreams();
+      await refreshCameraCaptures();
+    }
+
+    function formatChangeTime(secondsFromNow) {
+      const when = serverDateForSecondsFromNow(secondsFromNow);
+      if (clockTimeFormat === "24h") {
+        return when.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
+      }
+      return when.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
+    }
+
+    function formatDuration(secondsValue) {
+      const seconds = Math.max(0, Math.ceil(Number(secondsValue)));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      const parts = [];
+      if (hours) parts.push(hours + "h");
+      if (minutes) parts.push(minutes + "m");
+      if (remainingSeconds || !parts.length) parts.push(remainingSeconds + "s");
+      return parts.length ? parts.join(" ") : "0s";
+    }
+
+    function serverDateForSecondsFromNow(secondsFromNow) {
+      const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
+      const targetSeconds = (hostSecondsNow() + seconds) % 86400;
+      const deltaSeconds = targetSeconds - hostSecondsNow();
+      const date = new Date(Date.now() + deltaSeconds * 1000);
+      date.setHours(Math.floor(targetSeconds / 3600), Math.floor((targetSeconds % 3600) / 60), Math.floor(targetSeconds % 60), 0);
+      return date;
+    }
+
+    function formatChangeLabel(secondsFromNow) {
+      if (!Number.isFinite(Number(secondsFromNow))) return "?";
+      const seconds = Math.max(0, Math.ceil(Number(secondsFromNow)));
+      const targetSeconds = (hostSecondsNow() + seconds) % 86400;
+      return secondsToClock(targetSeconds) + " (" + formatDuration(seconds) + ")";
+    }
+
+    function secondsToClock(seconds) {
+      const normalized = ((seconds % 86400) + 86400) % 86400;
+      const hours = Math.floor(normalized / 3600);
+      const minutes = Math.floor((normalized % 3600) / 60);
+      if (clockTimeFormat === "24h") {
+        return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+      }
+      const hour = hours % 12 || 12;
+      const suffix = hours < 12 ? "AM" : "PM";
+      return hour + ":" + String(minutes).padStart(2, "0") + " " + suffix;
+    }
+
+    function hostSecondsNow() {
+      const elapsed = Math.floor((Date.now() - timerHostLoadedAt) / 1000);
+      return (timerHostSecondsAtLoad + elapsed) % 86400;
+    }
+
+    function updatePageRefreshStatus() {
+      refreshStatus.textContent = `Refreshing in ${refreshSeconds}s.`;
+    }
+
+    function tickPageRefresh() {
+      refreshSeconds -= 1;
+      if (refreshSeconds <= 0) {
+        window.location.reload();
+        return;
+      }
+      updatePageRefreshStatus();
+    }
+
+    function stopPageAutoRefresh() {
+      if (!pageRefreshTimer) return;
+      window.clearInterval(pageRefreshTimer);
+      pageRefreshTimer = null;
+      refreshStatus.textContent = "Auto-refresh paused.";
+      resumeRefreshButton.hidden = false;
+    }
+
+    function startPageAutoRefresh() {
+      if (pageRefreshTimer) return;
+      refreshSeconds = 30;
+      updatePageRefreshStatus();
+      resumeRefreshButton.hidden = true;
+      pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
+    }
+
+    async function refreshHostClock() {
+      if (!hostClock) return;
+      try {
+        const response = await fetch("/api/host-time");
+        const data = await response.json();
+        if (response.ok && typeof data.display === "string") {
+          hostClock.textContent = data.display;
+          if (Number.isFinite(Number(data.seconds_since_midnight))) {
+            timerHostSecondsAtLoad = Number(data.seconds_since_midnight);
+            timerHostLoadedAt = Date.now();
+          }
+          return;
+        }
+      } catch (error) {
+      }
+      hostClock.textContent = secondsToClock(hostSecondsNow());
+    }
+
+    function currentTimerStep(event, ageSeconds = 0) {
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (!pattern.length) return null;
+      const durations = pattern.map((step) => Number(step.dur));
+      if (durations.some((duration) => !Number.isFinite(duration) || duration <= 0)) return null;
+      const total = durations.reduce((sum, duration) => sum + duration, 0);
+      let cycleT = Number(event.cycle_t ?? event.elapsed_t ?? event.current_t ?? 0);
+      if (!Number.isFinite(cycleT)) cycleT = 0;
+      cycleT += Math.max(0, Number(ageSeconds) || 0);
+      if (Number(event.reschedule ?? 1)) {
+        cycleT = ((cycleT % total) + total) % total;
+      } else {
+        cycleT = Math.min(Math.max(cycleT, 0), total);
+      }
+      let start = 0;
+      for (let index = 0; index < pattern.length; index += 1) {
+        const end = start + durations[index];
+        if (cycleT < end || index === pattern.length - 1) {
+          return {step: pattern[index], elapsed: Math.max(0, cycleT - start), duration: durations[index], remaining: Math.max(0, end - cycleT)};
+        }
+        start = end;
+      }
+      return null;
+    }
+
+    function timerDevicesFromMessage(message) {
+      const candidates = [
+        message?.telemetry?.last_report?.content?.devices,
+        message?.telemetry?.report?.content?.devices,
+        message?.telemetry?.content?.devices,
+        message?.telemetry?.devices,
+        message?.report?.content?.devices,
+        message?.last_report?.content?.devices,
+        message?.content?.devices,
+        message?.devices,
+      ];
+      return candidates.find((devices) => Array.isArray(devices)) || [];
+    }
+
+    function statusNode(message) {
+      if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "value" in message[0]) {
+        return message[0].value;
+      }
+      if (Array.isArray(message) && message.length === 1 && message[0] && typeof message[0] === "object" && "node" in message[0]) {
+        return message[0].node;
+      }
+      return message;
+    }
+
+    function syncSavedEditorMetadata(role, block, device) {
+      const channelId = block.dataset.channelId;
+      const channel = (timerChannels[role] || []).find((item) => item.id === channelId);
+      if (!channel || !device) return;
+      channel.default_editor = block.querySelector(".editor-mode").value;
+      channel.editor = structuredClone(device.editor);
+    }
+
+    function channelForEvent(role, event, index) {
+      const channels = timerChannels[role] || [];
+      const eventPin = Number(event?.pin);
+      if (Number.isFinite(eventPin)) {
+        const byPin = channels.find((channel) => Number(channel.pin) === eventPin);
+        if (byPin) return byPin;
+      }
+      const eventId = event.id || "pin-" + (event.pin ?? index);
+      return channels.find((channel) => channel.id === eventId) || {
+        role,
+        id: eventId,
+        name: event.id || "pin " + (event.pin ?? index),
+        pin: event.pin,
+        type: event.type || "gpio",
+        default_editor: "cycle",
+      };
+    }
+
+    function twoStepDurations(event) {
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      if (pattern.length !== 2) return null;
+      const on = Number(pattern[0].dur);
+      const off = Number(pattern[1].dur);
+      const onValue = Number(pattern[0].val);
+      const offValue = Number(pattern[1].val);
+      if (!Number.isFinite(on) || !Number.isFinite(off) || on <= 0 || off <= 0 || onValue <= 0 || offValue !== 0) return null;
+      return {on, off, total: on + off};
+    }
+
+    function chooseUnit(seconds) {
+      if (seconds % 3600 === 0) return {value: seconds / 3600, unit: "hours"};
+      if (seconds % 60 === 0) return {value: seconds / 60, unit: "minutes"};
+      return {value: seconds, unit: "seconds"};
+    }
+
+    function chooseSharedUnit(values) {
+      if (values.every((value) => value % 3600 === 0)) return "hours";
+      if (values.every((value) => value % 60 === 0)) return "minutes";
+      return "seconds";
+    }
+
+    function unitMultiplier(unit) {
+      if (unit === "hours") return 3600;
+      if (unit === "minutes") return 60;
+      return 1;
+    }
+
+    function secondsToTimeInput(seconds) {
+      const normalized = ((seconds % 86400) + 86400) % 86400;
+      const hours = Math.floor(normalized / 3600);
+      const minutes = Math.floor((normalized % 3600) / 60);
+      return String(hours).padStart(2, "0") + ":" + String(minutes).padStart(2, "0");
+    }
+
+    function clockValuesForEvent(channel, event) {
+      const editor = channel.editor && typeof channel.editor === "object" ? channel.editor : null;
+      if (editor?.kind === "daily_window" && editor.on_time && editor.off_time) {
+        return {on: editor.on_time, off: editor.off_time};
+      }
+      const durations = twoStepDurations(event);
+      if (!durations || durations.total !== 86400) return {on: "06:00", off: "18:00"};
+      const cycleT = Number(event.cycle_t ?? event.current_t ?? 0) || 0;
+      const onSeconds = ((hostSecondsNow() - cycleT) % 86400 + 86400) % 86400;
+      return {on: secondsToTimeInput(onSeconds), off: secondsToTimeInput(onSeconds + durations.on)};
+    }
+
+    function cycleEditorValues(channel, event) {
+      const editor = channel.editor && typeof channel.editor === "object" ? channel.editor : null;
+      if (editor?.kind === "cycle" && Number.isFinite(Number(editor.on_seconds)) && Number.isFinite(Number(editor.off_seconds))) {
+        const onSeconds = Math.max(1, Number(editor.on_seconds));
+        const offSeconds = Math.max(1, Number(editor.off_seconds));
+        const startAtSeconds = Math.max(0, Number(editor.start_at_seconds ?? 0));
+        const unit = ["seconds", "minutes", "hours"].includes(editor.unit) ? editor.unit : chooseSharedUnit([onSeconds, offSeconds, startAtSeconds]);
+        const divisor = unitMultiplier(unit);
+        return {onValue: onSeconds / divisor, offValue: offSeconds / divisor, startAtValue: startAtSeconds / divisor, unit};
+      }
+      const durations = twoStepDurations(event) || {on: 60, off: 60, total: 120};
+      const unit = chooseSharedUnit([durations.on, durations.off]);
+      const divisor = unitMultiplier(unit);
+      return {onValue: durations.on / divisor, offValue: durations.off / divisor, startAtValue: 0, unit};
+    }
+
+    function showEditorMessage(message, className, text) {
+      message.className = "editor-message" + (className ? " " + className : "");
+      message.textContent = text;
+    }
+
+    function responseErrorMessage(payload, fallback) {
+      const detail = payload?.detail;
+      if (typeof detail === "string") return detail;
+      if (typeof detail?.message === "string") return detail.message;
+      if (typeof detail?.health?.error?.message === "string") return detail.health.error.message;
+      return fallback;
+    }
+
+    function formatAge(timestamp) {
+      const milliseconds = Date.now() - Date.parse(timestamp || "");
+      if (!Number.isFinite(milliseconds) || milliseconds < 0) return "unknown";
+      const seconds = Math.floor(milliseconds / 1000);
+      if (seconds < 2) return "just now";
+      if (seconds < 60) return `${seconds}s ago`;
+      return `${Math.floor(seconds / 60)}m ago`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function captureEditorFocus() {
+      const form = timerBoard.querySelector("#timer-schedule-form");
+      if (!activeEditor || !form || !form.contains(document.activeElement)) return null;
+      const field = document.activeElement;
+      const fieldName = field?.name;
+      if (!fieldName) return null;
+      return {
+        name: fieldName,
+        selectionStart: typeof field.selectionStart === "number" ? field.selectionStart : null,
+        selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null,
+      };
+    }
+
+    function restoreEditorFocus(focusState) {
+      if (!focusState) return;
+      const form = timerBoard.querySelector("#timer-schedule-form");
+      const field = form?.elements?.[focusState.name];
+      if (!field || typeof field.focus !== "function") return;
+      field.focus();
+      if (typeof field.setSelectionRange === "function" && focusState.selectionStart !== null && focusState.selectionEnd !== null) {
+        field.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+      }
+    }
+
+    function flushPendingTimerRender() {
+      if (!pendingTimerRender) return;
+      const form = timerBoard.querySelector("#timer-schedule-form");
+      if (activeEditor && form && form.contains(document.activeElement)) return;
+      pendingTimerRender = false;
+      renderTimerStatus();
+    }
+
+    function scheduleEditorBlock(role, channel, event) {
+      const cycleValues = cycleEditorValues(channel, event);
+      const clock = clockValuesForEvent(channel, event);
+      const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
+      return `
+        <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}" data-channel-pin="${escapeHtml(channel.pin ?? "")}" data-channel-type="${escapeHtml(channel.type || "gpio")}" data-channel-order="${escapeHtml(channel.display_order ?? 0)}">
+          <div class="timer-top"><strong>${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
+          <div class="editor-row">
+            <label>Set as
+              <select class="editor-mode" name="mode-${escapeHtml(channel.id)}">
+                <option value="cycle"${mode === "cycle" ? " selected" : ""}>Cycle set</option>
+                <option value="clock_window"${mode === "clock_window" ? " selected" : ""}>24h set</option>
+                <option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>
+                <option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>
+              </select>
+            </label>
+          </div>
+          <div class="editor-row cycle-fields">
+            <label>On for <input class="editor-on-value" name="onValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${cycleValues.onValue}"></label>
+            <label>Off for <input class="editor-off-value" name="offValue-${escapeHtml(channel.id)}" type="number" min="1" step="1" value="${cycleValues.offValue}"></label>
+            <label>Start at <input class="editor-start-at" name="startAtSeconds-${escapeHtml(channel.id)}" type="number" min="0" step="1" value="${cycleValues.startAtValue}"></label>
+            <label>Unit <select class="editor-cycle-unit" name="cycleUnit-${escapeHtml(channel.id)}"><option value="seconds"${cycleValues.unit === "seconds" ? " selected" : ""}>seconds</option><option value="minutes"${cycleValues.unit === "minutes" ? " selected" : ""}>minutes</option><option value="hours"${cycleValues.unit === "hours" ? " selected" : ""}>hours</option></select></label>
+          </div>
+          <div class="editor-row clock-fields">
+            <label>On at <input class="editor-on-time" name="onTime-${escapeHtml(channel.id)}" type="time" value="${clock.on}"></label>
+            <label>Off at <input class="editor-off-time" name="offTime-${escapeHtml(channel.id)}" type="time" value="${clock.off}"></label>
+            <span class="editor-note">Applies using the host clock.</span>
+          </div>
+        </section>
+      `;
+    }
+
+    async function openControllerScheduleEditor(role) {
+      stopPageAutoRefresh();
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/commands/report`, {method: "POST"});
+        const text = await response.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch (error) {}
+        if (!response.ok) {
+          throw new Error(responseErrorMessage(parsed, text || `${response.status} ${response.statusText}`));
+        }
+        const health = timerStatuses.get(role) || {};
+        const verifiedAt = new Date().toISOString();
+        timerStatuses.set(role, {...health, ok: true, status: "OK", checked_at: verifiedAt, last_verified_at: verifiedAt, error: null});
+        activeEditor = {role};
+        renderTimerStatus(true);
+      } catch (error) {
+        const health = timerStatuses.get(role) || {};
+        timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {...(health.error || {}), message: String(error.message || error)}});
+        activeEditor = null;
+        renderTimerStatus(true);
+      }
+    }
+
+    function syncEditorMode(block) {
+      const mode = block.querySelector(".editor-mode").value;
+      const clock = mode === "clock_window";
+      const scheduled = mode === "cycle" || clock;
+      block.querySelector(".cycle-fields").hidden = !scheduled || clock;
+      block.querySelector(".clock-fields").hidden = !clock;
+    }
+
+    async function submitScheduleEditor(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const message = form.querySelector(".editor-message");
+      showEditorMessage(message, "", "Saving...");
+      try {
+        let lastMessage = "";
+        const role = form.dataset.role;
+        const blocks = Array.from(form.querySelectorAll(".device-schedule-editor"));
+        const configResponse = await fetch("/api/config");
+        const configPayload = await configResponse.json();
+        if (!configResponse.ok) {
+          throw new Error(configPayload?.detail || `config: ${configResponse.status} ${configResponse.statusText}`);
+        }
+        const controller = structuredClone(configPayload?.config?.controllers?.[role] || {});
+        controller.settings = structuredClone(controller.settings || {});
+        controller.settings.devices = structuredClone(controller.settings.devices || {});
+        for (const block of blocks) {
+          const channelId = block.dataset.channelId;
+          const mode = block.querySelector(".editor-mode").value;
+          const device = structuredClone(controller.settings.devices[channelId] || {});
+          device.pin = Number(block.dataset.channelPin);
+          device.output_type = block.dataset.channelType || "gpio";
+          device.display_order = Number(block.dataset.channelOrder || 0);
+          device.visibility = mode === "hidden" ? "hidden" : "visible";
+          device.programming = mode === "disabled" ? "disabled" : "enabled";
+          const existingEditor = structuredClone(device.editor || {});
+          if (mode === "cycle") {
+            const cycleUnit = block.querySelector(".editor-cycle-unit").value;
+            const multiplier = unitMultiplier(cycleUnit);
+            const onSeconds = Number(block.querySelector(".editor-on-value").value) * multiplier;
+            const offSeconds = Number(block.querySelector(".editor-off-value").value) * multiplier;
+            const startAtSeconds = Number(block.querySelector(".editor-start-at").value) * multiplier;
+            device.editor = {kind: "cycle", on_seconds: onSeconds, off_seconds: offSeconds, start_at_seconds: startAtSeconds, unit: cycleUnit};
+          } else if (mode === "clock_window") {
+            device.editor = {
+              kind: "daily_window",
+              on_time: block.querySelector(".editor-on-time").value || existingEditor.on_time || "06:00",
+              off_time: block.querySelector(".editor-off-time").value || existingEditor.off_time || "18:00",
+            };
+          } else if (mode === "disabled" || mode === "hidden") {
+            device.editor = existingEditor.kind ? existingEditor : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0};
+          } else {
+            device.editor = existingEditor;
+          }
+          controller.settings.devices[channelId] = device;
+        }
+        const scheduleResponse = await fetch(`/api/controllers/${encodeURIComponent(role)}/schedule`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(controller),
+        });
+        const scheduleText = await scheduleResponse.text();
+        let scheduleParsed = null;
+        try { scheduleParsed = JSON.parse(scheduleText); } catch (error) {}
+        if (!scheduleResponse.ok) {
+          throw new Error(responseErrorMessage(scheduleParsed, scheduleText || `${scheduleResponse.status} ${scheduleResponse.statusText}`));
+        }
+        lastMessage = scheduleParsed?.message || "Schedule settings saved.";
+        for (const block of blocks) {
+          const channelId = block.dataset.channelId;
+          syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);
+        }
+        activeEditor = null;
+        renderTimerStatus(true);
+        showEditorMessage(message, "editor-success", lastMessage || "Schedule settings saved.");
+      } catch (error) {
+        showEditorMessage(message, "editor-error", String(error.message || error));
+      }
+    }
+
+    function renderTimerStatus(force = false) {
+      const activeForm = timerBoard.querySelector("#timer-schedule-form");
+      if (!force && activeEditor && activeForm && activeForm.contains(document.activeElement)) {
+        pendingTimerRender = true;
+        return;
+      }
+      pendingTimerRender = false;
+      const focusState = captureEditorFocus();
+      timerBoard.replaceChildren();
+      let rendered = 0;
+      for (const role of timerRoles) {
+        const message = timerMessages.get(role);
+        const health = timerStatuses.get(role);
+        const ok = health?.ok === true;
+        const devices = timerDevicesFromMessage(message);
+        const channels = timerChannels[role] || [];
+        const liveByPin = new Map();
+        for (const device of devices) {
+          const pin = Number(device?.pin);
+          if (Number.isFinite(pin)) liveByPin.set(pin, device);
+        }
+        const items = channels.length
+          ? channels.map((channel) => ({channel, event: liveByPin.get(Number(channel.pin)), index: 0}))
+          : devices.map((device, index) => ({channel: channelForEvent(role, device, index), event: device, index}));
+        if (!ok && activeEditor?.role === role) activeEditor = null;
+        const isEditing = ok && activeEditor && activeEditor.role === role;
+        const controllerCard = document.createElement(isEditing ? "form" : "section");
+        if (isEditing) {
+          controllerCard.id = "timer-schedule-form";
+          controllerCard.dataset.role = role;
+        }
+        controllerCard.className = "controller-card";
+        controllerCard.classList.toggle("controller-card-error", !ok);
+        const controllerTop = document.createElement("div");
+        controllerTop.className = "controller-top";
+        const controllerName = document.createElement("span");
+        controllerName.className = "controller-name";
+        controllerName.textContent = role;
+        const status = document.createElement("span");
+        status.className = ok ? "editor-success" : "editor-error";
+        status.textContent = ok
+          ? `OK — last verified ${formatAge(health.last_verified_at || health.checked_at)}`
+          : `ERROR: ${health?.error?.message || "no valid report"}`;
+        controllerTop.append(controllerName, status);
+        const devicesGrid = document.createElement("div");
+        devicesGrid.className = "controller-devices";
+        let configurableCount = items.length;
+        for (const item of items) {
+          const channel = item.channel;
+          const disabled = channel.default_editor === "disabled";
+          const hidden = channel.default_editor === "hidden";
+          const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
+          const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
+          const step = currentTimerStep(event, messageAge);
+          const value = Number(event.current_value ?? 0);
+          const isOn = value > 0;
+          const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
+          const card = document.createElement("div");
+          card.className = "timer-card";
+          card.classList.toggle("timer-card-stale", !ok);
+          const top = document.createElement("div");
+          top.className = "timer-top";
+          const name = document.createElement("span");
+          name.className = "timer-name";
+          name.textContent = channel.name;
+          const badge = document.createElement("span");
+          badge.className = "timer-value " + (isOn ? "on" : "off");
+          badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));
+          top.append(name, badge);
+          const meta = document.createElement("div");
+          meta.className = "timer-meta";
+          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale");
+          const bar = document.createElement("div");
+          bar.className = "timer-bar";
+          const fill = document.createElement("div");
+          fill.className = "timer-fill" + (isOn ? "" : " off");
+          fill.style.width = percent + "%";
+          bar.append(fill);
+          card.append(top, meta, bar);
+          if (!hidden || isEditing) {
+            devicesGrid.append(card);
+            if (isEditing) {
+              const editor = document.createElement("div");
+              editor.innerHTML = scheduleEditorBlock(role, channel, event);
+              const block = editor.firstElementChild;
+              if (block) {
+                card.append(block);
+              }
+            }
+          }
+        }
+        controllerCard.append(controllerTop, devicesGrid);
+        const diagnostics = document.createElement("a");
+        diagnostics.href = `/controllers/${encodeURIComponent(role)}`;
+        diagnostics.textContent = "Diagnostics";
+        if (isEditing) {
+          const actions = document.createElement("div");
+          actions.className = "controller-actions controller-actions-editing";
+          actions.innerHTML = `
+            <button type="submit">Apply schedule</button>
+            <button type="button" name="cancel">Close</button>
+            <span class="editor-message" aria-live="polite"></span>
+          `;
+          for (const block of controllerCard.querySelectorAll(".device-schedule-editor")) {
+            syncEditorMode(block);
+            block.querySelector(".editor-mode").addEventListener("change", () => syncEditorMode(block));
+          }
+          controllerCard.addEventListener("focusout", () => window.setTimeout(flushPendingTimerRender, 0));
+          controllerCard.addEventListener("submit", submitScheduleEditor);
+          actions.append(diagnostics);
+          controllerCard.append(actions);
+          actions.querySelector('[name="cancel"]').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });
+        } else {
+          const actions = document.createElement("div");
+          actions.className = "controller-actions";
+          if (configurableCount > 0) {
+            const edit = document.createElement("button");
+            edit.type = "button";
+            edit.textContent = "Edit schedule";
+            edit.disabled = !ok;
+            edit.addEventListener("click", () => openControllerScheduleEditor(role));
+            actions.append(edit);
+          } else {
+            actions.textContent = "No configured device schedules.";
+          }
+          actions.append(diagnostics);
+          controllerCard.append(actions);
+        }
+        if (isEditing) {
+          controllerCard.classList.add("controller-card-editing");
+        }
+        timerBoard.append(controllerCard);
+        rendered += 1;
+      }
+      restoreEditorFocus(focusState);
+      if (!rendered) {
+        timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
+      }
+    }
+
+    function updateCameraFilters() {
+      const selected = cameraCaptureFilter.value;
+      const options = new Map([["all", "All cameras"]]);
+      if (selected.startsWith("camera:")) {
+        options.set(selected, cameraCaptureFilter.selectedOptions[0]?.textContent || selected.slice(7));
+      }
+      for (const capture of cameraCaptures) {
+        if (capture.camera_id) {
+          options.set("camera:" + capture.camera_id, capture.camera_id);
+        }
+      }
+      cameraCaptureFilter.replaceChildren();
+      for (const [value, label] of options.entries()) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        cameraCaptureFilter.append(option);
+      }
+      cameraCaptureFilter.value = options.has(selected) ? selected : "all";
+    }
+
+    function cameraCaptureRequestUrl() {
+      const params = new URLSearchParams({limit: String(cameraCapturePageSize), offset: String(cameraCaptureOffset)});
+      const filter = cameraCaptureFilter.value;
+      if (filter.startsWith("camera:")) {
+        params.set("camera_id", filter.slice(7));
+      }
+      return `/api/camera/captures?${params.toString()}`;
+    }
+
+    function cameraCapturePostUrl() {
+      const params = new URLSearchParams();
+      if (cameraCaptureCamera.value) {
+        params.set("camera_id", cameraCaptureCamera.value);
+      }
+      const query = params.toString();
+      return query ? `/api/camera/captures?${query}` : "/api/camera/captures";
+    }
+
+    function pageOffset() {
+      const value = Number(cameraCapturePage.value || 1);
+      const page = Math.max(1, Math.floor(Number.isFinite(value) ? value : 1));
+      return (page - 1) * cameraCapturePageSize;
+    }
+
+    function selectCameraCapture(capture) {
+      if (!capture || typeof capture.image_url !== "string") return;
+      selectedCameraImageUrl = capture.image_url;
+      cameraViewer.src = capture.image_url;
+      cameraViewer.hidden = false;
+      for (const button of cameraCaptureList.querySelectorAll("button")) {
+        button.classList.toggle("selected", button.dataset.imageUrl === selectedCameraImageUrl);
+      }
+    }
+
+    function captureLabel(capture) {
+      const parts = [];
+      if (capture.timestamp) parts.push(new Date(capture.timestamp).toLocaleString());
+      if (capture.capture_kind) parts.push(capture.capture_kind);
+      if (capture.camera_id) parts.push("camera " + capture.camera_id);
+      if (capture.brightness_mean !== undefined) parts.push("brightness " + capture.brightness_mean);
+      return parts.join(" | ");
+    }
+
+    function renderCameraCaptures() {
+      updateCameraFilters();
+      const captures = cameraCaptures;
+      cameraCaptureList.replaceChildren();
+      if (!captures.length) {
+        cameraCaptureList.textContent = cameraCaptureOffset ? "No more captures." : "No captures found.";
+        cameraViewer.hidden = true;
+        cameraViewer.removeAttribute("src");
+        selectedCameraImageUrl = "";
+        cameraCapturePrev.disabled = cameraCaptureOffset === 0;
+        cameraCaptureNext.disabled = true;
+        cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+        cameraCapturePage.value = String(Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1));
+        cameraCapturePageStatus.textContent = cameraCaptureTotal ? `Page ${Math.max(1, Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1)} of ${cameraCaptureTotalPages} | Showing 0 of ${cameraCaptureTotal}` : "No captures";
+        return;
+      }
+      for (const capture of captures) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.imageUrl = capture.image_url || "";
+        button.textContent = captureLabel(capture);
+        button.addEventListener("click", () => selectCameraCapture(capture));
+        cameraCaptureList.append(button);
+      }
+      const selected = captures.find((capture) => capture.image_url === selectedCameraImageUrl) || captures[0];
+      selectCameraCapture(selected);
+      cameraCapturePrev.disabled = cameraCaptureOffset === 0;
+      cameraCaptureNext.disabled = !cameraCaptureHasMore;
+      cameraCapturePage.max = String(Math.max(1, cameraCaptureTotalPages));
+      cameraCapturePage.value = String(Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1);
+      const start = cameraCaptureOffset + 1;
+      const end = cameraCaptureOffset + captures.length;
+      const currentPage = Math.floor(cameraCaptureOffset / cameraCapturePageSize) + 1;
+      cameraCapturePageStatus.textContent = `Page ${currentPage} of ${cameraCaptureTotalPages} | Showing ${start}-${end} of ${cameraCaptureTotal}`;
+    }
+
+    async function refreshCameraCaptures() {
+      cameraCaptureList.textContent = "Loading captures...";
+      try {
+        const response = await fetch(cameraCaptureRequestUrl());
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || `${response.status} ${response.statusText}`);
+        cameraCaptures = Array.isArray(data.captures) ? data.captures : [];
+        const total = Number(data.total ?? 0);
+        cameraCaptureTotal = Number.isFinite(total) ? total : 0;
+        cameraCaptureTotalPages = Math.max(1, Math.ceil(cameraCaptureTotal / cameraCapturePageSize));
+        cameraCaptureHasMore = Boolean(data.has_more);
+        renderCameraCaptures();
+      } catch (error) {
+        cameraCaptureList.textContent = "Could not load captures.";
+        cameraCaptureStatus.textContent = String(error.message || error);
+      }
+    }
+
+    async function captureCameraImage() {
+      cameraCaptureButton.disabled = true;
+      cameraCaptureStatus.textContent = "Capturing...";
+      try {
+        const response = await fetch(cameraCapturePostUrl(), {method: "POST"});
+        const text = await response.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (error) {}
+        if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
+        cameraCaptureStatus.textContent = "Captured.";
+        if (data && typeof data.image_url === "string") {
+          selectedCameraImageUrl = data.image_url;
+          cameraViewer.src = data.image_url;
+          cameraViewer.hidden = false;
+        }
+        cameraCaptureOffset = 0;
+        await refreshCameraCaptures();
+      } catch (error) {
+        cameraCaptureStatus.textContent = String(error.message || error);
+      } finally {
+        cameraCaptureButton.disabled = false;
+      }
+    }
+
+    function stopTimerStreams() {
+      for (const source of timerEventSources.values()) {
+        source.close();
+      }
+      timerEventSources.clear();
+      timerStatus.textContent = "Not streaming.";
+    }
+
+    function startTimerStreams() {
+      stopTimerStreams();
+      timerMessages.clear();
+      timerStatuses.clear();
+      timerMessageTimes.clear();
+      renderTimerStatus();
+      if (!timerRoles.length) {
+        timerStatus.textContent = "No timers configured.";
+        return;
+      }
+      timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
+      for (const role of timerRoles) {
+        const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);
+        timerEventSources.set(role, source);
+        for (const eventName of ["snapshot", "report"]) {
+          source.addEventListener(eventName, (event) => {
+            const data = JSON.parse(event.data);
+            timerMessages.set(role, data);
+            timerMessageTimes.set(role, Date.now());
+            if (eventName === "snapshot") timerStatuses.set(role, data);
+            renderTimerStatus();
+          });
+        }
+        source.addEventListener("status", (event) => {
+          const data = JSON.parse(event.data);
+          timerStatuses.set(role, data);
+          timerMessages.set(role, data);
+          timerMessageTimes.set(role, Date.now());
+          renderTimerStatus();
+        });
+        source.onerror = () => {
+          const health = timerStatuses.get(role) || {};
+          timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {message: "controller status stream disconnected"}});
+          renderTimerStatus(true);
+          if (source.readyState === EventSource.CLOSED) {
+            timerStatus.textContent = "Stream disconnected.";
+          }
+        };
+      }
+    }
+
+    cameraCaptureButton.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      captureCameraImage();
+    });
+    cameraCaptureList.addEventListener("click", stopPageAutoRefresh);
+    cameraCaptureFilter.addEventListener("change", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = 0;
+      refreshCameraCaptures();
+    });
+    cameraCaptureGo.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = pageOffset();
+      refreshCameraCaptures();
+    });
+    cameraCapturePrev.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset = Math.max(0, cameraCaptureOffset - cameraCapturePageSize);
+      refreshCameraCaptures();
+    });
+    cameraCaptureNext.addEventListener("click", () => {
+      stopPageAutoRefresh();
+      cameraCaptureOffset += cameraCapturePageSize;
+      refreshCameraCaptures();
+    });
+    window.addEventListener("beforeunload", stopTimerStreams);
+    setInterval(refreshHostClock, 30000);
+    setInterval(() => renderTimerStatus(), 1000);
+    let pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);
+    resumeRefreshButton.addEventListener("click", startPageAutoRefresh);
+    (async () => {
+      try {
+        await bootstrapDashboard();
+      } catch (error) {
+        timerStatus.textContent = `Dashboard setup failed: ${String(error.message || error)}`;
+      }
+    })();
+  </script>
+</body>
+</html>

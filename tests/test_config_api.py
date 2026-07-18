@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from plamp.pico_health import PicoHealth, failed_health
 from plamp.usb_events import UsbSerialEvent
 
@@ -68,6 +68,20 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_timer_dashboard_root_is_static_file(self):
+        fail = RuntimeError("root route performed server-side dashboard work")
+        with (
+            patch.object(server, "configured_timer_roles", side_effect=fail),
+            patch.object(server, "configured_timer_channels", side_effect=fail),
+            patch.object(server, "configured_time_format", side_effect=fail),
+            patch.object(server, "configured_camera_ids", side_effect=fail),
+            patch.object(server, "seconds_since_midnight", side_effect=fail),
+        ):
+            response = server.get_timer_dashboard_page()
+
+        self.assertIsInstance(response, FileResponse)
+        self.assertEqual(Path(response.path), server.STATIC_DIR / "index.html")
+
     def test_startup_resolves_application_revision_once(self):
         previous_revision = server.APP_REVISION
         try:
