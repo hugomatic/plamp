@@ -13,7 +13,7 @@ Production installation and service control belong to `plampctl`. With nginx ena
 Useful pages:
 
 - `/` - static main Pico scheduler and camera client; it loads all runtime state through REST and SSE
-- `/settings` — hardware and configuration
+- `/settings` — static hardware and configuration client; it loads and saves through REST
 - `/api/test` — runnable API examples
 - `/openapi.json` — machine-readable API
 

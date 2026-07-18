@@ -404,8 +404,9 @@
 
   async function bootstrapSettings() {
     try {
-      const [{system}, configResponse] = await Promise.all([
+      const [, system, configResponse] = await Promise.all([
         PlampWeb.bootstrapShell({activePath: "/settings", headingSuffix: "Settings"}),
+        PlampWeb.loadSystem(),
         fetch("/api/config"),
       ]);
       const configPayload = await PlampWeb.responseJson(configResponse, "config");

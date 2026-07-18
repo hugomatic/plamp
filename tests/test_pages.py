@@ -1,10 +1,9 @@
 import html as html_module
 import json
-import re
 import unittest
 from pathlib import Path
 
-from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_settings_page, render_system_info_page
+from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_system_info_page
 
 
 def static_timer_dashboard(*args, **kwargs) -> str:
@@ -29,8 +28,44 @@ class PageRenderTests(unittest.TestCase):
     def test_settings_load_failure_disables_saves(self):
         script = static_text("settings.js")
 
+        self.assertIn("PlampWeb.loadSystem()", script)
         self.assertIn("setSaveDisabled(true)", script)
         self.assertIn("Settings setup failed:", script)
+
+    def test_settings_static_client_preserves_save_contract(self):
+        html = static_text("settings.html")
+        script = static_text("settings.js")
+
+        for function_name in (
+            "collectControllers",
+            "collectControllerDevices",
+            "collectCameras",
+            "controllerRenames",
+            "collectConfigWithControllerRenames",
+        ):
+            self.assertIn(f"function {function_name}", script)
+        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', script)
+        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', script)
+        self.assertIn('saveSection("cameras-status", "/api/config/cameras", collectCameras())', script)
+        self.assertIn("Pin required for device", script)
+        self.assertIn("delete result[oldKey]", script)
+        self.assertIn("window.location.reload()", script)
+        self.assertIn('id="save-controllers"', html)
+        self.assertIn('id="save-devices"', html)
+        self.assertIn('id="save-cameras"', html)
+
+    def test_settings_static_client_preserves_hidden_and_camera_matching(self):
+        html = static_text("settings.html")
+        script = static_text("settings.js")
+
+        self.assertIn("hiddenControllers = {}", script)
+        self.assertIn("hydrateControllerRowFromHidden", script)
+        self.assertIn("structuredClone(hiddenControllers)", script)
+        self.assertIn("function cameraMatches", script)
+        self.assertIn("normalizeCameraKey", script)
+        self.assertIn("Capture dir must be inside repo root", script)
+        self.assertIn('row.className = `camera-row${isNew ? " new-row" : ""}`', script)
+        self.assertIn("Report an issue", html)
 
     def test_shared_shell_discovers_navigation_from_rest(self):
         shell = static_text("app.js")
@@ -79,27 +114,6 @@ class PageRenderTests(unittest.TestCase):
 
         self.assertNotIn("<script>", nav)
 
-    def hidden_scheduler_controllers_payload(self, html: str) -> dict:
-        match = re.search(
-            r'<script id="hidden-scheduler-controllers" type="application/json">(.*?)</script>',
-            html,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        return json.loads(match.group(1))
-
-    def scheduler_empty_state_block(self, html: str) -> str:
-        match = re.search(
-            r'(<div class="pico-scheduler-block pico-scheduler-new" data-controller-key="">.*?</div>)\s*<button id="save-controllers"',
-            html,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        return match.group(1)
-
-    def scheduler_blocks(self, html: str) -> list[str]:
-        return re.findall(r'<div class="pico-scheduler-block[^"]*" data-controller-key=".*?">.*?</div>', html, re.DOTALL)
-
     def test_timer_dashboard_page_links_to_settings(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
         shell = static_text("app.js")
@@ -122,55 +136,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h1>nurse-plamp API test</h1>", html)
 
 
-    def test_pages_use_same_nav_with_github_link(self):
-        expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
-        settings_summary = {
-            "config": {"controllers": {}, "devices": {}, "cameras": {}},
-            "detected": {"picos": [], "cameras": []},
-            "host": {"hostname": "plamp", "network": []},
-            "picos": [],
-            "software": {},
-            "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-        }
-
-        pages = [
-            render_settings_page(settings_summary),
-            render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h"),
-        ]
-
-        for html in pages:
-            self.assertIn(expected, html)
-        shell = static_text("app.js")
-        for link in ('navLink("/", "Plamp", activePath)', 'navLink("/settings", "Settings", activePath)', 'navLink("/system", "System", activePath)', 'navLink("/api/test", "API test", activePath)'):
-            self.assertIn(link, shell)
-
     def test_pages_use_same_nav_with_system_link(self):
         expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
         html = render_system_info_page({"host": {"hostname": "sprout"}})
         self.assertIn(expected, html)
         self.assertEqual(html.count("<nav>"), 1)
-
-    def test_pages_can_include_controller_links_in_nav(self):
-        expected = '<a href="/controllers/octo_relay">octo_relay</a>'
-        settings_summary = {
-            "config": {"controllers": {}, "devices": {}, "cameras": {}},
-            "detected": {"picos": [], "cameras": []},
-            "host": {"hostname": "plamp", "network": []},
-            "picos": [],
-            "software": {},
-            "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-        }
-
-        pages = [
-            render_settings_page(settings_summary, ["octo_relay"]),
-            render_system_info_page({"host": {"hostname": "sprout"}}, controller_ids=["octo_relay"]),
-            render_api_test_page(["octo_relay"], "octo_relay", "{}", "12h", controller_ids=["octo_relay"]),
-        ]
-
-        for page in pages:
-            self.assertIn(expected, page)
-        shell = static_text("app.js")
-        self.assertIn('navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId, activePath)', shell)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -544,25 +514,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("color: #111;", html)
         self.assertIn("font: inherit;", html)
 
-    def test_settings_page_device_editor_offers_disabled_and_hidden(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {"pump_lights": {"type": "pico_scheduler"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "editor": "disabled"}},
-                    "cameras": {},
-                },
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {},
-            }
-        )
-
-        self.assertIn('<option value="disabled" selected>disabled</option>', html)
-        self.assertIn('<option value="hidden">hidden</option>', html)
-
     def test_timer_dashboard_renders_disabled_and_hidden_channels_in_editor_flow(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
@@ -791,296 +742,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("Detected picos", html)
         self.assertIn("cam0", html)
 
-    def test_settings_page_includes_plamp_setup_without_system_status_or_hostname_editor(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {"pump_lights": {"pico_serial": "abc", "label": "Pump lights"}},
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 2, "editor": "cycle", "label": "Main pump"}},
-                    "cameras": {"rpicam_cam0": {"label": "Tent cam"}},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn("Plamp config", html)
-        self.assertIn("<th>Label</th>", html)
-        self.assertNotIn("<th>Role</th>", html)
-        self.assertIn("Pump lights", html)
-        self.assertIn("Main pump", html)
-        self.assertIn("Tent cam", html)
-        self.assertIn('href="/settings"', html)
-        self.assertIn('href="/api/test"', html)
-        self.assertNotIn('href="/config"', html)
-        self.assertNotIn("System status", html)
-        self.assertNotIn("Device control", html)
-        self.assertNotIn('id="hostname-input"', html)
-        self.assertNotIn('id="hostname-confirm"', html)
-        self.assertNotIn('id="hostname-status"', html)
-
-    def test_settings_page_preserves_config_order_for_setup_rows(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {"second": {"pico_serial": "2"}, "first": {"pico_serial": "1"}},
-                    "devices": {
-                        "lights": {"controller": "second", "pin": 3, "editor": "clock_window"},
-                        "pump": {"controller": "first", "pin": 2, "editor": "cycle"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {},
-            }
-        )
-
-        self.assertLess(html.index('data-controller-key="second"'), html.index('data-controller-key="first"'))
-        self.assertLess(html.index('data-device-id="lights"'), html.index('data-device-id="pump"'))
-
-    def test_settings_page_merges_renamed_camera_with_detected_hardware(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {"picam0": {"label": "Tent", "detected_key": "rpicam_cam0"}}},
-                "detected": {"picos": [], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {},
-            }
-        )
-
-        self.assertIn('value="picam0"', html)
-        self.assertIn('class="camera-detected-key"', html)
-        self.assertIn('<option value="rpicam_cam0" selected>', html)
-        self.assertIn("Camera Module 3 Wide | wide", html)
-        self.assertEqual(html.count('class="camera-row"'), 1)
-
-    def test_settings_page_pairs_existing_renamed_camera_without_saved_detected_key(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {"picam0": {}}},
-                "detected": {"picos": [], "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}]},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {},
-            }
-        )
-
-        self.assertIn('value="picam0"', html)
-        self.assertIn('<option value="rpicam_cam0" selected>', html)
-
-    def test_settings_page_posts_config_section_updates_from_forms(self):
-        html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
-
-        self.assertIn("collectControllers()", html)
-        self.assertIn("collectControllerDevices()", html)
-        self.assertIn("collectCameras()", html)
-        self.assertIn("function controllerRenames()", html)
-        self.assertIn("collectConfigWithControllerRenames()", html)
-        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
-        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
-        self.assertNotIn('saveSection("devices-status", "/api/config/devices", collectDevices())', html)
-        self.assertIn('"/api/config/cameras"', html)
-        self.assertIn('label: row.querySelector(".device-label").value.trim()', html)
-        self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
-        self.assertIn('const label = labelInput.value.trim();', html)
-        self.assertIn('label: row.querySelector(".camera-label").value.trim()', html)
-        self.assertIn('detected_key: row.querySelector(".camera-detected-key").value', html)
-        self.assertIn('const pinValue = row.querySelector(".device-pin").value', html)
-        self.assertIn('pin: Number(pinValue)', html)
-        self.assertIn("if (response.ok) window.location.reload();", html)
-        self.assertIn("throw new Error(`Pin required for device ${key}.`);", html)
-        self.assertIn('try {', html)
-        self.assertIn('catch (error)', html)
-
-    def test_settings_page_keeps_camera_blank_row(self):
-        html = render_settings_page({"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}})
-
-        self.assertIn('class="camera-row new-row" data-camera-key=""', html)
-
-    def test_settings_page_does_not_offer_obsolete_report_interval(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {
-                            "type": "pico_scheduler",
-                            "pico_serial": "abc",
-                            "report_every": 15,
-                            "label": "Pump lights",
-                        }
-                    },
-                    "devices": {"pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle"}},
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertNotIn("Pico poll interval (seconds)", html)
-        self.assertNotIn('class="controller-report-every"', html)
-        self.assertNotIn("payload.payload.report_every", html)
-
-    def test_settings_page_groups_scheduler_settings_by_controller(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {
-                            "type": "pico_scheduler",
-                            "pico_serial": "abc",
-                            "report_every": 10,
-                            "label": "Pump lights",
-                        },
-                        "unused": {
-                            "type": "pico_scheduler",
-                            "pico_serial": "def",
-                            "report_every": 20,
-                            "label": "Unused",
-                        },
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                        "lights": {"controller": "pump_lights", "pin": 4, "type": "pwm", "editor": "clock_window", "label": "Lights"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {
-                    "picos": [
-                        {"serial": "abc", "port": "/dev/ttyACM0"},
-                        {"serial": "def", "port": "/dev/ttyACM1"},
-                    ],
-                    "cameras": [],
-                },
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn("<h3>Pico schedulers</h3>", html)
-        self.assertEqual(html.count("<h3>Pico schedulers</h3>"), 1)
-        self.assertNotIn("<h3>Controllers</h3>", html)
-        self.assertEqual(html.count('class="pico-scheduler-block"'), 1)
-        self.assertIn('class="pico-scheduler-block" data-controller-key="pump_lights"', html)
-        self.assertNotIn('data-controller-key="unused"', html)
-        self.assertIn("<th>Assigned peripheral</th>", html)
-        self.assertIn("Pump lights", html)
-        self.assertIn("/dev/ttyACM0", html)
-        self.assertIn("<h4>Devices</h4>", html)
-        self.assertIn("<th>Output type</th>", html)
-        self.assertNotIn("<h3>Devices</h3>", html)
-        self.assertIn('class="device-row new-row"', html)
-        self.assertNotIn('class="pico-scheduler-new"', html)
-
-    def test_settings_page_renders_only_devices_for_each_scheduler_controller(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "alpha": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Alpha"},
-                        "beta": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Beta"},
-                    },
-                    "devices": {
-                        "pump": {"controller": "alpha", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                        "fan": {"controller": "beta", "pin": 4, "type": "pwm", "editor": "clock_window", "label": "Fan"},
-                    },
-                    "cameras": {"rpicam_cam0": {"label": "Tent cam"}},
-                },
-                "detected": {
-                    "picos": [
-                        {"serial": "abc", "port": "/dev/ttyACM0"},
-                        {"serial": "def", "port": "/dev/ttyACM1"},
-                    ],
-                    "cameras": [{"key": "rpicam:cam0", "model": "imx708", "lens": "wide"}],
-                },
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        alpha_block_start = html.index('class="pico-scheduler-block" data-controller-key="alpha"')
-        beta_block_start = html.index('class="pico-scheduler-block" data-controller-key="beta"')
-        cameras_start = html.index("<h3>Cameras</h3>")
-
-        alpha_block = html[alpha_block_start:beta_block_start]
-        beta_block = html[beta_block_start:cameras_start]
-
-        self.assertIn('data-device-id="pump"', alpha_block)
-        self.assertNotIn('data-device-id="fan"', alpha_block)
-        self.assertIn('class="device-row new-row" data-device-id=""', alpha_block)
-        self.assertIn('data-device-id="fan"', beta_block)
-        self.assertNotIn('data-device-id="pump"', beta_block)
-        self.assertIn('class="device-row new-row" data-device-id=""', beta_block)
-        self.assertIn('value="rpicam_cam0"', html)
-        self.assertIn("Camera Module 3 Wide | wide", html)
-
-    def test_settings_page_preserves_hidden_scheduler_controllers_in_combined_save_script(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                        "unused": {
-                            "type": "pico_scheduler",
-                            "pico_serial": "def",
-                            "report_every": 20,
-                            "label": "Unused & <grow> > flower </script> bloom",
-                        },
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {
-                    "picos": [
-                        {"serial": "abc", "port": "/dev/ttyACM0"},
-                        {"serial": "def", "port": "/dev/ttyACM1"},
-                    ],
-                    "cameras": [],
-                },
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        hidden_payload = self.hidden_scheduler_controllers_payload(html)
-
-        self.assertEqual(
-            hidden_payload["unused"],
-            {
-                "type": "pico_scheduler",
-                "config": {"pico_serial": "def", "label": "Unused & <grow> > flower </script> bloom"},
-                "settings": {"report_every": 20},
-                "devices": {},
-            },
-        )
-        self.assertIn(r'"Unused & <grow> > flower <\/script> bloom"', html)
-        self.assertNotIn('"Unused & <grow> > flower </script> bloom"', html)
-        self.assertNotIn("&amp;", hidden_payload["unused"]["config"]["label"])
-        self.assertNotIn("&lt;", hidden_payload["unused"]["config"]["label"])
-        self.assertNotIn("&gt;", hidden_payload["unused"]["config"]["label"])
-        self.assertIn('const hiddenControllers = JSON.parse(document.getElementById("hidden-scheduler-controllers").textContent || "{}");', html)
-        self.assertIn("const result = structuredClone(hiddenControllers);", html)
-
     def test_json_script_text_preserves_payload_and_escapes_script_end_tag(self):
         payload = {
             "unused": {
@@ -1095,263 +756,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertEqual(json.loads(rendered), payload)
         self.assertIn(r"<\/script>", rendered)
         self.assertNotIn("</script>", rendered)
-
-    def test_settings_page_combined_save_posts_config_to_api_config(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {},
-            }
-        )
-
-        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', html)
-        self.assertNotIn('saveSection("controllers-status", "/api/config/controllers", collectControllers())', html)
-
-    def test_settings_page_grouped_device_save_uses_combined_config_payload(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', html)
-        self.assertNotIn('saveSection("devices-status", "/api/config/devices", collectDevices())', html)
-        self.assertIn("function collectControllerDevices()", html)
-        self.assertIn("function collectConfigWithControllerRenames()", html)
-
-    def test_settings_page_preserves_hidden_controller_fields_when_empty_state_reuses_hidden_id(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
-                    },
-                    "devices": {},
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "def", "port": "/dev/ttyACM1"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('const existingController = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {});', html)
-        self.assertIn('const isHiddenReuse = !row.dataset.controllerKey && Object.keys(existingController).length > 0;', html)
-        self.assertIn('const payload = isHiddenReuse ? existingController : {type, payload: {}, settings: {}};', html)
-        self.assertIn('if (!isHiddenReuse || label !== labelInput.defaultValue) payload.settings.label = label;', html)
-        self.assertIn('if (!isHiddenReuse || picoSerial !== picoSerialDefault) payload.payload.pico_serial = picoSerial;', html)
-        self.assertNotIn("reportEveryInput", html)
-
-    def test_settings_page_collects_devices_with_visible_block_controller_after_rename(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('const controller = blockController || row.dataset.deviceController || "";', html)
-        self.assertNotIn('controller: row.querySelector(".device-controller").value || blockController', html)
-
-    def test_settings_page_removes_old_controller_key_after_rename(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "protocon": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Proto"},
-                    },
-                    "devices": {},
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('const oldKey = row.dataset.controllerKey || "";', html)
-        self.assertIn('oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {}', html)
-        self.assertIn("if (oldKey && oldKey !== key) delete result[oldKey];", html)
-
-    def test_settings_page_renders_create_block_even_when_scheduler_exists(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}, {"serial": "def", "port": "/dev/ttyACM1"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        blocks = self.scheduler_blocks(html)
-
-        self.assertEqual(len(blocks), 2)
-        self.assertIn('class="pico-scheduler-block" data-controller-key="pump_lights"', blocks[0])
-        self.assertIn('class="pico-scheduler-block pico-scheduler-new" data-controller-key=""', blocks[1])
-        self.assertIn('class="controller-row new-row" data-controller-key=""', blocks[1])
-        self.assertIn('class="device-row new-row" data-device-id=""', blocks[1])
-        self.assertIn("<h4>Devices</h4>", blocks[1])
-
-    def test_settings_page_renders_create_path_when_no_scheduler_groups_exist(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
-                    },
-                    "devices": {},
-                    "cameras": {},
-                },
-                "detected": {
-                    "picos": [
-                        {"serial": "def", "port": "/dev/ttyACM1"},
-                    ],
-                    "cameras": [],
-                },
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        empty_block = self.scheduler_empty_state_block(html)
-
-        self.assertIn('class="controller-row new-row" data-controller-key=""', empty_block)
-        self.assertIn('class="device-row new-row" data-device-id=""', empty_block)
-        self.assertIn('data-device-controller=""', empty_block)
-        self.assertNotIn('class="device-controller" value="" type="hidden"', empty_block)
-        self.assertEqual(empty_block.count('class="controller-row'), 1)
-        self.assertEqual(empty_block.count('class="device-row'), 1)
-        self.assertIn('class="controller-id" placeholder="pump_lights" value=""', empty_block)
-        self.assertIn("<h3>Pico schedulers</h3>", html)
-        self.assertIn("<h4>Devices</h4>", empty_block)
-        self.assertIn("<h3>Cameras</h3>", html)
-        self.assertNotIn("<h3>Controllers</h3>", html)
-        self.assertIn('const blockController = row.closest(".pico-scheduler-block")?.querySelector(".controller-row .controller-id")?.value.trim() || "";', html)
-        self.assertIn('const controller = blockController || row.dataset.deviceController || "";', html)
-
-    def test_settings_page_hydrates_create_block_from_hidden_controller_data(self):
-        html = render_settings_page(
-            {
-                "config": {
-                    "controllers": {
-                        "pump_lights": {"type": "pico_scheduler", "pico_serial": "abc", "report_every": 10, "label": "Pump lights"},
-                        "unused": {"type": "pico_scheduler", "pico_serial": "def", "report_every": 20, "label": "Unused"},
-                    },
-                    "devices": {
-                        "pump": {"controller": "pump_lights", "pin": 3, "type": "gpio", "editor": "cycle", "label": "Pump"},
-                    },
-                    "cameras": {},
-                },
-                "detected": {"picos": [{"serial": "abc", "port": "/dev/ttyACM0"}, {"serial": "def", "port": "/dev/ttyACM1"}], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('function hydrateControllerRowFromHidden(row) {', html)
-        self.assertIn('const hiddenController = hiddenControllers[key];', html)
-        self.assertIn('const labelInput = row.querySelector(".controller-label");', html)
-        self.assertIn('labelInput.defaultValue = hiddenSettings.label || "";', html)
-        self.assertIn('const picoSerialSelect = row.querySelector(".controller-pico-serial");', html)
-        self.assertIn('picoSerialSelect.dataset.defaultValue = hiddenPayload.pico_serial || "";', html)
-        self.assertNotIn("reportEveryInput", html)
-        self.assertIn('row.querySelector(".controller-id").addEventListener("input", () => hydrateControllerRowFromHidden(row));', html)
-
-    def test_settings_page_no_longer_renders_hostname_confirm_apply_controls(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertNotIn('id="hostname-input"', html)
-        self.assertNotIn('id="hostname-confirm"', html)
-        self.assertNotIn('id="hostname-status"', html)
-        self.assertNotIn('/api/host-config/hostname', html)
-
-    def test_settings_page_uses_hostname_in_title_and_heading(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "sprout", "network": []},
-                "picos": [],
-                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn("<title>sprout Settings</title>", html)
-        self.assertIn("<h1>sprout Settings</h1>", html)
-
-    def test_settings_page_links_to_new_github_issue(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            }
-        )
-
-        self.assertIn('href="https://github.com/hugomatic/plamp/issues/new"', html)
-        self.assertIn("Report an issue", html)
 
     def test_api_test_page_includes_config_routes(self):
         html = render_api_test_page(["pump_lights"], "pump_lights", "{}", "12h")
@@ -1430,61 +834,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn("Helper: Generate pump/lights", html)
         self.assertNotIn("GET /api/controllers/{role}", html)
         self.assertNotIn("GET /api/controllers/{role}?stream=true", html)
-
-    def test_pages_link_favicon_svg(self):
-        settings_html = render_settings_page(
-            {"config": {"controllers": {}, "devices": {}, "cameras": {}}, "detected": {"picos": [], "cameras": []}, "host": {"hostname": "plamp", "network": []}, "picos": [], "software": {}, "storage": {}}
-        )
-        dashboard_html = static_timer_dashboard(
-            [],
-            "pump_n_lights",
-            {"host_time": {"display": "-"}, "host": {"hostname": "plamp"}, "captures": {"items": []}, "timer_states": []},
-            "CLOCK_24",
-        )
-        api_html = render_api_test_page(["pump_n_lights"], "pump_n_lights", '{"channels":[]}', "CLOCK_24")
-        expected = '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
-        self.assertIn(expected, settings_html)
-        self.assertIn(expected, dashboard_html)
-        self.assertIn(expected, api_html)
-
-    def test_settings_page_explains_camera_capture_dir_and_schedule_and_shows_paths(self):
-        html = render_settings_page(
-            {
-                "config": {"controllers": {}, "devices": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {
-                    "path": "/repo/plamp",
-                    "user_name": "hugo",
-                    "user_is_sudoer": True,
-                    "user_has_serial_access": True,
-                    "user_has_video_access": True,
-                    "os_name": "Debian GNU/Linux",
-                    "os_arch": "aarch64",
-                    "os_version": "12 (bookworm)",
-                    "git_short_commit": "abc123",
-                    "git_branch": "main",
-                    "git_dirty": False,
-                    "git_dirty_files": [],
-                    "git_commit_timestamp": "2026-05-08T09:00:00+00:00",
-                    "mpremote_path": "/home/hugo/.local/bin/mpremote",
-                    "mpremote_version": "mpremote 1.28.0",
-                },
-                "paths": {"repo_root": "/repo/plamp", "data_dir": "/repo/plamp/data"},
-                "storage": {"path": "/repo/plamp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-                "tools": {"pyserial": "3.5"},
-            }
-        )
-
-        self.assertIn("Capture dir must stay inside Plamp root.", html)
-        self.assertIn("data/grow/grows/&lt;grow-id&gt;/captures", html)
-        self.assertIn("absolute paths are rejected", html)
-        self.assertIn("Set it to <code>0</code> to disable scheduling for that camera.", html)
-        self.assertIn("<title>plamp Settings</title>", html)
-        self.assertIn("<h1>plamp Settings</h1>", html)
-        self.assertNotIn("System info", html)
-        self.assertNotIn("Operating system", html)
 
     def test_settings_page_shows_short_git_dirty_reason(self):
         html = render_system_info_page(

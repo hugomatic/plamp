@@ -38,7 +38,7 @@ from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, Pic
 from plamp.scheduler_state import EXPECTED_FIRMWARE_PROTOCOL, FirmwareIdentity, firmware_identity, normalize_scheduler_state
 from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_controller_page, render_settings_page, render_system_info_page, set_app_revision
+from plamp_web.pages import render_api_test_page, render_controller_page, render_system_info_page, set_app_revision
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -2612,9 +2612,9 @@ def get_settings_json() -> dict[str, Any]:
     return settings_summary()
 
 
-@app.get("/settings", response_class=HTMLResponse)
-def get_settings_page() -> HTMLResponse:
-    return HTMLResponse(render_settings_page(settings_summary(), configured_timer_roles()))
+@app.get("/settings", response_class=FileResponse)
+def get_settings_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "settings.html", media_type="text/html")
 
 
 @app.get("/", response_class=FileResponse)

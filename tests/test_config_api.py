@@ -68,6 +68,13 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_settings_route_is_static_file(self):
+        with patch.object(server, "settings_summary", side_effect=AssertionError("must not render")):
+            response = server.get_settings_page()
+
+        self.assertIsInstance(response, FileResponse)
+        self.assertEqual(Path(response.path), server.STATIC_DIR / "settings.html")
+
     def test_static_assets_are_served(self):
         paths = {route.path for route in server.app.routes}
 
@@ -725,24 +732,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(summary["host"]["hostname"], "sprout")
         self.assertEqual(summary["config"]["controllers"]["pump_lights"], {})
         self.assertIn("detected", summary)
-
-    def test_get_settings_page_uses_combined_settings_payload(self):
-        with patch.object(
-            server,
-            "settings_summary",
-            return_value={
-                "config": {"controllers": {}, "cameras": {}},
-                "detected": {"picos": [], "cameras": []},
-                "host": {"hostname": "plamp", "network": []},
-                "picos": [],
-                "software": {"git_short_commit": "abc123", "git_branch": "main", "git_dirty": False},
-                "storage": {"path": "/tmp", "free": "1 GB", "used": "1 GB", "total": "2 GB"},
-            },
-        ):
-            response = server.get_settings_page()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Plamp config", response.body)
 
     def test_get_controller_page_uses_monitor_status_and_serial_log(self):
         monitor = DummyMonitor("abc")
