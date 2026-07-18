@@ -26,6 +26,7 @@ from typing import Any
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
 from plamp.context import resolve_context
@@ -76,6 +77,7 @@ camera_worker_lock = threading.Lock()
 camera_worker: "CameraWorker | None" = None
 
 app = FastAPI(title="plamp web")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 APP_REVISION = "unknown"
 
 

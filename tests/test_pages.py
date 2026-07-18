@@ -11,23 +11,39 @@ def static_timer_dashboard(*args, **kwargs) -> str:
     return Path("plamp_web/static/index.html").read_text(encoding="utf-8")
 
 
+def static_text(name: str) -> str:
+    return (Path("plamp_web/static") / name).read_text(encoding="utf-8")
+
+
 class PageRenderTests(unittest.TestCase):
+    def test_shared_shell_discovers_navigation_from_rest(self):
+        shell = static_text("app.js")
+        dashboard = static_text("index.html")
+
+        self.assertIn('fetch("/api/controllers")', shell)
+        self.assertIn('fetch("/api/system")', shell)
+        self.assertIn("window.PlampWeb", shell)
+        self.assertIn('<script src="/static/app.js"></script>', dashboard)
+        self.assertNotIn("function renderMainNav", dashboard)
+
     def test_timer_dashboard_static_file_bootstraps_only_through_rest(self):
         path = Path("plamp_web/static/index.html")
         self.assertTrue(path.is_file())
         html = path.read_text(encoding="utf-8")
+        shell = static_text("app.js")
 
-        for endpoint in ("/api/timer-config", "/api/host-time", "/api/config", "/api/system"):
+        for endpoint in ("/api/timer-config", "/api/host-time", "/api/config"):
             self.assertIn(f'fetch("{endpoint}")', html)
+        self.assertIn('fetch("/api/system")', shell)
         self.assertIn("let clockTimeFormat", html)
         self.assertIn("let timerRoles", html)
         self.assertIn("let timerChannels", html)
         self.assertIn("let timerHostSecondsAtLoad", html)
-        self.assertIn("function renderMainNav", html)
+        self.assertIn("PlampWeb.bootstrapShell", html)
         self.assertIn("function populateCameraSelectors", html)
         self.assertIn("async function bootstrapDashboard", html)
         bootstrap = html.split("async function bootstrapDashboard()", 1)[1].split("function formatChangeTime", 1)[0]
-        self.assertLess(bootstrap.index('fetch("/api/system")'), bootstrap.index("startTimerStreams();"))
+        self.assertLess(bootstrap.index("PlampWeb.bootstrapShell"), bootstrap.index("startTimerStreams();"))
         self.assertIn("await bootstrapDashboard()", html)
 
     def test_nav_uses_single_link_to_running_revision(self):
@@ -70,8 +86,9 @@ class PageRenderTests(unittest.TestCase):
 
     def test_timer_dashboard_page_links_to_settings(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
+        shell = static_text("app.js")
 
-        self.assertIn('navLink("/settings", "Settings")', html)
+        self.assertIn('navLink("/settings", "Settings", activePath)', shell)
         self.assertNotIn('href="/config"', html)
 
     def test_timer_dashboard_page_uses_hostname_in_title_and_heading(self):
@@ -107,9 +124,9 @@ class PageRenderTests(unittest.TestCase):
 
         for html in pages:
             self.assertIn(expected, html)
-        dashboard = static_timer_dashboard()
-        for link in ('navLink("/", "Plamp")', 'navLink("/settings", "Settings")', 'navLink("/system", "System")', 'navLink("/api/test", "API test")'):
-            self.assertIn(link, dashboard)
+        shell = static_text("app.js")
+        for link in ('navLink("/", "Plamp", activePath)', 'navLink("/settings", "Settings", activePath)', 'navLink("/system", "System", activePath)', 'navLink("/api/test", "API test", activePath)'):
+            self.assertIn(link, shell)
 
     def test_pages_use_same_nav_with_system_link(self):
         expected = '<nav><a href="/">Plamp</a> | <a href="/settings">Settings</a> | <a href="/system">System</a> | <a href="/api/test">API test</a> | [rev unknown]</nav>'
@@ -136,8 +153,8 @@ class PageRenderTests(unittest.TestCase):
 
         for page in pages:
             self.assertIn(expected, page)
-        dashboard = static_timer_dashboard()
-        self.assertIn('navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId)', dashboard)
+        shell = static_text("app.js")
+        self.assertIn('navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId, activePath)', shell)
 
     def test_timer_dashboard_page_reloads_every_30_seconds(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)

@@ -68,6 +68,11 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_static_assets_are_served(self):
+        paths = {route.path for route in server.app.routes}
+
+        self.assertIn("/static", paths)
+
     def test_timer_dashboard_root_is_static_file(self):
         fail = RuntimeError("root route performed server-side dashboard work")
         with (

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plamp</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
   <style>
     body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.4; }
     nav { margin-bottom: 1.5rem; }
@@ -58,7 +59,7 @@
   </style>
 </head>
 <body>
-  <nav id="main-nav"></nav>
+  <nav id="main-nav" data-plamp-nav aria-label="Plamp"></nav>
   <h1 id="page-name">Plamp</h1>
   <h2>Controllers</h2>
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
@@ -93,6 +94,7 @@
     <button id="resume-refresh" type="button" hidden>Resume auto-refresh</button>
   </footer>
 
+  <script src="/static/app.js"></script>
   <script>
     let clockTimeFormat = "12h";
     let timerRoles = [];
@@ -131,35 +133,6 @@
     let activeEditor = null;
     let pendingTimerRender = false;
 
-    function appendNavItem(nav, item) {
-      if (nav.childNodes.length) nav.append(" | ");
-      nav.append(item);
-    }
-
-    function navLink(href, label) {
-      const link = document.createElement("a");
-      link.href = href;
-      link.textContent = label;
-      return link;
-    }
-
-    function renderMainNav(controllerIds, revision) {
-      const nav = document.getElementById("main-nav");
-      nav.replaceChildren();
-      appendNavItem(nav, navLink("/", "Plamp"));
-      for (const controllerId of controllerIds) {
-        appendNavItem(nav, navLink(`/controllers/${encodeURIComponent(controllerId)}`, controllerId));
-      }
-      appendNavItem(nav, navLink("/settings", "Settings"));
-      appendNavItem(nav, navLink("/system", "System"));
-      appendNavItem(nav, navLink("/api/test", "API test"));
-      if (revision && revision !== "unknown") {
-        appendNavItem(nav, navLink(`https://github.com/hugomatic/plamp/commit/${encodeURIComponent(revision)}`, `[rev ${revision}]`));
-      } else {
-        appendNavItem(nav, document.createTextNode("[rev unknown]"));
-      }
-    }
-
     function populateCameraSelectors(cameraIds) {
       cameraCaptureCamera.replaceChildren();
       if (!cameraIds.length) {
@@ -183,18 +156,18 @@
     }
 
     async function bootstrapDashboard() {
-      const [timerResponse, hostTimeResponse, configResponse, systemResponse] = await Promise.all([
+      const [shell, timerResponse, hostTimeResponse, configResponse] = await Promise.all([
+        PlampWeb.bootstrapShell({activePath: "/", headingSuffix: "Plamp"}),
         fetch("/api/timer-config"),
         fetch("/api/host-time"),
         fetch("/api/config"),
-        fetch("/api/system"),
       ]);
-      const [timerPayload, hostTimePayload, configPayload, systemPayload] = await Promise.all([
+      const [timerPayload, hostTimePayload, configPayload] = await Promise.all([
         responseJson(timerResponse, "timer config"),
         responseJson(hostTimeResponse, "host time"),
         responseJson(configResponse, "config"),
-        responseJson(systemResponse, "system"),
       ]);
+      const systemPayload = shell.system;
 
       timerRoles = Array.isArray(timerPayload.roles) ? timerPayload.roles : [];
       timerChannels = timerPayload.channels && typeof timerPayload.channels === "object" ? timerPayload.channels : {};
@@ -206,8 +179,6 @@
       const pageName = hostname ? `${hostname} Plamp` : "Plamp";
       document.title = pageName;
       document.getElementById("page-name").textContent = pageName;
-      const revision = String(systemPayload?.software?.git_short_commit || systemPayload?.software?.git_commit || "unknown");
-      renderMainNav(timerRoles, revision);
       const cameras = configPayload?.config?.cameras;
       populateCameraSelectors(cameras && typeof cameras === "object" ? Object.keys(cameras) : []);
 
