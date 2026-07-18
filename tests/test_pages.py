@@ -15,6 +15,31 @@ def static_text(name: str) -> str:
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_controller_static_client_uses_rest_and_sse_without_injected_state(self):
+        html = static_text("controller.html")
+        script = static_text("controller.js")
+
+        self.assertIn("data-plamp-nav", html)
+        self.assertIn('src="/static/controller.js"', html)
+        self.assertNotIn("octo_relay", html)
+        self.assertNotIn("pump_lights", html)
+        self.assertIn("decodeURIComponent", script)
+        self.assertIn('new URLSearchParams({path: `controllers.${controller}`})', script)
+        self.assertIn("/serial-log`)", script)
+        self.assertIn("new EventSource", script)
+        self.assertIn('?stream=true`', script)
+
+    def test_controller_static_client_preserves_diagnostic_commands(self):
+        html = static_text("controller.html")
+        script = static_text("controller.js")
+
+        for element_id in ("report-now", "pulse-pin", "pulse-seconds", "pulse-send", "refresh-diagnostics", "refresh-log"):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn("/commands/report`", script)
+        self.assertIn("/pins/${encodeURIComponent(pin)}/pulse`", script)
+        self.assertIn("window.confirm", script)
+        self.assertIn("Stream disconnected; showing last valid report.", script)
+
     def test_settings_static_client_bootstraps_only_from_rest(self):
         html = static_text("settings.html")
         script = static_text("settings.js")

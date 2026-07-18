@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controller diagnostics</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    section { margin-top: 1.5rem; }
+    table { border-collapse: collapse; margin: 1rem 0; max-width: 760px; width: 100%; }
+    td, th { border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; }
+    code { background: #f4f4f4; padding: .1rem .25rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+    .command-form { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+    .command-form label { display: grid; gap: .25rem; }
+    input { border: 1px solid #aaa; border-radius: 6px; font: inherit; padding: .4rem .5rem; width: 8rem; }
+    .diagnostics { background: #f7f7f7; font-size: .8rem; max-height: 32rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
+    .serial-log { background: #111; border-radius: 6px; color: #eee; font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 28rem; overflow: auto; padding: .65rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <nav data-plamp-nav aria-label="Plamp"></nav>
+  <h1 id="controller-heading">Controller diagnostics</h1>
+  <p><a href="/">Back to dashboard</a></p>
+  <p id="controller-load-status" class="status">Loading controller...</p>
+
+  <section><h2>Status</h2><table><tbody id="controller-status"><tr><td colspan="2">Waiting for controller status.</td></tr></tbody></table></section>
+  <section>
+    <h2>Commands</h2>
+    <p id="command-status" class="status">Loading.</p>
+    <div class="actions"><button id="report-now" type="button" disabled>Report now</button></div>
+    <div class="command-form">
+      <label>Pin <input id="pulse-pin" name="pin" type="number" min="0" max="29" step="1" inputmode="numeric"></label>
+      <label>Seconds <input id="pulse-seconds" name="seconds" type="number" min="1" step="1" value="5" inputmode="numeric"></label>
+      <button id="pulse-send" type="button" disabled>Pulse</button>
+    </div>
+  </section>
+  <section>
+    <h2>Configured pins</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Channel</th><th>Pin</th><th>Type</th><th>Visibility</th><th>Programming</th><th></th></tr></thead>
+      <tbody id="configured-pins"><tr><td colspan="7">Waiting for configuration.</td></tr></tbody>
+    </table>
+  </section>
+  <section>
+    <h2>Diagnostics</h2>
+    <button id="refresh-diagnostics" type="button" disabled>Refresh diagnostics</button>
+    <pre id="controller-diagnostics" class="diagnostics">Waiting for controller status.</pre>
+  </section>
+  <section>
+    <h2>Serial log</h2>
+    <button id="refresh-log" type="button" disabled>Refresh log</button>
+    <pre id="serial-log" class="serial-log">Waiting for serial log.</pre>
+  </section>
+  <script src="/static/app.js"></script>
+  <script src="/static/controller.js"></script>
+</body>
+</html>
