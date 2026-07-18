@@ -5,8 +5,8 @@ Plamp is local-first hydroponics automation designed for humans and agents. Core
 ## Current System
 
 - `plamp_web`: one FastAPI service providing REST, SSE, scheduled camera captures, Pico monitoring, and the fallback website.
-- `plamp_cli`: JSON-first REST client installed as `plamp`.
-- `plamp`: shared hardware/domain library and direct CLI used by the REST service and local operations.
+- `plamp_cli`: explicitly named JSON-first REST compatibility client.
+- `plamp`: shared hardware/domain library and the primary direct CLI used by the REST service and local operations.
 - `pico_scheduler`: one generic, persistent, runtime-configurable MicroPython application.
 - `data/`: desired configuration, generated controller state, logs, pictures, and other runtime data.
 
@@ -48,14 +48,18 @@ Observed reports describe runtime state. They do not replace desired configurati
 
 Agents should receive machine-readable JSON on stdout and diagnostics on stderr.
 
-Current REST-backed operations use `python -m plamp_cli` or the installed `plamp` command. The direct path includes:
+The primary `plamp` command calls the shared module directly and does not require the
+REST service. Its hardware path includes:
 
 ```bash
-python -m plamp pico report <controller>
-python -m plamp pico pulse <controller> <pin> <seconds>
-python -m plamp pico configure <controller> <compiled-state.json>
-python -m plamp pico upgrade <controller> <compiled-state.json>
+plamp pico report <controller>
+plamp pico pulse <controller> <pin> <seconds>
+plamp pico configure <controller> <compiled-state.json>
+plamp pico upgrade <controller> <compiled-state.json>
 ```
+
+`python3 -m plamp_cli` remains an explicitly named REST compatibility client during
+migration. It does not own the `plamp` command.
 
 Primary HTTP surfaces:
 

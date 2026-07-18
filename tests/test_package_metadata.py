@@ -21,11 +21,19 @@ class PackageMetadataTests(unittest.TestCase):
             ["fastapi", "pyserial", "pyudev", "uvicorn[standard]"],
         )
 
-    def test_readme_exposes_rest_cli_without_uv_setup(self):
+    def test_readme_exposes_direct_cli_without_uv_setup(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         operation = readme.split("## Operate Plamp", 1)[1].split("## Web and API", 1)[0]
 
-        self.assertIn("source ./setup.sh\nplamp --help", operation)
+        self.assertIn("source ./setup.sh\nplamp context", operation)
+        self.assertIn("plamp config get", operation)
+        self.assertIn("plamp pico report pump_lights", operation)
+        self.assertIn("plamp camera capture rpicam_cam0", operation)
+        self.assertNotIn("JSON-first REST CLI", operation)
+        self.assertNotIn("\nuv run python -m plamp ", operation)
+        self.assertNotIn("plamp controllers list", operation)
+        self.assertNotIn("plamp pico-scheduler", operation)
+        self.assertNotIn("plamp pics", operation)
         self.assertNotIn("uv sync", operation)
 
 
