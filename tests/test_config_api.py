@@ -68,6 +68,17 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_controller_route_is_static_file(self):
+        fail = AssertionError("controller route must not touch runtime state")
+        with (
+            patch.object(server, "get_or_start_monitor", side_effect=fail),
+            patch.object(server, "configured_timer_channels", side_effect=fail),
+        ):
+            response = server.get_controller_page("pump_lights")
+
+        self.assertIsInstance(response, FileResponse)
+        self.assertEqual(Path(response.path), server.STATIC_DIR / "controller.html")
+
     def test_settings_route_is_static_file(self):
         with patch.object(server, "settings_summary", side_effect=AssertionError("must not render")):
             response = server.get_settings_page()
@@ -732,24 +743,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(summary["host"]["hostname"], "sprout")
         self.assertEqual(summary["config"]["controllers"]["pump_lights"], {})
         self.assertIn("detected", summary)
-
-    def test_get_controller_page_uses_monitor_status_and_serial_log(self):
-        monitor = DummyMonitor("abc")
-        monitor.serial_log_entries = [{"direction": "tx", "text": "r"}]
-        monitor.snapshot = lambda: {"state": "connected", "serial": "abc"}
-        with (
-            patch.object(server, "get_or_start_monitor", return_value=monitor),
-            patch.object(server, "configured_timer_channels", return_value={"pump_lights": [{"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible"}]}),
-        ):
-            response = server.get_controller_page("pump_lights")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"pump_lights Pico", response.body)
-        self.assertIn(b'<input id="pulse-pin" name="pin" type="number"', response.body)
-        self.assertIn(b'<button id="pulse-send" type="button">Pulse</button>', response.body)
-        self.assertIn(b"<td>Pump</td>", response.body)
-        self.assertIn(b"<td>21</td>", response.body)
-        self.assertIn(b"TX r", response.body)
 
     def test_config_route_is_removed(self):
         routes = {route.path for route in server.app.routes}

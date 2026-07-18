@@ -3,7 +3,7 @@ import json
 import unittest
 from pathlib import Path
 
-from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_controller_page, render_system_info_page
+from plamp_web.pages import json_script_text, main_nav, render_api_test_page, render_system_info_page
 
 
 def static_timer_dashboard(*args, **kwargs) -> str:
@@ -428,49 +428,6 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('textContent = "Report now";', html)
         self.assertNotIn('textContent = "Refresh log";', html)
         self.assertNotIn('textContent = "Pico";', html)
-
-    def test_controller_page_includes_report_pulse_and_serial_log_controls(self):
-        status = {
-            "state": "connected",
-            "serial": "abc",
-            "firmware": {"current": True},
-            "raw_lines": ["report evidence"],
-        }
-        html = render_controller_page(
-            "pump_lights",
-            [
-                {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible"},
-                {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible"},
-                {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden"},
-            ],
-            status,
-            [{"at": "now", "direction": "tx", "text": "r"}],
-        )
-
-        self.assertIn('<button id="report-now" type="button">Report now</button>', html)
-        self.assertIn('<input id="pulse-pin" name="pin" type="number"', html)
-        self.assertIn('<input id="pulse-seconds" name="seconds" type="number"', html)
-        self.assertIn('<button id="pulse-send" type="button">Pulse</button>', html)
-        self.assertIn("<td>Pump</td>", html)
-        self.assertIn("<td>21</td>", html)
-        self.assertIn("<td>Fan</td>", html)
-        self.assertIn("<td>22</td>", html)
-        self.assertIn("<td>Hidden</td>", html)
-        self.assertIn("<td>23</td>", html)
-        self.assertIn("Are you sure you want to pulse pin", html)
-        self.assertIn('id="refresh-log"', html)
-        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/pins/${encodeURIComponent(pin)}/pulse`', html)
-        self.assertIn('postCommand(`/api/controllers/${encodeURIComponent(controller)}/commands/report`', html)
-        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}/serial-log`', html)
-        self.assertIn('}).join("\\n");', html)
-        self.assertNotIn('}).join("\n");', html)
-        self.assertIn("<h2>Diagnostics</h2>", html)
-        self.assertIn('id="controller-diagnostics"', html)
-        self.assertIn('<button id="refresh-diagnostics" type="button">Refresh diagnostics</button>', html)
-        self.assertIn('fetch(`/api/controllers/${encodeURIComponent(controller)}`)', html)
-        self.assertIn("diagnosticsNode.textContent = JSON.stringify(data.telemetry || data, null, 2);", html)
-        self.assertIn('setStatus("Diagnostics refreshed.");', html)
-        self.assertIn(html_module.escape(json.dumps(status, indent=2, sort_keys=True)), html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)

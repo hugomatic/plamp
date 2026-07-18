@@ -38,7 +38,7 @@ from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, Pic
 from plamp.scheduler_state import EXPECTED_FIRMWARE_PROTOCOL, FirmwareIdentity, firmware_identity, normalize_scheduler_state
 from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
 from plamp_web import camera_capture, hardware_inventory
-from plamp_web.pages import render_api_test_page, render_controller_page, render_system_info_page, set_app_revision
+from plamp_web.pages import render_api_test_page, render_system_info_page, set_app_revision
 from plamp_web.hardware_config import (
     apply_config_section,
     config_view,
@@ -2622,8 +2622,6 @@ def get_timer_dashboard_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
 
 
-@app.get("/controllers/{controller}", response_class=HTMLResponse)
-def get_controller_page(controller: str) -> HTMLResponse:
-    monitor = get_or_start_monitor(controller)
-    channels = configured_timer_channels().get(controller, [])
-    return HTMLResponse(render_controller_page(controller, channels, monitor.snapshot(), monitor.serial_log(), configured_timer_roles()))
+@app.get("/controllers/{controller}", response_class=FileResponse)
+def get_controller_page(controller: str) -> FileResponse:
+    return FileResponse(STATIC_DIR / "controller.html", media_type="text/html")
