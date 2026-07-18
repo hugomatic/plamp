@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=80", "setuptools-scm[simple]>=8"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "plamp"
 dynamic = ["version"]
@@ -14,8 +10,5 @@ dependencies = [
   "uvicorn[standard]",
 ]
 
-[project.scripts]
-plamp = "plamp_cli.main:run"
-
-[tool.setuptools.packages.find]
-include = ["plamp*"]
+[tool.uv]
+package = false

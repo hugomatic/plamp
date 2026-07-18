@@ -126,7 +126,7 @@ wheels = [
 
 [[package]]
 name = "plamp"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "pyserial" },

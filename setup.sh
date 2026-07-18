@@ -22,10 +22,12 @@ _plamp_setup_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 _plamp_old_root="${PLAMP_ROOT:-}"
 
 if [[ -n "$_plamp_old_root" ]]; then
+  _plamp_remove_path_entry "$_plamp_old_root/bin"
   _plamp_remove_path_entry "$_plamp_old_root/.venv/bin"
   _plamp_remove_path_entry "$_plamp_old_root"
 fi
 
+_plamp_remove_path_entry "$_plamp_setup_dir/bin"
 _plamp_remove_path_entry "$_plamp_setup_dir/.venv/bin"
 _plamp_remove_path_entry "$_plamp_setup_dir"
 
@@ -38,7 +40,7 @@ if [[ -n "${1:-}" ]]; then
 else
   export PLAMP_DATA_DIR="$PLAMP_ROOT/data"
 fi
-export PATH="$PLAMP_ROOT/.venv/bin:$PLAMP_ROOT:$PATH"
+export PATH="$PLAMP_ROOT/bin:$PLAMP_ROOT/.venv/bin:$PLAMP_ROOT:$PATH"
 hash -r
 
 printf 'PLAMP_ROOT=%s\n' "$PLAMP_ROOT"

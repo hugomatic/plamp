@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+launcher_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+plamp_root="$(cd -- "${launcher_dir}/.." && pwd -P)"
+
+exec python3 "${plamp_root}/plamp_cli/main.py" "$@"

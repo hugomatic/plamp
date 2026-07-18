@@ -14,6 +14,9 @@ class SetupShTests(unittest.TestCase):
         root = parent / name
         root.mkdir()
         shutil.copy2(REPO_ROOT / "setup.sh", root / "setup.sh")
+        (root / "bin").mkdir()
+        shutil.copy2(REPO_ROOT / "bin" / "plamp", root / "bin" / "plamp")
+        shutil.copytree(REPO_ROOT / "plamp_cli", root / "plamp_cli")
         return root
 
     def run_bash(self, script: str) -> list[str]:
@@ -39,6 +42,19 @@ class SetupShTests(unittest.TestCase):
 
             self.assertEqual(lines, [str(root), str(root / "data")])
 
+    def test_setup_exposes_checkout_launcher_without_virtual_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.make_checkout(Path(tmp), "checkout")
+
+            lines = self.run_bash(
+                f'source "{root}/setup.sh" >/dev/null\n'
+                'command -v plamp\n'
+                'plamp --help >/dev/null\n'
+                'printf "launcher-ok\\n"'
+            )
+
+            self.assertEqual(lines, [str(root / "bin" / "plamp"), "launcher-ok"])
+
     def test_second_activation_removes_first_checkout_from_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent = Path(tmp)
@@ -54,7 +70,10 @@ class SetupShTests(unittest.TestCase):
 
             self.assertEqual(lines[0], str(second))
             self.assertEqual(lines[1], str(second_data))
-            self.assertEqual(lines[2], f"{second}/.venv/bin:{second}:/usr/bin:/bin")
+            self.assertEqual(
+                lines[2],
+                f"{second}/bin:{second}/.venv/bin:{second}:/usr/bin:/bin",
+            )
             self.assertNotIn(str(first), lines[2])
 
 

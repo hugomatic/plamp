@@ -82,37 +82,6 @@ class PlampCliBootstrapTests(unittest.TestCase):
         self.assertIn("Example: plamp pico-scheduler get pump_n_lights", stderr.getvalue())
         self.assertIn("Try: plamp pico-scheduler list", stderr.getvalue())
 
-    def test_package_installs_with_console_script(self):
-        repo_root = Path(__file__).resolve().parents[1]
-        python = Path("/usr/bin/python3")
-        self.assertTrue(python.exists())
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = subprocess.run(
-                [
-                    python,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--no-deps",
-                    "--no-build-isolation",
-                    "--target",
-                    tmpdir,
-                    str(repo_root),
-                ],
-                cwd=repo_root,
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-
-            self.assertEqual(
-                result.returncode,
-                0,
-                msg=f"pip install failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}",
-            )
-            self.assertTrue((Path(tmpdir) / "plamp_cli" / "__init__.py").exists())
-
     def test_main_py_runs_as_direct_script(self):
         repo_root = Path(__file__).resolve().parents[1]
         result = subprocess.run(

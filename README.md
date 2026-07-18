@@ -38,9 +38,11 @@ systemctl is-active plamp-web
 
 ## Operate Plamp
 
-The installed JSON-first CLI currently talks to the local REST API:
+Select this checkout, then use its JSON-first REST CLI:
 
 ```bash
+source ./setup.sh
+plamp --help
 plamp config get
 plamp controllers list
 plamp pico-scheduler list
@@ -62,7 +64,7 @@ uv run python -m plamp camera capture rpicam_cam0
 
 Use `-` instead of `compiled-state.json` to read the complete compiled scheduler state from stdin. Configure sends that state through the shared locked Pico protocol. Upgrade renders the current generic scheduler firmware, seeds both state slots, resets once, and verifies the reconnected report. These commands work while the service is running or stopped and do not contact `plamp-web`. Remote agents can use either the REST CLI or direct CLI over SSH.
 
-`setup.sh [DATA_DIR]` selects the checkout and instance for the current shell. It exports `PLAMP_ROOT` and `PLAMP_DATA_DIR`; without an argument, data defaults to `$PLAMP_ROOT/data`. Source another checkout's setup script to switch versions without leaving its executable paths behind.
+`setup.sh [DATA_DIR]` selects the checkout and instance for the current shell. It exports `PLAMP_ROOT` and `PLAMP_DATA_DIR`, and makes the checkout-owned `bin/plamp` launcher available without installing Plamp as a Python package. Without an argument, data defaults to `$PLAMP_ROOT/data`. Source another checkout's setup script to switch versions without leaving its executable paths behind.
 
 See [CLI reference](./plamp_cli/README.md).
 
