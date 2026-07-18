@@ -1,5 +1,9 @@
 # Repository-Owned Plamp Launcher Implementation Plan
 
+> **Superseded:** This completed plan incorrectly assigned the `plamp` command to the
+> REST compatibility client. Corrective work follows the authoritative agent-first
+> architecture design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `source setup.sh` provide a working `plamp` REST CLI from any checkout without activation, uv synchronization, or Python distribution installation.

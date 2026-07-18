@@ -14,6 +14,19 @@ Agents should operate Plamp through a local library and CLI even when the web se
 
 With the service stopped, automatic reports, scheduled pictures, REST/SSE, and dependent web apps pause. Pico schedules and direct CLI hardware operations continue.
 
+## Command launcher
+
+The command named `plamp` is the `plamp` module's direct CLI. The repository-owned
+`bin/plamp` launcher resolves its checkout and runs that checkout's virtual-environment
+Python with `-m plamp`. It exposes neither virtual-environment activation nor uv to the
+operator. `plampctl` creates and synchronizes the environment during installation and
+upgrades. If the environment is missing, the launcher reports an installation error
+with a `plampctl` recovery command; it does not silently choose another interpreter.
+
+`plamp_cli` remains explicitly named REST compatibility code while migration is
+incomplete. It must not own the `plamp` command or become a dependency of the direct
+CLI.
+
 ## Shared mechanisms
 
 The library owns behavior that must remain consistent across processes:
@@ -72,6 +85,24 @@ The CLI is the primary agent interface: stable JSON, diagnostics on stderr, docu
 
 REST handles bounded commands and reads. SSE carries reports, status, camera results, and progress. WebSocket and P2P remain out of scope until a concrete requirement exists.
 
+The REST/SSE server imports and composes focused `plamp` capabilities. Web application
+code reaches those capabilities only through REST/SSE; it does not import internal
+hardware, configuration, scheduling, or camera behavior.
+
+Initially the REST/SSE service may serve the web application's static HTML, JavaScript,
+CSS, and other assets. This is only a deployment convenience. Once loaded, the browser
+uses the same REST/SSE contract as a separately hosted client. The first conversion
+target is the main dashboard, followed by settings, controller diagnostics, system
+information, and API-test pages. A later React or other web service can therefore be
+developed and deployed separately without changing `plamp` or the REST/SSE contract.
+
+Cross-origin browser access is disabled unless exact allowed origins are present in
+`PLAMP_DATA_DIR/host.json`. The `plamp` module owns origin validation, locking, and
+atomic persistence. The direct CLI exposes `plamp host cors list|allow|remove`, while
+`plampctl cors` composes those operations with a service restart and readiness check.
+The server applies one policy to REST, preflight requests, errors, and SSE. Wildcard
+origins are rejected; CORS is browser policy and is not presented as authentication.
+
 ## Migration
 
 1. Extract locked Pico report transactions and direct CLI access.
@@ -81,6 +112,9 @@ REST handles bounded commands and reads. SSE carries reports, status, camera res
 5. Add atomic configuration writes and explicit desired/applied state.
 6. Update runtime configuration without flashing.
 7. Add provisioning, upgrades, and recovery.
-8. Move REST/SSE and replaceable web apps onto the shared library.
+8. Correct `bin/plamp` to launch the direct module CLI through the hidden environment.
+9. Move remaining REST/SSE behavior onto the shared library.
+10. Convert the main dashboard, then remaining pages, into static REST/SSE clients.
+11. Add configurable exact-origin CORS for separately hosted web development.
 
 Each slice must preserve tower operation and remain independently reversible.

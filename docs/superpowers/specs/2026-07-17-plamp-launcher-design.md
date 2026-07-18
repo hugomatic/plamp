@@ -1,5 +1,9 @@
 # Plamp Launcher Design
 
+> **Superseded:** This design incorrectly assigned the `plamp` command to the REST
+> compatibility client. The command-launcher section of
+> `2026-07-14-agent-first-plamp-architecture-design.md` is authoritative.
+
 ## Problem
 
 `setup.sh` prepends `.venv/bin`, but a checkout that has not been synchronized
