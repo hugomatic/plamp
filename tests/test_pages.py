@@ -40,6 +40,13 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("window.confirm", script)
         self.assertIn("Stream disconnected; showing last valid report.", script)
 
+    def test_controller_report_events_preserve_last_monitor_status(self):
+        script = static_text("controller.js")
+
+        self.assertIn("function renderStreamEvent(eventName, data)", script)
+        self.assertIn('if (eventName !== "report") renderStatus(telemetry);', script)
+        self.assertIn("renderStreamEvent(eventName, JSON.parse(event.data))", script)
+
     def test_settings_static_client_bootstraps_only_from_rest(self):
         html = static_text("settings.html")
         script = static_text("settings.js")

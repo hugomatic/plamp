@@ -135,10 +135,10 @@
     logNode.textContent = logText(data.entries);
   }
 
-  function renderStreamEvent(data) {
+  function renderStreamEvent(eventName, data) {
     const telemetry = data?.telemetry && typeof data.telemetry === "object" ? data.telemetry : data;
     if (!telemetry || typeof telemetry !== "object") return;
-    renderStatus(telemetry);
+    if (eventName !== "report") renderStatus(telemetry);
     diagnosticsNode.textContent = JSON.stringify(telemetry, null, 2);
     loadStatus.textContent = "Live controller stream connected.";
     loadStatus.classList.remove("error");
@@ -149,7 +149,7 @@
     controllerSource = new EventSource(`/api/controllers/${encodeURIComponent(controller)}?stream=true`);
     for (const eventName of ["snapshot", "report", "status"]) {
       controllerSource.addEventListener(eventName, (event) => {
-        try { renderStreamEvent(JSON.parse(event.data)); }
+        try { renderStreamEvent(eventName, JSON.parse(event.data)); }
         catch (error) { setCommandStatus(`Invalid ${eventName} event: ${error.message || String(error)}`, true); }
       });
     }
