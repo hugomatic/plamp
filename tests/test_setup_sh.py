@@ -16,7 +16,17 @@ class SetupShTests(unittest.TestCase):
         shutil.copy2(REPO_ROOT / "setup.sh", root / "setup.sh")
         (root / "bin").mkdir()
         shutil.copy2(REPO_ROOT / "bin" / "plamp", root / "bin" / "plamp")
-        shutil.copytree(REPO_ROOT / "plamp_cli", root / "plamp_cli")
+        venv_bin = root / ".venv" / "bin"
+        venv_bin.mkdir(parents=True)
+        python = venv_bin / "python"
+        python.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'python=%s\\n' \"$0\"\n"
+            "printf 'pythonpath=%s\\n' \"${PYTHONPATH:-}\"\n"
+            "printf 'arg=%s\\n' \"$@\"\n",
+            encoding="utf-8",
+        )
+        python.chmod(0o755)
         return root
 
     def run_bash(self, script: str) -> list[str]:
@@ -42,18 +52,51 @@ class SetupShTests(unittest.TestCase):
 
             self.assertEqual(lines, [str(root), str(root / "data")])
 
-    def test_setup_exposes_checkout_launcher_without_virtual_environment(self):
+    def test_setup_exposes_direct_module_launcher_with_hidden_environment(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = self.make_checkout(Path(tmp), "checkout")
 
             lines = self.run_bash(
                 f'source "{root}/setup.sh" >/dev/null\n'
                 'command -v plamp\n'
-                'plamp --help >/dev/null\n'
-                'printf "launcher-ok\\n"'
+                'plamp pico report pump_lights'
             )
 
-            self.assertEqual(lines, [str(root / "bin" / "plamp"), "launcher-ok"])
+            self.assertEqual(
+                lines,
+                [
+                    str(root / "bin" / "plamp"),
+                    f"python={root}/.venv/bin/python",
+                    f"pythonpath={root}",
+                    "arg=-m",
+                    "arg=plamp",
+                    "arg=pico",
+                    "arg=report",
+                    "arg=pump_lights",
+                ],
+            )
+
+    def test_launcher_reports_missing_environment_without_invoking_uv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.make_checkout(Path(tmp), "checkout")
+            (root / ".venv" / "bin" / "python").unlink()
+
+            completed = subprocess.run(
+                [root / "bin" / "plamp", "--help"],
+                cwd=Path(tmp),
+                env={"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("Plamp environment is missing", completed.stderr)
+            self.assertIn(f"{root}/plampctl reinstall", completed.stderr)
+            self.assertNotIn("uv", completed.stderr.lower())
+            self.assertNotIn("traceback", completed.stderr.lower())
 
     def test_second_activation_removes_first_checkout_from_path(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -37,6 +37,15 @@ class DirectCliTests(unittest.TestCase):
         }), encoding="utf-8")
         return path
 
+    def test_help_uses_plamp_command_name(self):
+        stdout = io.StringIO()
+        with self.assertRaises(SystemExit) as caught:
+            with contextlib.redirect_stdout(stdout):
+                main(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("usage: plamp", stdout.getvalue())
+        self.assertNotIn("python -m plamp", stdout.getvalue())
+
     def test_controller_serial_reads_existing_config_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self.write_config(Path(tmp))

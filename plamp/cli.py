@@ -28,7 +28,7 @@ def _non_negative_finite_timeout(value: str) -> float:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m plamp")
+    parser = argparse.ArgumentParser(prog="plamp")
     parser.add_argument("--lock-dir", type=Path)
     parser.add_argument(
         "--timeout",
