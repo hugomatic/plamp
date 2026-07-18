@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    section { border-top: 1px solid #ddd; margin-top: 2rem; padding-top: 1rem; }
+    table { border-collapse: collapse; margin: 1rem 0 1.5rem; max-width: 1100px; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+    th { background: #f4f4f4; font-weight: 700; }
+    td { background: #fff; color: #111; }
+    code { background: #f4f4f4; padding: .1rem .25rem; }
+    pre { background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; white-space: pre-wrap; }
+    .system-page { max-width: 1100px; }
+    .system-actions, .logs-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }
+  </style>
+</head>
+<body>
+  <nav data-plamp-nav aria-label="Plamp"></nav>
+  <h1 id="system-heading">System</h1>
+  <p id="system-load-status" class="status">Loading system information...</p>
+  <p id="host-clock" class="status"><strong>Host time:</strong> <span>-</span></p>
+
+  <div class="system-page">
+    <section aria-label="System summary">
+      <h2>System info</h2>
+      <table><tbody id="system-info"><tr><td colspan="2">Waiting for system information.</td></tr></tbody></table>
+    </section>
+    <section aria-label="Hardware">
+      <h2>Hardware</h2>
+      <h3>Serial USB peripherals</h3>
+      <table>
+        <thead><tr><th>Port</th><th>USB Device</th><th>Serial</th><th>USB ID</th></tr></thead>
+        <tbody id="system-picos"><tr><td colspan="4">Waiting for hardware information.</td></tr></tbody>
+      </table>
+      <h3>Cameras</h3>
+      <table>
+        <thead><tr><th>Camera</th><th>Model</th><th>Sensor</th><th>Lens</th><th>Path</th></tr></thead>
+        <tbody id="system-cameras"><tr><td colspan="5">Waiting for hardware information.</td></tr></tbody>
+      </table>
+    </section>
+    <section aria-label="System software">
+      <h2>Software</h2>
+      <p class="muted">Detected software and runtime details.</p>
+      <table><tbody id="system-software"><tr><td colspan="2">Waiting for software information.</td></tr></tbody></table>
+    </section>
+    <section aria-label="System storage">
+      <h2>Storage</h2>
+      <table><tbody id="system-storage"><tr><td colspan="2">Waiting for storage information.</td></tr></tbody></table>
+    </section>
+    <section aria-label="Camera worker">
+      <h2>Camera worker</h2>
+      <table><tbody id="system-camera-worker"><tr><td colspan="2">Waiting for worker information.</td></tr></tbody></table>
+    </section>
+    <section aria-label="Controller workers">
+      <h2>Controller workers</h2>
+      <table>
+        <thead><tr><th>Role</th><th>Serial</th><th>State</th><th>Connected</th><th>Port</th><th>Last seen</th><th>Last error</th></tr></thead>
+        <tbody id="system-monitors"><tr><td colspan="7">Waiting for controller workers.</td></tr></tbody>
+      </table>
+    </section>
+    <section aria-label="System actions">
+      <h2>Actions</h2>
+      <div class="system-actions">
+        <button id="system-restart" type="button" disabled>Restart</button>
+        <button id="system-reinstall" type="button" disabled>Reinstall</button>
+        <button id="system-upgrade" type="button" disabled>Upgrade</button>
+      </div>
+      <p id="system-action-status" class="status">Loading.</p>
+    </section>
+    <section aria-label="System logs">
+      <h2>Logs</h2>
+      <div class="logs-actions"><button id="system-load-logs" type="button" disabled>Load logs</button></div>
+      <pre id="system-logs">Logs not loaded.</pre>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script src="/static/system.js"></script>
+</body>
+</html>

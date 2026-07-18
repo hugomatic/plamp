@@ -47,6 +47,37 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (eventName !== "report") renderStatus(telemetry);', script)
         self.assertIn("renderStreamEvent(eventName, JSON.parse(event.data))", script)
 
+    def test_system_static_client_uses_rest_without_injected_state(self):
+        html = static_text("system.html")
+        script = static_text("system.js")
+
+        self.assertIn("data-plamp-nav", html)
+        self.assertIn('src="/static/app.js"', html)
+        self.assertIn('src="/static/system.js"', html)
+        for heading in ("System info", "Hardware", "Software", "Storage", "Camera worker", "Controller workers", "Actions", "Logs"):
+            self.assertIn(f"<h2>{heading}</h2>", html)
+        self.assertIn("PlampWeb.loadSystem()", script)
+        self.assertIn("function renderSystem(system)", script)
+        for injected_value in ("sprout", "octo_relay", "/home/hugo", "5d98690", "plamp-web started"):
+            self.assertNotIn(injected_value, html)
+
+    def test_system_static_client_preserves_actions_and_lazy_logs(self):
+        html = static_text("system.html")
+        script = static_text("system.js")
+
+        for element_id in ("system-restart", "system-reinstall", "system-upgrade", "system-load-logs"):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn("Logs not loaded.", html)
+        self.assertIn('fetch("/api/logs?lines=200")', script)
+        self.assertIn('addEventListener("click", loadLogs)', script)
+        self.assertNotIn("await loadLogs()", script)
+        for path in ("/api/system/restart", "/api/system/reinstall", "/api/system/upgrade"):
+            self.assertIn(path, script)
+        self.assertIn("if (!response.ok)", script)
+        self.assertIn("failed:", script)
+        self.assertIn("result unconfirmed:", script)
+        self.assertNotIn("complete.", script)
+
     def test_settings_static_client_bootstraps_only_from_rest(self):
         html = static_text("settings.html")
         script = static_text("settings.js")
