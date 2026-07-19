@@ -42,7 +42,7 @@ Each printable wall view must place its exterior face flat on Z=0. Interior ribs
 
 All four vertical exterior seams use 45-degree mitres through the wall thickness. The mitres hide the seam from the outside; they are not the structural joint. The internal M3 corner tabs provide the structural connection.
 
-Do not add a full-height tongue, dovetail, or groove along a wall seam. Use only short, shallow locating keys near the top and bottom corners. These keys establish alignment before tightening the screws without creating a long tolerance-sensitive sliding fit.
+Do not add a full-height tongue, dovetail, or groove along a wall seam. Use only short, shallow wall-to-wall locating keys near the bottom corners. These keys establish alignment before tightening the screws without entering the top panel stack or creating a long tolerance-sensitive sliding fit.
 
 Each wall is a separately printable part and must carry `revision_string` on a non-critical interior face. The marking must be readable in the STL and must not affect a mating, sealing, or hardware surface.
 
@@ -81,9 +81,11 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - Use two small opposing retention detents rather than a broad catcher. Grow each detent inward on a 30-degree ramp measured from horizontal; the detents resist gravity and handling, while the solid pocket shoulder carries screw load.
 - Prefer support-free nut-entry geometry, but accept small, deliberate, inward-accessible support when eliminating it would weaken the pocket or detents.
 - Because the assembled vertical screw axes become horizontal in the flat wall print orientation, production tab bores must use a teardrop or 45-degree-roof profile rather than an unsupported round horizontal ceiling.
-- The tabs must have broad roots and printable gussets that transfer screw loads into the wall without relying on a narrow layer-bond cantilever.
+- The tabs are straight rectangular columns grown from the wall's exterior build-plate face. Do not add angled gussets: the columns begin at Z=0 in print orientation and do not need sloped support geometry.
 - Each tab's corner-facing edge starts at least `corner_fit_clearance` beyond the neighboring 3 mm wall skin; the shared M3 axis remains 7 mm from the corner.
-- Clearance-tab gussets run inward along their own wall length and remain within the clearance tab's 4 mm stack layer. They must not descend through the neighboring nut-tab layer.
+- Keep the rectangular tab body, horizontal support-aware bore, captured-nut pocket, and retention detents. Removing the gussets must not change the screw axis or stack thickness.
+
+The west/east top locator keys are omitted. At the current dimensions the former top key occupied assembled Z=-19 through -3 mm, intersecting both the ledge ring at Z=-16 through -13 mm and the sub-panel at Z=-13 through -3 mm. The corner tabs, M3 screw axis, and 45-degree seam provide the top alignment without that key. Keep only the bottom wall-to-wall locator keys, using straight rectangular keys and clearance notches without angled insertion lead-ins.
 
 At the northeast corner, for example, the final stack from top to bottom is:
 
@@ -179,7 +181,7 @@ The enclosure must support this workflow:
 5. Complete wiring with both YZ sides open so the relay board's long edges remain reachable.
 6. Remove the four top screws and loosen or remove the four bottom corner screws.
 7. Lift the connected panel assembly and ledge ring without disconnecting the wiring.
-8. Lower west and east vertically from above, engaging downward lead-ins on their short locating keys and placing their tabs into the shared top and bottom corner stacks.
+8. Insert west and east from the open sides, engaging their straight bottom locating keys and placing their tabs into the shared top and bottom corner stacks.
 9. Refit the ledge ring and panel assembly.
 10. Tighten the four bottom-up floor screws and four downward top screws.
 
@@ -224,7 +226,7 @@ Before rendering four full walls, add a compact fit-test view representing one t
 
 - Two independently printed wall-tab coupons in their production print orientation.
 - The 45-degree exterior mitre.
-- Short locating keys.
+- The straight bottom locating key and notch; the top coupon must not contain a wall-to-wall locator key.
 - M3 clearance holes.
 - The inward side-loaded nut trap and retention detent.
 - A ledge-ring segment.
@@ -241,7 +243,7 @@ The coupon should answer four physical questions before a full-wall print:
 
 ## Source Structure
 
-The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, top tabs, bottom tabs, nut traps, locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
+The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, rectangular top tabs, rectangular bottom tabs, nut traps, bottom locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
 
 Avoid unrelated refactoring of the connector, label, PSU, converter, relay, or generator code. Preserve the directory-specific Git revision behavior in `things/plamp8/generate.bash`.
 
