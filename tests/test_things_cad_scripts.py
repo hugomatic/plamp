@@ -203,6 +203,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module floor_locator_keys", source)
         self.assertIn("module floor_locator_lands", source)
         self.assertIn("module floor_locator_key_shape", source)
+        floor_key = source.split("module floor_locator_key_shape", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertNotIn("hull()", floor_key)
+        self.assertNotIn("lead_in", floor_key)
         self.assertIn("floor_locator_depth = locator_key_w;", source)
         self.assertIn("x_locator_starts", source)
         self.assertIn("y_locator_starts", source)

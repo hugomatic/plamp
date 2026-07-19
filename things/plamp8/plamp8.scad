@@ -1116,21 +1116,7 @@ module floor_corner_fastener_holes() {
 }
 
 module floor_locator_key_shape() {
-    lead_in = 0.5;
-
-    hull() {
-        cube([
-            floor_locator_l,
-            floor_locator_depth,
-            floor_locator_h - lead_in
-        ]);
-        translate([lead_in, lead_in, floor_locator_h - lead_in])
-            cube([
-                floor_locator_l - 2 * lead_in,
-                floor_locator_depth - 2 * lead_in,
-                lead_in
-            ]);
-    }
+    cube([floor_locator_l, floor_locator_depth, floor_locator_h]);
 }
 
 module floor_locator_lands() {
