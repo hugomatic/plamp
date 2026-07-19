@@ -269,6 +269,36 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h)", source)
         self.assertIn("assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y()", source)
 
+    def test_plamp8_transparent_components_have_raised_assembly_labels(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("component_label_t = 0.8;", source)
+        self.assertIn("module raised_component_label", source)
+        self.assertIn('raised_component_label("12V PSU"', source)
+        self.assertIn('raised_component_label("DC/DC"', source)
+        self.assertIn('raised_component_label("RELAYS"', source)
+        self.assertIn("linear_extrude(height = component_label_t)", source)
+
+        for module_name in (
+            "psu_keepout",
+            "converter_keepout",
+            "relay_board_keepout",
+        ):
+            keepout = source.split(f"module {module_name}", 1)[1].split(
+                "module ", 1
+            )[0]
+            self.assertIn("raised_component_label(", keepout)
+
+        for module_name in (
+            "psu_footprint",
+            "converter_footprint",
+            "relay_footprint",
+        ):
+            footprint = source.split(f"module {module_name}", 1)[1].split(
+                "module ", 1
+            )[0]
+            self.assertNotIn("raised_component_label(", footprint)
+
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 

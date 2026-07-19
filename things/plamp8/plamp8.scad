@@ -207,6 +207,11 @@ relay_mount_hole_d = screw_clearance_d(relay_screw_size);
 relay_mount_x = 135;
 relay_mount_y = 70;
 relay_countersink_d = screw_chamfer_d(relay_screw_size);
+component_label_t = 0.8;
+component_label_color = [0.05, 0.05, 0.05, 1];
+psu_label_font = 9;
+converter_label_font = 5;
+relay_label_font = 14;
 
 retaining_corner_l = 5;
 retaining_corner_t = 4;
@@ -847,6 +852,20 @@ module c13_inlet_unit(include_revision = true) {
             flush_revision_label();
 }
 
+module raised_component_label(label, font_size, top_z, counter_rotation_z) {
+    color(component_label_color)
+        translate([0, 0, top_z])
+            rotate([0, 0, counter_rotation_z])
+                linear_extrude(height = component_label_t)
+                    text(
+                        label,
+                        size = font_size,
+                        font = "DejaVu Sans",
+                        halign = "center",
+                        valign = "center"
+                    );
+}
+
 module psu_keepout() {
     color([1, 0.6, 0.1, 0.25])
         translate([0, 0, psu_h / 2])
@@ -854,6 +873,8 @@ module psu_keepout() {
 
     color([0, 0, 0, 1])
         psu_mount_markers(psu_h + 1);
+
+    raised_component_label("12V PSU", psu_label_font, psu_h, -internal_psu_rot_z);
 }
 
 module converter_keepout() {
@@ -865,6 +886,8 @@ module converter_keepout() {
         for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
             translate([0, y, converter_h + 1])
                 cylinder(h = 2, d = converter_mount_hole_d);
+
+    raised_component_label("DC/DC", converter_label_font, converter_h, -internal_converter_rot_z);
 }
 
 module relay_board_keepout() {
@@ -876,6 +899,8 @@ module relay_board_keepout() {
         for (x = [-relay_mount_x / 2, relay_mount_x / 2], y = [-relay_mount_y / 2, relay_mount_y / 2])
             translate([x, y, relay_h + 1])
                 cylinder(h = 2, d = relay_mount_hole_d);
+
+    raised_component_label("RELAYS", relay_label_font, relay_h, -internal_relay_rot_z);
 }
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
