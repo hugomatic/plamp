@@ -17,6 +17,7 @@
 - Remove the top wall-to-wall locator key and matching notch because their former assembled Z=-19 through -3 mm interval intersects the ledge ring and sub-panel.
 - Keep a straight bottom wall-to-wall locator key and clearance notch without an angled lead-in.
 - Keep floor locator keys and lands unchanged; they are separate from the wall-to-wall locator.
+- Remove the circular `floor_corner_lands()` that extend into the wall skins; keep the inner rectangular floor and its corner fastener holes.
 - Preserve all ordered manufacturing view names and directory-specific Git revision behavior.
 
 ---
@@ -273,6 +274,7 @@ Confirm in OpenSCAD or the generated meshes:
 - each bottom clearance wall retains two straight locator keys;
 - each bottom nut-owner wall retains two matching straight notches;
 - the captured nut pocket, integrated 0.8 mm axial retaining wall, and detents remain present.
+- the floor has no circular corner lands extending beyond its inner rectangular outline.
 
 - [ ] **Step 4: Run final verification from the committed source**
 

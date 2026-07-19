@@ -156,7 +156,7 @@ At the northeast corner, the stack from inside to outside/downward is:
 
 This replaces the current four midpoint M5 floor fasteners and wall tabs. Floor corner geometry must be checked against existing component mounts, perimeter ribs, and enclosure clearances before placement.
 
-The existing panel screw axes leave too little floor material around an M3 countersink if used in the current inner-only floor outline. Add local floor corner lands extending beneath the wall joints so every countersink retains at least 2 mm of material to its nearest floor edge.
+Keep the floor inside the four wall skins. Do not add circular floor corner lands beneath the wall joints: those lands occupy the wall volume. At the fixed 7 mm axis and 6.5 mm countersink diameter, the inner-only floor leaves 0.75 mm of edge ligament toward each wall. Validate that edge in the bottom coupon; if it proves inadequate, revise the countersink or shared screw axis deliberately rather than extending floor material into a wall.
 
 The floor itself provides the bottom structural plane. Short locating keys near the corners align it with the wall interiors and prevent lateral drift while screws are loose. Do not use a continuous perimeter groove. Remove the legacy 60 mm L-shaped floor corner ribs: they occupy the new 7 mm M3 corner axes and are superseded by the local circular screw lands, locator lands, and installed walls.
 
