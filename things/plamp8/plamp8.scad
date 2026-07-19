@@ -1680,40 +1680,23 @@ module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     );
 }
 
-module corner_locator_key(top = true, h = corner_coupon_wall_h) {
-    center_y = top
-        ? h - locator_key_l / 2 - wall_t
-        : locator_key_l / 2 + wall_t;
-
-    translate([wall_t, center_y - locator_key_l / 2, wall_t])
+module bottom_corner_locator_key() {
+    translate([wall_t, wall_t, wall_t])
         cube([locator_key_w, locator_key_l, locator_key_h]);
 }
 
-module corner_locator_notch(top = true, h = corner_coupon_wall_h) {
-    center_y = top
-        ? h - locator_key_l / 2 - wall_t
-        : locator_key_l / 2 + wall_t;
+module bottom_corner_locator_notch() {
+    shim = 0.01;
     notch_w = locator_key_w + 2 * locator_clearance;
-    notch_l = locator_key_l + locator_clearance;
+    notch_l = locator_key_l + 2 * locator_clearance;
     notch_h = locator_key_h + locator_clearance;
 
     translate([
         wall_t - locator_clearance,
-        center_y - locator_key_l / 2 - locator_clearance,
-        wall_t - 0.01
+        wall_t - locator_clearance,
+        wall_t - shim
     ])
-        cube([notch_w, notch_l, notch_h + 0.02]);
-
-    // Downward assembly lead-in on the fixed nut-owner wall.
-    lead_y = top
-        ? center_y + locator_key_l / 2 - locator_clearance
-        : center_y + locator_key_l / 2 - locator_clearance;
-    hull() {
-        translate([wall_t - locator_clearance, lead_y - 1, wall_t - 0.01])
-            cube([notch_w, 1, notch_h + 0.02]);
-        translate([wall_t - 1.5, lead_y + 2, wall_t - 0.01])
-            cube([notch_w + 3, 0.1, notch_h + 1]);
-    }
+        cube([notch_w, notch_l, notch_h + 2 * shim]);
 }
 
 module wall_mitre_negative(length, h = wall_z_height) {
@@ -1833,20 +1816,16 @@ module wall_corner_tabs(length, h, nut_owner) {
         }
 }
 
-module wall_locator_keys(length, h) {
+module wall_bottom_locator_keys(length) {
     for (right = [false, true])
-        wall_end_feature(right = right, length = length) {
-            corner_locator_key(top = true, h = h);
-            corner_locator_key(top = false, h = h);
-        }
+        wall_end_feature(right = right, length = length)
+            bottom_corner_locator_key();
 }
 
-module wall_locator_notches(length, h) {
+module wall_bottom_locator_notches(length) {
     for (right = [false, true])
-        wall_end_feature(right = right, length = length) {
-            corner_locator_notch(top = true, h = h);
-            corner_locator_notch(top = false, h = h);
-        }
+        wall_end_feature(right = right, length = length)
+            bottom_corner_locator_notch();
 }
 
 module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_height) {
@@ -1856,10 +1835,10 @@ module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_heigh
             wall_corner_tabs(length, h, nut_owner);
             wall_stiffening_ribs(length, h, vent_mode);
             if (!nut_owner)
-                wall_locator_keys(length, h);
+                wall_bottom_locator_keys(length);
         }
         if (nut_owner)
-            wall_locator_notches(length, h);
+            wall_bottom_locator_notches(length);
         floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h);
         wall_revision_negative(length, h, vent_mode);
@@ -1944,11 +1923,11 @@ module corner_wall_coupon(nut_owner = false, top = true) {
                     corner_nut_tab(bearing_side);
                 else
                     corner_clearance_tab();
-            if (!nut_owner)
-                corner_locator_key(top);
+            if (!nut_owner && !top)
+                bottom_corner_locator_key();
         }
-        if (nut_owner)
-            corner_locator_notch(top);
+        if (nut_owner && !top)
+            bottom_corner_locator_notch();
     }
 }
 
