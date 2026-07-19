@@ -85,6 +85,8 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - Each tab's corner-facing edge starts at least `corner_fit_clearance` beyond the neighboring 3 mm wall skin; the shared M3 axis remains 7 mm from the corner.
 - Keep the rectangular tab body, horizontal support-aware bore, captured-nut pocket, and retention detents. Removing the gussets must not change the screw axis or stack thickness.
 
+The nut-side tab is one asymmetric rectangular 4.8 mm-thick block: the normal 4 mm stack layer plus 0.8 mm on the exposed retaining side. Subtract the bore and nut-entry pocket from that single block so the remaining 0.8 mm wall captures the nut axially. Do not model the axial retainer as a separate face-touching solid.
+
 The west/east top locator keys are omitted. At the current dimensions the former top key occupied assembled Z=-19 through -3 mm, intersecting both the ledge ring at Z=-16 through -13 mm and the sub-panel at Z=-13 through -3 mm. The corner tabs, M3 screw axis, and 45-degree seam provide the top alignment without that key. Keep only the bottom wall-to-wall locator keys, using straight rectangular keys and clearance notches without angled insertion lead-ins.
 
 At the northeast corner, for example, the final stack from top to bottom is:
