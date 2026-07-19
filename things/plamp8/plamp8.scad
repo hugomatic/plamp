@@ -241,6 +241,8 @@ locator_key_w = 2;
 locator_key_h = 2;
 locator_clearance = 0.25;
 ledge_ring_t = 3;
+ledge_ring_north_rail_w = 3;
+ledge_ring_north_clearance_min = 0.75;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
@@ -309,7 +311,7 @@ sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
 sub_panel_revision_depth = 0.6;
-ph_ledge_gap_clearance = 5;
+ph_ledge_gap_clearance = 0.5;
 ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 
 top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;
@@ -891,6 +893,12 @@ assert(
 function top_ledge_gap_center_for_dc_toggle(i) = layout_offset_x + dc_channel_x(i) + dc_toggle_x();
 function top_ledge_gap_start(i) = max(0, top_ledge_gap_center_for_dc_toggle(i) - ph_ledge_gap_w / 2);
 function top_ledge_gap_end(i, length) = min(length, top_ledge_gap_center_for_dc_toggle(i) + ph_ledge_gap_w / 2);
+ledge_ring_north_clearance =
+    box_inner_d - ledge_ring_north_rail_w
+    - (layout_offset_y + dc_channel_y(0) + sub_panel_switch_h / 2);
+assert(ledge_ring_north_clearance >= ledge_ring_north_clearance_min,
+    "north ring rail collides with the PH switch-body envelope");
+echo(str("north ring-to-switch clearance: ", ledge_ring_north_clearance, " mm"));
 
 module top_panel_8ch(include_revision = true) {
     translate([layout_offset_x, layout_offset_y, 0]) {
@@ -1045,16 +1053,19 @@ module ledge_ring_corner_holes() {
             cylinder(h = ledge_ring_t + 0.2, d = panel_screw_d);
 }
 
-module ledge_ring_ph_switch_clearance_span() {
-    // The rail between the two switch gaps would be an isolated island.
-    // Remove the whole span so the ring stays one part without crossing
-    // either switch body's envelope.
-    gap_start = top_ledge_gap_start(0);
-    gap_end = top_ledge_gap_end(1, box_inner_w);
+module ledge_ring_ph_switch_clearances() {
+    for (i = [0, 1]) {
+        gap_start = top_ledge_gap_start(i);
+        gap_end = top_ledge_gap_end(i, box_inner_w);
 
-    if (gap_end > gap_start)
-        translate([gap_start, box_inner_d - ledge_w - 0.1, -0.1])
-            cube([gap_end - gap_start, ledge_w + 0.2, ledge_ring_t + 0.2]);
+        if (gap_end > gap_start)
+            translate([gap_start, box_inner_d - ledge_w - 0.1, -0.1])
+                cube([
+                    gap_end - gap_start,
+                    ledge_w - ledge_ring_north_rail_w + 0.1,
+                    ledge_ring_t + 0.2
+                ]);
+    }
 }
 
 module ledge_ring_revision_negative() {
@@ -1080,7 +1091,7 @@ module ledge_ring_local() {
         ledge_ring_frame();
         ledge_ring_corner_holes();
         if (feature_ph_ledge_holes)
-            ledge_ring_ph_switch_clearance_span();
+            ledge_ring_ph_switch_clearances();
         ledge_ring_revision_negative();
     }
 }

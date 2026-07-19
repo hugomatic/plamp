@@ -104,11 +104,12 @@ The ring must:
 - Print flat without support.
 - Remain one structurally connected rectangular part with straight rails and defined bearing lands for the top and sub-panel assembly.
 - Use four M3 clearance holes aligned with the existing panel corner holes and wall tabs.
-- Preserve the required PH Up and PH Down switch-body clearances currently represented by the ledge-gap feature.
+- Preserve the required PH Up and PH Down switch-body clearances with two 21 mm-wide reliefs: the 20 mm switch openings plus 0.5 mm clearance per side.
+- Remain a closed ring. A continuous 3 mm north perimeter rail runs outside the switch-body envelopes, with 0.75 mm nominal clearance at the current dimensions.
 - Include short locating features that align it with the walls without creating a long binding groove.
 - Carry `revision_string` on a non-critical hidden face.
 
-Quarter-circle ledges are not required. Their curved cross-section existed to make an integral upright-wall ledge self-supporting; the separate ring is printed flat and can use a simpler rectangular section. The PH switch clearances may interrupt the north bearing rail, but the ring must remain structurally connected through the other three rails and the remaining north segments.
+Quarter-circle ledges are not required. Their curved cross-section existed to make an integral upright-wall ledge self-supporting; the separate ring is printed flat and can use a simpler rectangular section. The PH switch reliefs interrupt only the inboard portion of the north bearing rail. They must not sever the 3 mm outer north perimeter rail or merge into one oversized opening.
 
 The existing top-panel and sub-panel corner-hole coordinates remain the controlling interface. The ring and wall joints adapt to those coordinates rather than moving the panel holes.
 

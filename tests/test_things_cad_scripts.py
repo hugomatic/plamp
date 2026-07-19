@@ -93,12 +93,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("module ledge_ring_context", source)
         self.assertIn("module ledge_ring()", source)
-        self.assertIn("module ledge_ring_ph_switch_clearance_span", source)
-        self.assertNotIn("ledge_ring_switch_bridge", source)
+        self.assertIn("ledge_ring_north_rail_w = 3;", source)
+        self.assertIn("ledge_ring_north_clearance_min = 0.75;", source)
+        self.assertIn("ph_ledge_gap_clearance = 0.5;", source)
+        self.assertIn("module ledge_ring_ph_switch_clearances", source)
         self.assertIn('view == "ledge_ring"', source)
         self.assertIn("feature_ph_ledge_holes", source)
-        self.assertIn("top_ledge_gap_start(0)", source)
-        self.assertIn("top_ledge_gap_end(1, box_inner_w)", source)
+        self.assertIn("for (i = [0, 1])", source)
+        self.assertIn("top_ledge_gap_start(i)", source)
+        self.assertIn("top_ledge_gap_end(i, box_inner_w)", source)
+        self.assertIn("ledge_w - ledge_ring_north_rail_w", source)
+        self.assertIn(
+            "assert(ledge_ring_north_clearance >= ledge_ring_north_clearance_min",
+            source,
+        )
         self.assertNotIn("quarter_round(", source)
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)

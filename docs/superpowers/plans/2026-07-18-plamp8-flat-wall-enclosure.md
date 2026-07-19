@@ -192,7 +192,7 @@ Expected: FAIL because `ledge_ring` does not exist and `quarter_round()` is stil
 
 - [ ] **Step 3: Implement the rectangular ring**
 
-Replace `top_panel_ledge()`, `top_ledge_segment()`, and `quarter_round()` with a flat rectangular frame built by subtracting the inner opening from the outer footprint. Subtract four M3 clearance holes and the two existing PH switch clearance regions from the north rail. Engrave `revision_string` on the hidden underside away from holes and switch gaps.
+Replace `top_panel_ledge()`, `top_ledge_segment()`, and `quarter_round()` with a flat rectangular frame built by subtracting the inner opening from the outer footprint. Subtract four M3 clearance holes and two separate 21 mm-wide PH switch reliefs from only the inboard portion of the north rail. Preserve a continuous 3 mm outer north perimeter rail; do not merge the reliefs or open the ring. Engrave `revision_string` on the hidden underside away from holes and switch reliefs.
 
 Use one context module in box coordinates and one printable wrapper:
 
@@ -238,7 +238,7 @@ things/plamp8/generate.bash --revision ring-fit-1 --preview --view top_panel \
   prints/plamp8_top_panel_preview
 ```
 
-Expected: tests PASS; all three outputs non-empty; no quarter-circle geometry remains; PH switch clearances remain visible.
+Expected: tests PASS; all three outputs non-empty; no quarter-circle geometry remains; two PH switch reliefs remain visible while the 3 mm outer north rail keeps the ring closed.
 
 - [ ] **Step 5: Commit**
 
