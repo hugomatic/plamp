@@ -56,11 +56,13 @@ wall_z_height = 83;
 
 The default preserves the current wall height, which is derived today from `internal_clearance_h = 80` plus `wall_t = 3`.
 
-`wall_z_height` is the common vertical distance from the floor seating plane to the ledge-ring seating plane. Changing it must:
+Preserve the established top datum: the top surface is Z=0, the 3 mm top panel occupies Z=-3..0, the existing 10 mm sub-panel occupies Z=-13..-3, and the new 3 mm ledge ring occupies Z=-16..-13. At the default height, the wall bottom edge and floor underside remain at Z=-83.
+
+`wall_z_height` is the full exterior wall height from the bottom wall edge to the top wall edge. In assembly coordinates, the top edge remains at Z=0 and the bottom edge is `-wall_z_height`. Changing it must:
 
 - Resize all four walls equally.
-- Keep bottom joints and floor geometry fixed at the floor end.
-- Move the top joints, ledge ring, mounted panels, and top assembly together.
+- Move the bottom joints, floor, and floor-mounted components with the bottom wall edge.
+- Keep the top joints, ledge ring, mounted panels, and top surface fixed relative to the top wall edge.
 - Keep each top and bottom attachment feature at a fixed offset from its respective wall end.
 - Recenter or regenerate wall ventilation within fixed top and bottom safety margins.
 - Update internal-component and assembly placement that is currently derived from `box_h`.
@@ -76,6 +78,8 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - The nut trap opens toward the inside of the enclosure.
 - The nut must be insertable and removable from inside after the wall is printed.
 - With the wall in its flat print orientation, the nut entry and trap roof must require no support.
+- Because the assembled vertical screw axes become horizontal in the flat wall print orientation, production tab bores must use a teardrop or 45-degree-roof profile rather than an unsupported round horizontal ceiling.
+- The tabs must have broad roots and printable gussets that transfer screw loads into the wall without relying on a narrow layer-bond cantilever.
 
 At the northeast corner, for example, the final stack from top to bottom is:
 
@@ -98,13 +102,13 @@ Replace the integral `top_panel_ledge()` geometry with one separately printed re
 The ring must:
 
 - Print flat without support.
-- Provide a continuous, straight seating surface for the top and sub-panel assembly.
+- Remain one structurally connected rectangular part with straight rails and defined bearing lands for the top and sub-panel assembly.
 - Use four M3 clearance holes aligned with the existing panel corner holes and wall tabs.
 - Preserve the required PH Up and PH Down switch-body clearances currently represented by the ledge-gap feature.
 - Include short locating features that align it with the walls without creating a long binding groove.
 - Carry `revision_string` on a non-critical hidden face.
 
-Quarter-circle ledges are not required. Their curved cross-section existed to make an integral upright-wall ledge self-supporting; the separate ring is printed flat and can use a simpler rectangular section.
+Quarter-circle ledges are not required. Their curved cross-section existed to make an integral upright-wall ledge self-supporting; the separate ring is printed flat and can use a simpler rectangular section. The PH switch clearances may interrupt the north bearing rail, but the ring must remain structurally connected through the other three rails and the remaining north segments.
 
 The existing top-panel and sub-panel corner-hole coordinates remain the controlling interface. The ring and wall joints adapt to those coordinates rather than moving the panel holes.
 
@@ -143,6 +147,8 @@ At the northeast corner, the stack from inside to outside/downward is:
 
 This replaces the current four midpoint M5 floor fasteners and wall tabs. Floor corner geometry must be checked against existing component mounts, perimeter ribs, and enclosure clearances before placement.
 
+The existing panel screw axes leave too little floor material around an M3 countersink if used in the current inner-only floor outline. Add local floor corner lands extending beneath the wall joints so every countersink retains at least 2 mm of material to its nearest floor edge.
+
 The floor itself provides the bottom structural plane. Short locating keys near the corners align it with the wall interiors and prevent lateral drift while screws are loose. Do not use a continuous perimeter groove.
 
 ## Support-Free Nut Traps
@@ -167,7 +173,7 @@ The enclosure must support this workflow:
 5. Complete wiring with both YZ sides open so the relay board's long edges remain reachable.
 6. Remove the four top screws and loosen or remove the four bottom corner screws.
 7. Lift the connected panel assembly and ledge ring without disconnecting the wiring.
-8. Install west and east normally, engaging their short locating keys and placing their tabs into the shared top and bottom corner stacks.
+8. Lower west and east vertically from above, engaging downward lead-ins on their short locating keys and placing their tabs into the shared top and bottom corner stacks.
 9. Refit the ledge ring and panel assembly.
 10. Tighten the four bottom-up floor screws and four downward top screws.
 
@@ -253,7 +259,7 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 6. Confirm all requested STL files are present and non-empty.
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
 8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on.
-9. Check independently printed part pairs for unintended volumetric overlap. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
+9. Check independently printed part pairs for unintended volumetric overlap. Bound the calculations to four wall-corner boxes, four narrow floor-to-wall edge strips, four narrow ring-to-wall edge strips, the thin sub-panel-to-ring perimeter, the thin top-to-sub-panel perimeter, and the two PH switch clearance regions. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
 
 Generated STL and print artifacts remain untracked unless explicitly requested.
 
@@ -269,6 +275,6 @@ The redesign is complete when:
 - The floor uses four bottom-up corner M3 screws and no midpoint M5 enclosure fasteners.
 - West and east can be omitted in assembly while north and south support the wiring configuration.
 - West and east can be added after wiring without disconnecting the panel wiring.
-- `wall_z_height` changes the enclosure height without moving fixed end features away from their respective ends.
+- `wall_z_height` changes the full wall height without moving fixed end features away from their respective top or bottom wall ends.
 - The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
 - Revision markings remain readable on every standalone printable enclosure part.
