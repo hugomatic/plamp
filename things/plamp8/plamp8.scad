@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, wall_corner_fastener_test, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -35,6 +35,7 @@ feature_ph_ledge_holes = true;
 
 // height between the floor and the ledge
 internal_clearance_h = 80;
+wall_z_height = 83;
 outlet_plate_left = 46;
 outlet_plate_right = 76;
 plate_h = 120;
@@ -62,10 +63,12 @@ toggle_hole_d = 12;
 psu_screw_size = "M5";       // [M3, M4, M5]
 converter_screw_size = "M5"; // [M3, M4, M5]
 relay_screw_size = "M5";     // [M3, M4, M5]
-floor_screw_size = "M5";     // [M3, M4, M5]
+floor_screw_size = "M3";     // [M3, M4, M5]
 panel_screw_size = "M3";
 panel_screw_length = 20;
 panel_screw_tip_protrusion = 1;
+top_corner_screw_length = 25;
+bottom_corner_screw_length = 12; // candidate; confirm with the physical coupon
 
 function screw_clearance_d(size) =
     size == "M5" ? 5.5 :
@@ -213,6 +216,16 @@ psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
 wall_t = 3;
+corner_tab_t = 4;
+corner_tab_w = 12;
+corner_tab_h = 11;
+corner_tab_root_l = 8;
+corner_fit_clearance = 0.25;
+locator_key_l = 16;
+locator_key_w = 2;
+locator_key_h = 2;
+locator_clearance = 0.25;
+ledge_ring_t = 3;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
@@ -229,7 +242,7 @@ floor_fastener_inset = wall_t + floor_tab_d / 2;
 floor_rib_t = 4;
 floor_rib_h = 5;
 floor_rib_corner_l = 60;
-box_h = internal_clearance_h + wall_t;
+box_h = wall_z_height;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
@@ -283,6 +296,12 @@ sub_panel_h = 10;
 sub_panel_revision_depth = 0.6;
 ph_ledge_gap_clearance = 5;
 ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
+
+top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t;
+bottom_stack_h = wall_t + 2 * corner_tab_t;
+assert(top_corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
+echo(str("top M3 protrusion: ", top_corner_screw_length - top_stack_h, " mm"));
+echo(str("bottom candidate M3 protrusion: ", bottom_corner_screw_length - bottom_stack_h, " mm"));
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
@@ -1538,6 +1557,117 @@ module side_loaded_panel_nut_traps() {
     }
 }
 
+// Wall-local printable coordinates:
+// X runs along the wall, Y runs along enclosure Z / the screw axis,
+// and Z runs from the exterior build-plate face toward the box interior.
+module support_free_bore_profile(d) {
+    r = d / 2;
+
+    union() {
+        intersection() {
+            circle(d = d);
+            translate([-r, -r])
+                square([d, r]);
+        }
+        polygon([[-r, 0], [0, r], [r, 0]]);
+    }
+}
+
+module support_free_horizontal_bore(length, d, axis_z = corner_tab_h / 2) {
+    translate([0, 0, axis_z])
+        rotate([90, 0, 0])
+            linear_extrude(height = length, center = true)
+                support_free_bore_profile(d);
+}
+
+module corner_tab_gusset(direction = 1) {
+    rotate([90, 0, 0])
+        linear_extrude(height = corner_tab_t, center = true)
+            polygon([
+                [direction * corner_tab_w / 2, 0],
+                [direction * (corner_tab_w / 2 + corner_tab_root_l), 0],
+                [direction * corner_tab_w / 2, corner_tab_root_l]
+            ]);
+}
+
+module corner_tab_positive() {
+    union() {
+        translate([-corner_tab_w / 2, -corner_tab_t / 2, 0])
+            cube([corner_tab_w, corner_tab_t, corner_tab_h]);
+        corner_tab_gusset(-1);
+        corner_tab_gusset(1);
+    }
+}
+
+module support_free_m3_nut_trap(length = corner_tab_t + 0.2, axis_z = corner_tab_h / 2) {
+    nut_d = panel_nut_d + panel_nut_clearance;
+    entry_w = nut_d - 2 * panel_nut_entry_detent;
+
+    translate([0, 0, axis_z])
+        rotate([90, 0, 0])
+            cylinder(h = length, d = nut_d, center = true, $fn = 6);
+
+    // Open the trap toward the wall's Z-positive interior face. This makes
+    // the nut serviceable and removes any unsupported pocket ceiling.
+    translate([-entry_w / 2, -length / 2, axis_z])
+        cube([entry_w, length, corner_tab_h - axis_z + 1]);
+}
+
+module corner_clearance_tab() {
+    difference() {
+        corner_tab_positive();
+        support_free_horizontal_bore(corner_tab_t + 0.2, panel_screw_d);
+    }
+}
+
+module corner_nut_tab() {
+    difference() {
+        corner_tab_positive();
+        support_free_horizontal_bore(corner_tab_t + 0.2, panel_screw_d);
+        support_free_m3_nut_trap();
+    }
+}
+
+module corner_coupon_plate(t) {
+    coupon_w = 18;
+
+    difference() {
+        translate([-coupon_w / 2, -coupon_w / 2, 0])
+            cube([coupon_w, coupon_w, t]);
+        translate([0, 0, -0.1])
+            cylinder(h = t + 0.2, d = panel_screw_d);
+    }
+}
+
+module wall_corner_fastener_test() {
+    echo(str("top corner screw: M3x", top_corner_screw_length));
+    echo(str("top stack: ", top_stack_h, " mm"));
+    echo(str("bottom candidate screw: M3x", bottom_corner_screw_length));
+    echo(str("bottom stack: ", bottom_stack_h, " mm"));
+
+    // Top stack surrogates: top panel, existing sub-panel, and ledge ring.
+    translate([-54, 0, 0])
+        corner_coupon_plate(plate_t);
+    translate([-30, 0, 0])
+        corner_coupon_plate(sub_panel_h);
+    translate([-6, 0, 0])
+        corner_coupon_plate(ledge_ring_t);
+
+    // Two production-orientation wall tabs for the top stack.
+    translate([22, 0, 0])
+        corner_clearance_tab();
+    translate([52, 0, 0])
+        corner_nut_tab();
+
+    // Floor and a second tab pair for the mirrored bottom stack.
+    translate([-30, 30, 0])
+        corner_coupon_plate(wall_t);
+    translate([0, 30, 0])
+        corner_clearance_tab();
+    translate([30, 30, 0])
+        corner_nut_tab();
+}
+
 module panel_corner_fastener_test() {
     test_w = 18;
 
@@ -1737,6 +1867,8 @@ if (view == "relay_footprint") {
     c13_inlet();
 } else if (view == "panel_corner_fastener_test") {
     panel_corner_fastener_test();
+} else if (view == "wall_corner_fastener_test") {
+    wall_corner_fastener_test();
 } else if (view == "top_panel") {
     top_panel();
 } else if (view == "sub_panel") {

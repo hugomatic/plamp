@@ -49,6 +49,24 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_flat_wall_corner_stack_contract(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("wall_z_height = 83;", source)
+        self.assertIn("corner_tab_t = 4;", source)
+        self.assertIn("ledge_ring_t = 3;", source)
+        self.assertIn("top_corner_screw_length = 25;", source)
+        self.assertIn('floor_screw_size = "M3";', source)
+        self.assertIn("module support_free_horizontal_bore", source)
+        self.assertIn("module corner_clearance_tab", source)
+        self.assertIn("module corner_nut_tab", source)
+        self.assertIn("module corner_tab_gusset", source)
+        self.assertIn("module support_free_m3_nut_trap", source)
+        self.assertIn("module wall_corner_fastener_test", source)
+        self.assertIn('view == "wall_corner_fastener_test"', source)
+        self.assertIn("sub_panel_base_h = 5;", source)
+        self.assertIn("sub_panel_h = 10;", source)
+
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
