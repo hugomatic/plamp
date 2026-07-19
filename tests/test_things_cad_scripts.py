@@ -181,6 +181,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("mirror(", revision_module)
         self.assertIn("module wall_stiffening_ribs", source)
         self.assertIn("transverse_rib_y = h / 3;", source)
+        self.assertIn("floor_rib_y0 = wall_t;", source)
         self.assertIn("transverse_rib_x0", source)
         self.assertIn('vent_mode == "half" ? length / 2', source)
         self.assertNotIn("module bottom_corner_locator_key", source)

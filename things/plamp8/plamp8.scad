@@ -1746,6 +1746,7 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
     rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
     rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;
     transverse_rib_y = h / 3;
+    floor_rib_y0 = wall_t;
     transverse_rib_x0 = corner_axis_inset + corner_tab_w / 2;
     transverse_rib_x1 = length - transverse_rib_x0;
 
@@ -1754,6 +1755,13 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
             cube([wall_rib_w, rib_y1 - rib_y0, wall_rib_h]);
 
     translate([transverse_rib_x0, transverse_rib_y - wall_rib_w / 2, wall_t])
+        cube([
+            transverse_rib_x1 - transverse_rib_x0,
+            wall_rib_w,
+            wall_rib_h
+        ]);
+
+    translate([transverse_rib_x0, floor_rib_y0, wall_t])
         cube([
             transverse_rib_x1 - transverse_rib_x0,
             wall_rib_w,
