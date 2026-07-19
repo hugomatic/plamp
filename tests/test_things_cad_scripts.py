@@ -175,22 +175,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("mirror(", revision_module)
         self.assertIn("module wall_stiffening_ribs", source)
         self.assertIn('vent_mode == "half" ? length / 2', source)
-        self.assertIn("module bottom_corner_locator_key", source)
-        self.assertIn("module bottom_corner_locator_notch", source)
-        self.assertIn("module wall_bottom_locator_keys", source)
-        self.assertIn("module wall_bottom_locator_notches", source)
+        self.assertNotIn("module bottom_corner_locator_key", source)
+        self.assertNotIn("module bottom_corner_locator_notch", source)
+        self.assertNotIn("module wall_bottom_locator_keys", source)
+        self.assertNotIn("module wall_bottom_locator_notches", source)
         self.assertNotIn("module corner_locator_key", source)
         self.assertNotIn("module corner_locator_notch", source)
         self.assertNotIn("module wall_locator_keys", source)
         self.assertNotIn("module wall_locator_notches", source)
-        notch = source.split("module bottom_corner_locator_notch", 1)[1].split(
-            "module ", 1
-        )[0]
-        self.assertNotIn("hull()", notch)
-        coupon = source.split("module corner_wall_coupon", 1)[1].split(
-            "module ", 1
-        )[0]
-        self.assertIn("if (!nut_owner && !top)", coupon)
 
     def test_plamp8_floor_uses_corner_m3_wall_fasteners(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -208,7 +200,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )[0]
         self.assertNotIn("hull()", floor_key)
         self.assertNotIn("lead_in", floor_key)
-        self.assertIn("floor_locator_depth = locator_key_w;", source)
+        self.assertIn("floor_locator_depth = 2;", source)
+        self.assertIn("floor_locator_clearance = 0.25;", source)
         self.assertIn("x_locator_starts", source)
         self.assertIn("y_locator_starts", source)
         self.assertIn("module bottom_m3_flat_head_recess", source)

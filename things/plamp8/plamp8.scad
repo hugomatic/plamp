@@ -236,17 +236,14 @@ corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
 coupon_plate_column_x = 100;
-locator_key_l = 16;
-locator_key_w = 2;
-locator_key_h = 2;
-locator_clearance = 0.25;
 wall_rib_w = 3;
 wall_rib_h = 2;
 wall_vent_joint_clearance = 1;
 floor_locator_l = 16;
-floor_locator_depth = locator_key_w;
+floor_locator_depth = 2;
 floor_locator_h = 2;
 floor_locator_end_offset = 20;
+floor_locator_clearance = 0.25;
 ledge_ring_t = 3;
 ledge_ring_north_rail_w = 3;
 ledge_ring_north_clearance_min = 0.75;
@@ -1656,25 +1653,6 @@ module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     );
 }
 
-module bottom_corner_locator_key() {
-    translate([wall_t, wall_t, wall_t])
-        cube([locator_key_w, locator_key_l, locator_key_h]);
-}
-
-module bottom_corner_locator_notch() {
-    shim = 0.01;
-    notch_w = locator_key_w + 2 * locator_clearance;
-    notch_l = locator_key_l + 2 * locator_clearance;
-    notch_h = locator_key_h + locator_clearance;
-
-    translate([
-        wall_t - locator_clearance,
-        wall_t - locator_clearance,
-        wall_t - shim
-    ])
-        cube([notch_w, notch_l, notch_h + 2 * shim]);
-}
-
 module wall_mitre_negative(length, h = wall_z_height) {
     translate([0, h + 0.1, 0])
         rotate([90, 0, 0])
@@ -1754,14 +1732,14 @@ module floor_locator_notches(length) {
         length - floor_locator_end_offset - floor_locator_l
     ])
         translate([
-            x - locator_clearance,
+            x - floor_locator_clearance,
             -0.1,
-            wall_t - floor_locator_depth - locator_clearance
+            wall_t - floor_locator_depth - floor_locator_clearance
         ])
             cube([
-                floor_locator_l + 2 * locator_clearance,
-                wall_t + floor_locator_h + locator_clearance + 0.1,
-                floor_locator_depth + 2 * locator_clearance
+                floor_locator_l + 2 * floor_locator_clearance,
+                wall_t + floor_locator_h + floor_locator_clearance + 0.1,
+                floor_locator_depth + 2 * floor_locator_clearance
             ]);
 }
 
@@ -1792,29 +1770,13 @@ module wall_corner_tabs(length, h, nut_owner) {
         }
 }
 
-module wall_bottom_locator_keys(length) {
-    for (right = [false, true])
-        wall_end_feature(right = right, length = length)
-            bottom_corner_locator_key();
-}
-
-module wall_bottom_locator_notches(length) {
-    for (right = [false, true])
-        wall_end_feature(right = right, length = length)
-            bottom_corner_locator_notch();
-}
-
 module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_height) {
     difference() {
         union() {
             wall_body_positive(length, h);
             wall_corner_tabs(length, h, nut_owner);
             wall_stiffening_ribs(length, h, vent_mode);
-            if (!nut_owner)
-                wall_bottom_locator_keys(length);
         }
-        if (nut_owner)
-            wall_bottom_locator_notches(length);
         floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h);
         wall_revision_negative(length, h, vent_mode);
@@ -1899,11 +1861,7 @@ module corner_wall_coupon(nut_owner = false, top = true) {
                     corner_nut_tab(bearing_side);
                 else
                     corner_clearance_tab();
-            if (!nut_owner && !top)
-                bottom_corner_locator_key();
         }
-        if (nut_owner && !top)
-            bottom_corner_locator_notch();
     }
 }
 
