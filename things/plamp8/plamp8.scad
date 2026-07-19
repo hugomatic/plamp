@@ -63,7 +63,7 @@ toggle_hole_d = 12;
 psu_screw_size = "M5";       // [M3, M4, M5]
 converter_screw_size = "M5"; // [M3, M4, M5]
 relay_screw_size = "M5";     // [M3, M4, M5]
-floor_screw_size = "M5";     // [M3, M4, M5]
+floor_screw_size = "M3";     // [M3, M4, M5]
 corner_screw_size = "M3";
 panel_screw_size = "M3";
 panel_screw_length = 20;
@@ -222,6 +222,8 @@ psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
 wall_t = 3;
+panel_screw_inset = 4;
+corner_axis_inset = wall_t + panel_screw_inset;
 corner_tab_t = 4;
 corner_tab_w = 12;
 corner_tab_h = 11;
@@ -233,7 +235,6 @@ corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
-corner_coupon_axis_x = 7;
 coupon_assembly_clearance = 0.05;
 coupon_plate_column_x = 100;
 locator_key_l = 16;
@@ -243,6 +244,11 @@ locator_clearance = 0.25;
 wall_rib_w = 3;
 wall_rib_h = 2;
 wall_vent_joint_clearance = 1;
+floor_locator_l = 16;
+floor_locator_depth = locator_key_w;
+floor_locator_h = 2;
+floor_locator_end_offset = 20;
+floor_corner_land_radial_ligament = 2;
 ledge_ring_t = 3;
 ledge_ring_north_rail_w = 3;
 ledge_ring_north_clearance_min = 0.75;
@@ -255,10 +261,6 @@ floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
 floor_fastener_chamfer_d = screw_chamfer_d(floor_screw_size);
 floor_nut_trap_d = screw_nut_trap_d(floor_screw_size);
 floor_nut_trap_h = screw_nut_trap_h(floor_screw_size);
-floor_tab_w = 22;
-floor_tab_d = 16;
-floor_tab_h = 8;
-floor_fastener_inset = wall_t + floor_tab_d / 2;
 floor_rib_t = 4;
 floor_rib_h = 5;
 floor_rib_corner_l = 60;
@@ -268,7 +270,6 @@ top_outline_w = 2;
 top_outline_h = 1;
 ledge_w = 10;
 ledge_r = ledge_w;
-panel_screw_inset = 4;
 internal_psu_y = 20;
 internal_psu_rot_z = 90;
 internal_converter_x = 65;
@@ -992,13 +993,11 @@ module walls_context() {
                     side_wall_psu_vents();
                 }
                 if (feature_ledge) panel_corner_fastener_bosses();
-                floor_wall_tabs();
                 if (feature_psu_tie_wrap_anchors_wall)
                     psu_right_wall_tie_wrap_anchors_in_box();
             }
             panel_corner_screw_holes_in_box();
             side_loaded_panel_nut_traps();
-            floor_wall_tab_negatives();
             legacy_wall_revision_negative();
         }
 }
@@ -1009,6 +1008,9 @@ module floor_context() {
             union() {
                 translate([wall_t, wall_t, -box_h])
                     cube([box_inner_w, box_inner_d, wall_t]);
+                floor_corner_lands();
+                floor_locator_lands();
+                floor_locator_keys();
                 floor_perimeter_rib();
                 if (feature_power_screw_mounts) {
                     component_airflow_posts_in_box();
@@ -1025,8 +1027,8 @@ module floor_context() {
             if (feature_power_screw_mounts) {
                 psu_bottom_mount_holes();
                 converter_bottom_mount_holes();
-                floor_fastener_holes();
             }
+            floor_corner_fastener_holes();
             box_bottom_revision_negative();
         }
 }
@@ -1155,46 +1157,108 @@ module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t) {
         cylinder(h = t + 0.1, d1 = chamfer_d, d2 = d);
 }
 
-function floor_fastener_points() = [
-    [box_w / 2, floor_fastener_inset, 0],
-    [box_w / 2, box_d - floor_fastener_inset, 180],
-    [floor_fastener_inset, box_d / 2, -90],
-    [box_w - floor_fastener_inset, box_d / 2, 90]
+module bottom_m3_flat_head_recess(surface_z = 0) {
+    translate([0, 0, surface_z - 0.1])
+        cylinder(
+            h = panel_screw_countersink_h + 0.1,
+            d1 = corner_screw_head_d,
+            d2 = corner_screw_d
+        );
+}
+
+function enclosure_corner_points() = [
+    [corner_axis_inset, corner_axis_inset],
+    [box_w - corner_axis_inset, corner_axis_inset],
+    [corner_axis_inset, box_d - corner_axis_inset],
+    [box_w - corner_axis_inset, box_d - corner_axis_inset]
 ];
 
-function floor_wall_tab_points() = [
-    [box_w / 2, wall_t, 0],
-    [box_w / 2, box_d - wall_t, 180],
-    [wall_t, box_d / 2, -90],
-    [box_w - wall_t, box_d / 2, 90]
-];
+module floor_corner_lands() {
+    land_d = floor_fastener_chamfer_d + 2 * floor_corner_land_radial_ligament;
 
-module floor_fastener_holes() {
-    for (p = floor_fastener_points())
-        translate([p[0], p[1], 0])
-            bottom_chamfered_mount_hole(floor_fastener_hole_d, floor_fastener_chamfer_d);
-}
-
-module floor_wall_tabs() {
-    for (p = floor_wall_tab_points())
-        translate([p[0], p[1], -box_h + wall_t])
-            rotate([0, 0, p[2]])
-                floor_wall_tab();
-}
-
-module floor_wall_tab() {
-    translate([-floor_tab_w / 2, 0, 0])
-        cube([floor_tab_w, floor_tab_d, floor_tab_h]);
-}
-
-module floor_wall_tab_negatives() {
-    for (p = floor_fastener_points())
+    for (p = enclosure_corner_points())
         translate([p[0], p[1], -box_h])
-            rotate([0, 0, p[2]]) {
-                cylinder(h = wall_t + floor_tab_h + 2, d = floor_fastener_hole_d);
-                translate([0, 0, wall_t + floor_tab_h - floor_nut_trap_h + 0.01])
-                    cylinder(h = floor_nut_trap_h + 0.2, d = floor_nut_trap_d, $fn = 6);
-            }
+            cylinder(h = wall_t, d = land_d);
+}
+
+module floor_corner_fastener_holes() {
+    for (p = enclosure_corner_points())
+        translate([p[0], p[1], 0]) {
+            translate([0, 0, -box_h - 0.1])
+                cylinder(h = wall_t + 0.2, d = corner_screw_d);
+            bottom_m3_flat_head_recess(-box_h);
+        }
+}
+
+module floor_locator_key_shape() {
+    lead_in = 0.5;
+
+    hull() {
+        cube([
+            floor_locator_l,
+            floor_locator_depth,
+            floor_locator_h - lead_in
+        ]);
+        translate([lead_in, lead_in, floor_locator_h - lead_in])
+            cube([
+                floor_locator_l - 2 * lead_in,
+                floor_locator_depth - 2 * lead_in,
+                lead_in
+            ]);
+    }
+}
+
+module floor_locator_lands() {
+    x_locator_starts = [
+        floor_locator_end_offset,
+        box_w - floor_locator_end_offset - floor_locator_l
+    ];
+    y_locator_starts = [
+        floor_locator_end_offset,
+        box_d - floor_locator_end_offset - floor_locator_l
+    ];
+
+    for (x = x_locator_starts) {
+        translate([x, wall_t - floor_locator_depth, -box_h])
+            cube([floor_locator_l, floor_locator_depth, wall_t]);
+        translate([x, box_d - wall_t, -box_h])
+            cube([floor_locator_l, floor_locator_depth, wall_t]);
+    }
+
+    for (y = y_locator_starts) {
+        translate([wall_t - floor_locator_depth, y, -box_h])
+            cube([floor_locator_depth, floor_locator_l, wall_t]);
+        translate([box_w - wall_t, y, -box_h])
+            cube([floor_locator_depth, floor_locator_l, wall_t]);
+    }
+}
+
+module floor_locator_keys() {
+    x_locator_starts = [
+        floor_locator_end_offset,
+        box_w - floor_locator_end_offset - floor_locator_l
+    ];
+    y_locator_starts = [
+        floor_locator_end_offset,
+        box_d - floor_locator_end_offset - floor_locator_l
+    ];
+    z0 = -box_h + wall_t - 0.01;
+
+    for (x = x_locator_starts) {
+        translate([x, wall_t - floor_locator_depth, z0])
+            floor_locator_key_shape();
+        translate([x, box_d - wall_t, z0])
+            floor_locator_key_shape();
+    }
+
+    for (y = y_locator_starts) {
+        translate([wall_t, y, z0])
+            rotate([0, 0, 90])
+                floor_locator_key_shape();
+        translate([box_w - wall_t, y + floor_locator_l, z0])
+            rotate([0, 0, -90])
+                floor_locator_key_shape();
+    }
 }
 
 module psu_bottom_mount_holes() {
@@ -1813,7 +1877,7 @@ module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
     ];
     vent_start_x = vent_mode == "half" ? length / 2 : vent_wall_margin;
     vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
-    joint_min_x = corner_coupon_axis_x + corner_tab_w / 2;
+    joint_min_x = corner_axis_inset + corner_tab_w / 2;
     joint_max_x = length - joint_min_x;
     joint_min_y = bottom_wall_joint_inner_y();
     joint_max_y = top_wall_joint_inner_y(h);
@@ -1844,6 +1908,23 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
             cube([wall_rib_w, rib_y1 - rib_y0, wall_rib_h]);
 }
 
+module floor_locator_notches(length) {
+    for (x = [
+        floor_locator_end_offset,
+        length - floor_locator_end_offset - floor_locator_l
+    ])
+        translate([
+            x - locator_clearance,
+            -0.1,
+            wall_t - floor_locator_depth - locator_clearance
+        ])
+            cube([
+                floor_locator_l + 2 * locator_clearance,
+                wall_t + floor_locator_h + locator_clearance + 0.1,
+                floor_locator_depth + 2 * locator_clearance
+            ]);
+}
+
 module wall_end_feature(right = false, length = box_w) {
     if (right)
         translate([length, 0, 0])
@@ -1856,16 +1937,16 @@ module wall_end_feature(right = false, length = box_w) {
 module wall_corner_tabs(length, h, nut_owner) {
     for (right = [false, true])
         wall_end_feature(right = right, length = length) {
-            translate([corner_coupon_axis_x, top_nut_tab_center_y(h), 0])
+            translate([corner_axis_inset, top_nut_tab_center_y(h), 0])
                 if (nut_owner)
                     corner_nut_tab(bearing_side = 1, root_direction = -1);
-            translate([corner_coupon_axis_x, top_clearance_tab_center_y(h), 0])
+            translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
                 if (!nut_owner)
                     corner_clearance_tab(root_direction = -1);
-            translate([corner_coupon_axis_x, bottom_nut_tab_center_y(), 0])
+            translate([corner_axis_inset, bottom_nut_tab_center_y(), 0])
                 if (nut_owner)
                     corner_nut_tab(bearing_side = -1, root_direction = 1);
-            translate([corner_coupon_axis_x, bottom_clearance_tab_center_y(), 0])
+            translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
                 if (!nut_owner)
                     corner_clearance_tab(root_direction = 1);
         }
@@ -1898,6 +1979,7 @@ module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_heigh
         }
         if (nut_owner)
             wall_locator_notches(length, h);
+        floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h);
         wall_revision_negative(length, h, vent_mode);
     }
@@ -1977,7 +2059,7 @@ module corner_wall_coupon(nut_owner = false, top = true) {
     difference() {
         union() {
             mitred_wall_segment();
-            translate([corner_coupon_axis_x, tab_y, 0])
+            translate([corner_axis_inset, tab_y, 0])
                 if (nut_owner)
                     corner_nut_tab(bearing_side, root_direction);
                 else
@@ -2007,12 +2089,7 @@ module corner_coupon_plate(t, head_side = 0) {
                     d2 = corner_screw_head_d
                 );
         if (head_side < 0)
-            translate([0, 0, -0.1])
-                cylinder(
-                    h = panel_screw_countersink_h + 0.1,
-                    d1 = corner_screw_head_d,
-                    d2 = corner_screw_d
-                );
+            bottom_m3_flat_head_recess();
     }
 }
 
@@ -2020,7 +2097,7 @@ module corner_coupon_north_context(top = true, origin = [0, 0, 0]) {
     z_offset = top ? -corner_coupon_wall_h : 0;
     translate(origin)
         multmatrix([
-            [-1, 0, 0, corner_coupon_axis_x],
+            [-1, 0, 0, corner_axis_inset],
             [0, 0, -1, wall_t + panel_screw_inset],
             [0, 1, 0, z_offset],
             [0, 0, 0, 1]
@@ -2033,7 +2110,7 @@ module corner_coupon_east_context(top = true, origin = [0, 0, 0]) {
     translate(origin)
         multmatrix([
             [0, 0, -1, wall_t + panel_screw_inset],
-            [-1, 0, 0, corner_coupon_axis_x],
+            [-1, 0, 0, corner_axis_inset],
             [0, 1, 0, z_offset],
             [0, 0, 0, 1]
         ])

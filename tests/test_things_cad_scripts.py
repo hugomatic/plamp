@@ -57,7 +57,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("ledge_ring_t = 3;", source)
         self.assertIn("top_corner_screw_length = 25;", source)
         self.assertIn('corner_screw_size = "M3";', source)
-        self.assertIn('floor_screw_size = "M5";', source)
+        self.assertIn('floor_screw_size = "M3";', source)
+        self.assertIn(
+            "corner_axis_inset = wall_t + panel_screw_inset;", source
+        )
         self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
@@ -134,6 +137,26 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('vent_mode == "half" ? length / 2', source)
         self.assertIn("bottom_wall_joint_inner_y", source)
         self.assertIn("top_wall_joint_inner_y", source)
+
+    def test_plamp8_floor_uses_corner_m3_wall_fasteners(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn('floor_screw_size = "M3";', source)
+        self.assertIn("function enclosure_corner_points()", source)
+        self.assertIn("module floor_corner_fastener_holes", source)
+        self.assertIn("module floor_corner_lands", source)
+        self.assertIn("module floor_locator_keys", source)
+        self.assertIn("module floor_locator_lands", source)
+        self.assertIn("module floor_locator_key_shape", source)
+        self.assertIn("floor_locator_depth = locator_key_w;", source)
+        self.assertIn("x_locator_starts", source)
+        self.assertIn("y_locator_starts", source)
+        self.assertIn("floor_corner_land_radial_ligament = 2;", source)
+        self.assertIn("module bottom_m3_flat_head_recess", source)
+        self.assertGreaterEqual(source.count("bottom_m3_flat_head_recess("), 3)
+        self.assertNotIn("function floor_fastener_points()", source)
+        self.assertNotIn("function floor_wall_tab_points()", source)
+        self.assertNotIn("module floor_wall_tabs()", source)
 
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
