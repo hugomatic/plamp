@@ -202,6 +202,8 @@ Update the ordered `view` contract to include:
 
 Preserve the existing component footprint and connector coupon views. Keep `wall_corner_fastener_test` only as a temporary compatibility alias; it must not remain in the ordered view list or determine the generated STL name. Remove the obsolete monolithic `walls` printable view rather than exporting the old shell under a misleading name.
 
+Remove feature switches and geometry that were reachable only through that obsolete monolithic shell. This includes the disabled wall-only PSU tie-wrap anchors; the supported floor PSU tie-wrap anchors remain available through `feature_psu_tie_wrap_anchors`.
+
 Replace the single assembly `show_walls` control with:
 
 ```scad

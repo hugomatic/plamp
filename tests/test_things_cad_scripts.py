@@ -69,6 +69,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
+        self.assertIn("corner_nut_detent_angle = 30;", source)
+        self.assertIn(
+            "corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);",
+            source,
+        )
         self.assertIn(
             "top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;",
             source,
@@ -87,16 +92,27 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module corner_nut_tab", source)
         self.assertIn("module corner_tab_gusset", source)
         self.assertIn("module support_free_m3_nut_trap", source)
+        self.assertIn("module corner_nut_retention_detents", source)
+        nut_trap = source.split("module support_free_m3_nut_trap", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("corner_nut_retention_detents(", nut_trap)
         self.assertIn("module corner_nut_axial_retainer", source)
         self.assertIn("module corner_wall_coupon", source)
-        self.assertIn("module wall_corner_fastener_test", source)
+        self.assertIn("module corner_coupon", source)
         self.assertIn("module wall_corner_fastener_assembly", source)
         self.assertIn(
             "outer_edge_offset = panel_screw_inset - coupon_assembly_clearance;",
             source,
         )
         self.assertIn("coupon_plate_column_x = 100;", source)
+        self.assertIn('view == "corner_coupon"', source)
         self.assertIn('view == "wall_corner_fastener_test"', source)
+        view_line = next(
+            line for line in source.splitlines() if line.startswith("view =")
+        )
+        self.assertIn("corner_coupon", view_line)
+        self.assertNotIn("wall_corner_fastener_test", view_line)
         self.assertIn('view == "wall_corner_fastener_assembly"', source)
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
@@ -137,6 +153,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn(f'view == "{name}"', source)
         self.assertNotIn(" walls,", view_line)
         self.assertNotIn('view == "walls"', source)
+        self.assertNotIn("module walls_context", source)
+        self.assertNotIn("module walls()", source)
+        self.assertNotIn("feature_ledge", source)
+        self.assertNotIn("feature_psu_tie_wrap_anchors_wall", source)
+        self.assertNotIn("module psu_right_wall_tie_wrap_anchors_in_box", source)
+        self.assertNotIn("psu_wall_anchor_z", source)
+        self.assertNotIn("module side_wall_psu_vents", source)
+        self.assertNotIn("module legacy_wall_revision_negative", source)
+        self.assertNotIn("module panel_corner_fastener_bosses", source)
+        self.assertNotIn("module panel_corner_screw_holes_in_box", source)
+        self.assertNotIn("module side_loaded_panel_nut_traps", source)
+        self.assertNotIn("internal_clearance_h", source)
+        self.assertNotIn("psu_wall_clearance", source)
+        self.assertNotIn("corner_r", source)
         self.assertIn("module wall_mitre_negative", source)
         self.assertIn("module wall_revision_negative", source)
         revision_module = source.split("module wall_revision_negative", 1)[1].split(
@@ -167,6 +197,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("function floor_fastener_points()", source)
         self.assertNotIn("function floor_wall_tab_points()", source)
         self.assertNotIn("module floor_wall_tabs()", source)
+        for obsolete in (
+            "floor_perimeter_rib",
+            "floor_rib_corner",
+            "floor_rib_t",
+            "floor_rib_h",
+            "floor_rib_corner_l",
+            "floor_nut_trap_d",
+            "floor_nut_trap_h",
+        ):
+            self.assertNotIn(obsolete, source)
 
     def test_plamp8_assembly_has_individual_wall_controls_and_height(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -236,8 +276,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("fit_plate(usb_c_panel_w, usb_c_panel_h);", usb_unit)
         self.assertNotIn("alignment_walls", usb_unit)
         self.assertIn("module panel_corner_screw_lands", source)
-        self.assertIn("module panel_corner_fastener_bosses", source)
-        self.assertIn("module side_loaded_panel_nut_traps", source)
+        self.assertIn("module panel_corner_fastener_boss", source)
+        self.assertIn("module side_loaded_panel_nut_trap", source)
         self.assertIn("panel_nut_entry_detent", source)
         self.assertIn("module self_supporting_nut_trap_roof", source)
         self.assertRegex(

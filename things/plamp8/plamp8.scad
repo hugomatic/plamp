@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, ledge_ring, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, wall_corner_fastener_test, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, ledge_ring, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -24,12 +24,8 @@ show_top_panel = true;
 
 /* [box features] */
 
-//box features: ledge
-feature_ledge = true;
 //box features: floor anchors (tie wraps)
 feature_psu_tie_wrap_anchors = false;
-//box features: wall anchors (tie wraps)
-feature_psu_tie_wrap_anchors_wall = false;
 //box features: power module bottom screw mounts
 feature_power_screw_mounts = true;
 feature_ph_ledge_holes = true;
@@ -37,15 +33,11 @@ feature_ph_ledge_holes = true;
 
 /* [dimensions] */
 
-// height between the floor and the ledge
-internal_clearance_h = 80;
 wall_z_height = 83;
 outlet_plate_left = 46;
 outlet_plate_right = 76;
 plate_h = 120;
 plate_t = 3;
-
-corner_r = 6;
 
 hole_d = 34;        // source cylinder diameter
 hole_h = 24;        // final vertical height after trimming
@@ -183,7 +175,6 @@ psu_mount_hole_d = screw_clearance_d(psu_screw_size);
 psu_mount_x_inset = 8.25;
 psu_mount_y_inset = 2.5;
 psu_mount_chamfer_d = screw_chamfer_d(psu_screw_size);
-psu_wall_clearance = 1;
 psu_view_w = psu_d;
 psu_view_d = psu_w;
 psu_anchor_r = 5;
@@ -240,6 +231,8 @@ bore_tangent_a = corner_screw_d / 2 / sqrt(2);
 corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
+corner_nut_detent_angle = 30;
+corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -266,11 +259,6 @@ component_airflow_post_spacing = 14;
 component_airflow_post_hole_clearance = 8;
 floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
 floor_fastener_chamfer_d = screw_chamfer_d(floor_screw_size);
-floor_nut_trap_d = screw_nut_trap_d(floor_screw_size);
-floor_nut_trap_h = screw_nut_trap_h(floor_screw_size);
-floor_rib_t = 4;
-floor_rib_h = 5;
-floor_rib_corner_l = 60;
 box_h = wall_z_height;
 panel_margin = 5;
 top_outline_w = 2;
@@ -299,7 +287,6 @@ right_ac_x = 40;
 
 plate_w = outlet_plate_left + outlet_plate_right;
 
-psu_wall_anchor_z = psu_h + psu_anchor_gap;
 psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
 psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
 
@@ -384,8 +371,6 @@ top_panel_brand_text = "plamp";
 top_panel_brand_font = 4;
 top_panel_brand_y_offset = 19;
 box_revision_font = 6;
-wall_revision_x_offset = -35;
-
 letter_size = 6;
 write_t = 0.75;
 revision_string = "dev";
@@ -990,27 +975,6 @@ module sub_panel_8ch() {
 
 
 
-module walls_context() {
-    color([0.15, 0.45, 0.9, 1])
-        difference() {
-            union() {
-                difference() {
-                    translate([0, 0, -box_h])
-                        cube([box_w, box_d, box_h]);
-                    translate([wall_t, wall_t, -box_h - 1])
-                        cube([box_w - 2 * wall_t, box_d - 2 * wall_t, box_h + 3]);
-                    side_wall_psu_vents();
-                }
-                if (feature_ledge) panel_corner_fastener_bosses();
-                if (feature_psu_tie_wrap_anchors_wall)
-                    psu_right_wall_tie_wrap_anchors_in_box();
-            }
-            panel_corner_screw_holes_in_box();
-            side_loaded_panel_nut_traps();
-            legacy_wall_revision_negative();
-        }
-}
-
 module floor_context() {
     color([0.68, 0.68, 0.62, 1])
         difference() {
@@ -1020,7 +984,6 @@ module floor_context() {
                 floor_corner_lands();
                 floor_locator_lands();
                 floor_locator_keys();
-                floor_perimeter_rib();
                 if (feature_power_screw_mounts) {
                     component_airflow_posts_in_box();
                     psu_retaining_corners_in_box();
@@ -1040,22 +1003,6 @@ module floor_context() {
             floor_corner_fastener_holes();
             box_bottom_revision_negative();
         }
-}
-
-module floor_perimeter_rib() {
-    z = -box_h + wall_t;
-    for (sx = [-1, 1], sy = [-1, 1])
-        floor_rib_corner(sx, sy, z);
-}
-
-module floor_rib_corner(sx, sy, z) {
-    x0 = sx < 0 ? wall_t : box_w - wall_t - floor_rib_t;
-    y0 = sy < 0 ? wall_t : box_d - wall_t - floor_rib_t;
-
-    translate([sx < 0 ? wall_t : box_w - wall_t - floor_rib_corner_l, y0, z])
-        cube([floor_rib_corner_l, floor_rib_t, floor_rib_h]);
-    translate([x0, sy < 0 ? wall_t : box_d - wall_t - floor_rib_corner_l, z])
-        cube([floor_rib_t, floor_rib_corner_l, floor_rib_h]);
 }
 
 module ledge_ring_corner_holes() {
@@ -1118,26 +1065,6 @@ module ledge_ring_context() {
 
 module ledge_ring() {
     ledge_ring_local();
-}
-
-module side_wall_psu_vents() {
-    vent_zs = [-box_h + vent_floor_clearance:vent_hole_spacing:-(vent_top_margin + vent_ledge_clearance)];
-    right_wall_ys = [vent_wall_margin:vent_hole_spacing:box_d - vent_wall_margin];
-    side_wall_xs = [box_w / 2:vent_hole_spacing:box_w - vent_wall_margin];
-
-    for (y = right_wall_ys, z = vent_zs)
-        translate([box_w + 1, y, z])
-            rotate([0, -90, 0])
-                cylinder(h = wall_t + 2, d = vent_hole_d);
-
-    for (x = side_wall_xs, z = vent_zs) {
-        translate([x, -1, z])
-            rotate([-90, 0, 0])
-                cylinder(h = wall_t + 2, d = vent_hole_d);
-        translate([x, box_d + 1, z])
-            rotate([90, 0, 0])
-                cylinder(h = wall_t + 2, d = vent_hole_d);
-    }
 }
 
 module relay_bottom_mount_holes() {
@@ -1441,14 +1368,6 @@ module box_bottom_revision_negative() {
             write_text(revision_string, box_revision_font, -0.01);
 }
 
-module legacy_wall_revision_negative() {
-    translate([box_w / 2 + wall_revision_x_offset, -0.01, -box_h / 2])
-        rotate([-90, 0, 0])
-            mirror([1, 0, 0])
-                rotate([0, 0, 180])
-                    write_text(revision_string, box_revision_font, -0.01);
-}
-
 module psu_floor_tie_wrap_anchors_in_box() {
     translate([
         box_inner_x + top_panel_w / 2 + internal_psu_x,
@@ -1494,16 +1413,6 @@ module psu_floor_stops() {
     for (x = [psu_w / 2])
         translate([x, -psu_stop_l / 2, 0])
             cube([psu_stop_t, psu_stop_l, psu_stop_h]);
-}
-
-module psu_right_wall_tie_wrap_anchors_in_box() {
-    psu_center_y = box_inner_y + top_panel_h / 2 + internal_psu_y;
-
-    // Wall anchors are modeled in box coordinates so "right wall" stays literal.
-    for (y = [psu_center_y - psu_w / 2 + psu_anchor_inset, psu_center_y + psu_w / 2 - psu_anchor_inset])
-        translate([box_w - wall_t, y, -box_h + wall_t + psu_wall_anchor_z])
-            rotate([0, -90, 0])
-                tie_wrap_anchor_y();
 }
 
 module tie_wrap_anchor_x() {
@@ -1580,15 +1489,6 @@ module panel_corner_screw_holes(include_countersink = false) {
             panel_corner_screw_hole(include_countersink);
 }
 
-module panel_corner_screw_holes_in_box() {
-    for (
-        x = [box_inner_x + panel_screw_inset, box_inner_x + top_panel_w - panel_screw_inset],
-        y = [box_inner_y + panel_screw_inset, box_inner_y + top_panel_h - panel_screw_inset]
-    )
-        translate([x, y, panel_fastener_boss_bottom_z - 1])
-            cylinder(h = -panel_fastener_boss_bottom_z + 2, d = panel_screw_d);
-}
-
 module panel_corner_fastener_boss(direction = 1) {
     union() {
         translate([0, 0, panel_fastener_boss_bottom_z])
@@ -1599,21 +1499,6 @@ module panel_corner_fastener_boss(direction = 1) {
             panel_fastener_boss_bottom_z
         ])
             cube([panel_nut_entry_l, panel_fastener_boss_d, panel_fastener_boss_h]);
-    }
-}
-
-module panel_corner_fastener_bosses() {
-    for (sx = [-1, 1], sy = [-1, 1]) {
-        x = sx < 0
-            ? box_inner_x + panel_screw_inset
-            : box_inner_x + top_panel_w - panel_screw_inset;
-        y = sy < 0
-            ? box_inner_y + panel_screw_inset
-            : box_inner_y + top_panel_h - panel_screw_inset;
-        direction = sx < 0 ? 1 : -1;
-
-        translate([x, y, 0])
-            panel_corner_fastener_boss(direction);
     }
 }
 
@@ -1649,21 +1534,6 @@ module side_loaded_panel_nut_trap(direction = 1) {
         cube([panel_nut_entry_detent_l, throat_w, slot_h]);
 
     self_supporting_nut_trap_roof(roof_x, roof_l, slot_w, slot_h);
-}
-
-module side_loaded_panel_nut_traps() {
-    for (sx = [-1, 1], sy = [-1, 1]) {
-        x = sx < 0
-            ? box_inner_x + panel_screw_inset
-            : box_inner_x + top_panel_w - panel_screw_inset;
-        y = sy < 0
-            ? box_inner_y + panel_screw_inset
-            : box_inner_y + top_panel_h - panel_screw_inset;
-        direction = sx < 0 ? 1 : -1;
-
-        translate([x, y, panel_nut_trap_z])
-            side_loaded_panel_nut_trap(direction);
-    }
 }
 
 // Wall-local printable coordinates:
@@ -1732,6 +1602,33 @@ module clearance_tab_inward_gusset() {
     }
 }
 
+// Subtractive entry transition that leaves two small positive detents.
+// Their 30-degree faces guide the nut past the narrow retaining throat.
+module corner_nut_retention_detents(
+    nut_flat_w,
+    throat_w,
+    pocket_center_y,
+    detent_bottom_z
+) {
+    shim = 0.01;
+    entry_y = pocket_center_y - corner_nut_slot_l / 2;
+    ramp_start_z = detent_bottom_z - corner_nut_detent_ramp_h;
+
+    hull() {
+        translate([-nut_flat_w / 2, entry_y, ramp_start_z - shim])
+            cube([nut_flat_w, corner_nut_slot_l, shim]);
+        translate([-throat_w / 2, entry_y, detent_bottom_z])
+            cube([throat_w, corner_nut_slot_l, shim]);
+    }
+
+    translate([-throat_w / 2, entry_y, detent_bottom_z])
+        cube([
+            throat_w,
+            corner_nut_slot_l,
+            corner_tab_h - detent_bottom_z + 1
+        ]);
+}
+
 module support_free_m3_nut_trap(
     bearing_side = 1,
     axis_z = wall_t + panel_screw_inset
@@ -1756,20 +1653,15 @@ module support_free_m3_nut_trap(
         cube([
             nut_flat_w,
             corner_nut_slot_l,
-            detent_bottom_z - axis_z
+            detent_bottom_z - corner_nut_detent_ramp_h - axis_z
         ]);
 
-    // A short flexible throat retains the nut before final assembly.
-    translate([
-        -throat_w / 2,
-        pocket_center_y - corner_nut_slot_l / 2,
+    corner_nut_retention_detents(
+        nut_flat_w,
+        throat_w,
+        pocket_center_y,
         detent_bottom_z
-    ])
-        cube([
-            throat_w,
-            corner_nut_slot_l,
-            corner_tab_h - detent_bottom_z + 1
-        ]);
+    );
 }
 
 module corner_clearance_tab() {
@@ -2181,7 +2073,7 @@ module wall_corner_fastener_assembly() {
     }
 }
 
-module wall_corner_fastener_test() {
+module corner_coupon() {
     echo(str("top corner screw: M3x", top_corner_screw_length));
     echo(str("top stack: ", top_stack_h, " mm"));
     echo(str("bottom candidate screw: M3x", bottom_corner_screw_length));
@@ -2298,12 +2190,6 @@ module plate() {
         top_panel_8ch(true);
 }
 
-module walls() {
-    echo_hardware(include_floor = true);
-    translate([0, 0, box_h])
-        walls_context();
-}
-
 module floor_part() {
     echo_hardware(true, true, true, true);
     translate([0, 0, box_h])
@@ -2375,8 +2261,7 @@ module assembly() {
         east_wall_context();
 
     if (show_ledge_ring)
-        if (feature_ledge)
-            ledge_ring_context();
+        ledge_ring_context();
 
     if (show_floor)
         floor_context();
@@ -2426,8 +2311,10 @@ if (view == "relay_footprint") {
     c13_inlet();
 } else if (view == "panel_corner_fastener_test") {
     panel_corner_fastener_test();
+} else if (view == "corner_coupon") {
+    corner_coupon();
 } else if (view == "wall_corner_fastener_test") {
-    wall_corner_fastener_test();
+    corner_coupon();
 } else if (view == "wall_corner_fastener_assembly") {
     wall_corner_fastener_assembly();
 } else if (view == "top_panel") {
