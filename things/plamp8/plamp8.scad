@@ -64,8 +64,7 @@ corner_screw_size = "M3";
 panel_screw_size = "M3";
 panel_screw_length = 20;
 panel_screw_tip_protrusion = 1;
-top_corner_screw_length = 30;
-bottom_corner_screw_length = 25;
+corner_screw_length = 30;
 
 function screw_clearance_d(size) =
     size == "M5" ? 5.5 :
@@ -310,13 +309,20 @@ ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 
 top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;
-assert(top_corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
+corner_screw_tip_allowance = 1;
+bottom_corner_nut_offset = corner_screw_length
+    - corner_screw_tip_allowance
+    - (bottom_stack_h - corner_nut_retainer_t);
+assert(corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
+assert(bottom_corner_nut_offset >= 0, "bottom corner nut offset must not be negative");
+assert(bottom_corner_nut_offset + corner_screw_tip_allowance <= corner_nut_tab_extension,
+    "bottom corner nut must remain inside the extended beam");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
 assert(2 * bore_tangent_a > corner_screw_d / 2, "teardrop roof must clear the round screw envelope");
-echo(str("top M3 protrusion: ", top_corner_screw_length - top_stack_h, " mm"));
-echo(str("bottom candidate M3 protrusion: ", bottom_corner_screw_length - bottom_stack_h, " mm"));
+echo(str("top M3 protrusion: ", corner_screw_length - top_stack_h, " mm"));
+echo(str("bottom M3 nut offset: ", bottom_corner_nut_offset, " mm"));
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
@@ -1584,12 +1590,14 @@ module corner_nut_retention_detents(
 
 module support_free_m3_nut_trap(
     bearing_side = 1,
+    pocket_offset_y = 0,
     axis_z = wall_t + panel_screw_inset
 ) {
     nut_d = corner_nut_d + corner_nut_clearance;
     nut_flat_w = nut_d * cos(30);
     throat_w = nut_flat_w - 2 * panel_nut_entry_detent;
-    pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2;
+    pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
+        + pocket_offset_y;
     detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
 
     translate([0, pocket_center_y, axis_z])
@@ -1630,6 +1638,7 @@ module corner_nut_tab(bearing_side = 1) {
         + corner_nut_tab_extension;
     corner_nut_tab_bore_center_y = -bearing_side
         * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
+    nut_offset_y = bearing_side < 0 ? bottom_corner_nut_offset : 0;
 
     difference() {
         corner_nut_tab_positive(bearing_side);
@@ -1638,7 +1647,10 @@ module corner_nut_tab(bearing_side = 1) {
                 corner_nut_tab_length + 0.2,
                 corner_screw_d
             );
-        support_free_m3_nut_trap(bearing_side);
+        support_free_m3_nut_trap(
+            bearing_side,
+            pocket_offset_y = nut_offset_y
+        );
     }
 }
 
@@ -1959,9 +1971,8 @@ module wall_corner_fastener_assembly() {
 }
 
 module corner_coupon() {
-    echo(str("top corner screw: M3x", top_corner_screw_length));
+    echo(str("corner screws: 8x M3x", corner_screw_length));
     echo(str("top stack: ", top_stack_h, " mm"));
-    echo(str("bottom candidate screw: M3x", bottom_corner_screw_length));
     echo(str("bottom stack: ", bottom_stack_h, " mm"));
     echo(str("nut bearing shoulder: ", corner_nut_shoulder_t, " mm"));
 

@@ -55,8 +55,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("wall_z_height = 83;", source)
         self.assertIn("corner_tab_t = 6;", source)
         self.assertIn("ledge_ring_t = 3;", source)
-        self.assertIn("top_corner_screw_length = 30;", source)
-        self.assertIn("bottom_corner_screw_length = 25;", source)
+        self.assertIn("corner_screw_length = 30;", source)
+        self.assertNotIn("top_corner_screw_length", source)
+        self.assertNotIn("bottom_corner_screw_length", source)
+        self.assertIn("bottom_corner_nut_offset", source)
         self.assertIn('corner_screw_size = "M3";', source)
         self.assertIn('floor_screw_size = "M3";', source)
         self.assertIn(
