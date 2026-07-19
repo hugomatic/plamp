@@ -81,11 +81,13 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - Use two small opposing retention detents rather than a broad catcher. Grow each detent inward on a 30-degree ramp measured from horizontal; the detents resist gravity and handling, while the solid pocket shoulder carries screw load.
 - Prefer support-free nut-entry geometry, but accept small, deliberate, inward-accessible support when eliminating it would weaken the pocket or detents.
 - Because the assembled vertical screw axes become horizontal in the flat wall print orientation, production tab bores must use a teardrop or 45-degree-roof profile rather than an unsupported round horizontal ceiling.
-- The tabs are straight rectangular columns grown from the wall's exterior build-plate face. Do not add angled gussets: the columns begin at Z=0 in print orientation and do not need sloped support geometry.
+- The east/west clearance tabs are compact 5 mm-radius bosses grown from the wall's exterior build-plate face. The north/south nut-side geometry is one continuous 5 mm-radius corner spine joining the bottom and top nut-bearing zones. Do not add angled gussets: both forms begin at Z=0 in print orientation and do not need sloped support geometry.
 - Each tab's corner-facing edge starts at least `corner_fit_clearance` beyond the neighboring 3 mm wall skin; the shared M3 axis remains 7 mm from the corner.
-- Keep the rectangular tab body, horizontal support-aware bore, captured-nut pocket, and retention detents. Removing the gussets must not change the screw axis or stack thickness.
+- Keep the rounded boss profile, horizontal support-aware bores, captured-nut pockets, and retention detents. Replacing the separated nut bosses with the continuous spine must not change the screw axis or either joint's stack thickness.
 
-The nut-side tab is one asymmetric rectangular 4.8 mm-thick block: the normal 4 mm stack layer plus 0.8 mm on the exposed retaining side. Subtract the bore and nut-entry pocket from that single block so the remaining 0.8 mm wall captures the nut axially. Do not model the axial retainer as a separate face-touching solid.
+The nut-side corner spine is one continuous positive solid on each end of each north/south wall. It spans from the lower edge of the bottom nut-bearing zone to the upper edge of the top nut-bearing zone, filling the 6.4 mm separation left by the two extended nut bosses. Its rounded profile remains centered on the shared M3 axis and clipped at the same wall-facing and inward limits as the existing bosses. Subtract two independent bores from the spine, one entering from each end and ending beyond its associated nut trap without joining the opposite bore. Preserve the two existing side-loaded nut traps, their bearing shoulders, offsets, and retention detents. The two M3x30 screws must remain mechanically separate and must not meet inside the spine.
+
+The spine replaces only the two north/south nut-tab positives. East/west walls retain two separate 6 mm-thick clearance tabs at every corner so the walls can still be inserted during the documented assembly sequence.
 
 The west/east top locator keys are omitted. At the current dimensions the former top key occupied assembled Z=-19 through -3 mm, intersecting both the ledge ring at Z=-16 through -13 mm and the sub-panel at Z=-13 through -3 mm. The corner tabs, M3 screw axis, and 45-degree seam provide the top alignment without that key. Keep only the bottom wall-to-wall locator keys, using straight rectangular keys and clearance notches without angled insertion lead-ins.
 
@@ -222,6 +224,16 @@ Keep the existing floor, internal-component, top-panel, and sub-panel visibility
 
 All assembly transforms must reuse the same part modules used by the printable views. Do not maintain separate approximate wall geometry for visualization.
 
+## Assembly Illustration Labels
+
+Treat the transparent component keepouts as assembly-manual illustration elements as well as interference envelopes. Add horizontally centered, raised labels to their top faces:
+
+- Relay keepout: `RELAYS`
+- DC/DC converter keepout: `DC/DC`
+- 12 V power-supply keepout: `12V PSU`
+
+Build each label with positive-Z `linear_extrude()` text beginning at the keepout's top surface and extending upward by a named illustration-label thickness. Render the text in an opaque dark color so it remains readable over the existing translucent orange, purple, and green keepouts. Size each label independently to remain inside its component footprint, and orient it so it reads normally from above in the standard assembly view after the component's placement rotation. Labels belong only to the contextual keepout modules; they must not alter the floor, component-footprint coupons, or any printable enclosure part.
+
 ## First Printable: Corner-Stack Coupon
 
 Before rendering four full walls, add a compact fit-test view representing one top corner and one bottom corner. It must exercise:
@@ -245,7 +257,7 @@ The coupon should answer four physical questions before a full-wall print:
 
 ## Source Structure
 
-The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, rectangular top tabs, rectangular bottom tabs, nut traps, bottom locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
+The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, clearance tabs, continuous nut-bearing corner spines, nut traps, bottom locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
 
 Avoid unrelated refactoring of the connector, label, PSU, converter, relay, or generator code. Preserve the directory-specific Git revision behavior in `things/plamp8/generate.bash`.
 
@@ -259,6 +271,8 @@ Automated source-level tests should verify at least:
 - Floor corner hardware uses M3 rather than the old midpoint M5 fasteners.
 - Existing sub-panel thickness and corner-hole coordinates remain unchanged.
 - Top and bottom corner modules use the agreed north/south nut ownership and east/west clearance ownership.
+- North/south walls use one continuous rounded spine per corner, with two separate bores and two captured-nut traps, while east/west walls retain separate clearance tabs.
+- The three transparent component keepouts include the approved positive-Z assembly labels without adding those labels to printable component-footprint coupons.
 - Each printable part receives `revision_string` where required.
 
 OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct render commands:
@@ -270,7 +284,7 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 5. After committing the final CAD, render each wall, ledge ring, floor, top panel, sub-panel, and assembly from the directory-specific commit.
 6. Confirm all requested STL files are present and non-empty.
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
-8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on.
+8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on. Confirm each north/south spine is a single union, its two screw bores remain separated, both nut entries remain accessible, and all three component labels read correctly from above.
 9. Check independently printed part pairs for unintended volumetric overlap. Bound the calculations to four wall-corner boxes, four narrow floor-to-wall edge strips, four narrow ring-to-wall edge strips, the thin sub-panel-to-ring perimeter, the thin top-to-sub-panel perimeter, and the two PH switch clearance regions. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
 
 Generated STL and print artifacts remain untracked unless explicitly requested.
@@ -282,6 +296,7 @@ The redesign is complete when:
 - All four walls and the ledge ring render as independent parts with support minimized and any remaining support localized and removable.
 - Exterior wall seams are 45-degree mitres with no visible butt-joint step in assembly.
 - Every top and bottom corner screw captures both intersecting walls.
+- Each north/south corner has one continuous 5 mm-radius nut-bearing spine with separate top and bottom M3x30 screw paths; east/west clearance tabs remain separate.
 - All nut traps load from inside, retain the nut when inverted, and have no accidental or inaccessible support region.
 - Independently printed enclosure parts have no unintended interference in the assembled model.
 - The floor uses four bottom-up corner M3 screws and no midpoint M5 enclosure fasteners.
@@ -290,3 +305,4 @@ The redesign is complete when:
 - `wall_z_height` changes the full wall height without moving fixed end features away from their respective top or bottom wall ends.
 - The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
 - Revision markings remain readable on every standalone printable enclosure part.
+- `RELAYS`, `DC/DC`, and `12V PSU` appear as opaque, positive-Z raised text on the corresponding transparent assembly keepouts and do not affect printable parts.
