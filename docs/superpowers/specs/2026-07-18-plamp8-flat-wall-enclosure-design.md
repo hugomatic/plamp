@@ -2,7 +2,7 @@
 
 ## Goal
 
-Redesign the Plamp8 enclosure walls so every enclosure part can be printed without support and the enclosure can be wired with its relay-board long sides accessible. Replace the current one-piece upright wall shell and its support-driven corner geometry with four independently printable walls, a separate ledge ring, and shared M3 corner joints.
+Redesign the Plamp8 enclosure walls so support is minimized, deliberate, and easy to remove, while the enclosure can be wired with its relay-board long sides accessible. Replace the current one-piece upright wall shell and its large support-driven corner geometry with four independently printable walls, a separate ledge ring, and shared M3 corner joints.
 
 The redesign must preserve the current floor, top-panel, and sub-panel interfaces wherever possible. In particular, the existing printed sub-panel should remain usable unless a physical corner-stack test proves that no available screw length can clamp it correctly.
 
@@ -38,7 +38,7 @@ Replace the monolithic `walls` printable part with four modules and four printab
 - `west_wall`
 - `east_wall`
 
-Each printable wall view must place its exterior face flat on Z=0. Interior ribs, tabs, nut traps, and locating features then build upward from supported material. No wall view may require slicer-generated support.
+Each printable wall view must place its exterior face flat on Z=0. Interior ribs, tabs, nut traps, and locating features then build upward from supported material. Prefer printable slopes, but allow small intentional support patches where they preserve joint strength or serviceability. Avoid large, trapped, inaccessible, or accidental support regions.
 
 All four vertical exterior seams use 45-degree mitres through the wall thickness. The mitres hide the seam from the outside; they are not the structural joint. The internal M3 corner tabs provide the structural connection.
 
@@ -77,7 +77,9 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - The north or south wall contributes the lower tab with an M3 nut trap.
 - The nut trap opens toward the inside of the enclosure.
 - The nut must be insertable and removable from inside after the wall is printed.
-- With the wall in its flat print orientation, the nut entry and trap roof must require no support.
+- The nut remains positively captured when the wall or enclosure is inverted and while a screwdriver starts or removes the screw.
+- Use two small opposing retention detents rather than a broad catcher. Grow each detent inward on a 30-degree ramp measured from horizontal; the detents resist gravity and handling, while the solid pocket shoulder carries screw load.
+- Prefer support-free nut-entry geometry, but accept small, deliberate, inward-accessible support when eliminating it would weaken the pocket or detents.
 - Because the assembled vertical screw axes become horizontal in the flat wall print orientation, production tab bores must use a teardrop or 45-degree-roof profile rather than an unsupported round horizontal ceiling.
 - The tabs must have broad roots and printable gussets that transfer screw loads into the wall without relying on a narrow layer-bond cantilever.
 - Each tab's corner-facing edge starts at least `corner_fit_clearance` beyond the neighboring 3 mm wall skin; the shared M3 axis remains 7 mm from the corner.
@@ -152,15 +154,16 @@ This replaces the current four midpoint M5 floor fasteners and wall tabs. Floor 
 
 The existing panel screw axes leave too little floor material around an M3 countersink if used in the current inner-only floor outline. Add local floor corner lands extending beneath the wall joints so every countersink retains at least 2 mm of material to its nearest floor edge.
 
-The floor itself provides the bottom structural plane. Short locating keys near the corners align it with the wall interiors and prevent lateral drift while screws are loose. Do not use a continuous perimeter groove.
+The floor itself provides the bottom structural plane. Short locating keys near the corners align it with the wall interiors and prevent lateral drift while screws are loose. Do not use a continuous perimeter groove. Remove the legacy 60 mm L-shaped floor corner ribs: they occupy the new 7 mm M3 corner axes and are superseded by the local circular screw lands, locator lands, and installed walls.
 
-## Support-Free Nut Traps
+## Captured Nut Traps
 
 Every captured nut is side-loaded from the enclosure interior. In the wall's flat print orientation:
 
-- The pocket opening faces upward or sideways with no unsupported horizontal ceiling.
-- Any necessary roof uses printable slopes no shallower than 45 degrees.
-- A small retention detent may prevent the nut from falling out before assembly.
+- The pocket opens toward the enclosure interior.
+- Two small opposing detents positively retain the nut against inversion and screwdriver disturbance.
+- Detent insertion ramps use the printer's current 30-degree minimum support-free slope measured from horizontal.
+- Small intentional support is acceptable only when localized, visible in the slicer, accessible from inside, and removable without damaging the nut pocket.
 - The nut remains serviceable after printing and before final enclosure closure.
 
 Nut clearance, entry length, detent, tab thickness, tab overlap, and hole clearance remain named parameters. The existing M3 nut and clearance values are the starting point, but the fit coupon decides the final tolerances.
@@ -194,10 +197,10 @@ Update the ordered `view` contract to include:
 - `ledge_ring`
 - `top_panel`
 - `sub_panel`
-- A corner-stack fit-test view
+- `corner_coupon`
 - `assembly`
 
-Preserve the existing component footprint and connector coupon views. Remove the obsolete monolithic `walls` printable view rather than exporting the old shell under a misleading name.
+Preserve the existing component footprint and connector coupon views. Keep `wall_corner_fastener_test` only as a temporary compatibility alias; it must not remain in the ordered view list or determine the generated STL name. Remove the obsolete monolithic `walls` printable view rather than exporting the old shell under a misleading name.
 
 Replace the single assembly `show_walls` control with:
 
@@ -257,7 +260,7 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 1. Run shell syntax and existing CAD-script tests.
 2. Render the corner fit-test first with an explicit honest dirty-worktree revision.
 3. Confirm its STL is present, non-empty, and has no empty-object or missing-include warnings.
-4. Inspect the coupon mesh or preview for support-free orientation and obvious interference.
+4. Inspect the coupon mesh or preview for minimized, deliberate support and obvious interference.
 5. After committing the final CAD, render each wall, ledge ring, floor, top panel, sub-panel, and assembly from the directory-specific commit.
 6. Confirm all requested STL files are present and non-empty.
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
@@ -270,10 +273,10 @@ Generated STL and print artifacts remain untracked unless explicitly requested.
 
 The redesign is complete when:
 
-- All four walls and the ledge ring render as independent, support-free printable parts.
+- All four walls and the ledge ring render as independent parts with support minimized and any remaining support localized and removable.
 - Exterior wall seams are 45-degree mitres with no visible butt-joint step in assembly.
 - Every top and bottom corner screw captures both intersecting walls.
-- All nut traps load from inside and can be printed without support.
+- All nut traps load from inside, retain the nut when inverted, and have no accidental or inaccessible support region.
 - Independently printed enclosure parts have no unintended interference in the assembled model.
 - The floor uses four bottom-up corner M3 screws and no midpoint M5 enclosure fasteners.
 - West and east can be omitted in assembly while north and south support the wiring configuration.

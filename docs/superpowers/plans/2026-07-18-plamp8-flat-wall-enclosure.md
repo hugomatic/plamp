@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the support-dependent Plamp8 wall shell with four flat-printed walls, a separate ledge ring, and shared support-free M3 corner joints while preserving the existing top panel and sub-panel.
+**Goal:** Replace the support-dependent Plamp8 wall shell with four flat-printed walls, a separate ledge ring, and shared M3 corner joints with deliberate, minimized support while preserving the existing top panel and sub-panel.
 
 **Architecture:** Keep the implementation in `things/plamp8/plamp8.scad`, following its existing parameter and view conventions. Build reusable corner-joint and wall-body modules once, then transform those same modules for the four printable wall views and the assembly. Use source-contract tests for stable interfaces, targeted OpenSCAD renders for geometry, a physical corner coupon for fit, and a bounded intersection diagnostic for unintended overlap.
 
@@ -128,7 +128,7 @@ module support_free_horizontal_bore(length, d) {
 
 Build `corner_clearance_tab()` and `corner_nut_tab()` around this bore in the same wall-local coordinates. Give each tab a broad root into the wall plus `corner_tab_gusset()` with a 45-degree printable slope. Define the side-open nut entry and roof directly in these print coordinates; do not wrap or rotate the old upright-shell nut trap.
 
-Adapt the existing `panel_corner_fastener_test()` into `wall_corner_fastener_test()`. Lay out separate printable top and bottom coupon pieces on Z=0, preserving a 3 mm top-panel surrogate, 10 mm sub-panel surrogate, 3 mm ring segment, two 4 mm wall tabs, and 3 mm floor segment. Echo the 25 mm top screw and the candidate bottom screw stack; keep every coupon exterior surface on the build plane. Slice the coupon after rendering to confirm that neither the tab bodies nor their horizontal bores require support.
+Adapt the existing `panel_corner_fastener_test()` into the corner coupon. Lay out separate printable top and bottom coupon pieces on Z=0, preserving a 3 mm top-panel surrogate, 10 mm sub-panel surrogate, 3 mm ring segment, two 4 mm wall tabs, and 3 mm floor segment. Echo the 25 mm top screw and the candidate bottom screw stack; keep every coupon exterior surface on the build plane. Slice the coupon after rendering to confirm support is minimized, deliberate, and removable.
 
 - [ ] **Step 4: Run the contract test and render the coupon**
 
@@ -574,7 +574,7 @@ bash -n things/plamp8/generate.bash
 git diff --check
 ```
 
-Before physical fit evidence, low-detail render the coupon, ledge ring, four walls, floor, full assembly, and north/south-only wiring assembly. Final-quality render only the coupon plus one revision-marked wall; inspect the marked wall in the slicer to verify the exterior is on the build plate, horizontal bores/roofs need no support, and the revision is readable. Do not regenerate unchanged top/sub-panel STLs.
+Before physical fit evidence, low-detail render the coupon, ledge ring, four walls, floor, full assembly, and north/south-only wiring assembly. Final-quality render only the coupon plus one revision-marked wall; inspect the marked wall in the slicer to verify the exterior is on the build plate, support is localized and removable, and the revision is readable. Do not regenerate unchanged top/sub-panel STLs.
 
 After the physical coupon passes, generate final manufacturing-quality ledge ring, four walls, and floor from the committed directory-specific revision. Confirm every requested STL is non-empty and inspect logs for empty-object, missing-include, and manifold warnings.
 
@@ -591,3 +591,83 @@ git push
 Use the committed coupon STL with M3x25 first. Record whether the nut inserts from inside, tabs assemble without binding, the 45-degree seam closes, and the full panel/ring/tab stack clamps with full nut engagement and 0-2 mm screw protrusion. Try M3x30 only if M3x25 lacks engagement.
 
 Do not start four full wall prints until the coupon supplies this physical evidence.
+
+---
+
+### Task 7: Captured-Nut Detents And Named Corner Coupon
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+**Interfaces:**
+- Replaces the broad nut-entry catcher with two small opposing positive detents using a named 30-degree ramp.
+- Renames the ordered manufacturing view to `corner_coupon`; preserves `wall_corner_fastener_test` only as a developer compatibility alias.
+
+- [ ] **Step 1: Write the failing source-contract test**
+
+Require `corner_nut_detent_angle = 30`, `module corner_nut_retention_detents`, `module corner_coupon`, and `view == "corner_coupon"`. Require `corner_coupon` in the ordered view line and reject `wall_corner_fastener_test` from that line.
+
+- [ ] **Step 2: Run the focused test and verify RED**
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_flat_wall_corner_stack_contract -v
+```
+
+Expected: FAIL because the detent module and named coupon view do not exist.
+
+- [ ] **Step 3: Implement the minimal production geometry**
+
+Keep the vertical hex pocket and solid screw-bearing shoulder. Replace the full-width flat retention ledge with two short opposing detents whose insertion faces grow inward at `corner_nut_detent_angle = 30` degrees from horizontal. The detents retain the nut against inversion and screwdriver disturbance but do not carry screw clamp load. Build the coupon from the same `corner_nut_tab()` and `corner_clearance_tab()` modules as production walls.
+
+- [ ] **Step 4: Verify GREEN and render the renamed coupon**
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_flat_wall_corner_stack_contract -v
+things/plamp8/generate.bash --revision detent-fit-1 --view corner_coupon \
+  things/plamp8/prints/plamp8_corner_coupon_detent_1
+```
+
+Expected: test PASS; non-empty manifold `plamp8_corner_coupon_detent-fit-1.stl`; no missing geometry warning.
+
+### Task 8: Remove Superseded Floor Corners And Legacy Box Controls
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+**Interfaces:**
+- Keeps `floor_corner_lands()`, `floor_locator_lands()`, and `floor_locator_keys()`.
+- Removes `floor_perimeter_rib()`, `floor_rib_corner()`, and their three dedicated dimensions.
+- Removes only Customizer controls, modules, and dimensions proven unreachable from every ordered view and the current four-wall `assembly()`.
+
+- [ ] **Step 1: Write failing cleanup assertions**
+
+Require the three current floor land/locator modules and reject `floor_perimeter_rib`, `floor_rib_corner`, `floor_rib_t`, `floor_rib_h`, and `floor_rib_corner_l`. Reject the unreachable monolithic `walls()` / `walls_context()` path and its wall-only feature gate. Require current manufacturing views to remain present.
+
+- [ ] **Step 2: Run the focused tests and verify RED**
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_floor_uses_corner_m3_wall_fasteners \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_has_four_flat_printed_mitred_wall_views -v
+```
+
+Expected: FAIL on the still-present legacy floor ribs and shell modules.
+
+- [ ] **Step 3: Delete only proven-dead geometry and controls**
+
+Remove the L-shaped floor rib call/modules/dimensions. Trace each candidate feature with `rg` before deletion; retain any control referenced by `floor_context()`, an ordered printable view, or current `assembly()`. Use `show_ledge_ring` as the sole assembly ring visibility gate.
+
+- [ ] **Step 4: Render floor and reduced shell assembly**
+
+Render `floor` at low detail and compile a walls+floor+ring assembly with component and text rendering disabled. Confirm the four M3 axes are unobstructed and local circular lands remain around their countersinks.
+
+### Task 9: Replacement Coupon And Verification Gate
+
+- [ ] Run the complete CAD-script suite, shell syntax check, `git diff --check`, four standalone wall renders, floor render, bounded wall-corner intersection check, and reduced all/wiring/100 mm assembly compilations.
+- [ ] Inspect the coupon STL for localized support surfaces and confirm the detents are reachable from the enclosure interior.
+- [ ] Commit and push source before generating the final coupon so `revision_string` is a reproducible directory-specific Git hash.
+- [ ] Generate only the new `corner_coupon` STL and do not present the obsolete `363883f` coupon for printing.
