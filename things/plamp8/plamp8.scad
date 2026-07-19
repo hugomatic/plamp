@@ -230,6 +230,7 @@ bore_tangent_a = corner_screw_d / 2 / sqrt(2);
 corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
+corner_nut_tab_extension = 16;
 corner_nut_detent_angle = 30;
 corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
@@ -1539,12 +1540,17 @@ module corner_tab_positive() {
 
 module corner_nut_tab_positive(bearing_side = 1) {
     y0 = -corner_tab_t / 2
-        - (bearing_side > 0 ? corner_nut_retainer_t : 0);
+        - (bearing_side > 0
+            ? corner_nut_retainer_t + corner_nut_tab_extension
+            : 0);
+    corner_nut_tab_length = corner_tab_t
+        + corner_nut_retainer_t
+        + corner_nut_tab_extension;
 
     translate([corner_tab_outer_x, y0, 0])
         cube([
             corner_tab_effective_w,
-            corner_tab_t + corner_nut_retainer_t,
+            corner_nut_tab_length,
             corner_tab_h
         ]);
 }
@@ -1619,12 +1625,19 @@ module corner_clearance_tab() {
 }
 
 module corner_nut_tab(bearing_side = 1) {
+    corner_nut_tab_length = corner_tab_t
+        + corner_nut_retainer_t
+        + corner_nut_tab_extension;
+    corner_nut_tab_bore_center_y = -bearing_side
+        * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
+
     difference() {
         corner_nut_tab_positive(bearing_side);
-        support_free_horizontal_bore(
-            corner_tab_t + 2 * corner_nut_retainer_t + 0.2,
-            corner_screw_d
-        );
+        translate([0, corner_nut_tab_bore_center_y, 0])
+            support_free_horizontal_bore(
+                corner_nut_tab_length + 0.2,
+                corner_screw_d
+            );
         support_free_m3_nut_trap(bearing_side);
     }
 }

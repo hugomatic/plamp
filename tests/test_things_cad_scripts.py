@@ -69,6 +69,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
+        self.assertIn("corner_nut_tab_extension = 16;", source)
         self.assertIn("corner_nut_detent_angle = 30;", source)
         self.assertIn(
             "corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);",
@@ -91,6 +92,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module corner_nut_tab_positive", source)
         self.assertIn("module corner_clearance_tab", source)
         self.assertIn("corner_tab_t + corner_nut_retainer_t", source)
+        self.assertIn("corner_nut_tab_length", source)
+        self.assertIn("corner_nut_tab_bore_center_y", source)
         self.assertIn("module corner_nut_tab", source)
         self.assertIn("module support_free_m3_nut_trap", source)
         self.assertIn("module corner_nut_retention_detents", source)
