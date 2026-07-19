@@ -383,3 +383,31 @@ git push origin feature/plamp8-flat-walls
 ```
 
 Expected: all tests pass, the commit succeeds, and the remote branch advances.
+
+---
+
+### Task 5: Refine East-Wall Revision And Stiffening
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+**Interfaces:**
+- Consumes: `wall_revision_negative(...)`, `wall_stiffening_ribs(...)`, and the existing full-vent safety margins.
+- Produces: an east-wall revision position above the vent field and a centerline vertical rib for `vent_mode == "full"`.
+
+- [ ] **Step 1: Write failing assertions**
+
+Require a named `wall_revision_top_margin = 10;`, a full-vent `revision_y` of `h - wall_revision_top_margin`, and `length / 2` in the full-vent `rib_xs` array.
+
+- [ ] **Step 2: Run the east-wall contract test and verify RED**
+
+```bash
+python3 -m unittest tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_has_four_flat_printed_mitred_wall_views -v
+```
+
+Expected: FAIL because the top-margin parameter and center rib are absent.
+
+- [ ] **Step 3: Implement, verify, commit, and push**
+
+Add the named margin with the wall parameters. Derive `revision_y` from `vent_mode`, use it in `wall_revision_negative`, and add `length / 2` to the `full` rib positions. Run the focused and full CAD tests plus `git diff --check`, then commit as `Refine Plamp8 east wall` and push the feature branch.

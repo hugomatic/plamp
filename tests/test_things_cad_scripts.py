@@ -193,11 +193,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("corner_r", source)
         self.assertIn("module wall_mitre_negative", source)
         self.assertIn("module wall_revision_negative", source)
+        self.assertIn("wall_revision_top_margin = 10;", source)
         revision_module = source.split("module wall_revision_negative", 1)[1].split(
             "module ", 1
         )[0]
         self.assertNotIn("mirror(", revision_module)
+        self.assertIn(
+            'revision_y = vent_mode == "full" ? h - wall_revision_top_margin : h / 2;',
+            revision_module,
+        )
         self.assertIn("module wall_stiffening_ribs", source)
+        self.assertIn(
+            "? [vent_wall_margin + vent_hole_spacing / 2, length / 2, length - 21]",
+            source,
+        )
         self.assertIn("transverse_rib_y = top_nut_tab_center_y(h)", source)
         self.assertIn("corner_nut_shoulder_t / 2;", source)
         self.assertIn("floor_rib_y0 = wall_t;", source)

@@ -46,6 +46,8 @@ Do not add a full-height tongue, dovetail, or groove along a wall seam. Use only
 
 Each wall is a separately printable part and must carry `revision_string` on a non-critical interior face. The marking must be readable in the STL and must not affect a mating, sealing, or hardware surface.
 
+On the fully vented east wall, place `revision_string` in the clear upper band above the highest vent row rather than among the holes. Add a vertical stiffening rib on the wall centerline in addition to the two existing full-vent ribs; the center rib must run between the established bottom and top joint clearances and remain on the interior face.
+
 ## Adjustable Wall Height
 
 Expose a dedicated Customizer parameter:

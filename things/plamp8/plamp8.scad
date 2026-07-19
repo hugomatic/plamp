@@ -280,6 +280,7 @@ vent_wall_margin = 10;
 vent_top_margin = ledge_r + vent_hole_d;
 vent_floor_clearance = vent_wall_margin + vent_hole_spacing;
 vent_ledge_clearance = vent_hole_spacing;
+wall_revision_top_margin = 10;
 service_row_y = 58;
 ac_row_y = -63;
 dc_row_y = -106;
@@ -1767,8 +1768,9 @@ module wall_body_positive(length, h = wall_z_height) {
 
 module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
     revision_x = vent_mode == "half" ? length / 3 : length / 2;
+    revision_y = vent_mode == "full" ? h - wall_revision_top_margin : h / 2;
 
-    translate([revision_x, h / 2, wall_t])
+    translate([revision_x, revision_y, wall_t])
         write_text(revision_string, box_revision_font, -0.6);
 }
 
@@ -1801,7 +1803,7 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
     rib_xs = vent_mode == "half"
         ? [length / 4, length / 2 + vent_hole_spacing / 2]
         : (vent_mode == "full"
-            ? [vent_wall_margin + vent_hole_spacing / 2, length - 21]
+            ? [vent_wall_margin + vent_hole_spacing / 2, length / 2, length - 21]
             : [length / 3, 2 * length / 3]);
     rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
     rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;
