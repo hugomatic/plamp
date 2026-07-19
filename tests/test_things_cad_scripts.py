@@ -111,6 +111,30 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
 
+    def test_plamp8_has_four_flat_printed_mitred_wall_views(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        view_line = next(
+            line for line in source.splitlines() if line.startswith("view =")
+        )
+
+        for name in ("north_wall", "south_wall", "west_wall", "east_wall"):
+            self.assertIn(name, view_line)
+            self.assertIn(f"module {name}_context", source)
+            self.assertIn(f"module {name}()", source)
+            self.assertIn(f'view == "{name}"', source)
+        self.assertNotIn(" walls,", view_line)
+        self.assertNotIn('view == "walls"', source)
+        self.assertIn("module wall_mitre_negative", source)
+        self.assertIn("module wall_revision_negative", source)
+        revision_module = source.split("module wall_revision_negative", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertNotIn("mirror(", revision_module)
+        self.assertIn("module wall_stiffening_ribs", source)
+        self.assertIn('vent_mode == "half" ? length / 2', source)
+        self.assertIn("bottom_wall_joint_inner_y", source)
+        self.assertIn("top_wall_joint_inner_y", source)
+
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 

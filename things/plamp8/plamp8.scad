@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, walls, ledge_ring, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, wall_corner_fastener_test, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, ledge_ring, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, wall_corner_fastener_test, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -240,6 +240,9 @@ locator_key_l = 16;
 locator_key_w = 2;
 locator_key_h = 2;
 locator_clearance = 0.25;
+wall_rib_w = 3;
+wall_rib_h = 2;
+wall_vent_joint_clearance = 1;
 ledge_ring_t = 3;
 ledge_ring_north_rail_w = 3;
 ledge_ring_north_clearance_min = 0.75;
@@ -996,7 +999,7 @@ module walls_context() {
             panel_corner_screw_holes_in_box();
             side_loaded_panel_nut_traps();
             floor_wall_tab_negatives();
-            wall_revision_negative();
+            legacy_wall_revision_negative();
         }
 }
 
@@ -1365,7 +1368,7 @@ module box_bottom_revision_negative() {
             write_text(revision_string, box_revision_font, -0.01);
 }
 
-module wall_revision_negative() {
+module legacy_wall_revision_negative() {
     translate([box_w / 2 + wall_revision_x_offset, -0.01, -box_h / 2])
         rotate([-90, 0, 0])
             mirror([1, 0, 0])
@@ -1714,6 +1717,10 @@ function top_clearance_tab_center_y(h) = h + ledge_top_z - ledge_ring_t - corner
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
 function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
 function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
+function bottom_wall_joint_inner_y() =
+    bottom_nut_tab_center_y() + corner_tab_t / 2 + corner_tab_root_l;
+function top_wall_joint_inner_y(h) =
+    top_nut_tab_center_y(h) - corner_tab_t / 2 - corner_tab_root_l;
 
 module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     polyhedron(
@@ -1728,18 +1735,18 @@ module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     );
 }
 
-module corner_locator_key(top = true) {
+module corner_locator_key(top = true, h = corner_coupon_wall_h) {
     center_y = top
-        ? corner_coupon_wall_h - locator_key_l / 2 - wall_t
+        ? h - locator_key_l / 2 - wall_t
         : locator_key_l / 2 + wall_t;
 
     translate([wall_t, center_y - locator_key_l / 2, wall_t])
         cube([locator_key_w, locator_key_l, locator_key_h]);
 }
 
-module corner_locator_notch(top = true) {
+module corner_locator_notch(top = true, h = corner_coupon_wall_h) {
     center_y = top
-        ? corner_coupon_wall_h - locator_key_l / 2 - wall_t
+        ? h - locator_key_l / 2 - wall_t
         : locator_key_l / 2 + wall_t;
     notch_w = locator_key_w + 2 * locator_clearance;
     notch_l = locator_key_l + locator_clearance;
@@ -1762,6 +1769,198 @@ module corner_locator_notch(top = true) {
         translate([wall_t - 1.5, lead_y + 2, wall_t - 0.01])
             cube([notch_w + 3, 0.1, notch_h + 1]);
     }
+}
+
+module wall_mitre_negative(length, h = wall_z_height) {
+    translate([0, h + 0.1, 0])
+        rotate([90, 0, 0])
+            linear_extrude(height = h + 0.2)
+                polygon([
+                    [-0.1, -0.1],
+                    [wall_t + 0.1, wall_t + 0.1],
+                    [-0.1, wall_t + 0.1]
+                ]);
+
+    translate([0, h + 0.1, 0])
+        rotate([90, 0, 0])
+            linear_extrude(height = h + 0.2)
+                polygon([
+                    [length + 0.1, -0.1],
+                    [length + 0.1, wall_t + 0.1],
+                    [length - wall_t - 0.1, wall_t + 0.1]
+                ]);
+}
+
+module wall_body_positive(length, h = wall_z_height) {
+    difference() {
+        cube([length, h, wall_t]);
+        wall_mitre_negative(length, h);
+    }
+}
+
+module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
+    revision_x = vent_mode == "half" ? length / 3 : length / 2;
+
+    translate([revision_x, h / 2, wall_t])
+        write_text(revision_string, box_revision_font, -0.6);
+}
+
+module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
+    vent_ys = [
+        vent_floor_clearance:
+        vent_hole_spacing:
+        h - vent_top_margin - vent_ledge_clearance
+    ];
+    vent_start_x = vent_mode == "half" ? length / 2 : vent_wall_margin;
+    vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
+    joint_min_x = corner_coupon_axis_x + corner_tab_w / 2;
+    joint_max_x = length - joint_min_x;
+    joint_min_y = bottom_wall_joint_inner_y();
+    joint_max_y = top_wall_joint_inner_y(h);
+
+    if (vent_mode != "none")
+        for (x = vent_xs, y = vent_ys)
+            if (
+                x - vent_hole_d / 2 >= joint_min_x + wall_vent_joint_clearance
+                && x + vent_hole_d / 2 <= joint_max_x - wall_vent_joint_clearance
+                && y - vent_hole_d / 2 >= joint_min_y + wall_vent_joint_clearance
+                && y + vent_hole_d / 2 <= joint_max_y - wall_vent_joint_clearance
+            )
+                translate([x, y, -0.1])
+                    cylinder(h = wall_t + wall_rib_h + 0.2, d = vent_hole_d);
+}
+
+module wall_stiffening_ribs(length, h, vent_mode = "none") {
+    rib_xs = vent_mode == "half"
+        ? [length / 4, length / 2 + vent_hole_spacing / 2]
+        : (vent_mode == "full"
+            ? [vent_wall_margin + vent_hole_spacing / 2, length - 21]
+            : [length / 3, 2 * length / 3]);
+    rib_y0 = bottom_wall_joint_inner_y() + wall_vent_joint_clearance;
+    rib_y1 = top_wall_joint_inner_y(h) - wall_vent_joint_clearance;
+
+    for (x = rib_xs)
+        translate([x - wall_rib_w / 2, rib_y0, wall_t])
+            cube([wall_rib_w, rib_y1 - rib_y0, wall_rib_h]);
+}
+
+module wall_end_feature(right = false, length = box_w) {
+    if (right)
+        translate([length, 0, 0])
+            mirror([1, 0, 0])
+                children();
+    else
+        children();
+}
+
+module wall_corner_tabs(length, h, nut_owner) {
+    for (right = [false, true])
+        wall_end_feature(right = right, length = length) {
+            translate([corner_coupon_axis_x, top_nut_tab_center_y(h), 0])
+                if (nut_owner)
+                    corner_nut_tab(bearing_side = 1, root_direction = -1);
+            translate([corner_coupon_axis_x, top_clearance_tab_center_y(h), 0])
+                if (!nut_owner)
+                    corner_clearance_tab(root_direction = -1);
+            translate([corner_coupon_axis_x, bottom_nut_tab_center_y(), 0])
+                if (nut_owner)
+                    corner_nut_tab(bearing_side = -1, root_direction = 1);
+            translate([corner_coupon_axis_x, bottom_clearance_tab_center_y(), 0])
+                if (!nut_owner)
+                    corner_clearance_tab(root_direction = 1);
+        }
+}
+
+module wall_locator_keys(length, h) {
+    for (right = [false, true])
+        wall_end_feature(right = right, length = length) {
+            corner_locator_key(top = true, h = h);
+            corner_locator_key(top = false, h = h);
+        }
+}
+
+module wall_locator_notches(length, h) {
+    for (right = [false, true])
+        wall_end_feature(right = right, length = length) {
+            corner_locator_notch(top = true, h = h);
+            corner_locator_notch(top = false, h = h);
+        }
+}
+
+module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_height) {
+    difference() {
+        union() {
+            wall_body_positive(length, h);
+            wall_corner_tabs(length, h, nut_owner);
+            wall_stiffening_ribs(length, h, vent_mode);
+            if (!nut_owner)
+                wall_locator_keys(length, h);
+        }
+        if (nut_owner)
+            wall_locator_notches(length, h);
+        wall_vent_negatives(length, vent_mode, h);
+        wall_revision_negative(length, h, vent_mode);
+    }
+}
+
+module south_wall_context() {
+    color([0.15, 0.45, 0.9, 1])
+        multmatrix([
+            [1, 0, 0, 0],
+            [0, 0, 1, 0],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])
+            flat_wall(box_w, nut_owner = true, vent_mode = "half");
+}
+
+module north_wall_context() {
+    color([0.15, 0.45, 0.9, 1])
+        multmatrix([
+            [1, 0, 0, 0],
+            [0, 0, -1, box_d],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])
+            flat_wall(box_w, nut_owner = true, vent_mode = "half");
+}
+
+module west_wall_context() {
+    color([0.2, 0.75, 0.35, 1])
+        multmatrix([
+            [0, 0, 1, 0],
+            [-1, 0, 0, box_d],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])
+            flat_wall(box_d, nut_owner = false, vent_mode = "none");
+}
+
+module east_wall_context() {
+    color([0.2, 0.75, 0.35, 1])
+        multmatrix([
+            [0, 0, -1, box_w],
+            [1, 0, 0, 0],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])
+            flat_wall(box_d, nut_owner = false, vent_mode = "full");
+}
+
+module north_wall() {
+    flat_wall(box_w, nut_owner = true, vent_mode = "half");
+}
+
+module south_wall() {
+    flat_wall(box_w, nut_owner = true, vent_mode = "half");
+}
+
+module west_wall() {
+    flat_wall(box_d, nut_owner = false, vent_mode = "none");
+}
+
+module east_wall() {
+    flat_wall(box_d, nut_owner = false, vent_mode = "full");
 }
 
 module corner_wall_coupon(nut_owner = false, top = true) {
@@ -2082,8 +2281,14 @@ if (view == "relay_footprint") {
     converter_footprint();
 } else if (view == "floor") {
     floor_part();
-} else if (view == "walls") {
-    walls();
+} else if (view == "north_wall") {
+    north_wall();
+} else if (view == "south_wall") {
+    south_wall();
+} else if (view == "west_wall") {
+    west_wall();
+} else if (view == "east_wall") {
+    east_wall();
 } else if (view == "ledge_ring") {
     ledge_ring();
 } else if (view == "plate") {
