@@ -263,6 +263,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn(f"{control} = true;", source)
             self.assertIn(f"if ({control})", source)
         self.assertNotIn("show_walls = true;", source)
+        self.assertIn("show_dc_dc = true;", source)
+        self.assertIn("if (show_dc_dc)", source)
+        self.assertIn("internal_components(show_psu, show_dc_dc, show_relay);", source)
         self.assertIn("box_h = wall_z_height;", source)
         self.assertIn("assert(wall_z_height", source)
         self.assertIn("assert(ledge_top_z == -(plate_t + sub_panel_h)", source)
@@ -273,11 +276,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
         self.assertIn("component_label_t = 0.8;", source)
+        self.assertNotIn("component_label_color", source)
         self.assertIn("module raised_component_label", source)
         self.assertIn('raised_component_label("12V PSU"', source)
         self.assertIn('raised_component_label("DC/DC"', source)
         self.assertIn('raised_component_label("RELAYS"', source)
         self.assertIn("linear_extrude(height = component_label_t)", source)
+        label_module = source.split("module raised_component_label", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertNotIn("color(", label_module)
 
         for module_name in (
             "psu_keepout",
@@ -288,6 +296,24 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 "module ", 1
             )[0]
             self.assertIn("raised_component_label(", keepout)
+
+        self.assertRegex(
+            source,
+            r"color\(\[1, 0\.6, 0\.1, 0\.25\]\)\s*\{[\s\S]*?"
+            r'raised_component_label\("12V PSU", psu_label_font, psu_h, 0\);\s*\}',
+        )
+        self.assertRegex(
+            source,
+            r"color\(\[0\.8, 0\.25, 0\.95, 0\.25\]\)\s*\{[\s\S]*?"
+            r'raised_component_label\("DC/DC", converter_label_font, converter_h, '
+            r"-internal_converter_rot_z\);\s*\}",
+        )
+        self.assertRegex(
+            source,
+            r"color\(\[0\.1, 0\.7, 0\.2, 0\.25\]\)\s*\{[\s\S]*?"
+            r'raised_component_label\("RELAYS", relay_label_font, relay_h, '
+            r"-internal_relay_rot_z\);\s*\}",
+        )
 
         for module_name in (
             "psu_footprint",

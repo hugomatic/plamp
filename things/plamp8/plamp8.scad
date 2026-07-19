@@ -16,6 +16,7 @@ show_east_wall = true;
 show_ledge_ring = true;
 show_floor = true;
 show_psu = true;
+show_dc_dc = true;
 show_relay = true;
 show_top_outline = false;
 show_sub_panel = true;
@@ -208,7 +209,6 @@ relay_mount_x = 135;
 relay_mount_y = 70;
 relay_countersink_d = screw_chamfer_d(relay_screw_size);
 component_label_t = 0.8;
-component_label_color = [0.05, 0.05, 0.05, 1];
 psu_label_font = 9;
 converter_label_font = 5;
 relay_label_font = 14;
@@ -853,54 +853,53 @@ module c13_inlet_unit(include_revision = true) {
 }
 
 module raised_component_label(label, font_size, top_z, counter_rotation_z) {
-    color(component_label_color)
-        translate([0, 0, top_z])
-            rotate([0, 0, counter_rotation_z])
-                linear_extrude(height = component_label_t)
-                    text(
-                        label,
-                        size = font_size,
-                        font = "DejaVu Sans",
-                        halign = "center",
-                        valign = "center"
-                    );
+    translate([0, 0, top_z])
+        rotate([0, 0, counter_rotation_z])
+            linear_extrude(height = component_label_t)
+                text(
+                    label,
+                    size = font_size,
+                    font = "DejaVu Sans",
+                    halign = "center",
+                    valign = "center"
+                );
 }
 
 module psu_keepout() {
-    color([1, 0.6, 0.1, 0.25])
+    color([1, 0.6, 0.1, 0.25]) {
         translate([0, 0, psu_h / 2])
             cube([psu_w, psu_d, psu_h], center = true);
+        raised_component_label("12V PSU", psu_label_font, psu_h, 0);
+    }
 
     color([0, 0, 0, 1])
         psu_mount_markers(psu_h + 1);
-
-    raised_component_label("12V PSU", psu_label_font, psu_h, -internal_psu_rot_z);
 }
 
 module converter_keepout() {
-    color([0.8, 0.25, 0.95, 0.25])
+    color([0.8, 0.25, 0.95, 0.25]) {
         translate([0, 0, converter_h / 2])
             cube([converter_w, converter_d, converter_h], center = true);
+        raised_component_label("DC/DC", converter_label_font, converter_h, -internal_converter_rot_z);
+    }
 
     color([0, 0, 0, 1])
         for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
             translate([0, y, converter_h + 1])
                 cylinder(h = 2, d = converter_mount_hole_d);
-
-    raised_component_label("DC/DC", converter_label_font, converter_h, -internal_converter_rot_z);
 }
 
 module relay_board_keepout() {
-    color([0.1, 0.7, 0.2, 0.25])
+    color([0.1, 0.7, 0.2, 0.25]) {
         translate([0, 0, relay_h / 2])
             cube([relay_w, relay_d, relay_h], center = true);
+        raised_component_label("RELAYS", relay_label_font, relay_h, -internal_relay_rot_z);
+    }
 
     color([0, 0, 0, 1])
         for (x = [-relay_mount_x / 2, relay_mount_x / 2], y = [-relay_mount_y / 2, relay_mount_y / 2])
             translate([x, y, relay_h + 1])
                 cylinder(h = 2, d = relay_mount_hole_d);
-
-    raised_component_label("RELAYS", relay_label_font, relay_h, -internal_relay_rot_z);
 }
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
@@ -2126,13 +2125,13 @@ module mounted_top_panel() {
         top_panel_8ch(true);
 }
 
-module internal_components(show_psu = true, show_relay = true) {
+module internal_components(show_psu = true, show_dc_dc = true, show_relay = true) {
     translate([box_inner_x + top_panel_w / 2, box_inner_y + top_panel_h / 2, 0]) {
         if (show_psu)
             translate([internal_psu_x, internal_psu_y, -box_h + wall_t + component_raise_h])
                 rotate([0, 0, internal_psu_rot_z])
                     psu_keepout();
-        if (show_psu)
+        if (show_dc_dc)
             translate([internal_converter_x, internal_converter_y, -box_h + wall_t + component_raise_h])
                 rotate([0, 0, internal_converter_rot_z])
                     converter_keepout();
@@ -2245,7 +2244,7 @@ module assembly() {
         translate([box_inner_x, box_inner_y, 0])
             mounted_top_panel();
 
-    internal_components(show_psu, show_relay);
+    internal_components(show_psu, show_dc_dc, show_relay);
 }
 
 if (view == "relay_footprint") {

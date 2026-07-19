@@ -336,3 +336,50 @@ git log --oneline -4
 ```
 
 Expected: the branch is clean, generated files exist only under `/tmp`, and the log includes the design, spine, and label commits.
+
+---
+
+### Task 4: Apply Assembly-Illustration Review Feedback
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+**Interfaces:**
+- Consumes: the three component keepout modules and `internal_components(...)`.
+- Produces: independent `show_dc_dc` visibility, inherited keepout color/transparency for all raised labels, and a 90-degree counter-clockwise assembled orientation for `12V PSU`.
+
+- [ ] **Step 1: Write failing source-contract assertions**
+
+Extend the assembly-controls test with `show_dc_dc = true;`, `if (show_dc_dc)`, and `internal_components(show_psu, show_dc_dc, show_relay);`. Update the label test to reject `component_label_color`, verify the label module contains no `color(` call, verify each label call is inside its keepout's transparent `color()` block, and require the PSU call to use a local rotation of `0` while converter and relay retain their negative placement counter-rotations.
+
+- [ ] **Step 2: Run the two focused tests and verify RED**
+
+```bash
+python3 -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_assembly_has_individual_wall_controls_and_height \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_transparent_components_have_raised_assembly_labels -v
+```
+
+Expected: FAIL because `show_dc_dc` is absent and labels still apply an independent color.
+
+- [ ] **Step 3: Implement the visibility and illustration refinements**
+
+Add `show_dc_dc = true;`, change `internal_components` to accept three booleans, guard the converter with `show_dc_dc`, and pass all three controls from `assembly()`. Remove `component_label_color` and the `color()` wrapper from `raised_component_label`. Expand each keepout's existing transparent color into a block containing both its cube and label. Call the PSU label with local rotation `0`; keep converter and relay calls counter-rotated by their placement angles.
+
+- [ ] **Step 4: Run focused and full tests, then commit and push**
+
+```bash
+python3 -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_assembly_has_individual_wall_controls_and_height \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_transparent_components_have_raised_assembly_labels -v
+python3 -m unittest tests.test_things_cad_scripts -v
+git diff --check
+git add tests/test_things_cad_scripts.py things/plamp8/plamp8.scad \
+  docs/superpowers/specs/2026-07-18-plamp8-flat-wall-enclosure-design.md \
+  docs/superpowers/plans/2026-07-19-plamp8-corner-spine-labels.md
+git commit -m "Refine Plamp8 assembly labels"
+git push origin feature/plamp8-flat-walls
+```
+
+Expected: all tests pass, the commit succeeds, and the remote branch advances.

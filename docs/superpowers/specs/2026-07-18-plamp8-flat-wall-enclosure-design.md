@@ -222,6 +222,8 @@ show_ledge_ring = true;
 
 Keep the existing floor, internal-component, top-panel, and sub-panel visibility controls. The normal `assembly` view is the only required assembly visualization; users can reproduce the wiring state by unchecking west and east.
 
+Split converter visibility from PSU visibility with `show_dc_dc = true`. `show_psu` controls only the 12 V PSU keepout, `show_dc_dc` controls only the DC/DC keepout, and `show_relay` continues to control the relay keepout.
+
 All assembly transforms must reuse the same part modules used by the printable views. Do not maintain separate approximate wall geometry for visualization.
 
 ## Assembly Illustration Labels
@@ -232,7 +234,7 @@ Treat the transparent component keepouts as assembly-manual illustration element
 - DC/DC converter keepout: `DC/DC`
 - 12 V power-supply keepout: `12V PSU`
 
-Build each label with positive-Z `linear_extrude()` text beginning at the keepout's top surface and extending upward by a named illustration-label thickness. Render the text in an opaque dark color so it remains readable over the existing translucent orange, purple, and green keepouts. Size each label independently to remain inside its component footprint, and orient it so it reads normally from above in the standard assembly view after the component's placement rotation. Labels belong only to the contextual keepout modules; they must not alter the floor, component-footprint coupons, or any printable enclosure part.
+Build each label with positive-Z `linear_extrude()` text beginning at the keepout's top surface and extending upward by a named illustration-label thickness. Put the text inside the same `color()` scope as its transparent component volume; do not apply another color or opacity to the label. Size each label independently to remain inside its component footprint. Orient `RELAYS` and `DC/DC` horizontally in the standard assembly top view, and rotate `12V PSU` 90 degrees counter-clockwise from horizontal. Labels belong only to the contextual keepout modules; they must not alter the floor, component-footprint coupons, or any printable enclosure part.
 
 ## First Printable: Corner-Stack Coupon
 
@@ -273,6 +275,7 @@ Automated source-level tests should verify at least:
 - Top and bottom corner modules use the agreed north/south nut ownership and east/west clearance ownership.
 - North/south walls use one continuous rounded spine per corner, with two separate bores and two captured-nut traps, while east/west walls retain separate clearance tabs.
 - The three transparent component keepouts include the approved positive-Z assembly labels without adding those labels to printable component-footprint coupons.
+- The assembly exposes an independent `show_dc_dc` control rather than coupling the converter to `show_psu`.
 - Each printable part receives `revision_string` where required.
 
 OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct render commands:
@@ -284,7 +287,7 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 5. After committing the final CAD, render each wall, ledge ring, floor, top panel, sub-panel, and assembly from the directory-specific commit.
 6. Confirm all requested STL files are present and non-empty.
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
-8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on. Confirm each north/south spine is a single union, its two screw bores remain separated, both nut entries remain accessible, and all three component labels read correctly from above.
+8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on. Confirm each north/south spine is a single union, its two screw bores remain separated, both nut entries remain accessible, `RELAYS` and `DC/DC` read horizontally, `12V PSU` reads 90 degrees counter-clockwise, and each label inherits its keepout's transparent color.
 9. Check independently printed part pairs for unintended volumetric overlap. Bound the calculations to four wall-corner boxes, four narrow floor-to-wall edge strips, four narrow ring-to-wall edge strips, the thin sub-panel-to-ring perimeter, the thin top-to-sub-panel perimeter, and the two PH switch clearance regions. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
 
 Generated STL and print artifacts remain untracked unless explicitly requested.
@@ -305,4 +308,5 @@ The redesign is complete when:
 - `wall_z_height` changes the full wall height without moving fixed end features away from their respective top or bottom wall ends.
 - The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
 - Revision markings remain readable on every standalone printable enclosure part.
-- `RELAYS`, `DC/DC`, and `12V PSU` appear as opaque, positive-Z raised text on the corresponding transparent assembly keepouts and do not affect printable parts.
+- `RELAYS`, `DC/DC`, and `12V PSU` appear as positive-Z raised text in the same transparent color scopes as their corresponding assembly keepouts and do not affect printable parts; the PSU text is rotated 90 degrees counter-clockwise.
+- `show_dc_dc` independently shows or hides the converter keepout in the assembly.
