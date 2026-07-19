@@ -100,6 +100,22 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("corner_nut_tab_length", source)
         self.assertIn("corner_nut_tab_bore_center_y", source)
         self.assertIn("module corner_nut_tab", source)
+        self.assertIn("function corner_spine_y0()", source)
+        self.assertIn("function corner_spine_y1(h)", source)
+        self.assertIn("module corner_nut_tab_negatives", source)
+        self.assertIn("module corner_nut_spine(h)", source)
+        self.assertIn(
+            "corner_tab_boss_positive(spine_l, spine_y0 + spine_l / 2);",
+            source,
+        )
+        self.assertEqual(source.count("corner_nut_tab_negatives("), 4)
+        self.assertIn("corner_nut_spine(h);", source)
+        wall_tabs = source.split("module wall_corner_tabs", 1)[1].split(
+            "module flat_wall", 1
+        )[0]
+        self.assertIn("if (nut_owner)", wall_tabs)
+        self.assertIn("corner_nut_spine(h);", wall_tabs)
+        self.assertEqual(wall_tabs.count("corner_clearance_tab();"), 2)
         self.assertIn("module support_free_m3_nut_trap", source)
         self.assertIn("module corner_nut_retention_detents", source)
         nut_trap = source.split("module support_free_m3_nut_trap", 1)[1].split(

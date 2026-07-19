@@ -1648,7 +1648,7 @@ module corner_clearance_tab() {
     }
 }
 
-module corner_nut_tab(bearing_side = 1) {
+module corner_nut_tab_negatives(bearing_side = 1) {
     corner_nut_tab_length = corner_tab_t
         + corner_nut_retainer_t
         + corner_nut_tab_extension;
@@ -1656,17 +1656,21 @@ module corner_nut_tab(bearing_side = 1) {
         * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
     nut_offset_y = bearing_side < 0 ? bottom_corner_nut_offset : 0;
 
+    translate([0, corner_nut_tab_bore_center_y, 0])
+        support_free_horizontal_bore(
+            corner_nut_tab_length + 0.2,
+            corner_screw_d
+        );
+    support_free_m3_nut_trap(
+        bearing_side,
+        pocket_offset_y = nut_offset_y
+    );
+}
+
+module corner_nut_tab(bearing_side = 1) {
     difference() {
         corner_nut_tab_positive(bearing_side);
-        translate([0, corner_nut_tab_bore_center_y, 0])
-            support_free_horizontal_bore(
-                corner_nut_tab_length + 0.2,
-                corner_screw_d
-            );
-        support_free_m3_nut_trap(
-            bearing_side,
-            pocket_offset_y = nut_offset_y
-        );
+        corner_nut_tab_negatives(bearing_side);
     }
 }
 
@@ -1674,6 +1678,22 @@ function top_clearance_tab_center_y(h) = h + ledge_top_z - ledge_ring_t - corner
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
 function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
 function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
+function corner_spine_y0() = bottom_nut_tab_center_y() - corner_tab_t / 2;
+function corner_spine_y1(h) = top_nut_tab_center_y(h) + corner_tab_t / 2;
+
+module corner_nut_spine(h) {
+    spine_y0 = corner_spine_y0();
+    spine_l = corner_spine_y1(h) - spine_y0;
+
+    difference() {
+        corner_tab_boss_positive(spine_l, spine_y0 + spine_l / 2);
+        translate([0, top_nut_tab_center_y(h), 0])
+            corner_nut_tab_negatives(bearing_side = 1);
+        translate([0, bottom_nut_tab_center_y(), 0])
+            corner_nut_tab_negatives(bearing_side = -1);
+    }
+}
+
 assert(ledge_top_z == -(plate_t + sub_panel_h),
     "sub-panel top datum must stay fixed below the top panel");
 assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h),
@@ -1819,18 +1839,15 @@ module wall_end_feature(right = false, length = box_w) {
 module wall_corner_tabs(length, h, nut_owner) {
     for (right = [false, true])
         wall_end_feature(right = right, length = length) {
-            translate([corner_axis_inset, top_nut_tab_center_y(h), 0])
-                if (nut_owner)
-                    corner_nut_tab(bearing_side = 1);
-            translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
-                if (!nut_owner)
+            if (nut_owner)
+                translate([corner_axis_inset, 0, 0])
+                    corner_nut_spine(h);
+            else {
+                translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
                     corner_clearance_tab();
-            translate([corner_axis_inset, bottom_nut_tab_center_y(), 0])
-                if (nut_owner)
-                    corner_nut_tab(bearing_side = -1);
-            translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
-                if (!nut_owner)
+                translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
                     corner_clearance_tab();
+            }
         }
 }
 
