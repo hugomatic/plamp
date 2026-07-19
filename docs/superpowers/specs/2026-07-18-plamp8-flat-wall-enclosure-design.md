@@ -80,6 +80,8 @@ At every top corner, the two intersecting walls contribute overlapping inward-fa
 - With the wall in its flat print orientation, the nut entry and trap roof must require no support.
 - Because the assembled vertical screw axes become horizontal in the flat wall print orientation, production tab bores must use a teardrop or 45-degree-roof profile rather than an unsupported round horizontal ceiling.
 - The tabs must have broad roots and printable gussets that transfer screw loads into the wall without relying on a narrow layer-bond cantilever.
+- Each tab's corner-facing edge starts at least `corner_fit_clearance` beyond the neighboring 3 mm wall skin; the shared M3 axis remains 7 mm from the corner.
+- Clearance-tab gussets run inward along their own wall length and remain within the clearance tab's 4 mm stack layer. They must not descend through the neighboring nut-tab layer.
 
 At the northeast corner, for example, the final stack from top to bottom is:
 

@@ -9,7 +9,11 @@ dc_connector_type = "xt60"; // [barrel, xt60]
 /* [assembly view options] */
 
 // show / hide enclosure parts
-show_walls = true;
+show_north_wall = true;
+show_south_wall = true;
+show_west_wall = true;
+show_east_wall = true;
+show_ledge_ring = true;
 show_floor = true;
 show_psu = true;
 show_relay = true;
@@ -224,11 +228,14 @@ psu_side_guide_h = retaining_corner_h;
 wall_t = 3;
 panel_screw_inset = 4;
 corner_axis_inset = wall_t + panel_screw_inset;
+corner_fit_clearance = 0.25;
 corner_tab_t = 4;
 corner_tab_w = 12;
 corner_tab_h = 11;
 corner_tab_root_l = 8;
-corner_fit_clearance = 0.25;
+corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
+corner_tab_inner_x = corner_tab_w / 2;
+corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
 bore_tangent_a = corner_screw_d / 2 / sqrt(2);
 corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
@@ -321,6 +328,8 @@ ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;
 assert(top_corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
+assert(wall_z_height >= 2 * (corner_tab_h + corner_tab_root_l) + 10,
+    "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
 assert(2 * bore_tangent_a > corner_screw_d / 2, "teardrop roof must clear the round screw envelope");
 echo(str("top M3 protrusion: ", top_corner_screw_length - top_stack_h, " mm"));
@@ -1685,22 +1694,41 @@ module corner_tab_gusset(root_direction = 1) {
     edge_y = root_direction * corner_tab_t / 2;
 
     hull() {
-        translate([-corner_tab_w / 2, edge_y - 0.05, wall_t])
-            cube([corner_tab_w, 0.1, corner_tab_h - wall_t]);
+        translate([corner_tab_outer_x, edge_y - 0.05, wall_t])
+            cube([corner_tab_effective_w, 0.1, corner_tab_h - wall_t]);
         translate([
-            -corner_tab_w / 2,
+            corner_tab_outer_x,
             edge_y + root_direction * corner_tab_root_l - 0.05,
             wall_t
         ])
-            cube([corner_tab_w, 0.1, 0.1]);
+            cube([corner_tab_effective_w, 0.1, 0.1]);
     }
 }
 
 module corner_tab_positive(root_direction = 1) {
     union() {
-        translate([-corner_tab_w / 2, -corner_tab_t / 2, 0])
-            cube([corner_tab_w, corner_tab_t, corner_tab_h]);
+        translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
+            cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
         corner_tab_gusset(root_direction);
+    }
+}
+
+// The clearance tab shares a screw axis with the perpendicular nut tab.
+// Route its reinforcement along the wall, away from the corner, so the
+// gusset remains inside its own 4 mm stack layer instead of crossing the
+// neighboring tab. wall_end_feature() mirrors +X inward at right ends.
+module clearance_tab_inward_gusset() {
+    edge_x = corner_tab_inner_x;
+
+    hull() {
+        translate([edge_x - 0.05, -corner_tab_t / 2, wall_t])
+            cube([0.1, corner_tab_t, corner_tab_h - wall_t]);
+        translate([
+            edge_x + corner_tab_root_l - 0.05,
+            -corner_tab_t / 2,
+            wall_t
+        ])
+            cube([0.1, corner_tab_t, 0.1]);
     }
 }
 
@@ -1744,9 +1772,13 @@ module support_free_m3_nut_trap(
         ]);
 }
 
-module corner_clearance_tab(root_direction = 1) {
+module corner_clearance_tab() {
     difference() {
-        corner_tab_positive(root_direction);
+        union() {
+            translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
+                cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
+            clearance_tab_inward_gusset();
+        }
         support_free_horizontal_bore(corner_tab_t + 0.2, corner_screw_d);
     }
 }
@@ -1770,11 +1802,11 @@ module corner_nut_axial_retainer(bearing_side = 1) {
     retainer_y = exposed_side * (corner_tab_t + corner_nut_retainer_t) / 2;
 
     translate([
-        -corner_tab_w / 2,
+        corner_tab_outer_x,
         retainer_y - corner_nut_retainer_t / 2,
         0
     ])
-        cube([corner_tab_w, corner_nut_retainer_t, corner_tab_h]);
+        cube([corner_tab_effective_w, corner_nut_retainer_t, corner_tab_h]);
 }
 
 function top_clearance_tab_center_y(h) = h + ledge_top_z - ledge_ring_t - corner_tab_t / 2;
@@ -1785,6 +1817,13 @@ function bottom_wall_joint_inner_y() =
     bottom_nut_tab_center_y() + corner_tab_t / 2 + corner_tab_root_l;
 function top_wall_joint_inner_y(h) =
     top_nut_tab_center_y(h) - corner_tab_t / 2 - corner_tab_root_l;
+
+assert(ledge_top_z == -(plate_t + sub_panel_h),
+    "sub-panel top datum must stay fixed below the top panel");
+assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h),
+    "top nut tab must remain below the clearance tab");
+assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y(),
+    "bottom clearance tab must remain below the nut tab");
 
 module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     polyhedron(
@@ -1942,13 +1981,13 @@ module wall_corner_tabs(length, h, nut_owner) {
                     corner_nut_tab(bearing_side = 1, root_direction = -1);
             translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
                 if (!nut_owner)
-                    corner_clearance_tab(root_direction = -1);
+                    corner_clearance_tab();
             translate([corner_axis_inset, bottom_nut_tab_center_y(), 0])
                 if (nut_owner)
                     corner_nut_tab(bearing_side = -1, root_direction = 1);
             translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
                 if (!nut_owner)
-                    corner_clearance_tab(root_direction = 1);
+                    corner_clearance_tab();
         }
 }
 
@@ -2063,7 +2102,7 @@ module corner_wall_coupon(nut_owner = false, top = true) {
                 if (nut_owner)
                     corner_nut_tab(bearing_side, root_direction);
                 else
-                    corner_clearance_tab(root_direction);
+                    corner_clearance_tab();
             if (!nut_owner)
                 corner_locator_key(top);
         }
@@ -2326,11 +2365,18 @@ module relay_footprint() {
 
 module assembly() {
     echo_hardware(true, true, true, true);
-    if (show_walls)
-        walls_context();
+    if (show_north_wall)
+        north_wall_context();
+    if (show_south_wall)
+        south_wall_context();
+    if (show_west_wall)
+        west_wall_context();
+    if (show_east_wall)
+        east_wall_context();
 
-    if (feature_ledge)
-        ledge_ring_context();
+    if (show_ledge_ring)
+        if (feature_ledge)
+            ledge_ring_context();
 
     if (show_floor)
         floor_context();

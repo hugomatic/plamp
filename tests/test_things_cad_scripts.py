@@ -61,6 +61,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn(
             "corner_axis_inset = wall_t + panel_screw_inset;", source
         )
+        self.assertIn(
+            "corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;",
+            source,
+        )
+        self.assertIn("corner_tab_inner_x = corner_tab_w / 2;", source)
         self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
@@ -74,6 +79,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn("module support_free_horizontal_bore", source)
         self.assertIn("module corner_clearance_tab", source)
+        self.assertIn("module clearance_tab_inward_gusset", source)
+        clearance_tab = source.split("module corner_clearance_tab", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("clearance_tab_inward_gusset();", clearance_tab)
         self.assertIn("module corner_nut_tab", source)
         self.assertIn("module corner_tab_gusset", source)
         self.assertIn("module support_free_m3_nut_trap", source)
@@ -157,6 +167,25 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("function floor_fastener_points()", source)
         self.assertNotIn("function floor_wall_tab_points()", source)
         self.assertNotIn("module floor_wall_tabs()", source)
+
+    def test_plamp8_assembly_has_individual_wall_controls_and_height(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        for control in (
+            "show_north_wall",
+            "show_south_wall",
+            "show_west_wall",
+            "show_east_wall",
+            "show_ledge_ring",
+        ):
+            self.assertIn(f"{control} = true;", source)
+            self.assertIn(f"if ({control})", source)
+        self.assertNotIn("show_walls = true;", source)
+        self.assertIn("box_h = wall_z_height;", source)
+        self.assertIn("assert(wall_z_height", source)
+        self.assertIn("assert(ledge_top_z == -(plate_t + sub_panel_h)", source)
+        self.assertIn("assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h)", source)
+        self.assertIn("assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y()", source)
 
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
