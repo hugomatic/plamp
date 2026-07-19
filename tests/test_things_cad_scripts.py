@@ -93,6 +93,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("corner_tab_root_l", source)
         self.assertIn("module corner_tab_positive", source)
         self.assertIn("module corner_nut_tab_positive", source)
+        self.assertIn("module corner_tab_boss_positive", source)
+        self.assertIn("corner_tab_boss_r = 5;", source)
         self.assertIn("module corner_clearance_tab", source)
         self.assertIn("corner_tab_t + corner_nut_retainer_t", source)
         self.assertIn("corner_nut_tab_length", source)

@@ -222,6 +222,7 @@ corner_fit_clearance = 0.25;
 corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
+corner_tab_boss_r = 5;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
@@ -1539,9 +1540,26 @@ module support_free_horizontal_bore(length, d, axis_z = wall_t + panel_screw_ins
                 support_free_bore_profile(d);
 }
 
+module corner_tab_boss_positive(length, center_y = 0) {
+    intersection() {
+        translate([0, center_y, wall_t + panel_screw_inset])
+            rotate([90, 0, 0])
+                cylinder(h = length, r = corner_tab_boss_r, center = true);
+        translate([
+            corner_tab_outer_x,
+            center_y - length / 2,
+            0
+        ])
+            cube([
+                corner_tab_effective_w,
+                length,
+                wall_t + panel_screw_inset + corner_tab_boss_r
+            ]);
+    }
+}
+
 module corner_tab_positive() {
-    translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
-        cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
+    corner_tab_boss_positive(corner_tab_t);
 }
 
 module corner_nut_tab_positive(bearing_side = 1) {
@@ -1553,12 +1571,10 @@ module corner_nut_tab_positive(bearing_side = 1) {
         + corner_nut_retainer_t
         + corner_nut_tab_extension;
 
-    translate([corner_tab_outer_x, y0, 0])
-        cube([
-            corner_tab_effective_w,
-            corner_nut_tab_length,
-            corner_tab_h
-        ]);
+    corner_tab_boss_positive(
+        corner_nut_tab_length,
+        y0 + corner_nut_tab_length / 2
+    );
 }
 
 // Subtractive entry transition that leaves two small positive detents.
