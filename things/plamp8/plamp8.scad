@@ -247,7 +247,6 @@ floor_locator_l = 16;
 floor_locator_depth = locator_key_w;
 floor_locator_h = 2;
 floor_locator_end_offset = 20;
-floor_corner_land_radial_ligament = 2;
 ledge_ring_t = 3;
 ledge_ring_north_rail_w = 3;
 ledge_ring_north_clearance_min = 0.75;
@@ -980,7 +979,6 @@ module floor_context() {
             union() {
                 translate([wall_t, wall_t, -box_h])
                     cube([box_inner_w, box_inner_d, wall_t]);
-                floor_corner_lands();
                 floor_locator_lands();
                 floor_locator_keys();
                 if (feature_power_screw_mounts) {
@@ -1107,14 +1105,6 @@ function enclosure_corner_points() = [
     [corner_axis_inset, box_d - corner_axis_inset],
     [box_w - corner_axis_inset, box_d - corner_axis_inset]
 ];
-
-module floor_corner_lands() {
-    land_d = floor_fastener_chamfer_d + 2 * floor_corner_land_radial_ligament;
-
-    for (p = enclosure_corner_points())
-        translate([p[0], p[1], -box_h])
-            cylinder(h = wall_t, d = land_d);
-}
 
 module floor_corner_fastener_holes() {
     for (p = enclosure_corner_points())
