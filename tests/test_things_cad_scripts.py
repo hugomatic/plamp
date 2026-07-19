@@ -83,21 +83,21 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn("module support_free_horizontal_bore", source)
+        self.assertNotIn("module corner_tab_gusset", source)
+        self.assertNotIn("module clearance_tab_inward_gusset", source)
+        self.assertNotIn("module corner_nut_axial_retainer", source)
+        self.assertNotIn("corner_tab_root_l", source)
+        self.assertIn("module corner_tab_positive", source)
+        self.assertIn("module corner_nut_tab_positive", source)
         self.assertIn("module corner_clearance_tab", source)
-        self.assertIn("module clearance_tab_inward_gusset", source)
-        clearance_tab = source.split("module corner_clearance_tab", 1)[1].split(
-            "module ", 1
-        )[0]
-        self.assertIn("clearance_tab_inward_gusset();", clearance_tab)
+        self.assertIn("corner_tab_t + corner_nut_retainer_t", source)
         self.assertIn("module corner_nut_tab", source)
-        self.assertIn("module corner_tab_gusset", source)
         self.assertIn("module support_free_m3_nut_trap", source)
         self.assertIn("module corner_nut_retention_detents", source)
         nut_trap = source.split("module support_free_m3_nut_trap", 1)[1].split(
             "module ", 1
         )[0]
         self.assertIn("corner_nut_retention_detents(", nut_trap)
-        self.assertIn("module corner_nut_axial_retainer", source)
         self.assertIn("module corner_wall_coupon", source)
         self.assertIn("module corner_coupon", source)
         self.assertIn("module wall_corner_fastener_assembly", source)

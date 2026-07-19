@@ -223,7 +223,6 @@ corner_fit_clearance = 0.25;
 corner_tab_t = 4;
 corner_tab_w = 12;
 corner_tab_h = 11;
-corner_tab_root_l = 8;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
@@ -315,7 +314,7 @@ ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
 top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;
 assert(top_corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
-assert(wall_z_height >= 2 * (corner_tab_h + corner_tab_root_l) + 10,
+assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
 assert(2 * bore_tangent_a > corner_screw_d / 2, "teardrop roof must clear the round screw envelope");
@@ -1560,46 +1559,21 @@ module support_free_horizontal_bore(length, d, axis_z = wall_t + panel_screw_ins
                 support_free_bore_profile(d);
 }
 
-module corner_tab_gusset(root_direction = 1) {
-    edge_y = root_direction * corner_tab_t / 2;
-
-    hull() {
-        translate([corner_tab_outer_x, edge_y - 0.05, wall_t])
-            cube([corner_tab_effective_w, 0.1, corner_tab_h - wall_t]);
-        translate([
-            corner_tab_outer_x,
-            edge_y + root_direction * corner_tab_root_l - 0.05,
-            wall_t
-        ])
-            cube([corner_tab_effective_w, 0.1, 0.1]);
-    }
+module corner_tab_positive() {
+    translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
+        cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
 }
 
-module corner_tab_positive(root_direction = 1) {
-    union() {
-        translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
-            cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
-        corner_tab_gusset(root_direction);
-    }
-}
+module corner_nut_tab_positive(bearing_side = 1) {
+    y0 = -corner_tab_t / 2
+        - (bearing_side > 0 ? corner_nut_retainer_t : 0);
 
-// The clearance tab shares a screw axis with the perpendicular nut tab.
-// Route its reinforcement along the wall, away from the corner, so the
-// gusset remains inside its own 4 mm stack layer instead of crossing the
-// neighboring tab. wall_end_feature() mirrors +X inward at right ends.
-module clearance_tab_inward_gusset() {
-    edge_x = corner_tab_inner_x;
-
-    hull() {
-        translate([edge_x - 0.05, -corner_tab_t / 2, wall_t])
-            cube([0.1, corner_tab_t, corner_tab_h - wall_t]);
-        translate([
-            edge_x + corner_tab_root_l - 0.05,
-            -corner_tab_t / 2,
-            wall_t
-        ])
-            cube([0.1, corner_tab_t, 0.1]);
-    }
+    translate([corner_tab_outer_x, y0, 0])
+        cube([
+            corner_tab_effective_w,
+            corner_tab_t + corner_nut_retainer_t,
+            corner_tab_h
+        ]);
 }
 
 // Subtractive entry transition that leaves two small positive detents.
@@ -1666,21 +1640,14 @@ module support_free_m3_nut_trap(
 
 module corner_clearance_tab() {
     difference() {
-        union() {
-            translate([corner_tab_outer_x, -corner_tab_t / 2, 0])
-                cube([corner_tab_effective_w, corner_tab_t, corner_tab_h]);
-            clearance_tab_inward_gusset();
-        }
+        corner_tab_positive();
         support_free_horizontal_bore(corner_tab_t + 0.2, corner_screw_d);
     }
 }
 
-module corner_nut_tab(bearing_side = 1, root_direction = 1) {
+module corner_nut_tab(bearing_side = 1) {
     difference() {
-        union() {
-            corner_tab_positive(root_direction);
-            corner_nut_axial_retainer(bearing_side);
-        }
+        corner_nut_tab_positive(bearing_side);
         support_free_horizontal_bore(
             corner_tab_t + 2 * corner_nut_retainer_t + 0.2,
             corner_screw_d
@@ -1689,27 +1656,10 @@ module corner_nut_tab(bearing_side = 1, root_direction = 1) {
     }
 }
 
-module corner_nut_axial_retainer(bearing_side = 1) {
-    exposed_side = -bearing_side;
-    retainer_y = exposed_side * (corner_tab_t + corner_nut_retainer_t) / 2;
-
-    translate([
-        corner_tab_outer_x,
-        retainer_y - corner_nut_retainer_t / 2,
-        0
-    ])
-        cube([corner_tab_effective_w, corner_nut_retainer_t, corner_tab_h]);
-}
-
 function top_clearance_tab_center_y(h) = h + ledge_top_z - ledge_ring_t - corner_tab_t / 2;
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
 function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
 function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
-function bottom_wall_joint_inner_y() =
-    bottom_nut_tab_center_y() + corner_tab_t / 2 + corner_tab_root_l;
-function top_wall_joint_inner_y(h) =
-    top_nut_tab_center_y(h) - corner_tab_t / 2 - corner_tab_root_l;
-
 assert(ledge_top_z == -(plate_t + sub_panel_h),
     "sub-panel top datum must stay fixed below the top panel");
 assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h),
@@ -1810,8 +1760,8 @@ module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
     vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
     joint_min_x = corner_axis_inset + corner_tab_w / 2;
     joint_max_x = length - joint_min_x;
-    joint_min_y = bottom_wall_joint_inner_y();
-    joint_max_y = top_wall_joint_inner_y(h);
+    joint_min_y = bottom_nut_tab_center_y() + corner_tab_t / 2;
+    joint_max_y = top_nut_tab_center_y(h) - corner_tab_t / 2;
 
     if (vent_mode != "none")
         for (x = vent_xs, y = vent_ys)
@@ -1831,8 +1781,8 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
         : (vent_mode == "full"
             ? [vent_wall_margin + vent_hole_spacing / 2, length - 21]
             : [length / 3, 2 * length / 3]);
-    rib_y0 = bottom_wall_joint_inner_y() + wall_vent_joint_clearance;
-    rib_y1 = top_wall_joint_inner_y(h) - wall_vent_joint_clearance;
+    rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
+    rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;
 
     for (x = rib_xs)
         translate([x - wall_rib_w / 2, rib_y0, wall_t])
@@ -1870,13 +1820,13 @@ module wall_corner_tabs(length, h, nut_owner) {
         wall_end_feature(right = right, length = length) {
             translate([corner_axis_inset, top_nut_tab_center_y(h), 0])
                 if (nut_owner)
-                    corner_nut_tab(bearing_side = 1, root_direction = -1);
+                    corner_nut_tab(bearing_side = 1);
             translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
                 if (!nut_owner)
                     corner_clearance_tab();
             translate([corner_axis_inset, bottom_nut_tab_center_y(), 0])
                 if (nut_owner)
-                    corner_nut_tab(bearing_side = -1, root_direction = 1);
+                    corner_nut_tab(bearing_side = -1);
             translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
                 if (!nut_owner)
                     corner_clearance_tab();
@@ -1984,7 +1934,6 @@ module corner_wall_coupon(nut_owner = false, top = true) {
         : (nut_owner
             ? bottom_nut_tab_center_y()
             : bottom_clearance_tab_center_y());
-    root_direction = top ? -1 : 1;
     bearing_side = top ? 1 : -1;
 
     difference() {
@@ -1992,7 +1941,7 @@ module corner_wall_coupon(nut_owner = false, top = true) {
             mitred_wall_segment();
             translate([corner_axis_inset, tab_y, 0])
                 if (nut_owner)
-                    corner_nut_tab(bearing_side, root_direction);
+                    corner_nut_tab(bearing_side);
                 else
                     corner_clearance_tab();
             if (!nut_owner)
