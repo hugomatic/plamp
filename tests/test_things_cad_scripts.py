@@ -53,9 +53,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
         self.assertIn("wall_z_height = 83;", source)
-        self.assertIn("corner_tab_t = 4;", source)
+        self.assertIn("corner_tab_t = 6;", source)
         self.assertIn("ledge_ring_t = 3;", source)
-        self.assertIn("top_corner_screw_length = 25;", source)
+        self.assertIn("top_corner_screw_length = 30;", source)
+        self.assertIn("bottom_corner_screw_length = 25;", source)
         self.assertIn('corner_screw_size = "M3";', source)
         self.assertIn('floor_screw_size = "M3";', source)
         self.assertIn(

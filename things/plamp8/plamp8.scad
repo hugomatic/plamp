@@ -64,8 +64,8 @@ corner_screw_size = "M3";
 panel_screw_size = "M3";
 panel_screw_length = 20;
 panel_screw_tip_protrusion = 1;
-top_corner_screw_length = 25;
-bottom_corner_screw_length = 12; // candidate; confirm with the physical coupon
+top_corner_screw_length = 30;
+bottom_corner_screw_length = 25;
 
 function screw_clearance_d(size) =
     size == "M5" ? 5.5 :
@@ -220,7 +220,7 @@ wall_t = 3;
 panel_screw_inset = 4;
 corner_axis_inset = wall_t + panel_screw_inset;
 corner_fit_clearance = 0.25;
-corner_tab_t = 4;
+corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
