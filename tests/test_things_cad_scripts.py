@@ -183,6 +183,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("transverse_rib_y = nut_owner", source)
         self.assertIn("top_nut_tab_center_y(h) - corner_nut_shoulder_t / 2", source)
         self.assertIn("floor_rib_y0 = wall_t;", source)
+        self.assertIn("floor_rib_x0 = floor_locator_end_offset", source)
+        self.assertIn("floor_rib_x1 = length - floor_rib_x0;", source)
         self.assertIn("transverse_rib_x0", source)
         self.assertIn('vent_mode == "half" ? length / 2', source)
         self.assertNotIn("module bottom_corner_locator_key", source)

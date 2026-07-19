@@ -1756,6 +1756,10 @@ module wall_stiffening_ribs(
     floor_rib_y0 = wall_t;
     transverse_rib_x0 = corner_axis_inset + corner_tab_w / 2;
     transverse_rib_x1 = length - transverse_rib_x0;
+    floor_rib_x0 = floor_locator_end_offset
+        + floor_locator_l
+        + floor_locator_clearance;
+    floor_rib_x1 = length - floor_rib_x0;
 
     for (x = rib_xs)
         translate([x - wall_rib_w / 2, rib_y0, wall_t])
@@ -1768,9 +1772,9 @@ module wall_stiffening_ribs(
             wall_rib_h
         ]);
 
-    translate([transverse_rib_x0, floor_rib_y0, wall_t])
+    translate([floor_rib_x0, floor_rib_y0, wall_t])
         cube([
-            transverse_rib_x1 - transverse_rib_x0,
+            floor_rib_x1 - floor_rib_x0,
             wall_rib_w,
             wall_rib_h
         ]);
