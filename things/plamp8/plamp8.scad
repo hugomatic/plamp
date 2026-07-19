@@ -1737,12 +1737,7 @@ module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
                     cylinder(h = wall_t + wall_rib_h + 0.2, d = vent_hole_d);
 }
 
-module wall_stiffening_ribs(
-    length,
-    h,
-    vent_mode = "none",
-    nut_owner = false
-) {
+module wall_stiffening_ribs(length, h, vent_mode = "none") {
     rib_xs = vent_mode == "half"
         ? [length / 4, length / 2 + vent_hole_spacing / 2]
         : (vent_mode == "full"
@@ -1750,9 +1745,8 @@ module wall_stiffening_ribs(
             : [length / 3, 2 * length / 3]);
     rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
     rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;
-    transverse_rib_y = nut_owner
-        ? top_nut_tab_center_y(h) - corner_nut_shoulder_t / 2
-        : h / 3;
+    transverse_rib_y = top_nut_tab_center_y(h)
+        - corner_nut_shoulder_t / 2;
     floor_rib_y0 = wall_t;
     transverse_rib_x0 = corner_axis_inset + corner_tab_w / 2;
     transverse_rib_x1 = length - transverse_rib_x0;
@@ -1829,7 +1823,7 @@ module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_heigh
         union() {
             wall_body_positive(length, h);
             wall_corner_tabs(length, h, nut_owner);
-            wall_stiffening_ribs(length, h, vent_mode, nut_owner);
+            wall_stiffening_ribs(length, h, vent_mode);
         }
         floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h);
