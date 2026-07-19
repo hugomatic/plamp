@@ -252,7 +252,8 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 5. After committing the final CAD, render each wall, ledge ring, floor, top panel, sub-panel, and assembly from the directory-specific commit.
 6. Confirm all requested STL files are present and non-empty.
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
-8. Visually inspect the full assembly with individual walls toggled off and on.
+8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on.
+9. Check independently printed part pairs for unintended volumetric overlap. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
 
 Generated STL and print artifacts remain untracked unless explicitly requested.
 
@@ -264,6 +265,7 @@ The redesign is complete when:
 - Exterior wall seams are 45-degree mitres with no visible butt-joint step in assembly.
 - Every top and bottom corner screw captures both intersecting walls.
 - All nut traps load from inside and can be printed without support.
+- Independently printed enclosure parts have no unintended interference in the assembled model.
 - The floor uses four bottom-up corner M3 screws and no midpoint M5 enclosure fasteners.
 - West and east can be omitted in assembly while north and south support the wiring configuration.
 - West and east can be added after wiring without disconnecting the panel wiring.
