@@ -1,0 +1,272 @@
+# Plamp8 Flat-Wall Enclosure Design
+
+## Goal
+
+Redesign the Plamp8 enclosure walls so every enclosure part can be printed without support and the enclosure can be wired with its relay-board long sides accessible. Replace the current one-piece upright wall shell and its support-driven corner geometry with four independently printable walls, a separate ledge ring, and shared M3 corner joints.
+
+The redesign must preserve the current floor, top-panel, and sub-panel interfaces wherever possible. In particular, the existing printed sub-panel should remain usable unless a physical corner-stack test proves that no available screw length can clamp it correctly.
+
+## Coordinate System And Wall Names
+
+Use unambiguous compass names throughout the SCAD source, Customizer, generated files, tests, and documentation:
+
+- North wall: `y = box_d`
+- South wall: `y = 0`
+- West wall: `x = 0`
+- East wall: `x = box_w`
+- Floor: XY plane
+- Z: enclosure height
+
+The relay board's long axis runs along Y. West and east are therefore the two walls that must remain absent during wiring so both long sides of the relay board are reachable.
+
+## Chosen Mechanical Approach
+
+Print four independent walls flat with each plain exterior face on the build plate. Join adjacent walls with hidden, vertically stacked internal tabs at the top and bottom of every corner. One vertical M3 screw at each top corner and one at each bottom corner clamps both intersecting walls plus the adjacent panel, ring, or floor.
+
+This design was chosen over:
+
+- Keeping the upright one-piece shell, because its raised bosses and nut traps begin in mid-air and require support.
+- Full-height dovetails or grooves, because a long printed wall can warp enough to make those joints bind and because they complicate installing the west and east walls after wiring.
+- A separate bottom ring, because the flat-printed floor already provides the required structural plane and locating surface.
+
+## Four Wall Parts
+
+Replace the monolithic `walls` printable part with four modules and four printable views:
+
+- `north_wall`
+- `south_wall`
+- `west_wall`
+- `east_wall`
+
+Each printable wall view must place its exterior face flat on Z=0. Interior ribs, tabs, nut traps, and locating features then build upward from supported material. No wall view may require slicer-generated support.
+
+All four vertical exterior seams use 45-degree mitres through the wall thickness. The mitres hide the seam from the outside; they are not the structural joint. The internal M3 corner tabs provide the structural connection.
+
+Do not add a full-height tongue, dovetail, or groove along a wall seam. Use only short, shallow locating keys near the top and bottom corners. These keys establish alignment before tightening the screws without creating a long tolerance-sensitive sliding fit.
+
+Each wall is a separately printable part and must carry `revision_string` on a non-critical interior face. The marking must be readable in the STL and must not affect a mating, sealing, or hardware surface.
+
+## Adjustable Wall Height
+
+Expose a dedicated Customizer parameter:
+
+```scad
+wall_z_height = 83;
+```
+
+The default preserves the current wall height, which is derived today from `internal_clearance_h = 80` plus `wall_t = 3`.
+
+`wall_z_height` is the common vertical distance from the floor seating plane to the ledge-ring seating plane. Changing it must:
+
+- Resize all four walls equally.
+- Keep bottom joints and floor geometry fixed at the floor end.
+- Move the top joints, ledge ring, mounted panels, and top assembly together.
+- Keep each top and bottom attachment feature at a fixed offset from its respective wall end.
+- Recenter or regenerate wall ventilation within fixed top and bottom safety margins.
+- Update internal-component and assembly placement that is currently derived from `box_h`.
+
+Floor thickness, ledge-ring thickness, top-panel thickness, and sub-panel dimensions do not change with `wall_z_height`. The geometry should assert that there is enough height for the two joint zones and their required separation. Component interference at unusually short heights should remain visible in the assembly view rather than silently moving components.
+
+## Top Corner Joint
+
+At every top corner, the two intersecting walls contribute overlapping inward-facing tabs on the same vertical M3 screw axis:
+
+- The west or east wall contributes the upper tab with an M3 clearance hole.
+- The north or south wall contributes the lower tab with an M3 nut trap.
+- The nut trap opens toward the inside of the enclosure.
+- The nut must be insertable and removable from inside after the wall is printed.
+- With the wall in its flat print orientation, the nut entry and trap roof must require no support.
+
+At the northeast corner, for example, the final stack from top to bottom is:
+
+1. The 3 mm top-panel corner
+2. The existing 10 mm sub-panel corner, whose 5 mm base rests on the ring
+3. Separate ledge ring
+4. East-wall upper tab with M3 clearance hole
+5. North-wall lower tab with M3 nut trap
+
+The other three corners use the same ownership rule. This makes north and south the nut-trap walls and west and east the clearance-tab walls.
+
+The screw installs downward from the visible top side. Its head treatment should remain compatible with the current panel corner-hole convention. Tightening the screw must clamp the top panel, sub-panel, ledge ring, and both walls without relying on friction at the 45-degree exterior seam.
+
+The ledge ring and the north/south wall seats must support the panel assembly at its final Z position even while west and east are absent during wiring. The final corner is fully clamped only after both intersecting wall tabs are present.
+
+## Separate Ledge Ring
+
+Replace the integral `top_panel_ledge()` geometry with one separately printed rectangular ledge ring.
+
+The ring must:
+
+- Print flat without support.
+- Provide a continuous, straight seating surface for the top and sub-panel assembly.
+- Use four M3 clearance holes aligned with the existing panel corner holes and wall tabs.
+- Preserve the required PH Up and PH Down switch-body clearances currently represented by the ledge-gap feature.
+- Include short locating features that align it with the walls without creating a long binding groove.
+- Carry `revision_string` on a non-critical hidden face.
+
+Quarter-circle ledges are not required. Their curved cross-section existed to make an integral upright-wall ledge self-supporting; the separate ring is printed flat and can use a simpler rectangular section.
+
+The existing top-panel and sub-panel corner-hole coordinates remain the controlling interface. The ring and wall joints adapt to those coordinates rather than moving the panel holes.
+
+## Existing Sub-Panel Compatibility
+
+Keep the current dimensions:
+
+```scad
+sub_panel_base_h = 5;
+sub_panel_h = 10;
+```
+
+Do not thin the base or reduce the overall height in the initial implementation. The sub-panel base rests directly on the ledge ring. Preserve its existing corner-hole locations and its revision marking.
+
+Available M3 hardware includes 25 mm and 30 mm screws. Select the shortest length that passes through the real top stack, fully engages the captured nut, and leaves no dangerous excess inside the wiring space. Target full nut engagement and approximately 0-2 mm protrusion beyond the nut. Screw length must be a named parameter and must not be encoded indirectly in boss geometry.
+
+If neither M3x25 nor M3x30 works with the existing sub-panel, stop after the corner coupon and revise the stack deliberately. Do not silently change the sub-panel thickness.
+
+## Bottom Corner Joint
+
+The floor-to-wall joint mirrors the top joint but has no sub-panel or ledge ring. Do not add a bottom ring in the initial design.
+
+At every bottom corner:
+
+- The west or east wall contributes the lower tab with an M3 clearance hole.
+- The north or south wall contributes the upper tab with an inward-accessible M3 nut trap.
+- The floor has an aligned M3 clearance hole and the appropriate underside head recess.
+- The screw installs upward from below, leaving its head visible when looking at the enclosure bottom.
+
+At the northeast corner, the stack from inside to outside/downward is:
+
+1. North-wall upper tab with M3 nut trap
+2. East-wall lower tab with M3 clearance hole
+3. Floor
+4. M3 screw head underneath
+
+This replaces the current four midpoint M5 floor fasteners and wall tabs. Floor corner geometry must be checked against existing component mounts, perimeter ribs, and enclosure clearances before placement.
+
+The floor itself provides the bottom structural plane. Short locating keys near the corners align it with the wall interiors and prevent lateral drift while screws are loose. Do not use a continuous perimeter groove.
+
+## Support-Free Nut Traps
+
+Every captured nut is side-loaded from the enclosure interior. In the wall's flat print orientation:
+
+- The pocket opening faces upward or sideways with no unsupported horizontal ceiling.
+- Any necessary roof uses printable slopes no shallower than 45 degrees.
+- A small retention detent may prevent the nut from falling out before assembly.
+- The nut remains serviceable after printing and before final enclosure closure.
+
+Nut clearance, entry length, detent, tab thickness, tab overlap, and hole clearance remain named parameters. The existing M3 nut and clearance values are the starting point, but the fit coupon decides the final tolerances.
+
+## Assembly And Service Sequence
+
+The enclosure must support this workflow:
+
+1. Install sockets and switches in the top panel and AC sub-panel, then join the panel assembly.
+2. Mount the PSU, converter, and relay board on the floor.
+3. Attach or locate the north and south walls while leaving west and east open.
+4. Rest the ledge ring and connected panel assembly on north and south, or support the connected panel assembly immediately above them, with enough wire slack to lift it later.
+5. Complete wiring with both YZ sides open so the relay board's long edges remain reachable.
+6. Remove the four top screws and loosen or remove the four bottom corner screws.
+7. Lift the connected panel assembly and ledge ring without disconnecting the wiring.
+8. Install west and east normally, engaging their short locating keys and placing their tabs into the shared top and bottom corner stacks.
+9. Refit the ledge ring and panel assembly.
+10. Tighten the four bottom-up floor screws and four downward top screws.
+
+No bonnet, hinge, laterally sliding service wall, or dedicated `wiring_assembly` view is required. Later service may remove the top assembly and whichever individual wall provides the needed access.
+
+## Views And Customizer Controls
+
+Update the ordered `view` contract to include:
+
+- `floor`
+- `north_wall`
+- `south_wall`
+- `west_wall`
+- `east_wall`
+- `ledge_ring`
+- `top_panel`
+- `sub_panel`
+- A corner-stack fit-test view
+- `assembly`
+
+Preserve the existing component footprint and connector coupon views. Remove the obsolete monolithic `walls` printable view rather than exporting the old shell under a misleading name.
+
+Replace the single assembly `show_walls` control with:
+
+```scad
+show_north_wall = true;
+show_south_wall = true;
+show_west_wall = true;
+show_east_wall = true;
+show_ledge_ring = true;
+```
+
+Keep the existing floor, internal-component, top-panel, and sub-panel visibility controls. The normal `assembly` view is the only required assembly visualization; users can reproduce the wiring state by unchecking west and east.
+
+All assembly transforms must reuse the same part modules used by the printable views. Do not maintain separate approximate wall geometry for visualization.
+
+## First Printable: Corner-Stack Coupon
+
+Before rendering four full walls, add a compact fit-test view representing one top corner and one bottom corner. It must exercise:
+
+- Two independently printed wall-tab coupons in their production print orientation.
+- The 45-degree exterior mitre.
+- Short locating keys.
+- M3 clearance holes.
+- The inward side-loaded nut trap and retention detent.
+- A ledge-ring segment.
+- A 3 mm top-panel surrogate stacked on a 10 mm sub-panel surrogate with its 5 mm base against the ledge-ring segment.
+- A floor segment and bottom-up screw-head recess.
+- M3x25 and M3x30 top-stack evaluation.
+
+The coupon should answer four physical questions before a full-wall print:
+
+1. Can the nut be inserted from inside without support damage or excessive force?
+2. Do the two wall tabs and mitres assemble without binding?
+3. Does the selected screw fully engage the nut without unsafe protrusion?
+4. Do the ring, panel surrogate, floor, and both walls clamp without visible rocking or deformation?
+
+## Source Structure
+
+The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, top tabs, bottom tabs, nut traps, locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
+
+Avoid unrelated refactoring of the connector, label, PSU, converter, relay, or generator code. Preserve the directory-specific Git revision behavior in `things/plamp8/generate.bash`.
+
+## Verification
+
+Automated source-level tests should verify at least:
+
+- The ordered view list contains all four named walls, the ledge ring, fit coupon, and assembly.
+- The obsolete monolithic `walls` view and single `show_walls` option are gone.
+- `wall_z_height` exists and drives the assembled top Z position.
+- Floor corner hardware uses M3 rather than the old midpoint M5 fasteners.
+- Existing sub-panel thickness and corner-hole coordinates remain unchanged.
+- Top and bottom corner modules use the agreed north/south nut ownership and east/west clearance ownership.
+- Each printable part receives `revision_string` where required.
+
+OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct render commands:
+
+1. Run shell syntax and existing CAD-script tests.
+2. Render the corner fit-test first with an explicit honest dirty-worktree revision.
+3. Confirm its STL is present, non-empty, and has no empty-object or missing-include warnings.
+4. Inspect the coupon mesh or preview for support-free orientation and obvious interference.
+5. After committing the final CAD, render each wall, ledge ring, floor, top panel, sub-panel, and assembly from the directory-specific commit.
+6. Confirm all requested STL files are present and non-empty.
+7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
+8. Visually inspect the full assembly with individual walls toggled off and on.
+
+Generated STL and print artifacts remain untracked unless explicitly requested.
+
+## Acceptance Criteria
+
+The redesign is complete when:
+
+- All four walls and the ledge ring render as independent, support-free printable parts.
+- Exterior wall seams are 45-degree mitres with no visible butt-joint step in assembly.
+- Every top and bottom corner screw captures both intersecting walls.
+- All nut traps load from inside and can be printed without support.
+- The floor uses four bottom-up corner M3 screws and no midpoint M5 enclosure fasteners.
+- West and east can be omitted in assembly while north and south support the wiring configuration.
+- West and east can be added after wiring without disconnecting the panel wiring.
+- `wall_z_height` changes the enclosure height without moving fixed end features away from their respective ends.
+- The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
+- Revision markings remain readable on every standalone printable enclosure part.
