@@ -56,14 +56,50 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("corner_tab_t = 4;", source)
         self.assertIn("ledge_ring_t = 3;", source)
         self.assertIn("top_corner_screw_length = 25;", source)
-        self.assertIn('floor_screw_size = "M3";', source)
+        self.assertIn('corner_screw_size = "M3";', source)
+        self.assertIn('floor_screw_size = "M5";', source)
+        self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
+        self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
+        self.assertIn("corner_nut_retainer_t = 0.8;", source)
+        self.assertIn(
+            "top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;",
+            source,
+        )
+        self.assertIn(
+            "bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;",
+            source,
+        )
         self.assertIn("module support_free_horizontal_bore", source)
         self.assertIn("module corner_clearance_tab", source)
         self.assertIn("module corner_nut_tab", source)
         self.assertIn("module corner_tab_gusset", source)
         self.assertIn("module support_free_m3_nut_trap", source)
+        self.assertIn("module corner_nut_axial_retainer", source)
+        self.assertIn("module corner_wall_coupon", source)
         self.assertIn("module wall_corner_fastener_test", source)
+        self.assertIn("module wall_corner_fastener_assembly", source)
+        self.assertIn(
+            "outer_edge_offset = panel_screw_inset - coupon_assembly_clearance;",
+            source,
+        )
+        self.assertIn("coupon_plate_column_x = 100;", source)
         self.assertIn('view == "wall_corner_fastener_test"', source)
+        self.assertIn('view == "wall_corner_fastener_assembly"', source)
+        self.assertIn("sub_panel_base_h = 5;", source)
+        self.assertIn("sub_panel_h = 10;", source)
+
+    def test_plamp8_ledge_ring_is_separate_and_preserves_panel_stack(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("module ledge_ring_context", source)
+        self.assertIn("module ledge_ring()", source)
+        self.assertIn("module ledge_ring_ph_switch_clearance_span", source)
+        self.assertNotIn("ledge_ring_switch_bridge", source)
+        self.assertIn('view == "ledge_ring"', source)
+        self.assertIn("feature_ph_ledge_holes", source)
+        self.assertIn("top_ledge_gap_start(0)", source)
+        self.assertIn("top_ledge_gap_end(1, box_inner_w)", source)
+        self.assertNotIn("quarter_round(", source)
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
 
