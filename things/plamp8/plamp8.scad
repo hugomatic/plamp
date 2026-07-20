@@ -281,6 +281,10 @@ vent_top_margin = ledge_r + vent_hole_d;
 vent_floor_clearance = vent_wall_margin + vent_hole_spacing;
 vent_ledge_clearance = vent_hole_spacing;
 wall_revision_top_margin = 10;
+assembly_name_depth = 0.6;
+assembly_name_font = 7;
+wall_assembly_name_y =
+    (wall_t + wall_rib_w + vent_floor_clearance - vent_hole_d / 2) / 2;
 service_row_y = 58;
 ac_row_y = -63;
 dc_row_y = -106;
@@ -1766,6 +1770,12 @@ module wall_body_positive(length, h = wall_z_height) {
     }
 }
 
+module wall_assembly_name_negative(length, wall_name) {
+    if (wall_name != "")
+        translate([length / 2, wall_assembly_name_y, wall_t])
+            write_text(wall_name, assembly_name_font, -assembly_name_depth);
+}
+
 module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
     revision_x = vent_mode == "half" ? length / 3 : length / 2;
     revision_y = vent_mode == "full" ? h - wall_revision_top_margin : h / 2;
@@ -1877,7 +1887,13 @@ module wall_corner_tabs(length, h, nut_owner) {
         }
 }
 
-module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_height) {
+module flat_wall(
+    length,
+    wall_name = "",
+    nut_owner = false,
+    vent_mode = "none",
+    h = wall_z_height
+) {
     difference() {
         union() {
             wall_body_positive(length, h);
@@ -1887,6 +1903,7 @@ module flat_wall(length, nut_owner = false, vent_mode = "none", h = wall_z_heigh
         floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h);
         wall_revision_negative(length, h, vent_mode);
+        wall_assembly_name_negative(length, wall_name);
     }
 }
 
@@ -1898,7 +1915,7 @@ module south_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            flat_wall(box_w, nut_owner = true, vent_mode = "half");
+            south_wall();
 }
 
 module north_wall_context() {
@@ -1909,7 +1926,7 @@ module north_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            flat_wall(box_w, nut_owner = true, vent_mode = "half");
+            north_wall();
 }
 
 module west_wall_context() {
@@ -1920,7 +1937,7 @@ module west_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            flat_wall(box_d, nut_owner = false, vent_mode = "none");
+            west_wall();
 }
 
 module east_wall_context() {
@@ -1931,23 +1948,43 @@ module east_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            flat_wall(box_d, nut_owner = false, vent_mode = "full");
+            east_wall();
 }
 
 module north_wall() {
-    flat_wall(box_w, nut_owner = true, vent_mode = "half");
+    flat_wall(
+        box_w,
+        wall_name = "NORTH",
+        nut_owner = true,
+        vent_mode = "half"
+    );
 }
 
 module south_wall() {
-    flat_wall(box_w, nut_owner = true, vent_mode = "half");
+    flat_wall(
+        box_w,
+        wall_name = "SOUTH",
+        nut_owner = true,
+        vent_mode = "half"
+    );
 }
 
 module west_wall() {
-    flat_wall(box_d, nut_owner = false, vent_mode = "none");
+    flat_wall(
+        box_d,
+        wall_name = "WEST",
+        nut_owner = false,
+        vent_mode = "none"
+    );
 }
 
 module east_wall() {
-    flat_wall(box_d, nut_owner = false, vent_mode = "full");
+    flat_wall(
+        box_d,
+        wall_name = "EAST",
+        nut_owner = false,
+        vent_mode = "full"
+    );
 }
 
 module corner_wall_coupon(nut_owner = false, top = true) {

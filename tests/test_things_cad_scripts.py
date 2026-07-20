@@ -223,6 +223,29 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("module wall_locator_keys", source)
         self.assertNotIn("module wall_locator_notches", source)
 
+    def test_plamp8_walls_have_full_compass_name_engravings(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("assembly_name_depth = 0.6;", source)
+        self.assertIn("assembly_name_font = 7;", source)
+        self.assertIn("wall_assembly_name_y =", source)
+        self.assertIn("module wall_assembly_name_negative", source)
+
+        flat_wall = source.split("module flat_wall", 1)[1].split("module ", 1)[0]
+        self.assertIn('wall_name = ""', flat_wall)
+        self.assertIn("wall_assembly_name_negative(length, wall_name);", flat_wall)
+
+        for wall in ("north", "south", "east", "west"):
+            wall_module = source.split(f"module {wall}_wall()", 1)[1].split(
+                "module ", 1
+            )[0]
+            self.assertIn(f'wall_name = "{wall.upper()}"', wall_module)
+
+            context_module = source.split(
+                f"module {wall}_wall_context()", 1
+            )[1].split("module ", 1)[0]
+            self.assertIn(f"{wall}_wall();", context_module)
+
     def test_plamp8_floor_uses_corner_m3_wall_fasteners(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
