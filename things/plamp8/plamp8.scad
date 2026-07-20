@@ -279,13 +279,8 @@ function vent_gap_center_left_of(x) =
     + (floor((x - vent_wall_margin) / vent_hole_spacing) - 0.5)
         * vent_hole_spacing;
 function full_vent_center_rib_x(length) = vent_gap_center_left_of(length / 2);
-east_center_rib_x = full_vent_center_rib_x(box_d);
 vent_rib_edge_clearance =
     vent_hole_spacing / 2 - vent_hole_d / 2 - wall_rib_w / 2;
-assert(east_center_rib_x == 105,
-    "east center rib must sit in the vent gap left of center");
-assert(vent_rib_edge_clearance >= 1,
-    "east center rib needs at least 1 mm clearance from adjacent vent holes");
 wall_revision_top_margin = 10;
 assembly_name_depth = 0.6;
 assembly_name_font = 7;
@@ -381,6 +376,11 @@ box_inner_w = top_panel_w;
 box_inner_d = top_panel_h;
 box_w = box_inner_w + 2 * wall_t;
 box_d = box_inner_d + 2 * wall_t;
+east_center_rib_x = full_vent_center_rib_x(box_d);
+assert(east_center_rib_x == 105,
+    "east center rib must sit in the vent gap left of center");
+assert(vent_rib_edge_clearance >= 1,
+    "east center rib needs at least 1 mm clearance from adjacent vent holes");
 layout_offset_x = panel_margin - content_left_x;
 layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;

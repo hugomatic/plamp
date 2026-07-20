@@ -250,6 +250,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("vent_rib_edge_clearance =", source)
         self.assertIn("assert(east_center_rib_x == 105", source)
         self.assertIn("assert(vent_rib_edge_clearance >= 1", source)
+        self.assertLess(
+            source.index("box_d = box_inner_d + 2 * wall_t;"),
+            source.index("east_center_rib_x = full_vent_center_rib_x(box_d);"),
+        )
         self.assertNotIn("module bottom_corner_locator_notch", source)
         self.assertNotIn("module wall_bottom_locator_keys", source)
         self.assertNotIn("module wall_bottom_locator_notches", source)
