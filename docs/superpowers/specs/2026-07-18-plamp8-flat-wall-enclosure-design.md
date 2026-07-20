@@ -242,6 +242,12 @@ Treat the transparent component keepouts as assembly-manual illustration element
 
 Build each label with positive-Z `linear_extrude()` text beginning at the keepout's top surface and extending upward by a named illustration-label thickness. Put the text inside the same `color()` scope as its transparent component volume; do not apply another color or opacity to the label. Size each label independently to remain inside its component footprint. Orient `RELAYS` and `DC/DC` horizontally in the standard assembly top view, and rotate `12V PSU` 90 degrees counter-clockwise from horizontal. Labels belong only to the contextual keepout modules; they must not alter the floor, component-footprint coupons, or any printable enclosure part.
 
+## DC/DC Converter Floor Fit
+
+Increase `converter_fit_clearance` from 0.5 mm to 0.75 mm per side. Because the retaining envelope adds twice this value to both calibrated body dimensions, this increases the finished pocket by exactly 0.5 mm overall in X and 0.5 mm overall in Y. Do not change `converter_w`, `converter_d`, the converter mount spacing, mount holes, airflow-post layout, or transparent keepout.
+
+The user requested no new automated test for this fit adjustment. Verify it by pushing the source change first and then rendering the existing `converter_footprint` view from that pushed commit. The generated STL must be non-empty, OpenSCAD must report no error or empty top-level object, and visual inspection must confirm the retaining corners moved outward without moving the converter body or screw pattern.
+
 ## First Printable: Corner-Stack Coupon
 
 Before rendering four full walls, add a compact fit-test view representing one top corner and one bottom corner. It must exercise:
@@ -317,5 +323,6 @@ The redesign is complete when:
 - The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
 - Revision markings remain readable on every standalone printable enclosure part.
 - Full-word compass engravings unambiguously pair every wall with its floor edge without an assembly-manual lookup.
+- The DC/DC retaining pocket is 0.5 mm larger overall in both X and Y while its calibrated body and mount geometry remain unchanged.
 - `RELAYS`, `DC/DC`, and `12V PSU` appear as positive-Z raised text in the same transparent color scopes as their corresponding assembly keepouts and do not affect printable parts; the PSU text is rotated 90 degrees counter-clockwise.
 - `show_dc_dc` independently shows or hides the converter keepout in the assembly.
