@@ -285,6 +285,7 @@ assembly_name_depth = 0.6;
 assembly_name_font = 7;
 wall_assembly_name_y =
     (wall_t + wall_rib_w + vent_floor_clearance - vent_hole_d / 2) / 2;
+floor_assembly_name_inset = 14;
 service_row_y = 58;
 ac_row_y = -63;
 dc_row_y = -106;
@@ -1007,6 +1008,19 @@ module sub_panel_8ch() {
 
 
 
+module floor_assembly_name_negative(label, x, y, angle) {
+    translate([x, y, -box_h + wall_t])
+        rotate([0, 0, angle])
+            write_text(label, assembly_name_font, -assembly_name_depth);
+}
+
+module floor_assembly_name_negatives() {
+    floor_assembly_name_negative("NORTH", box_w / 2, box_d - wall_t - floor_assembly_name_inset, 0);
+    floor_assembly_name_negative("EAST", box_w - wall_t - floor_assembly_name_inset, box_d / 2, -90);
+    floor_assembly_name_negative("SOUTH", box_w / 2, wall_t + floor_assembly_name_inset, 180);
+    floor_assembly_name_negative("WEST", wall_t + floor_assembly_name_inset, box_d / 2, 90);
+}
+
 module floor_context() {
     color([0.68, 0.68, 0.62, 1])
         difference() {
@@ -1033,6 +1047,7 @@ module floor_context() {
             }
             floor_corner_fastener_holes();
             box_bottom_revision_negative();
+            floor_assembly_name_negatives();
         }
 }
 

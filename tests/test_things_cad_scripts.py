@@ -246,6 +246,30 @@ class ThingsCadScriptsTest(unittest.TestCase):
             )[1].split("module ", 1)[0]
             self.assertIn(f"{wall}_wall();", context_module)
 
+    def test_plamp8_floor_has_matching_oriented_compass_names(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("floor_assembly_name_inset = 14;", source)
+        self.assertIn("module floor_assembly_name_negative", source)
+        self.assertIn("module floor_assembly_name_negatives", source)
+
+        floor_names = source.split(
+            "module floor_assembly_name_negatives", 1
+        )[1].split("module ", 1)[0]
+        expected = (
+            '("NORTH", box_w / 2, box_d - wall_t - floor_assembly_name_inset, 0)',
+            '("EAST", box_w - wall_t - floor_assembly_name_inset, box_d / 2, -90)',
+            '("SOUTH", box_w / 2, wall_t + floor_assembly_name_inset, 180)',
+            '("WEST", wall_t + floor_assembly_name_inset, box_d / 2, 90)',
+        )
+        for call in expected:
+            self.assertIn(f"floor_assembly_name_negative{call};", floor_names)
+
+        floor_context = source.split("module floor_context()", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("floor_assembly_name_negatives();", floor_context)
+
     def test_plamp8_floor_uses_corner_m3_wall_fasteners(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
