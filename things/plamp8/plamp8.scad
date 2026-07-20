@@ -22,6 +22,12 @@ show_sub_panel = true;
 show_top_panel = true;
 
 
+/* [box view options] */
+
+// Use point-up hexagonal vents when printing the fused box floor-down.
+box_coarse_vents = true;
+
+
 /* [box features] */
 
 //box features: floor anchors (tie wraps)
@@ -1740,7 +1746,22 @@ module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
         write_text(revision_string, box_revision_font, -0.6);
 }
 
-module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
+module wall_vent_negative(x, y, coarse_vents = false) {
+    translate([x, y, -0.1])
+        rotate([0, 0, coarse_vents ? 30 : 0])
+            cylinder(
+                h = wall_t + wall_rib_h + 0.2,
+                d = vent_hole_d,
+                $fn = coarse_vents ? 6 : render_fn
+            );
+}
+
+module wall_vent_negatives(
+    length,
+    vent_mode = "none",
+    h = wall_z_height,
+    coarse_vents = false
+) {
     vent_ys = [
         vent_floor_clearance:
         vent_hole_spacing:
@@ -1761,8 +1782,7 @@ module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
                 && y - vent_hole_d / 2 >= joint_min_y + wall_vent_joint_clearance
                 && y + vent_hole_d / 2 <= joint_max_y - wall_vent_joint_clearance
             )
-                translate([x, y, -0.1])
-                    cylinder(h = wall_t + wall_rib_h + 0.2, d = vent_hole_d);
+                wall_vent_negative(x, y, coarse_vents);
 }
 
 module wall_stiffening_ribs(length, h, vent_mode = "none") {
@@ -1848,7 +1868,8 @@ module flat_wall(
     wall_name = "",
     nut_owner = false,
     vent_mode = "none",
-    h = wall_z_height
+    h = wall_z_height,
+    coarse_vents = false
 ) {
     difference() {
         union() {
@@ -1857,13 +1878,13 @@ module flat_wall(
             wall_stiffening_ribs(length, h, vent_mode);
         }
         floor_locator_notches(length);
-        wall_vent_negatives(length, vent_mode, h);
+        wall_vent_negatives(length, vent_mode, h, coarse_vents);
         wall_revision_negative(length, h, vent_mode);
         wall_assembly_name_negative(length, wall_name);
     }
 }
 
-module south_wall_context() {
+module south_wall_context(coarse_vents = false) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1871,10 +1892,10 @@ module south_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            south_wall();
+            south_wall(coarse_vents = coarse_vents);
 }
 
-module north_wall_context() {
+module north_wall_context(coarse_vents = false) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1882,10 +1903,10 @@ module north_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            north_wall();
+            north_wall(coarse_vents = coarse_vents);
 }
 
-module west_wall_context() {
+module west_wall_context(coarse_vents = false) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, 1, 0],
@@ -1893,10 +1914,10 @@ module west_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            west_wall();
+            west_wall(coarse_vents = coarse_vents);
 }
 
-module east_wall_context() {
+module east_wall_context(coarse_vents = false) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, -1, box_w],
@@ -1904,42 +1925,46 @@ module east_wall_context() {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            east_wall();
+            east_wall(coarse_vents = coarse_vents);
 }
 
-module north_wall() {
+module north_wall(coarse_vents = false) {
     flat_wall(
         box_w,
         wall_name = "NORTH",
         nut_owner = true,
-        vent_mode = "half"
+        vent_mode = "half",
+        coarse_vents = coarse_vents
     );
 }
 
-module south_wall() {
+module south_wall(coarse_vents = false) {
     flat_wall(
         box_w,
         wall_name = "SOUTH",
         nut_owner = true,
-        vent_mode = "half"
+        vent_mode = "half",
+        coarse_vents = coarse_vents
     );
 }
 
-module west_wall() {
+module west_wall(coarse_vents = false) {
     flat_wall(
         box_d,
         wall_name = "WEST",
         nut_owner = false,
-        vent_mode = "none"
+        vent_mode = "none",
+        coarse_vents = coarse_vents
     );
 }
 
-module east_wall() {
+module east_wall(coarse_vents = false) {
     flat_wall(
         box_d,
         wall_name = "EAST",
         nut_owner = false,
-        vent_mode = "full"
+        vent_mode = "full",
+        coarse_vents = coarse_vents
     );
 }
 

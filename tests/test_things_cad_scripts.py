@@ -196,8 +196,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for name in ("north_wall", "south_wall", "west_wall", "east_wall"):
             self.assertIn(name, view_line)
-            self.assertIn(f"module {name}_context", source)
-            self.assertIn(f"module {name}()", source)
+            self.assertIn(f"module {name}_context(coarse_vents = false)", source)
+            self.assertIn(f"module {name}(coarse_vents = false)", source)
             self.assertIn(f'view == "{name}"', source)
         self.assertNotIn(" walls,", view_line)
         self.assertNotIn('view == "walls"', source)
@@ -241,6 +241,29 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('vent_mode == "half" ? length / 2', source)
         self.assertNotIn("module bottom_corner_locator_key", source)
 
+    def test_plamp8_box_coarse_vents_are_point_up_hexagons(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("box_coarse_vents = true;", source)
+        vent_negative = source.split("module wall_vent_negative", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("rotate([0, 0, coarse_vents ? 30 : 0])", vent_negative)
+        self.assertIn("$fn = coarse_vents ? 6 : render_fn", vent_negative)
+
+        vent_grid = source.split("module wall_vent_negatives", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("coarse_vents = false", vent_grid)
+        self.assertIn("wall_vent_negative(x, y, coarse_vents);", vent_grid)
+        self.assertEqual(source.count("for (x = vent_xs, y = vent_ys)"), 1)
+
+        for wall in ("north", "south", "west", "east"):
+            self.assertIn(f"module {wall}_wall(coarse_vents = false)", source)
+            self.assertIn(
+                f"module {wall}_wall_context(coarse_vents = false)", source
+            )
+
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -275,15 +298,23 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("wall_assembly_name_negative(length, wall_name);", flat_wall)
 
         for wall in ("north", "south", "east", "west"):
-            wall_module = source.split(f"module {wall}_wall()", 1)[1].split(
-                "module ", 1
-            )[0]
+            wall_signature = f"module {wall}_wall(coarse_vents = false)"
+            context_signature = (
+                f"module {wall}_wall_context(coarse_vents = false)"
+            )
+            self.assertIn(wall_signature, source)
+            self.assertIn(context_signature, source)
+            wall_module = source.split(
+                wall_signature, 1
+            )[1].split("module ", 1)[0]
             self.assertIn(f'wall_name = "{wall.upper()}"', wall_module)
 
-            context_module = source.split(
-                f"module {wall}_wall_context()", 1
-            )[1].split("module ", 1)[0]
-            self.assertIn(f"{wall}_wall();", context_module)
+            context_module = source.split(context_signature, 1)[1].split(
+                "module ", 1
+            )[0]
+            self.assertIn(
+                f"{wall}_wall(coarse_vents = coarse_vents);", context_module
+            )
 
     def test_plamp8_floor_has_matching_oriented_compass_names(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
