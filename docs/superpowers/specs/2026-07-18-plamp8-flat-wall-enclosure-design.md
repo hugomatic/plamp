@@ -46,6 +46,10 @@ Do not add a full-height tongue, dovetail, or groove along a wall seam. Use only
 
 Each wall is a separately printable part and must carry `revision_string` on a non-critical interior face. The marking must be readable in the STL and must not affect a mating, sealing, or hardware surface.
 
+Each wall must also carry its full compass name—`NORTH`, `SOUTH`, `EAST`, or `WEST`—as shallow engraved text on its interior face. Center the name horizontally in the clear lower wall band, above the floor joint geometry and below the first vent row. The marking must avoid stiffening ribs, vents, locator notches, corner hardware, and mating surfaces. These assembly names supplement rather than replace `revision_string`.
+
+Engrave the same four full compass names into the floor's interior face near their corresponding edges. Orient each floor label to read from the enclosure center toward its wall. Keep the text clear of component mounts, tie-wrap anchors, corner fasteners, locator lands, and all wall seating surfaces. Use named `assembly_name_depth = 0.6` and `assembly_name_font = 7` parameters for both floor and wall assembly names. Matching words on the floor and walls must make wall placement unambiguous without consulting the assembly manual.
+
 On the fully vented east wall, place `revision_string` in the clear upper band above the highest vent row rather than among the holes. Add a vertical stiffening rib on the wall centerline in addition to the two existing full-vent ribs; the center rib must run between the established bottom and top joint clearances and remain on the interior face.
 
 ## Adjustable Wall Height
@@ -279,6 +283,7 @@ Automated source-level tests should verify at least:
 - The three transparent component keepouts include the approved positive-Z assembly labels without adding those labels to printable component-footprint coupons.
 - The assembly exposes an independent `show_dc_dc` control rather than coupling the converter to `show_psu`.
 - Each printable part receives `revision_string` where required.
+- Every wall carries its full compass name on the interior face, and every floor edge carries the matching name in the correct orientation.
 
 OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct render commands:
 
@@ -291,6 +296,7 @@ OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct 
 7. Inspect OpenSCAD logs for empty objects, missing geometry, and manifold failures.
 8. Visually inspect the full assembly and sectioned corner joints with individual walls toggled off and on. Confirm each north/south spine is a single union, its two screw bores remain separated, both nut entries remain accessible, `RELAYS` and `DC/DC` read horizontally, `12V PSU` reads 90 degrees counter-clockwise, and each label inherits its keepout's transparent color.
 9. Check independently printed part pairs for unintended volumetric overlap. Bound the calculations to four wall-corner boxes, four narrow floor-to-wall edge strips, four narrow ring-to-wall edge strips, the thin sub-panel-to-ring perimeter, the thin top-to-sub-panel perimeter, and the two PH switch clearance regions. Coincident seating faces, designed tab contact, and fasteners occupying their clearance holes are intentional contacts; any other shared solid volume is interference.
+10. Inspect every standalone wall and the floor from their interior sides. Confirm all eight compass labels are legible, correctly matched and oriented, do not break through a 3 mm skin, and do not intersect vents, ribs, mounts, locators, fasteners, or seating surfaces.
 
 Generated STL and print artifacts remain untracked unless explicitly requested.
 
@@ -310,5 +316,6 @@ The redesign is complete when:
 - `wall_z_height` changes the full wall height without moving fixed end features away from their respective top or bottom wall ends.
 - The existing 5 mm base / 10 mm overall sub-panel remains compatible, or a failed physical coupon provides evidence before any sub-panel redesign.
 - Revision markings remain readable on every standalone printable enclosure part.
+- Full-word compass engravings unambiguously pair every wall with its floor edge without an assembly-manual lookup.
 - `RELAYS`, `DC/DC`, and `12V PSU` appear as positive-Z raised text in the same transparent color scopes as their corresponding assembly keepouts and do not affect printable parts; the PSU text is rotated 90 degrees counter-clockwise.
 - `show_dc_dc` independently shows or hides the converter keepout in the assembly.
