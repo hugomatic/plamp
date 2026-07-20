@@ -274,6 +274,18 @@ vent_wall_margin = 10;
 vent_top_margin = 15;
 vent_floor_clearance = vent_wall_margin + vent_hole_spacing;
 vent_top_clearance = vent_hole_spacing;
+function vent_gap_center_left_of(x) =
+    vent_wall_margin
+    + (floor((x - vent_wall_margin) / vent_hole_spacing) - 0.5)
+        * vent_hole_spacing;
+function full_vent_center_rib_x(length) = vent_gap_center_left_of(length / 2);
+east_center_rib_x = full_vent_center_rib_x(box_d);
+vent_rib_edge_clearance =
+    vent_hole_spacing / 2 - vent_hole_d / 2 - wall_rib_w / 2;
+assert(east_center_rib_x == 105,
+    "east center rib must sit in the vent gap left of center");
+assert(vent_rib_edge_clearance >= 1,
+    "east center rib needs at least 1 mm clearance from adjacent vent holes");
 wall_revision_top_margin = 10;
 assembly_name_depth = 0.6;
 assembly_name_font = 7;
@@ -1757,7 +1769,7 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
     rib_xs = vent_mode == "half"
         ? [length / 4, length / 2 + vent_hole_spacing / 2]
         : (vent_mode == "full"
-            ? [vent_wall_margin + vent_hole_spacing / 2, length / 2, length - 21]
+            ? [vent_wall_margin + vent_hole_spacing / 2, full_vent_center_rib_x(length), length - 21]
             : [length / 3, 2 * length / 3]);
     rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
     rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;

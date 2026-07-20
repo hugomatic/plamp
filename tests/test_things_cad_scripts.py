@@ -228,7 +228,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn("module wall_stiffening_ribs", source)
         self.assertIn(
-            "? [vent_wall_margin + vent_hole_spacing / 2, length / 2, length - 21]",
+            "? [vent_wall_margin + vent_hole_spacing / 2, "
+            "full_vent_center_rib_x(length), length - 21]",
             source,
         )
         self.assertIn("transverse_rib_y = top_nut_tab_center_y(h)", source)
@@ -239,6 +240,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("transverse_rib_x0", source)
         self.assertIn('vent_mode == "half" ? length / 2', source)
         self.assertNotIn("module bottom_corner_locator_key", source)
+
+    def test_plamp8_east_center_rib_sits_between_vent_columns(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("function vent_gap_center_left_of(x)", source)
+        self.assertIn("function full_vent_center_rib_x(length)", source)
+        self.assertIn("east_center_rib_x = full_vent_center_rib_x(box_d);", source)
+        self.assertIn("vent_rib_edge_clearance =", source)
+        self.assertIn("assert(east_center_rib_x == 105", source)
+        self.assertIn("assert(vent_rib_edge_clearance >= 1", source)
         self.assertNotIn("module bottom_corner_locator_notch", source)
         self.assertNotIn("module wall_bottom_locator_keys", source)
         self.assertNotIn("module wall_bottom_locator_notches", source)
