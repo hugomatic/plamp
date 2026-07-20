@@ -54,8 +54,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("wall_z_height = 83;", source)
         self.assertIn("corner_tab_t = 6;", source)
-        self.assertIn("ledge_ring_t = 3;", source)
-        self.assertIn("corner_screw_length = 30;", source)
+        self.assertIn("corner_screw_length = 25;", source)
+        self.assertIn("corner_long_screw_length = 30;", source)
         self.assertNotIn("top_corner_screw_length", source)
         self.assertNotIn("bottom_corner_screw_length", source)
         self.assertIn("bottom_corner_nut_offset", source)
@@ -79,11 +79,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;",
+            "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;",
             source,
         )
         self.assertIn(
-            "bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;",
+            "bottom_stack_h = wall_t + 2 * corner_tab_t;",
+            source,
+        )
+        self.assertIn(
+            "bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;",
             source,
         )
         self.assertIn("module support_free_horizontal_bore", source)
@@ -96,7 +100,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module corner_tab_boss_positive", source)
         self.assertIn("corner_tab_boss_r = 5;", source)
         self.assertIn("module corner_clearance_tab", source)
-        self.assertIn("corner_tab_t + corner_nut_retainer_t", source)
+        self.assertIn(
+            "corner_nut_tab_length = corner_tab_t\n"
+            "        + corner_nut_retainer_t\n"
+            "        + corner_nut_tab_extension;",
+            source,
+        )
         self.assertIn("corner_nut_tab_length", source)
         self.assertIn("corner_nut_tab_bore_center_y", source)
         self.assertIn("module corner_nut_tab", source)
@@ -141,28 +150,43 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
 
-    def test_plamp8_ledge_ring_is_separate_and_preserves_panel_stack(self):
+    def test_plamp8_sub_panel_replaces_ledge_ring_and_corner_screws_fill_nuts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        self.assertIn("module ledge_ring_context", source)
-        self.assertIn("module ledge_ring()", source)
-        self.assertIn("ledge_ring_north_rail_w = 3;", source)
-        self.assertIn("ledge_ring_north_clearance_min = 0.75;", source)
-        self.assertIn("ph_ledge_gap_clearance = 0.5;", source)
-        self.assertIn("module ledge_ring_ph_switch_clearances", source)
-        self.assertIn('view == "ledge_ring"', source)
-        self.assertIn("feature_ph_ledge_holes", source)
-        self.assertIn("for (i = [0, 1])", source)
-        self.assertIn("top_ledge_gap_start(i)", source)
-        self.assertIn("top_ledge_gap_end(i, box_inner_w)", source)
-        self.assertIn("ledge_w - ledge_ring_north_rail_w", source)
-        self.assertIn(
-            "assert(ledge_ring_north_clearance >= ledge_ring_north_clearance_min",
-            source,
-        )
-        self.assertNotIn("quarter_round(", source)
+        for obsolete in ("ledge_ring", "ledge_top_z", "ph_ledge", "top_ledge"):
+            self.assertNotIn(obsolete, source)
+        self.assertIn("sub_panel_bottom_z = -(plate_t + sub_panel_h);", source)
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
+        self.assertIn("corner_screw_length = 25;", source)
+        self.assertIn("corner_long_screw_length = 30;", source)
+        self.assertIn(
+            "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;", source
+        )
+        self.assertIn("bottom_stack_h = wall_t + 2 * corner_tab_t;", source)
+        self.assertIn(
+            "bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;",
+            source,
+        )
+        self.assertNotIn("corner_screw_tip_allowance", source)
+        self.assertIn("assert(top_stack_h == corner_screw_length", source)
+        self.assertIn(
+            "assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length",
+            source,
+        )
+        self.assertIn("assert(corner_long_screw_length <= top_long_screw_enclosure_h", source)
+        self.assertIn("assert(corner_long_screw_length <= bottom_long_screw_enclosure_h", source)
+        self.assertIn(
+            "h + sub_panel_bottom_z - corner_tab_t / 2;", source
+        )
+        fastener_assembly = source.split(
+            "module wall_corner_fastener_assembly", 1
+        )[1].split("module corner_coupon", 1)[0]
+        self.assertEqual(fastener_assembly.count("corner_coupon_plate("), 3)
+        coupon = source.split("module corner_coupon()", 1)[1].split(
+            "module panel_corner_fastener_test", 1
+        )[0]
+        self.assertEqual(coupon.count("corner_coupon_plate("), 3)
 
     def test_plamp8_has_four_flat_printed_mitred_wall_views(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -314,7 +338,6 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "show_south_wall",
             "show_west_wall",
             "show_east_wall",
-            "show_ledge_ring",
         ):
             self.assertIn(f"{control} = true;", source)
             self.assertIn(f"if ({control})", source)
@@ -324,7 +347,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("internal_components(show_psu, show_dc_dc, show_relay);", source)
         self.assertIn("box_h = wall_z_height;", source)
         self.assertIn("assert(wall_z_height", source)
-        self.assertIn("assert(ledge_top_z == -(plate_t + sub_panel_h)", source)
+        self.assertNotIn("show_ledge_ring", source)
+        self.assertIn("assert(sub_panel_bottom_z == -(plate_t + sub_panel_h)", source)
         self.assertIn("assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h)", source)
         self.assertIn("assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y()", source)
 

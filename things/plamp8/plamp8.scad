@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, ledge_ring, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -13,7 +13,6 @@ show_north_wall = true;
 show_south_wall = true;
 show_west_wall = true;
 show_east_wall = true;
-show_ledge_ring = true;
 show_floor = true;
 show_psu = true;
 show_dc_dc = true;
@@ -29,7 +28,6 @@ show_top_panel = true;
 feature_psu_tie_wrap_anchors = false;
 //box features: power module bottom screw mounts
 feature_power_screw_mounts = true;
-feature_ph_ledge_holes = true;
 
 
 /* [dimensions] */
@@ -65,7 +63,8 @@ corner_screw_size = "M3";
 panel_screw_size = "M3";
 panel_screw_length = 20;
 panel_screw_tip_protrusion = 1;
-corner_screw_length = 30;
+corner_screw_length = 25;
+corner_long_screw_length = 30;
 
 function screw_clearance_d(size) =
     size == "M5" ? 5.5 :
@@ -250,9 +249,6 @@ floor_locator_depth = 2;
 floor_locator_h = 2;
 floor_locator_end_offset = 20;
 floor_locator_clearance = 0.25;
-ledge_ring_t = 3;
-ledge_ring_north_rail_w = 3;
-ledge_ring_north_clearance_min = 0.75;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
@@ -264,8 +260,6 @@ box_h = wall_z_height;
 panel_margin = 5;
 top_outline_w = 2;
 top_outline_h = 1;
-ledge_w = 10;
-ledge_r = ledge_w;
 internal_psu_y = 20;
 internal_psu_rot_z = 90;
 internal_converter_x = 65;
@@ -277,9 +271,9 @@ internal_relay_rot_z = 90;
 vent_hole_d = 5;
 vent_hole_spacing = 10;
 vent_wall_margin = 10;
-vent_top_margin = ledge_r + vent_hole_d;
+vent_top_margin = 15;
 vent_floor_clearance = vent_wall_margin + vent_hole_spacing;
-vent_ledge_clearance = vent_hole_spacing;
+vent_top_clearance = vent_hole_spacing;
 wall_revision_top_margin = 10;
 assembly_name_depth = 0.6;
 assembly_name_font = 7;
@@ -316,25 +310,31 @@ sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
 sub_panel_revision_depth = 0.6;
-ph_ledge_gap_clearance = 0.5;
-ph_ledge_gap_w = sub_panel_switch_w + 2 * ph_ledge_gap_clearance;
-
-top_stack_h = plate_t + sub_panel_h + ledge_ring_t + 2 * corner_tab_t + corner_nut_retainer_t;
-bottom_stack_h = wall_t + 2 * corner_tab_t + corner_nut_retainer_t;
-corner_screw_tip_allowance = 1;
-bottom_corner_nut_offset = corner_screw_length
-    - corner_screw_tip_allowance
-    - (bottom_stack_h - corner_nut_retainer_t);
-assert(corner_screw_length - top_stack_h >= 0, "top corner screw is shorter than its stack");
+top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
+bottom_stack_h = wall_t + 2 * corner_tab_t;
+bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
+top_long_screw_enclosure_h =
+    top_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
+bottom_long_screw_enclosure_h =
+    bottom_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
+assert(top_stack_h == corner_screw_length,
+    "M3x25 top screw must end flush with the nut's far face");
+assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length,
+    "M3x25 bottom screw must end flush with the nut's far face");
 assert(bottom_corner_nut_offset >= 0, "bottom corner nut offset must not be negative");
-assert(bottom_corner_nut_offset + corner_screw_tip_allowance <= corner_nut_tab_extension,
-    "bottom corner nut must remain inside the extended beam");
+assert(corner_long_screw_length <= top_long_screw_enclosure_h,
+    "M3x30 top screw must remain enclosed");
+assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
+    "M3x30 bottom screw must remain enclosed");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
 assert(2 * bore_tangent_a > corner_screw_d / 2, "teardrop roof must clear the round screw envelope");
-echo(str("top M3 protrusion: ", corner_screw_length - top_stack_h, " mm"));
-echo(str("bottom M3 nut offset: ", bottom_corner_nut_offset, " mm"));
+echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
+echo(str("bottom M3x25 nut-face offset: ",
+    corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
+echo(str("M3x30 extra enclosed travel: ",
+    corner_long_screw_length - corner_screw_length, " mm"));
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
@@ -354,10 +354,10 @@ nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel
 revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
 revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
 top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
-ledge_top_z = -(plate_t + sub_panel_h);
+sub_panel_bottom_z = -(plate_t + sub_panel_h);
 panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
 panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
-panel_fastener_boss_h = ledge_top_z - panel_fastener_boss_bottom_z;
+panel_fastener_boss_h = sub_panel_bottom_z - panel_fastener_boss_bottom_z;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -921,16 +921,6 @@ assert(
     "XT60-to-switch clearance does not match the measured hardware envelopes"
 );
 
-function top_ledge_gap_center_for_dc_toggle(i) = layout_offset_x + dc_channel_x(i) + dc_toggle_x();
-function top_ledge_gap_start(i) = max(0, top_ledge_gap_center_for_dc_toggle(i) - ph_ledge_gap_w / 2);
-function top_ledge_gap_end(i, length) = min(length, top_ledge_gap_center_for_dc_toggle(i) + ph_ledge_gap_w / 2);
-ledge_ring_north_clearance =
-    box_inner_d - ledge_ring_north_rail_w
-    - (layout_offset_y + dc_channel_y(0) + sub_panel_switch_h / 2);
-assert(ledge_ring_north_clearance >= ledge_ring_north_clearance_min,
-    "north ring rail collides with the PH switch-body envelope");
-echo(str("north ring-to-switch clearance: ", ledge_ring_north_clearance, " mm"));
-
 module top_panel_8ch(include_revision = true) {
     translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
@@ -1049,68 +1039,6 @@ module floor_context() {
             box_bottom_revision_negative();
             floor_assembly_name_negatives();
         }
-}
-
-module ledge_ring_corner_holes() {
-    for (
-        x = [panel_screw_inset, box_inner_w - panel_screw_inset],
-        y = [panel_screw_inset, box_inner_d - panel_screw_inset]
-    )
-        translate([x, y, -0.1])
-            cylinder(h = ledge_ring_t + 0.2, d = panel_screw_d);
-}
-
-module ledge_ring_ph_switch_clearances() {
-    for (i = [0, 1]) {
-        gap_start = top_ledge_gap_start(i);
-        gap_end = top_ledge_gap_end(i, box_inner_w);
-
-        if (gap_end > gap_start)
-            translate([gap_start, box_inner_d - ledge_w - 0.1, -0.1])
-                cube([
-                    gap_end - gap_start,
-                    ledge_w - ledge_ring_north_rail_w + 0.1,
-                    ledge_ring_t + 0.2
-                ]);
-    }
-}
-
-module ledge_ring_revision_negative() {
-    translate([box_inner_w / 2, ledge_w / 2, 0])
-        mirror([1, 0, 0])
-            write_text(revision_string, 4, -0.01);
-}
-
-module ledge_ring_frame() {
-    difference() {
-        cube([box_inner_w, box_inner_d, ledge_ring_t]);
-        translate([ledge_w, ledge_w, -0.1])
-            cube([
-                box_inner_w - 2 * ledge_w,
-                box_inner_d - 2 * ledge_w,
-                ledge_ring_t + 0.2
-            ]);
-    }
-}
-
-module ledge_ring_local() {
-    difference() {
-        ledge_ring_frame();
-        ledge_ring_corner_holes();
-        if (feature_ph_ledge_holes)
-            ledge_ring_ph_switch_clearances();
-        ledge_ring_revision_negative();
-    }
-}
-
-module ledge_ring_context() {
-    color([0.95, 0.45, 0.1, 1])
-        translate([wall_t, wall_t, ledge_top_z - ledge_ring_t])
-            ledge_ring_local();
-}
-
-module ledge_ring() {
-    ledge_ring_local();
 }
 
 module relay_bottom_mount_holes() {
@@ -1718,7 +1646,8 @@ module corner_nut_tab(bearing_side = 1) {
     }
 }
 
-function top_clearance_tab_center_y(h) = h + ledge_top_z - ledge_ring_t - corner_tab_t / 2;
+function top_clearance_tab_center_y(h) =
+    h + sub_panel_bottom_z - corner_tab_t / 2;
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
 function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
 function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
@@ -1738,7 +1667,7 @@ module corner_nut_spine(h) {
     }
 }
 
-assert(ledge_top_z == -(plate_t + sub_panel_h),
+assert(sub_panel_bottom_z == -(plate_t + sub_panel_h),
     "sub-panel top datum must stay fixed below the top panel");
 assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h),
     "top nut tab must remain below the clearance tab");
@@ -1803,7 +1732,7 @@ module wall_vent_negatives(length, vent_mode = "none", h = wall_z_height) {
     vent_ys = [
         vent_floor_clearance:
         vent_hole_spacing:
-        h - vent_top_margin - vent_ledge_clearance
+        h - vent_top_margin - vent_top_clearance
     ];
     vent_start_x = vent_mode == "half" ? length / 2 : vent_wall_margin;
     vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
@@ -2085,10 +2014,8 @@ module wall_corner_fastener_assembly() {
     color([0.85, 0.72, 0.15, 1]) {
         translate(top_origin + [0, 0, -plate_t])
             corner_coupon_plate(plate_t, 1);
-        translate(top_origin + [0, 0, ledge_top_z])
+        translate(top_origin + [0, 0, sub_panel_bottom_z])
             corner_coupon_plate(sub_panel_h);
-        translate(top_origin + [0, 0, ledge_top_z - ledge_ring_t])
-            corner_coupon_plate(ledge_ring_t);
         translate(bottom_origin + [0, 0, 0])
             corner_coupon_plate(wall_t, -1);
     }
@@ -2115,8 +2042,6 @@ module corner_coupon() {
         corner_coupon_plate(plate_t, 1);
     translate([coupon_plate_column_x, 34, 0])
         corner_coupon_plate(sub_panel_h);
-    translate([coupon_plate_column_x, 56, 0])
-        corner_coupon_plate(ledge_ring_t);
     translate([coupon_plate_column_x + 22, 12, 0])
         corner_coupon_plate(wall_t, -1);
 }
@@ -2129,7 +2054,7 @@ module panel_corner_fastener_test() {
             union() {
                 translate([-test_w / 2, -test_w / 2, -plate_t])
                     cube([test_w, test_w, plate_t]);
-                translate([-test_w / 2, -test_w / 2, ledge_top_z])
+                translate([-test_w / 2, -test_w / 2, sub_panel_bottom_z])
                     cube([test_w, test_w, sub_panel_h]);
                 panel_corner_fastener_boss(1);
             }
@@ -2170,7 +2095,7 @@ module sub_panel() {
 }
 
 module mounted_sub_panel() {
-    translate([0, 0, ledge_top_z])
+    translate([0, 0, sub_panel_bottom_z])
         sub_panel_8ch();
 }
 
@@ -2280,9 +2205,6 @@ module assembly() {
     if (show_east_wall)
         east_wall_context();
 
-    if (show_ledge_ring)
-        ledge_ring_context();
-
     if (show_floor)
         floor_context();
 
@@ -2317,8 +2239,6 @@ if (view == "relay_footprint") {
     west_wall();
 } else if (view == "east_wall") {
     east_wall();
-} else if (view == "ledge_ring") {
-    ledge_ring();
 } else if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
