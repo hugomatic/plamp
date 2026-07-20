@@ -246,7 +246,13 @@ Build each label with positive-Z `linear_extrude()` text beginning at the keepou
 
 Increase `converter_fit_clearance` from 0.5 mm to 0.75 mm per side. Because the retaining envelope adds twice this value to both calibrated body dimensions, this increases the finished pocket by exactly 0.5 mm overall in X and 0.5 mm overall in Y. Do not change `converter_w`, `converter_d`, the converter mount spacing, mount holes, airflow-post layout, or transparent keepout.
 
-The user requested no new automated test for this fit adjustment. Verify it by pushing the source change first and then rendering the existing `converter_footprint` view from that pushed commit. The generated STL must be non-empty, OpenSCAD must report no error or empty top-level object, and visual inspection must confirm the retaining corners moved outward without moving the converter body or screw pattern.
+## Internal USB Cable Corridor
+
+Create additional space between the relay board and 12 V PSU for an approximately 30 mm USB connector and its upward cable bend. Change `internal_psu_x` from 60 mm to 70 mm, moving the PSU 10 mm toward the east wall. Change `internal_relay_x` from -35 mm to -39 mm, moving the relay board 4 mm toward the west wall. This increases the body-to-body corridor by 14 mm, to approximately 46 mm, while retaining approximately 22 mm between the PSU and east wall and approximately 26 mm between the relay board and west wall.
+
+The shared component offsets must move every associated floor and illustration feature together. For the PSU this includes mount holes, airflow posts, retaining corners, side guides, tie-wrap anchors, stops, and the transparent keepout. For the relay board this includes retaining corners and the transparent keepout. Do not move the DC/DC converter or change any Y offset.
+
+The user requested no new automated test for these fit and placement adjustments. Push the source change before running OpenSCAD, then render the existing `converter_footprint` and `assembly` views from that pushed commit. Both generated STLs must be non-empty, OpenSCAD must report no error or empty top-level object, and visual inspection must confirm the converter retaining corners moved outward without moving its body or screw pattern, the PSU and relay features moved as complete groups, and the new cable corridor remains clear.
 
 ## First Printable: Corner-Stack Coupon
 
@@ -324,5 +330,6 @@ The redesign is complete when:
 - Revision markings remain readable on every standalone printable enclosure part.
 - Full-word compass engravings unambiguously pair every wall with its floor edge without an assembly-manual lookup.
 - The DC/DC retaining pocket is 0.5 mm larger overall in both X and Y while its calibrated body and mount geometry remain unchanged.
+- The relay-to-PSU corridor is approximately 46 mm wide, with every dependent floor and illustration feature following its component's shared X offset.
 - `RELAYS`, `DC/DC`, and `12V PSU` appear as positive-Z raised text in the same transparent color scopes as their corresponding assembly keepouts and do not affect printable parts; the PSU text is rotated 90 degrees counter-clockwise.
 - `show_dc_dc` independently shows or hides the converter keepout in the assembly.
