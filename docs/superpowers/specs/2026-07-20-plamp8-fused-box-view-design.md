@@ -8,8 +8,7 @@ Add a print-ready `box` view that fuses the Plamp8 floor and four walls into one
 
 - Export one fused STL containing the floor and all four walls in assembly position.
 - Reuse the existing floor and wall geometry without copying box-specific versions of those modules.
-- Keep the top corner supports that locate and carry the sub-panel.
-- Remove bottom corner fasteners that are redundant in a fused print.
+- Keep the complete corner fastener stacks, including the supports that carry the sub-panel.
 - Make wall vents printable in the floor-down orientation without support.
 - Allow normal round vents in the box view through an OpenSCAD Customizer checkbox.
 - Preserve all existing separate-part and full-assembly behavior by default.
@@ -17,7 +16,7 @@ Add a print-ready `box` view that fuses the Plamp8 floor and four walls into one
 ## Non-goals
 
 - Do not merge or otherwise change the standalone wall and floor STLs.
-- Do not alter the sub-panel, top panel, component placement, component retainers, labels, ribs, or floor locator geometry.
+- Do not alter the sub-panel, top panel, corner fasteners, component placement, component retainers, labels, ribs, or floor locator geometry.
 - Do not add a second implementation of any wall or floor module.
 - Do not render the full assembly as part of this change.
 
@@ -35,17 +34,13 @@ The box is exported floor-down in its real assembly coordinates. It contains no 
 
 The existing `assembly` view and its show/hide controls do not affect `box`. The box is a deterministic manufacturing view rather than a preset assembled illustration.
 
-## Shared Geometry Parameters
+## Shared Vent Parameter
 
-The box view passes explicit parameters through the existing context, wall, vent, corner-tab, and floor modules. Defaults reproduce the current standalone parts.
+The box view passes one explicit vent-profile parameter through the existing wall context, wall, and vent modules. Its default reproduces the current standalone parts.
 
-The shared parameters control only these differences:
+The parameter controls only whether vents use the normal round profile or the coarse support-free profile. The box introduces no structural geometry mode.
 
-- whether vents use the normal round profile or the coarse support-free profile;
-- whether bottom corner wall fasteners are included; and
-- whether floor corner screw holes and countersinks are subtracted.
-
-For the box view, bottom wall fasteners and floor corner screw holes are disabled. The floor locator lands, keys, and wall notches remain. They provide alignment and positive overlap between the floor and walls in the union.
+All corner tabs, continuous nut spines, top and bottom nut catches, screw bores, floor countersinks, locator lands, locator keys, and wall notches remain exactly as they are in the separate parts. Besides the vent profile, `box()` composes the same context modules used by `assembly()`.
 
 ## Corner Supports
 
@@ -56,12 +51,15 @@ top_clearance_tab_center_y(h) =
     h + sub_panel_bottom_z - corner_tab_t / 2;
 ```
 
-Consequently, the top face of each support ends at `sub_panel_bottom_z`. The fused box retains:
+Consequently, the top face of each support ends at `sub_panel_bottom_z`. The fused box retains the complete existing corner stack:
 
-- the two top clearance tabs on each clearance-owner wall; and
-- the top nut-tab portion on each nut-owner wall.
+- the two top clearance tabs on each clearance-owner wall;
+- the continuous top-to-bottom nut spines on each nut-owner wall;
+- the bottom clearance tabs that sit on the floor;
+- the upper and lower nut catches and bores; and
+- the matching countersunk holes through the floor.
 
-The fused box omits the bottom clearance tabs, bottom nut pockets, and the continuous material whose only purpose is connecting top and bottom fasteners. Shared existing modules such as `corner_nut_tab()` are reused to create the top-only nut-owner support. Standalone walls retain their full continuous corner spines and both fastener zones.
+This unchanged stack gives the floor-down print a continuous load path from the floor through the lower tabs and nut spines to the sub-panel supports. It also preserves the option to fasten the box to a base or legs. M3x25 remains the direct-mount screw, while M3x30 allows approximately 5 mm of added mounting thickness.
 
 ## Coarse Vent Mode
 
@@ -84,7 +82,7 @@ The profile selection belongs in the shared vent-negative path. The box must not
 - Intended process: FDM, printed floor-down as one part.
 - The floor provides the build-plane base and the walls grow vertically.
 - Point-up hexagonal vents eliminate unsupported circular ceilings on vertical walls.
-- Existing top tabs continue to support the sub-panel.
+- Existing bottom tabs, continuous nut spines, and top tabs form printable columns that support the sub-panel.
 - Existing internal floor posts and component retainers remain printable from the floor.
 - The user must still confirm that the assembled box fits the printer's build volume and that wiring access is acceptable before choosing this alternative.
 
@@ -95,10 +93,9 @@ Source contract tests will verify:
 - `box` is present in the ordered view contract and dispatcher;
 - `box_coarse_vents` defaults to true;
 - the coarse profile is a point-up regular hexagon;
-- the box calls shared wall and floor context modules with explicit options;
+- the box calls the existing wall and floor context modules;
 - standalone wall and floor calls retain existing defaults;
-- top supports remain enabled for the box;
-- bottom wall fasteners and floor corner screw holes are disabled only for the box; and
+- all existing corner fasteners and locator features remain in the box; and
 - no box-specific duplicate wall or vent loop is introduced.
 
 All existing CAD script tests must continue to pass.
