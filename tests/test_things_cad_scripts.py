@@ -264,6 +264,36 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 f"module {wall}_wall_context(coarse_vents = false)", source
             )
 
+    def test_plamp8_box_view_reuses_complete_wall_and_floor_geometry(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        view_line = next(
+            line for line in source.splitlines() if line.startswith("view =")
+        )
+
+        self.assertIn("box", view_line)
+        self.assertIn('view == "box"', source)
+        box_module = source.split("module box()", 1)[1].split(
+            "module assembly()", 1
+        )[0]
+
+        for wall in ("north", "south", "west", "east"):
+            self.assertIn(
+                f"{wall}_wall_context(coarse_vents = box_coarse_vents);",
+                box_module,
+            )
+        self.assertIn("floor_context();", box_module)
+        self.assertIn("union()", box_module)
+        self.assertNotIn("flat_wall(", box_module)
+        self.assertNotIn("wall_corner_tabs(", box_module)
+        self.assertNotIn("floor_locator_", box_module)
+        self.assertNotIn("floor_corner_fastener_holes", box_module)
+
+        self.assertIn("corner_nut_spine(h);", source)
+        self.assertIn("floor_corner_fastener_holes();", source)
+        self.assertIn("floor_locator_lands();", source)
+        self.assertIn("floor_locator_keys();", source)
+        self.assertIn("floor_locator_notches(length);", source)
+
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 

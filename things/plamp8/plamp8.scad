@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, box, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -2231,6 +2231,17 @@ module relay_footprint() {
     }
 }
 
+module box() {
+    echo_hardware(true, true, true, true);
+    union() {
+        north_wall_context(coarse_vents = box_coarse_vents);
+        south_wall_context(coarse_vents = box_coarse_vents);
+        west_wall_context(coarse_vents = box_coarse_vents);
+        east_wall_context(coarse_vents = box_coarse_vents);
+        floor_context();
+    }
+}
+
 module assembly() {
     echo_hardware(true, true, true, true);
     if (show_north_wall)
@@ -2276,6 +2287,8 @@ if (view == "relay_footprint") {
     west_wall();
 } else if (view == "east_wall") {
     east_wall();
+} else if (view == "box") {
+    box();
 } else if (view == "plate") {
     plate();
 } else if (view == "ac_duplex_channel") {
