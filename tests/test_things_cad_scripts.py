@@ -606,6 +606,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "USB",
         ):
             self.assertIn(f'"{label}"', labels)
+        self.assertIn("dc_label_x_offset = -3;", labels)
+        self.assertIn("service_row_y + c13_cutout_h / 2 + 4", labels)
+        self.assertIn(
+            "usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 4", labels
+        )
         self.assertIn("mirror([1, 0, 0])", source)
         self.assertIn("sub_panel_back_labels_negative();", source)
 

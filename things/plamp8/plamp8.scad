@@ -1005,6 +1005,7 @@ module sub_panel_back_label_negative(label, x, y, font_size = 5) {
 }
 
 module sub_panel_back_labels_negative() {
+    dc_label_x_offset = -3;
     dc_label_y_offset = 12;
     ac_label_left_x = left_ac_x
         + outlet_toggle_x
@@ -1018,16 +1019,24 @@ module sub_panel_back_labels_negative() {
     ac_label_bottom_y = ac_row_y - outlet_spacing / 2;
 
     sub_panel_back_label_negative(
-        "CH1", dc_channel_x(0), dc_channel_y(0) + dc_label_y_offset
+        "CH1",
+        dc_channel_x(0) + dc_label_x_offset,
+        dc_channel_y(0) + dc_label_y_offset
     );
     sub_panel_back_label_negative(
-        "CH2", dc_channel_x(1), dc_channel_y(1) + dc_label_y_offset
+        "CH2",
+        dc_channel_x(1) + dc_label_x_offset,
+        dc_channel_y(1) + dc_label_y_offset
     );
     sub_panel_back_label_negative(
-        "CH3", dc_channel_x(2), dc_channel_y(2) + dc_label_y_offset
+        "CH3",
+        dc_channel_x(2) + dc_label_x_offset,
+        dc_channel_y(2) + dc_label_y_offset
     );
     sub_panel_back_label_negative(
-        "CH4", dc_channel_x(3), dc_channel_y(3) + dc_label_y_offset
+        "CH4",
+        dc_channel_x(3) + dc_label_x_offset,
+        dc_channel_y(3) + dc_label_y_offset
     );
 
     sub_panel_back_label_negative("CH5", ac_label_left_x, ac_label_top_y);
@@ -1038,12 +1047,12 @@ module sub_panel_back_labels_negative() {
     sub_panel_back_label_negative(
         "AC",
         c13_panel_x,
-        service_row_y + c13_cutout_h / 2 + 7
+        service_row_y + c13_cutout_h / 2 + 4
     );
     sub_panel_back_label_negative(
         "USB",
         usb_c_panel_x,
-        usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 7
+        usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 4
     );
 }
 
