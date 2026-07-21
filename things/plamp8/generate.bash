@@ -73,11 +73,14 @@ usage() {
 $cad stl generator
 
 usage:
-  $name [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
+  $name [--box] [--revision TEXT] [--scad FILE] [--view VIEW] [--preview] [--define EXPR] target_directory [commit]
 
 examples:
   # Generate every view from the latest committed part source.
   $name prints/${cad}_${source_date:-unknown}
+
+  # Generate the fused box, top panel, and sub-panel only.
+  $name --box prints/${cad}_${source_date:-unknown}_box
 
   # Reproduce a broken part from its engraved commit hash.
   $name prints/${cad}_${source_date:-unknown}_replacement ${source_revision:-COMMIT}
@@ -124,9 +127,16 @@ revision_text=""
 preview=0
 extra_defines=()
 view_filter=""
+box_mode=0
+flat_wall_views=(floor north_south_walls east_west_walls top_panel sub_panel)
+box_views=(box top_panel sub_panel)
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --box)
+      box_mode=1
+      shift
+      ;;
     --revision)
       [[ "$#" -ge 2 ]] || {
         echo "--revision requires a value" >&2
@@ -272,6 +282,10 @@ if [[ "${#views[@]}" -eq 0 ]]; then
 fi
 if [[ -n "$view_filter" ]]; then
   views=("$view_filter")
+elif [[ "$box_mode" -eq 1 ]]; then
+  views=("${box_views[@]}")
+else
+  views=("${flat_wall_views[@]}")
 fi
 
 mkdir -p "$target_directory"

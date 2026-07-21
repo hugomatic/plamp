@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [relay_footprint, psu_footprint, converter_footprint, floor, north_wall, south_wall, west_wall, east_wall, box, top_panel, sub_panel, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -218,6 +218,7 @@ box_print_orientation = "box";
 corner_nut_entry_angle = 45;
 support_free_roof_angle = 30;
 boolean_shim = 0.01;
+print_plate_gap = 10;
 panel_screw_inset = 4;
 corner_axis_inset = wall_t + panel_screw_inset;
 corner_fit_clearance = 0.25;
@@ -2416,26 +2417,22 @@ module internal_components(show_psu = true, show_dc_dc = true, show_relay = true
     }
 }
 
-// TODO: Refactor this hand-positioned legacy presentation layout to derive its
-// placements from the actual panel/component contexts.
-module plate() {
-    translate([-176, 56, 0])
-        outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
-    translate([-62, 66, 0])
-        dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
-    translate([6, 66, 0])
-        usb_c_panel_unit(true);
-    translate([78, 56, 0])
-        c13_inlet_unit(true);
-
-    translate([0, -140, 0])
-        top_panel_8ch(true);
-}
-
 module floor_part() {
     echo_hardware(true, true, true, true);
     translate([0, 0, box_h])
         floor_context();
+}
+
+module north_south_walls() {
+    north_wall();
+    translate([0, wall_z_height + print_plate_gap, 0])
+        south_wall();
+}
+
+module east_west_walls() {
+    east_wall();
+    translate([0, wall_z_height + print_plate_gap, 0])
+        west_wall();
 }
 
 module footprint_base(w, d, margin = 12) {
@@ -2570,8 +2567,10 @@ if (view == "relay_footprint") {
     east_wall();
 } else if (view == "box") {
     box();
-} else if (view == "plate") {
-    plate();
+} else if (view == "north_south_walls") {
+    north_south_walls();
+} else if (view == "east_west_walls") {
+    east_west_walls();
 } else if (view == "ac_duplex_channel") {
     ac_duplex_channel();
 } else if (view == "dc_barrel_channel") {

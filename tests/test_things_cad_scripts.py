@@ -232,6 +232,30 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("module side_wall_psu_vents", source)
         self.assertNotIn("module legacy_wall_revision_negative", source)
         self.assertNotIn("module panel_corner_fastener_bosses", source)
+
+    def test_plamp8_has_five_flat_or_three_box_production_plates(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        generate = (REPO_ROOT / "things" / "plamp8" / "generate.bash").read_text()
+
+        self.assertIn("module north_south_walls()", source)
+        self.assertIn("module east_west_walls()", source)
+        north_south = source.split("module north_south_walls()", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertEqual(north_south.count("north_wall();"), 1)
+        self.assertEqual(north_south.count("south_wall();"), 1)
+        east_west = source.split("module east_west_walls()", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertEqual(east_west.count("east_wall();"), 1)
+        self.assertEqual(east_west.count("west_wall();"), 1)
+        self.assertNotIn("module plate()", source)
+        self.assertIn(
+            'flat_wall_views=(floor north_south_walls east_west_walls top_panel sub_panel)',
+            generate,
+        )
+        self.assertIn('box_views=(box top_panel sub_panel)', generate)
+        self.assertIn("--box", generate)
         self.assertNotIn("module panel_corner_screw_holes_in_box", source)
         self.assertNotIn("module side_loaded_panel_nut_traps", source)
         self.assertNotIn("internal_clearance_h", source)
