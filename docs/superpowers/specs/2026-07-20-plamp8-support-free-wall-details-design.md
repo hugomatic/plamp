@@ -62,9 +62,23 @@ Rib centerlines, endpoints, vent clearances, revision-text clearance, and nomina
 
 Standalone wall vents remain round because their axes are vertical while the wall is printed flat. Box vents retain their existing point-up regular hexagons because their 30-degree roof facets meet the support-free threshold.
 
+The floor receives three shallow component-placement engravings at the existing 0.6 mm compass-label depth. Each label stays within its component footprint and avoids mount holes, airflow posts, and retaining corners:
+
+- `Pico Relay-B` is oriented like `WEST` (90 degrees);
+- `PSU` is oriented like `NORTH` (0 degrees); and
+- `DC/DC` is oriented like `SOUTH` (180 degrees).
+
+These floor markings replace the raised `RELAYS`, `12V PSU`, and `DC/DC` labels on the transparent assembly keepouts. The transparent colors and component geometry remain unchanged; only their raised text is removed.
+
 Wall text, floor geometry, corner-tab stack heights, nut offsets, floor locators, screw lengths, and the 0.02 mm box-only miter overlap remain unchanged.
 
 No box-specific copy of a wall, rib loop, nut trap, or bore loop is introduced. The existing modules remain authoritative and accept print-orientation/profile parameters.
+
+## Assembly preview Z-fighting
+
+The rounded-rectangle label-pocket cutters are not the source of the preview artifact: they already cut from Z = 2.5 mm through Z = 5.5 mm across the top of the 3 mm panel, providing 0.5 mm of intentional penetration.
+
+The actual coplanar interface is the mounted top-panel underside and sub-panel top, which both lie at Z = `-plate_t`. Add a named 0.01 mm separation only while `$preview` is true and apply it in the assembly placement transform. Final renders and generated STL use zero separation, so manufactured dimensions and the physical stack remain unchanged. This preserves fast OpenSCAD preview colors without requiring a long CGAL render.
 
 ## Verification and delivery
 
@@ -74,7 +88,9 @@ Source-contract tests will verify:
 - 45-degree mirrored center-facing nut entries;
 - flat-wall roofed horizontal bores and box round vertical bores;
 - print-up roofs on nut pockets and box entry tunnels;
-- smooth standalone semicylindrical ribs, faceted box half-hex ribs, and floor-touching quarter-profile behavior; and
+- smooth standalone semicylindrical ribs, faceted box half-hex ribs, and floor-touching quarter-profile behavior;
+- engraved floor component labels with the required compass orientations and no raised transparent-keepout labels;
+- preview-only top/sub-panel separation with unchanged render geometry; and
 - continued reuse of complete wall modules by `box`.
 
 Changes are committed and pushed before OpenSCAD runs. Verification renders only targeted standalone wall/corner geometry and `box`, never the full assembly. Generated STL and render logs stay outside the repository.
