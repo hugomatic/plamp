@@ -311,12 +311,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 "mitre_overlap = box_wall_mitre_overlap",
                 box_module,
             )
-        self.assertIn("floor_context();", box_module)
+        self.assertIn("floor_context(colorize = false);", box_module)
         self.assertIn("union()", box_module)
         self.assertNotIn("flat_wall(", box_module)
         self.assertNotIn("wall_corner_tabs(", box_module)
         self.assertNotIn("floor_locator_", box_module)
         self.assertNotIn("floor_corner_fastener_holes", box_module)
+        self.assertIn("color(box_preview_color)", box_module)
+        self.assertEqual(box_module.count("colorize = false"), 5)
 
         self.assertIn("corner_nut_spine(h, print_orientation);", source)
         self.assertIn("floor_corner_fastener_holes();", source)
@@ -376,13 +378,25 @@ class ThingsCadScriptsTest(unittest.TestCase):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
         self.assertIn("module smooth_half_rib_profile", source)
-        self.assertIn("module box_half_hex_rib_profile", source)
-        self.assertIn("module vertical_box_rib_ramp", source)
+        self.assertIn("module low_fn_half_hex_rib", source)
+        self.assertIn("$fn = 6", source)
+        self.assertNotIn("module box_half_hex_rib_profile", source)
+        self.assertIn(
+            "box_half_hex_rib_h = wall_rib_w * sqrt(3) / 4;",
+            source,
+        )
         self.assertIn("module floor_supported_box_rib", source)
+        self.assertNotIn("module vertical_box_rib_ramp", source)
         ribs = source.split("module wall_stiffening_ribs", 1)[1].split(
             "module ", 1
         )[0]
         self.assertIn("print_orientation", ribs)
+        self.assertIn("vertical_half_hex_rib(", ribs)
+        self.assertIn("horizontal_half_hex_rib(", ribs)
+        self.assertIn("rib_y0 = floor_rib_y0;", ribs)
+        self.assertIn(
+            "rib_y1 = transverse_rib_y + wall_rib_w / 2;", ribs
+        )
         self.assertEqual(source.count("for (x = rib_xs)"), 1)
 
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
@@ -453,7 +467,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for call in expected:
             self.assertIn(f"floor_assembly_name_negative{call};", floor_names)
 
-        floor_context = source.split("module floor_context()", 1)[1].split(
+        floor_context = source.split("module floor_context(", 1)[1].split(
             "module ", 1
         )[0]
         self.assertIn("floor_assembly_name_negatives();", floor_context)
@@ -516,20 +530,28 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h)", source)
         self.assertIn("assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y()", source)
 
-    def test_plamp8_transparent_components_have_raised_assembly_labels(self):
+    def test_plamp8_floor_marks_component_orientation(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        self.assertIn("component_label_t = 0.8;", source)
-        self.assertNotIn("component_label_color", source)
-        self.assertIn("module raised_component_label", source)
-        self.assertIn('raised_component_label("12V PSU"', source)
-        self.assertIn('raised_component_label("DC/DC"', source)
-        self.assertIn('raised_component_label("RELAYS"', source)
-        self.assertIn("linear_extrude(height = component_label_t)", source)
-        label_module = source.split("module raised_component_label", 1)[1].split(
+        labels = source.split("module floor_component_label_negatives", 1)[1].split(
             "module ", 1
         )[0]
-        self.assertNotIn("color(", label_module)
+        self.assertIn('"Pico Relay-B"', labels)
+        self.assertIn('"PSU"', labels)
+        self.assertIn('"DC/DC"', labels)
+        self.assertIn("90,", labels)
+        self.assertIn("180,", labels)
+        self.assertIn("floor_component_label_negatives();", source)
+
+    def test_plamp8_transparent_components_keep_colors_without_labels(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("color([1, 0.6, 0.1, 0.25])", source)
+        self.assertIn("color([0.8, 0.25, 0.95, 0.25])", source)
+        self.assertIn("color([0.1, 0.7, 0.2, 0.25])", source)
+        self.assertNotIn("raised_component_label", source)
+        self.assertNotIn('"12V PSU"', source)
+        self.assertNotIn('"RELAYS"', source)
 
         for module_name in (
             "psu_keepout",
@@ -539,35 +561,29 @@ class ThingsCadScriptsTest(unittest.TestCase):
             keepout = source.split(f"module {module_name}", 1)[1].split(
                 "module ", 1
             )[0]
-            self.assertIn("raised_component_label(", keepout)
+            self.assertNotIn("text(", keepout)
 
-        self.assertRegex(
-            source,
-            r"color\(\[1, 0\.6, 0\.1, 0\.25\]\)\s*\{[\s\S]*?"
-            r'raised_component_label\("12V PSU", psu_label_font, psu_h, 0\);\s*\}',
-        )
-        self.assertRegex(
-            source,
-            r"color\(\[0\.8, 0\.25, 0\.95, 0\.25\]\)\s*\{[\s\S]*?"
-            r'raised_component_label\("DC/DC", converter_label_font, converter_h, '
-            r"-internal_converter_rot_z\);\s*\}",
-        )
-        self.assertRegex(
-            source,
-            r"color\(\[0\.1, 0\.7, 0\.2, 0\.25\]\)\s*\{[\s\S]*?"
-            r'raised_component_label\("RELAYS", relay_label_font, relay_h, '
-            r"-internal_relay_rot_z\);\s*\}",
-        )
+    def test_plamp8_sub_panel_back_labels_match_wiring_layout(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        for module_name in (
-            "psu_footprint",
-            "converter_footprint",
-            "relay_footprint",
+        labels = source.split("module sub_panel_back_labels_negative", 1)[1].split(
+            "module ", 1
+        )[0]
+        for label in (
+            "CH1",
+            "CH2",
+            "CH3",
+            "CH4",
+            "CH5",
+            "CH6",
+            "CH7",
+            "CH8",
+            "AC",
+            "USB",
         ):
-            footprint = source.split(f"module {module_name}", 1)[1].split(
-                "module ", 1
-            )[0]
-            self.assertNotIn("raised_component_label(", footprint)
+            self.assertIn(f'"{label}"', labels)
+        self.assertIn("mirror([1, 0, 0])", source)
+        self.assertIn("sub_panel_back_labels_negative();", source)
 
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

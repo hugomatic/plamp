@@ -29,6 +29,7 @@ assembly_preview_gap = $preview ? 0.01 : 0;
 box_coarse_vents = true;
 // Give fused wall mitres a microscopic overlap so the exported mesh is manifold.
 box_wall_mitre_overlap = 0.02;
+box_preview_color = [0.68, 0.68, 0.62, 1];
 
 
 /* [box features] */
@@ -203,10 +204,6 @@ relay_mount_hole_d = screw_clearance_d(relay_screw_size);
 relay_mount_x = 135;
 relay_mount_y = 70;
 relay_countersink_d = screw_chamfer_d(relay_screw_size);
-component_label_t = 0.8;
-psu_label_font = 9;
-converter_label_font = 5;
-relay_label_font = 14;
 
 retaining_corner_l = 5;
 retaining_corner_t = 4;
@@ -243,6 +240,7 @@ coupon_assembly_clearance = 0.05;
 coupon_plate_column_x = 100;
 wall_rib_w = 3;
 wall_rib_h = 2;
+box_half_hex_rib_h = wall_rib_w * sqrt(3) / 4;
 wall_vent_joint_clearance = 1;
 floor_locator_l = 16;
 floor_locator_depth = 2;
@@ -430,6 +428,14 @@ module round_hull(x, y, r, h) {
             translate([dx, dy, 0]) cylinder(h = h, r = r);
             translate([0, dy, 0]) cylinder(h = h, r = r);
         }
+}
+
+module optional_color(c, enabled = true) {
+    if (enabled)
+        color(c)
+            children();
+    else
+        children();
 }
 
 // ---------------- positive modules ----------------
@@ -647,6 +653,8 @@ module sub_panel_8ch_negative() {
 
     translate([revision_x, revision_y, sub_panel_base_h])
         write_text(revision_string, 4, -sub_panel_revision_depth);
+
+    sub_panel_back_labels_negative();
 }
 
 // ---------------- final ----------------
@@ -866,36 +874,19 @@ module c13_inlet_unit(include_revision = true) {
             flush_revision_label();
 }
 
-module raised_component_label(label, font_size, top_z, counter_rotation_z) {
-    translate([0, 0, top_z])
-        rotate([0, 0, counter_rotation_z])
-            linear_extrude(height = component_label_t)
-                text(
-                    label,
-                    size = font_size,
-                    font = "DejaVu Sans",
-                    halign = "center",
-                    valign = "center"
-                );
-}
-
 module psu_keepout() {
-    color([1, 0.6, 0.1, 0.25]) {
+    color([1, 0.6, 0.1, 0.25])
         translate([0, 0, psu_h / 2])
             cube([psu_w, psu_d, psu_h], center = true);
-        raised_component_label("12V PSU", psu_label_font, psu_h, 0);
-    }
 
     color([0, 0, 0, 1])
         psu_mount_markers(psu_h + 1);
 }
 
 module converter_keepout() {
-    color([0.8, 0.25, 0.95, 0.25]) {
+    color([0.8, 0.25, 0.95, 0.25])
         translate([0, 0, converter_h / 2])
             cube([converter_w, converter_d, converter_h], center = true);
-        raised_component_label("DC/DC", converter_label_font, converter_h, -internal_converter_rot_z);
-    }
 
     color([0, 0, 0, 1])
         for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
@@ -904,11 +895,9 @@ module converter_keepout() {
 }
 
 module relay_board_keepout() {
-    color([0.1, 0.7, 0.2, 0.25]) {
+    color([0.1, 0.7, 0.2, 0.25])
         translate([0, 0, relay_h / 2])
             cube([relay_w, relay_d, relay_h], center = true);
-        raised_component_label("RELAYS", relay_label_font, relay_h, -internal_relay_rot_z);
-    }
 
     color([0, 0, 0, 1])
         for (x = [-relay_mount_x / 2, relay_mount_x / 2], y = [-relay_mount_y / 2, relay_mount_y / 2])
@@ -1004,7 +993,58 @@ module sub_panel_8ch() {
     }
 }
 
+module sub_panel_back_label_negative(label, x, y, font_size = 5) {
+    translate([x, y, 0])
+        mirror([1, 0, 0])
+            write_text(
+                label,
+                font_size,
+                assembly_name_depth - write_t
+            );
+}
 
+module sub_panel_back_labels_negative() {
+    dc_label_y_offset = 12;
+    ac_label_left_x = left_ac_x
+        + outlet_toggle_x
+        + sub_panel_switch_w / 2
+        + 7;
+    ac_label_right_x = right_ac_x
+        + outlet_toggle_x
+        + sub_panel_switch_w / 2
+        + 7;
+    ac_label_top_y = ac_row_y + outlet_spacing / 2;
+    ac_label_bottom_y = ac_row_y - outlet_spacing / 2;
+
+    sub_panel_back_label_negative(
+        "CH1", dc_channel_x(0), dc_channel_y(0) + dc_label_y_offset
+    );
+    sub_panel_back_label_negative(
+        "CH2", dc_channel_x(1), dc_channel_y(1) + dc_label_y_offset
+    );
+    sub_panel_back_label_negative(
+        "CH3", dc_channel_x(2), dc_channel_y(2) + dc_label_y_offset
+    );
+    sub_panel_back_label_negative(
+        "CH4", dc_channel_x(3), dc_channel_y(3) + dc_label_y_offset
+    );
+
+    sub_panel_back_label_negative("CH5", ac_label_left_x, ac_label_top_y);
+    sub_panel_back_label_negative("CH7", ac_label_left_x, ac_label_bottom_y);
+    sub_panel_back_label_negative("CH6", ac_label_right_x, ac_label_top_y);
+    sub_panel_back_label_negative("CH8", ac_label_right_x, ac_label_bottom_y);
+
+    sub_panel_back_label_negative(
+        "AC",
+        c13_panel_x,
+        service_row_y + c13_cutout_h / 2 + 7
+    );
+    sub_panel_back_label_negative(
+        "USB",
+        usb_c_panel_x,
+        usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 7
+    );
+}
 
 module floor_assembly_name_negative(label, x, y, angle) {
     translate([x, y, -box_h + wall_t])
@@ -1019,8 +1059,47 @@ module floor_assembly_name_negatives() {
     floor_assembly_name_negative("WEST", wall_t + floor_assembly_name_inset, box_d / 2, 90);
 }
 
-module floor_context() {
-    color([0.68, 0.68, 0.62, 1])
+module floor_component_label_negative(
+    label,
+    x,
+    y,
+    angle,
+    font_size
+) {
+    translate([x, y, -box_h + wall_t])
+        rotate([0, 0, angle])
+            write_text(label, font_size, -assembly_name_depth);
+}
+
+module floor_component_label_negatives() {
+    component_origin_x = box_inner_x + top_panel_w / 2;
+    component_origin_y = box_inner_y + top_panel_h / 2;
+
+    floor_component_label_negative(
+        "Pico Relay-B",
+        component_origin_x + internal_relay_x,
+        component_origin_y + internal_relay_y,
+        90,
+        9
+    );
+    floor_component_label_negative(
+        "PSU",
+        component_origin_x + internal_psu_x,
+        component_origin_y + internal_psu_y + 7,
+        0,
+        7
+    );
+    floor_component_label_negative(
+        "DC/DC",
+        component_origin_x + internal_converter_x,
+        component_origin_y + internal_converter_y + 3,
+        180,
+        5
+    );
+}
+
+module floor_context(colorize = true) {
+    optional_color([0.68, 0.68, 0.62, 1], colorize)
         difference() {
             union() {
                 translate([wall_t, wall_t, -box_h])
@@ -1042,6 +1121,7 @@ module floor_context() {
             floor_corner_fastener_holes();
             box_bottom_revision_negative();
             floor_assembly_name_negatives();
+            floor_component_label_negatives();
         }
 }
 
@@ -1776,7 +1856,7 @@ module wall_vent_negative(x, y, coarse_vents = false) {
     translate([x, y, -0.1])
         rotate([0, 0, coarse_vents ? 30 : 0])
             cylinder(
-                h = wall_t + wall_rib_h + 0.2,
+                h = wall_t + max(wall_rib_h, box_half_hex_rib_h) + 0.2,
                 d = vent_hole_d,
                 $fn = coarse_vents ? 6 : render_fn
             );
@@ -1820,89 +1900,58 @@ module smooth_half_rib_profile(width, projection) {
     }
 }
 
-module box_half_hex_rib_profile(width, projection) {
-    facet_rise = projection * tan(support_free_roof_angle);
-
-    assert(
-        2 * facet_rise <= width,
-        "box rib width cannot support 30-degree facets"
-    );
-    polygon([
-        [-width / 2, 0],
-        [width / 2, 0],
-        [width / 2 - facet_rise, projection],
-        [-width / 2 + facet_rise, projection]
-    ]);
-}
-
-module floor_supported_box_rib_profile(width, projection) {
-    facet_rise = projection * tan(support_free_roof_angle);
-
-    assert(
-        facet_rise <= width,
-        "floor-supported box rib cannot support its upper facet"
-    );
-    polygon([
-        [-width / 2, 0],
-        [width / 2, 0],
-        [width / 2 - facet_rise, projection],
-        [-width / 2, projection]
-    ]);
-}
-
-module horizontal_rib_extrusion(length) {
+module horizontal_rib_orientation() {
     multmatrix([
         [0, 0, 1, 0],
         [1, 0, 0, 0],
         [0, 1, 0, 0],
         [0, 0, 0, 1]
     ])
-        linear_extrude(height = length)
-            children();
+        children();
 }
 
-module vertical_rib_extrusion(length) {
+module vertical_rib_orientation() {
     multmatrix([
         [-1, 0, 0, 0],
         [0, 0, 1, 0],
         [0, 1, 0, 0],
         [0, 0, 0, 1]
     ])
+        children();
+}
+
+module horizontal_rib_extrusion(length) {
+    horizontal_rib_orientation()
         linear_extrude(height = length)
             children();
 }
 
-module vertical_box_rib_ramp(
-    length,
-    width = wall_rib_w,
-    projection = wall_rib_h
-) {
-    ramp_l = projection / tan(support_free_roof_angle);
-
-    assert(ramp_l <= length, "vertical box rib is too short for its ramp");
-    translate([-width / 2, 0, 0])
-        multmatrix([
-            [0, 0, 1, 0],
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 0, 1]
-        ])
-            linear_extrude(height = width)
-                polygon([
-                    [0, 0],
-                    [length, 0],
-                    [length, projection],
-                    [ramp_l, projection]
-                ]);
+module vertical_rib_extrusion(length) {
+    vertical_rib_orientation()
+        linear_extrude(height = length)
+            children();
 }
 
-module floor_supported_box_rib(
-    length,
-    width = wall_rib_w,
-    projection = wall_rib_h
-) {
-    horizontal_rib_extrusion(length)
-        floor_supported_box_rib_profile(width, projection);
+module low_fn_half_hex_rib(length, width = wall_rib_w) {
+    intersection() {
+        cylinder(h = length, r = width / 2, $fn = 6);
+        translate([-width / 2, 0, 0])
+            cube([width, width / 2 + boolean_shim, length]);
+    }
+}
+
+module horizontal_half_hex_rib(length, width = wall_rib_w) {
+    horizontal_rib_orientation()
+        low_fn_half_hex_rib(length, width);
+}
+
+module vertical_half_hex_rib(length, width = wall_rib_w) {
+    vertical_rib_orientation()
+        low_fn_half_hex_rib(length, width);
+}
+
+module floor_supported_box_rib(length, width = wall_rib_w) {
+    horizontal_half_hex_rib(length, width);
 }
 
 module wall_stiffening_ribs(
@@ -1916,11 +1965,11 @@ module wall_stiffening_ribs(
         : (vent_mode == "full"
             ? [vent_wall_margin + vent_hole_spacing / 2, full_vent_center_rib_x(length), length - 21]
             : [length / 3, 2 * length / 3]);
-    rib_y0 = bottom_nut_tab_center_y() + corner_tab_t / 2 + wall_vent_joint_clearance;
-    rib_y1 = top_nut_tab_center_y(h) - corner_tab_t / 2 - wall_vent_joint_clearance;
     transverse_rib_y = top_nut_tab_center_y(h)
         - corner_nut_shoulder_t / 2;
     floor_rib_y0 = wall_t;
+    rib_y0 = floor_rib_y0;
+    rib_y1 = transverse_rib_y + wall_rib_w / 2;
     transverse_rib_x0 = corner_axis_inset + corner_tab_w / 2;
     transverse_rib_x1 = length - transverse_rib_x0;
     floor_rib_x0 = floor_locator_end_offset
@@ -1931,16 +1980,20 @@ module wall_stiffening_ribs(
     for (x = rib_xs)
         translate([x, rib_y0, wall_t])
             if (print_orientation == box_print_orientation)
-                vertical_box_rib_ramp(rib_y1 - rib_y0);
+                vertical_half_hex_rib(rib_y1 - rib_y0);
             else
                 vertical_rib_extrusion(rib_y1 - rib_y0)
                     smooth_half_rib_profile(wall_rib_w, wall_rib_h);
 
     translate([transverse_rib_x0, transverse_rib_y, wall_t])
-        horizontal_rib_extrusion(transverse_rib_x1 - transverse_rib_x0)
-            if (print_orientation == box_print_orientation)
-                box_half_hex_rib_profile(wall_rib_w, wall_rib_h);
-            else
+        if (print_orientation == box_print_orientation)
+            horizontal_half_hex_rib(
+                transverse_rib_x1 - transverse_rib_x0
+            );
+        else
+            horizontal_rib_extrusion(
+                transverse_rib_x1 - transverse_rib_x0
+            )
                 smooth_half_rib_profile(wall_rib_w, wall_rib_h);
 
     translate([
@@ -2032,9 +2085,10 @@ module flat_wall(
 module south_wall_context(
     coarse_vents = false,
     mitre_overlap = 0,
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    colorize = true
 ) {
-    color([0.15, 0.45, 0.9, 1])
+    optional_color([0.15, 0.45, 0.9, 1], colorize)
         multmatrix([
             [1, 0, 0, 0],
             [0, 0, 1, 0],
@@ -2051,9 +2105,10 @@ module south_wall_context(
 module north_wall_context(
     coarse_vents = false,
     mitre_overlap = 0,
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    colorize = true
 ) {
-    color([0.15, 0.45, 0.9, 1])
+    optional_color([0.15, 0.45, 0.9, 1], colorize)
         multmatrix([
             [1, 0, 0, 0],
             [0, 0, -1, box_d],
@@ -2070,9 +2125,10 @@ module north_wall_context(
 module west_wall_context(
     coarse_vents = false,
     mitre_overlap = 0,
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    colorize = true
 ) {
-    color([0.2, 0.75, 0.35, 1])
+    optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, 1, 0],
             [-1, 0, 0, box_d],
@@ -2089,9 +2145,10 @@ module west_wall_context(
 module east_wall_context(
     coarse_vents = false,
     mitre_overlap = 0,
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    colorize = true
 ) {
-    color([0.2, 0.75, 0.35, 1])
+    optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, -1, box_w],
             [1, 0, 0, 0],
@@ -2436,29 +2493,34 @@ module relay_footprint() {
 
 module box() {
     echo_hardware(true, true, true, true);
-    union() {
-        north_wall_context(
-            coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap,
-            print_orientation = box_print_orientation
-        );
-        south_wall_context(
-            coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap,
-            print_orientation = box_print_orientation
-        );
-        west_wall_context(
-            coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap,
-            print_orientation = box_print_orientation
-        );
-        east_wall_context(
-            coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap,
-            print_orientation = box_print_orientation
-        );
-        floor_context();
-    }
+    color(box_preview_color)
+        union() {
+            north_wall_context(
+                coarse_vents = box_coarse_vents,
+                mitre_overlap = box_wall_mitre_overlap,
+                print_orientation = box_print_orientation,
+                colorize = false
+            );
+            south_wall_context(
+                coarse_vents = box_coarse_vents,
+                mitre_overlap = box_wall_mitre_overlap,
+                print_orientation = box_print_orientation,
+                colorize = false
+            );
+            west_wall_context(
+                coarse_vents = box_coarse_vents,
+                mitre_overlap = box_wall_mitre_overlap,
+                print_orientation = box_print_orientation,
+                colorize = false
+            );
+            east_wall_context(
+                coarse_vents = box_coarse_vents,
+                mitre_overlap = box_wall_mitre_overlap,
+                print_orientation = box_print_orientation,
+                colorize = false
+            );
+            floor_context(colorize = false);
+        }
 }
 
 module assembly() {
