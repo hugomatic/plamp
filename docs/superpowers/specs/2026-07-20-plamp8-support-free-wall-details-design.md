@@ -46,15 +46,15 @@ Box corner screw bores are vertical. They remain true round M3 clearance bores; 
 
 ## Wall ribs
 
-Rectangular rib projections are replaced with support-aware point-up profiles built by one shared rib helper.
+Rectangular rib projections are replaced with support-aware profiles built by one shared rib helper. The helper selects a smooth or faceted profile from the explicit print orientation; it does not duplicate rib placement loops.
 
-For standalone walls, every rib grows from the wall face and points toward wall-local +Z. Its cross-section is a point-up half-hex cap with 30-degree rising facets. Both vertical and horizontal assembled ribs lie in the build plane in this manufacturing view.
+For standalone walls, every rib grows from the wall face toward wall-local +Z with a smooth semicylindrical cross-section. Its flat diameter lies on the wall face, so successive layers recede rather than creating an unsupported underside. Both vertical and horizontal assembled ribs lie in the build plane in this manufacturing view.
 
 For `box`:
 
 - assembled vertical ribs keep their existing width and projection, but their lower ends rise from the wall with a short 30-degree support-free ramp before reaching full projection;
-- suspended horizontal ribs use the point-up half-hex profile across their long run so their underside rises at least 30 degrees above horizontal; and
-- the floor-touching horizontal rib uses the corresponding one-sided profile supported by both wall and floor, without an unnecessary suspended lower half.
+- suspended horizontal ribs use a faceted point-up half-hex profile across their long run so their underside rises at least 30 degrees above horizontal; and
+- the floor-touching horizontal rib uses the corresponding faceted quarter profile supported by both wall and floor, without an unnecessary suspended lower half.
 
 Rib centerlines, endpoints, vent clearances, revision-text clearance, and nominal projection remain unchanged unless the support-free end transition requires shortening only the full-height portion of a rib.
 
@@ -74,7 +74,7 @@ Source-contract tests will verify:
 - 45-degree mirrored center-facing nut entries;
 - flat-wall roofed horizontal bores and box round vertical bores;
 - print-up roofs on nut pockets and box entry tunnels;
-- shared support-aware rib profiles and floor-touching behavior; and
+- smooth standalone semicylindrical ribs, faceted box half-hex ribs, and floor-touching quarter-profile behavior; and
 - continued reuse of complete wall modules by `box`.
 
 Changes are committed and pushed before OpenSCAD runs. Verification renders only targeted standalone wall/corner geometry and `box`, never the full assembly. Generated STL and render logs stay outside the repository.
