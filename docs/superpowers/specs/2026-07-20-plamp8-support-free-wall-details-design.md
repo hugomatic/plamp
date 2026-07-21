@@ -69,6 +69,17 @@ The floor receives three shallow component-placement engravings at the existing 
 
 These floor markings replace the raised `RELAYS`, `12V PSU`, and `DC/DC` labels on the transparent assembly keepouts. The transparent colors and component geometry remain unchanged; only their raised text is removed.
 
+The underside of the sub-panel receives shallow mirrored wiring engravings that read normally while looking at the panel from the back:
+
+- DC top row: `CH1`, `CH2`;
+- DC bottom row: `CH3`, `CH4`, placing `CH2` and `CH4` nearest the AC input;
+- left AC column: `CH5` above `CH7`;
+- right AC column below USB: `CH6` above `CH8`;
+- `AC` at the AC input; and
+- `USB` at the USB connector.
+
+The back engravings use the existing 0.6 mm marking depth and avoid connector openings, screw holes, and rim-relief geometry.
+
 Wall text, floor geometry, corner-tab stack heights, nut offsets, floor locators, screw lengths, and the 0.02 mm box-only miter overlap remain unchanged.
 
 No box-specific copy of a wall, rib loop, nut trap, or bore loop is introduced. The existing modules remain authoritative and accept print-orientation/profile parameters.
@@ -89,6 +100,7 @@ Source-contract tests will verify:
 - print-up roofs on nut pockets and box entry tunnels;
 - smooth standalone semicylindrical ribs, faceted box half-hex ribs, and floor-touching quarter-profile behavior;
 - engraved floor component labels with the required compass orientations and no raised transparent-keepout labels;
+- mirrored sub-panel back labels for CH1-CH8, AC, and USB in the specified wiring layout;
 - preview-only top/sub-panel separation with unchanged render geometry; and
 - continued reuse of complete wall modules by `box`.
 

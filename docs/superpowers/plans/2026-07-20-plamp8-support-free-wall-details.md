@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add 45-degree center-facing nut entries, support-free box fasteners and ribs, permanent floor placement labels, and a preview-only panel separation.
+**Goal:** Add 45-degree center-facing nut entries, support-free box fasteners and ribs, permanent floor and sub-panel-back placement labels, and a preview-only panel separation.
 
 **Architecture:** Existing wall, corner-tab, rib-placement, and floor modules remain authoritative. An explicit `print_orientation` parameter selects box-only fastener/rib geometry; standalone fasteners retain current defaults except for the 45-degree entry, while standalone ribs become smooth semicylinders. `box()` passes the box orientation and does not duplicate geometry loops.
 
@@ -231,7 +231,7 @@ git push origin feature/plamp8-support-free
 
 ---
 
-### Task 3: Floor Placement Labels and Preview Polish
+### Task 3: Floor and Sub-Panel Placement Labels and Preview Polish
 
 **Files:**
 - Modify: `things/plamp8/plamp8.scad:210-225,870-930,1015-1065,2145-2165`
@@ -239,7 +239,7 @@ git push origin feature/plamp8-support-free
 
 **Interfaces:**
 - Consumes: component centers, compass engraving depth, transparent keepouts, `mounted_top_panel()`.
-- Produces: engraved floor labels and a 0.01 mm preview-only panel gap.
+- Produces: engraved floor labels, mirrored sub-panel back wiring labels, and a 0.01 mm preview-only panel gap.
 
 - [ ] **Step 1: Add failing label and preview tests**
 
@@ -263,6 +263,16 @@ def test_plamp8_preview_separates_panels_only_in_preview(self):
         "module ", 1
     )[0]
     self.assertIn("-plate_t + assembly_preview_gap", mounted)
+
+def test_plamp8_sub_panel_back_labels_match_wiring_layout(self):
+    source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+    labels = source.split("module sub_panel_back_labels_negative", 1)[1].split(
+        "module ", 1
+    )[0]
+    for label in ("CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "CH7", "CH8", "AC", "USB"):
+        self.assertIn(f'"{label}"', labels)
+    self.assertIn("mirror([1, 0, 0])", source)
+    self.assertIn("sub_panel_back_labels_negative();", source)
 ~~~
 
 Run both tests. Expected: FAIL.
@@ -279,7 +289,21 @@ floor_component_label_negative("DC/DC", converter_center, 180, 5);
 
 Call `floor_component_label_negatives()` in `floor_context()`'s subtraction beside compass names. Remove the raised label calls from transparent keepouts without changing colors or solids.
 
-- [ ] **Step 3: Add the low-priority preview-only gap**
+- [ ] **Step 3: Add mirrored sub-panel back wiring labels**
+
+Add a negative underside-text helper that starts just below local Z = 0, cuts to the existing 0.6 mm marking depth, and mirrors X so it reads normally from below. Place labels in back-view order:
+
+~~~text
+DC: CH1 CH2    (CH2 nearest AC input)
+    CH3 CH4    (CH4 nearest AC input)
+
+AC: CH5 CH6    (CH6 below USB)
+    CH7 CH8    (CH8 below USB)
+~~~
+
+Add `AC` at the C13 input and `USB` at the USB connector. Use existing `dc_channel_x/y()`, `left_ac_x`, `right_ac_x`, outlet spacing, `c13_panel_x`, `service_row_y`, and `usb_c_panel_x/y`; do not duplicate layout dimensions. Call `sub_panel_back_labels_negative()` inside `sub_panel_8ch_negative()`.
+
+- [ ] **Step 4: Add the low-priority preview-only gap**
 
 ~~~scad
 assembly_preview_gap = $preview ? 0.01 : 0;
@@ -292,13 +316,13 @@ module mounted_top_panel() {
 
 Do not change `label_pocket()`; its cutter already penetrates the panel by 0.5 mm.
 
-- [ ] **Step 4: Verify, commit, and push**
+- [ ] **Step 5: Verify, commit, and push**
 
 ~~~bash
 /home/hugo/.openclaw/workspace/code/plamp/.venv/bin/python -m unittest tests.test_things_cad_scripts -v
 git diff --check
 git add things/plamp8/plamp8.scad tests/test_things_cad_scripts.py
-git commit -m "Add Plamp8 floor placement markings"
+git commit -m "Add Plamp8 placement markings"
 git push origin feature/plamp8-support-free
 ~~~
 
