@@ -224,6 +224,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("feature_psu_tie_wrap_anchors_wall", source)
         self.assertNotIn("module psu_right_wall_tie_wrap_anchors_in_box", source)
         self.assertNotIn("psu_wall_anchor_z", source)
+        self.assertNotIn("feature_psu_tie_wrap_anchors", source)
+        self.assertNotIn("module psu_floor_tie_wrap_anchors", source)
+        self.assertNotIn("module psu_floor_stops", source)
+        self.assertNotIn("module tie_wrap_anchor", source)
+        self.assertNotIn("module half_round", source)
         self.assertNotIn("module side_wall_psu_vents", source)
         self.assertNotIn("module legacy_wall_revision_negative", source)
         self.assertNotIn("module panel_corner_fastener_bosses", source)
@@ -366,6 +371,19 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "module ", 1
         )[0]
         self.assertIn("-plate_t + assembly_preview_gap", mounted)
+
+    def test_plamp8_ribs_select_profiles_by_print_orientation(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("module smooth_half_rib_profile", source)
+        self.assertIn("module box_half_hex_rib_profile", source)
+        self.assertIn("module vertical_box_rib_ramp", source)
+        self.assertIn("module floor_supported_box_rib", source)
+        ribs = source.split("module wall_stiffening_ribs", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("print_orientation", ribs)
+        self.assertEqual(source.count("for (x = rib_xs)"), 1)
 
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

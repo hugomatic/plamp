@@ -33,8 +33,6 @@ box_wall_mitre_overlap = 0.02;
 
 /* [box features] */
 
-//box features: floor anchors (tie wraps)
-feature_psu_tie_wrap_anchors = false;
 //box features: power module bottom screw mounts
 feature_power_screw_mounts = true;
 
@@ -185,17 +183,6 @@ psu_mount_y_inset = 2.5;
 psu_mount_chamfer_d = screw_chamfer_d(psu_screw_size);
 psu_view_w = psu_d;
 psu_view_d = psu_w;
-psu_anchor_r = 5;
-psu_anchor_l = 14;
-psu_anchor_slot_w = 5;
-psu_anchor_slot_h = 2.5;
-psu_anchor_slot_z = 1;
-psu_anchor_gap = 5;
-psu_anchor_inset = 20;
-psu_stop_l = 10;
-psu_stop_t = 4;
-psu_stop_h = 4;
-psu_stop_anchor_clearance = 1;
 
 // Calibrated from footprint test print: printed 26.74 x 45.78 mm.
 converter_w = 27.26;
@@ -307,9 +294,6 @@ left_ac_x = -66;
 right_ac_x = 40;
 
 plate_w = outlet_plate_left + outlet_plate_right;
-
-psu_stop_between_x_anchors_l = psu_w - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
-psu_stop_between_y_anchors_l = psu_d - 2 * psu_anchor_inset - psu_anchor_l - 2 * psu_stop_anchor_clearance;
 
 c13_face_w = c13_face_w_inch * inch;
 c13_face_h = c13_face_h_inch * inch;
@@ -1049,10 +1033,6 @@ module floor_context() {
                     relay_retaining_corners_in_box();
                     converter_retaining_corners_in_box();
                 }
-                if (feature_psu_tie_wrap_anchors)
-                    psu_floor_tie_wrap_anchors_in_box();
-                if (feature_psu_tie_wrap_anchors)
-                    psu_floor_stops_in_box();
             }
             relay_bottom_mount_holes();
             if (feature_power_screw_mounts) {
@@ -1342,78 +1322,6 @@ module box_bottom_revision_negative() {
     translate([box_w / 2, box_d / 2, -box_h])
         mirror([1, 0, 0])
             write_text(revision_string, box_revision_font, -0.01);
-}
-
-module psu_floor_tie_wrap_anchors_in_box() {
-    translate([
-        box_inner_x + top_panel_w / 2 + internal_psu_x,
-        box_inner_y + top_panel_h / 2 + internal_psu_y,
-        -box_h + wall_t
-    ])
-        rotate([0, 0, internal_psu_rot_z])
-            psu_floor_tie_wrap_anchors();
-}
-
-module psu_floor_tie_wrap_anchors() {
-    // Floor anchors route straps in both directions across the PSU footprint.
-    for (y = [psu_d / 2 + psu_anchor_r + psu_anchor_gap])
-        for (x = [-psu_w / 2 + psu_anchor_inset, psu_w / 2 - psu_anchor_inset])
-            translate([x, y, 0])
-                tie_wrap_anchor_x();
-
-    for (x = [-psu_w / 2 - psu_anchor_r - psu_anchor_gap])
-        for (y = [-psu_d / 2 + psu_anchor_inset, psu_d / 2 - psu_anchor_inset])
-            translate([x, y, 0])
-                tie_wrap_anchor_y();
-
-}
-
-module psu_floor_stops_in_box() {
-    translate([
-        box_inner_x + top_panel_w / 2 + internal_psu_x,
-        box_inner_y + top_panel_h / 2 + internal_psu_y,
-        -box_h + wall_t
-    ])
-        rotate([0, 0, internal_psu_rot_z])
-            psu_floor_stops();
-}
-
-module psu_floor_stops() {
-    for (y = [psu_d / 2])
-        translate([-psu_stop_between_x_anchors_l / 2, y, 0])
-            cube([psu_stop_between_x_anchors_l, psu_stop_t, psu_stop_h]);
-
-    translate([-psu_w / 2 - psu_stop_t, -psu_stop_between_y_anchors_l / 2, 0])
-        cube([psu_stop_t, psu_stop_between_y_anchors_l, psu_stop_h]);
-
-    for (x = [psu_w / 2])
-        translate([x, -psu_stop_l / 2, 0])
-            cube([psu_stop_t, psu_stop_l, psu_stop_h]);
-}
-
-module tie_wrap_anchor_x() {
-    difference() {
-        rotate([0, 90, 0])
-            half_round(length = psu_anchor_l, r = psu_anchor_r);
-        // The tie passes across the anchor, under the curved roof.
-        translate([-psu_anchor_slot_w / 2, -psu_anchor_r - 1, psu_anchor_slot_z])
-            cube([psu_anchor_slot_w, 2 * psu_anchor_r + 2, psu_anchor_slot_h]);
-    }
-}
-
-module tie_wrap_anchor_y() {
-    rotate([0, 0, 90])
-        tie_wrap_anchor_x();
-}
-
-module half_round(length, r) {
-    translate([0, 0, -length / 2])
-        linear_extrude(height = length)
-            intersection() {
-                circle(r = r);
-                translate([-r, -r])
-                    square([r, 2 * r]);
-            }
 }
 
 module top_panel_outline() {
@@ -1903,7 +1811,106 @@ module wall_vent_negatives(
                 wall_vent_negative(x, y, coarse_vents);
 }
 
-module wall_stiffening_ribs(length, h, vent_mode = "none") {
+module smooth_half_rib_profile(width, projection) {
+    intersection() {
+        scale([width / 2, projection])
+            circle(r = 1, $fn = render_fn);
+        translate([-width / 2, 0])
+            square([width, projection]);
+    }
+}
+
+module box_half_hex_rib_profile(width, projection) {
+    facet_rise = projection * tan(support_free_roof_angle);
+
+    assert(
+        2 * facet_rise <= width,
+        "box rib width cannot support 30-degree facets"
+    );
+    polygon([
+        [-width / 2, 0],
+        [width / 2, 0],
+        [width / 2 - facet_rise, projection],
+        [-width / 2 + facet_rise, projection]
+    ]);
+}
+
+module floor_supported_box_rib_profile(width, projection) {
+    facet_rise = projection * tan(support_free_roof_angle);
+
+    assert(
+        facet_rise <= width,
+        "floor-supported box rib cannot support its upper facet"
+    );
+    polygon([
+        [-width / 2, 0],
+        [width / 2, 0],
+        [width / 2 - facet_rise, projection],
+        [-width / 2, projection]
+    ]);
+}
+
+module horizontal_rib_extrusion(length) {
+    multmatrix([
+        [0, 0, 1, 0],
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 0, 1]
+    ])
+        linear_extrude(height = length)
+            children();
+}
+
+module vertical_rib_extrusion(length) {
+    multmatrix([
+        [-1, 0, 0, 0],
+        [0, 0, 1, 0],
+        [0, 1, 0, 0],
+        [0, 0, 0, 1]
+    ])
+        linear_extrude(height = length)
+            children();
+}
+
+module vertical_box_rib_ramp(
+    length,
+    width = wall_rib_w,
+    projection = wall_rib_h
+) {
+    ramp_l = projection / tan(support_free_roof_angle);
+
+    assert(ramp_l <= length, "vertical box rib is too short for its ramp");
+    translate([-width / 2, 0, 0])
+        multmatrix([
+            [0, 0, 1, 0],
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 0, 1]
+        ])
+            linear_extrude(height = width)
+                polygon([
+                    [0, 0],
+                    [length, 0],
+                    [length, projection],
+                    [ramp_l, projection]
+                ]);
+}
+
+module floor_supported_box_rib(
+    length,
+    width = wall_rib_w,
+    projection = wall_rib_h
+) {
+    horizontal_rib_extrusion(length)
+        floor_supported_box_rib_profile(width, projection);
+}
+
+module wall_stiffening_ribs(
+    length,
+    h,
+    vent_mode = "none",
+    print_orientation = flat_wall_print_orientation
+) {
     rib_xs = vent_mode == "half"
         ? [length / 4, length / 2 + vent_hole_spacing / 2]
         : (vent_mode == "full"
@@ -1922,22 +1929,30 @@ module wall_stiffening_ribs(length, h, vent_mode = "none") {
     floor_rib_x1 = length - floor_rib_x0;
 
     for (x = rib_xs)
-        translate([x - wall_rib_w / 2, rib_y0, wall_t])
-            cube([wall_rib_w, rib_y1 - rib_y0, wall_rib_h]);
+        translate([x, rib_y0, wall_t])
+            if (print_orientation == box_print_orientation)
+                vertical_box_rib_ramp(rib_y1 - rib_y0);
+            else
+                vertical_rib_extrusion(rib_y1 - rib_y0)
+                    smooth_half_rib_profile(wall_rib_w, wall_rib_h);
 
-    translate([transverse_rib_x0, transverse_rib_y - wall_rib_w / 2, wall_t])
-        cube([
-            transverse_rib_x1 - transverse_rib_x0,
-            wall_rib_w,
-            wall_rib_h
-        ]);
+    translate([transverse_rib_x0, transverse_rib_y, wall_t])
+        horizontal_rib_extrusion(transverse_rib_x1 - transverse_rib_x0)
+            if (print_orientation == box_print_orientation)
+                box_half_hex_rib_profile(wall_rib_w, wall_rib_h);
+            else
+                smooth_half_rib_profile(wall_rib_w, wall_rib_h);
 
-    translate([floor_rib_x0, floor_rib_y0, wall_t])
-        cube([
-            floor_rib_x1 - floor_rib_x0,
-            wall_rib_w,
-            wall_rib_h
-        ]);
+    translate([
+        floor_rib_x0,
+        floor_rib_y0 + wall_rib_w / 2,
+        wall_t
+    ])
+        if (print_orientation == box_print_orientation)
+            floor_supported_box_rib(floor_rib_x1 - floor_rib_x0);
+        else
+            horizontal_rib_extrusion(floor_rib_x1 - floor_rib_x0)
+                smooth_half_rib_profile(wall_rib_w, wall_rib_h);
 }
 
 module floor_locator_notches(length) {
@@ -2000,7 +2015,12 @@ module flat_wall(
         union() {
             wall_body_positive(length, h, mitre_overlap);
             wall_corner_tabs(length, h, nut_owner, print_orientation);
-            wall_stiffening_ribs(length, h, vent_mode);
+            wall_stiffening_ribs(
+                length,
+                h,
+                vent_mode,
+                print_orientation
+            );
         }
         floor_locator_notches(length);
         wall_vent_negatives(length, vent_mode, h, coarse_vents);
@@ -2339,6 +2359,8 @@ module internal_components(show_psu = true, show_dc_dc = true, show_relay = true
     }
 }
 
+// TODO: Refactor this hand-positioned legacy presentation layout to derive its
+// placements from the actual panel/component contexts.
 module plate() {
     translate([-176, 56, 0])
         outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
