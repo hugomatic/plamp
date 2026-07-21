@@ -43,10 +43,13 @@ class Selection:
     views: tuple[str, ...] = ()
     defines: Mapping[str, object] = field(default_factory=dict)
     view_defines: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    raw_defines: tuple[str, ...] = ()
+    raw_view_defines: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "views", tuple(self.views))
         object.__setattr__(self, "defines", _freeze_mapping(self.defines))
+        object.__setattr__(self, "raw_defines", tuple(self.raw_defines))
         object.__setattr__(
             self,
             "view_defines",
@@ -54,6 +57,16 @@ class Selection:
                 {
                     view: _freeze_mapping(defines)
                     for view, defines in self.view_defines.items()
+                }
+            ),
+        )
+        object.__setattr__(
+            self,
+            "raw_view_defines",
+            MappingProxyType(
+                {
+                    view: tuple(defines)
+                    for view, defines in self.raw_view_defines.items()
                 }
             ),
         )
@@ -72,6 +85,7 @@ class PresetNode:
     path: tuple[str, ...]
     views: tuple[PresetView, ...] = ()
     children: tuple[PresetNode, ...] = ()
+    items: tuple[PresetView | PresetNode, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,9 +96,13 @@ class RenderJob:
     variables: Mapping[str, object]
     preset_paths: tuple[tuple[str, ...], ...]
     fingerprint: str
+    raw_defines: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "variables", _freeze_mapping(self.variables))
+        object.__setattr__(
+            self, "raw_defines", MappingProxyType(dict(self.raw_defines))
+        )
         object.__setattr__(
             self,
             "preset_paths",
@@ -109,6 +127,7 @@ class RenderPlan:
 class _Candidate:
     view: str | None
     variables: Mapping[str, object]
+    raw_defines: Mapping[str, str]
     preset_path: tuple[str, ...] | None
 
 
@@ -140,32 +159,62 @@ def serialize_scad_value(value: object) -> str:
     raise TypeError(f"Unsupported OpenSCAD value: {type(value).__name__}")
 
 
-def _effective_variables(
+def _parse_raw_defines(defines: tuple[str, ...]) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for define in defines:
+        if "=" not in define:
+            raise ValueError("Raw defines must use NAME=EXPRESSION")
+        name, expression = define.split("=", 1)
+        if not name:
+            raise ValueError("Raw defines must use NAME=EXPRESSION")
+        parsed[name] = expression
+    return parsed
+
+
+def _effective_defines(
     document: CadDocument,
     selection: Selection,
     view: str | None,
     preset_scopes: tuple[PresetMetadata, ...],
-) -> Mapping[str, object]:
+) -> tuple[Mapping[str, object], Mapping[str, str]]:
     variables: dict[str, object] = dict(document.global_variables)
+    raw_defines: dict[str, str] = {}
+
+    def apply_typed(defines: Mapping[str, object]) -> None:
+        variables.update(defines)
+        for name in defines:
+            raw_defines.pop(name, None)
+
+    def apply_raw(defines: tuple[str, ...]) -> None:
+        for name, expression in _parse_raw_defines(defines).items():
+            variables.pop(name, None)
+            raw_defines[name] = expression
+
     if view is not None and view in document.view_metadata:
-        variables.update(document.view_metadata[view].variables)
+        apply_typed(document.view_metadata[view].variables)
     for preset in preset_scopes:
-        variables.update(preset.variables)
+        apply_typed(preset.variables)
     if view is not None:
         for preset in preset_scopes:
-            variables.update(preset.view_variables.get(view, {}))
-    variables.update(selection.defines)
+            apply_typed(preset.view_variables.get(view, {}))
+    apply_typed(selection.defines)
+    apply_raw(selection.raw_defines)
     if view is not None:
-        variables.update(selection.view_defines.get(view, {}))
-    return variables
+        apply_typed(selection.view_defines.get(view, {}))
+        apply_raw(selection.raw_view_defines.get(view, ()))
+    return variables, raw_defines
 
 
 def _fingerprint(
-    source_identity: str, view: str | None, variables: Mapping[str, object]
+    source_identity: str,
+    view: str | None,
+    variables: Mapping[str, object],
+    raw_defines: Mapping[str, str],
 ) -> str:
     payload = {
         "generator_schema_version": GENERATOR_SCHEMA_VERSION,
         "source_identity": source_identity,
+        "raw_defines": dict(raw_defines),
         "variables": _plain(variables),
         "view": view,
     }
@@ -189,7 +238,9 @@ def _resolve_selection(document: CadDocument, selection: Selection) -> Selection
     if selection.preset is not None and selection.views:
         raise ValueError("A preset selection cannot be combined with direct views")
     unknown_view_defines = tuple(
-        view for view in selection.view_defines if view not in document.views
+        view
+        for view in (*selection.view_defines, *selection.raw_view_defines)
+        if view not in document.views
     )
     if unknown_view_defines:
         raise ValueError(f"Unknown view in view defines: {unknown_view_defines[0]!r}")
@@ -198,6 +249,8 @@ def _resolve_selection(document: CadDocument, selection: Selection) -> Selection
             preset=document.default_preset,
             defines=selection.defines,
             view_defines=selection.view_defines,
+            raw_defines=selection.raw_defines,
+            raw_view_defines=selection.raw_view_defines,
         )
     return selection
 
@@ -217,10 +270,14 @@ def build_render_plan(
         path: tuple[str, ...] | None = None,
         scopes: tuple[PresetMetadata, ...] = (),
     ) -> None:
+        variables, raw_defines = _effective_defines(
+            document, selection, view, scopes
+        )
         candidates.append(
             _Candidate(
                 view,
-                _effective_variables(document, selection, view, scopes),
+                variables,
+                raw_defines,
                 path,
             )
         )
@@ -243,6 +300,7 @@ def build_render_plan(
         scopes = parent_scopes + (preset,)
         views: list[PresetView] = []
         children: list[PresetNode] = []
+        items: list[PresetView | PresetNode] = []
         if not preset.items:
             candidate(None, path, scopes)
             views.append(PresetView(None, ""))
@@ -254,16 +312,18 @@ def build_render_plan(
                         raise ValueError(f"Unknown view {item_name!r}")
                     candidate(item_name, path, scopes)
                     metadata = document.view_metadata.get(item_name)
-                    views.append(
-                        PresetView(
-                            item_name,
-                            "" if metadata is None else metadata.description,
-                        )
+                    preset_view = PresetView(
+                        item_name,
+                        "" if metadata is None else metadata.description,
                     )
+                    views.append(preset_view)
+                    items.append(preset_view)
                 elif namespace == "preset":
-                    children.append(
-                        expand_preset(item_name, path, scopes, stack + (name,))
+                    child = expand_preset(
+                        item_name, path, scopes, stack + (name,)
                     )
+                    children.append(child)
+                    items.append(child)
                 else:
                     raise ValueError(f"Invalid preset item {item!r}")
         return PresetNode(
@@ -272,6 +332,7 @@ def build_render_plan(
             path=path,
             views=tuple(views),
             children=tuple(children),
+            items=tuple(items),
         )
 
     tree: list[PresetNode] = []
@@ -296,11 +357,14 @@ def build_render_plan(
     unique: dict[str, dict[str, object]] = {}
     order: list[str] = []
     for item in candidates:
-        fingerprint = _fingerprint(source_identity, item.view, item.variables)
+        fingerprint = _fingerprint(
+            source_identity, item.view, item.variables, item.raw_defines
+        )
         if fingerprint not in unique:
             unique[fingerprint] = {
                 "view": item.view,
                 "variables": item.variables,
+                "raw_defines": item.raw_defines,
                 "paths": [],
             }
             order.append(fingerprint)
@@ -322,6 +386,8 @@ def build_render_plan(
         variant_name = base if suffix == 1 else f"{base}-{suffix}"
         variables = details["variables"]
         assert isinstance(variables, Mapping)
+        raw_defines = details["raw_defines"]
+        assert isinstance(raw_defines, Mapping)
         paths = details["paths"]
         assert isinstance(paths, list)
         jobs.append(
@@ -332,6 +398,7 @@ def build_render_plan(
                 variables=variables,
                 preset_paths=tuple(paths),
                 fingerprint=fingerprint,
+                raw_defines=raw_defines,
             )
         )
 
@@ -342,6 +409,15 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
     """Return a stable JSON-compatible representation of a render plan."""
 
     def node_as_dict(node: PresetNode) -> dict[str, object]:
+        def item_as_dict(item: PresetView | PresetNode) -> dict[str, object]:
+            if isinstance(item, PresetNode):
+                return {"kind": "preset", **node_as_dict(item)}
+            return {
+                "kind": "view",
+                "name": item.name,
+                "description": item.description,
+            }
+
         return {
             "name": node.name,
             "description": node.description,
@@ -351,6 +427,7 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
                 for view in node.views
             ],
             "children": [node_as_dict(child) for child in node.children],
+            "items": [item_as_dict(item) for item in node.items],
         }
 
     return {
@@ -359,6 +436,11 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
             "views": list(plan.selection.views),
             "defines": _plain(plan.selection.defines),
             "view_defines": _plain(plan.selection.view_defines),
+            "raw_defines": list(plan.selection.raw_defines),
+            "raw_view_defines": {
+                view: list(defines)
+                for view, defines in plan.selection.raw_view_defines.items()
+            },
         },
         "jobs": [
             {
@@ -366,6 +448,7 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
                 "view": job.view,
                 "variant_name": job.variant_name,
                 "variables": _plain(job.variables),
+                "raw_defines": dict(job.raw_defines),
                 "preset_paths": [list(path) for path in job.preset_paths],
                 "fingerprint": job.fingerprint,
             }

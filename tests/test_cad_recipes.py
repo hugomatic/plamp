@@ -94,6 +94,31 @@ class CadRecipeTests(unittest.TestCase):
         self.assertEqual(plan.preset_tree[0].name, "outer")
         self.assertEqual(plan.preset_tree[0].children[0].name, "inner")
 
+    def test_preset_tree_preserves_mixed_declared_item_order(self):
+        source = document(
+            presets={
+                "outer": PresetMetadata(
+                    items=("view:floor", "preset:inner", "view:assembly")
+                ),
+                "inner": PresetMetadata(items=("view:box",)),
+            }
+        )
+
+        plan = build_render_plan(source, Selection(preset="outer"), "abc123")
+
+        root = plan.preset_tree[0]
+        self.assertEqual(
+            [
+                ("preset" if hasattr(item, "items") else "view", item.name)
+                for item in root.items
+            ],
+            [("view", "floor"), ("preset", "inner"), ("view", "assembly")],
+        )
+        self.assertEqual(
+            [item["kind"] for item in plan_as_dict(plan)["preset_tree"][0]["items"]],
+            ["view", "preset", "view"],
+        )
+
     def test_empty_preset_produces_one_implicit_default_job(self):
         source = document(presets={"configured-default": PresetMetadata()})
 
@@ -253,6 +278,86 @@ class CadRecipeTests(unittest.TestCase):
             source_identity="abc123",
         )
         self.assertEqual(plan.jobs_by_view["box"].variables["rib"], "view-cli")
+
+    def test_raw_defines_split_once_and_later_occurrences_win(self):
+        plan = build_render_plan(
+            document(),
+            Selection(
+                views=("box",),
+                raw_defines=("formula=first=value", "formula=second=value"),
+            ),
+            "abc123",
+        )
+
+        self.assertEqual(plan.jobs[0].raw_defines, {"formula": "second=value"})
+        self.assertNotIn("formula", plan.jobs[0].variables)
+
+    def test_raw_view_define_overrides_raw_global_define(self):
+        plan = build_render_plan(
+            document(),
+            Selection(
+                views=("box",),
+                raw_defines=("quality=global()",),
+                raw_view_defines={"box": ("quality=view_specific()",)},
+            ),
+            "abc123",
+        )
+
+        self.assertEqual(
+            plan.jobs[0].raw_defines, {"quality": "view_specific()"}
+        )
+
+    def test_higher_precedence_typed_view_define_replaces_raw_global(self):
+        plan = build_render_plan(
+            document(),
+            Selection(
+                views=("box",),
+                raw_defines=("quality=2+2",),
+                view_defines={"box": {"quality": "typed"}},
+            ),
+            "abc123",
+        )
+
+        self.assertEqual(plan.jobs[0].variables["quality"], "typed")
+        self.assertNotIn("quality", plan.jobs[0].raw_defines)
+
+    def test_raw_rhs_is_preserved_verbatim_for_future_argv_construction(self):
+        rhs = " 2 + (width == 4) "
+        plan = build_render_plan(
+            document(),
+            Selection(views=("box",), raw_defines=(f"formula={rhs}",)),
+            "abc123",
+        )
+
+        self.assertEqual(plan.jobs[0].raw_defines["formula"], rhs)
+        self.assertEqual(
+            f"formula={plan.jobs[0].raw_defines['formula']}", f"formula={rhs}"
+        )
+        self.assertEqual(plan_as_dict(plan)["jobs"][0]["raw_defines"], {"formula": rhs})
+
+    def test_raw_expression_and_typed_string_have_distinct_fingerprints(self):
+        raw = build_render_plan(
+            document(),
+            Selection(views=("box",), raw_defines=("value=2+2",)),
+            "abc123",
+        ).jobs[0]
+        typed = build_render_plan(
+            document(),
+            Selection(views=("box",), defines={"value": "2+2"}),
+            "abc123",
+        ).jobs[0]
+
+        self.assertNotEqual(raw.fingerprint, typed.fingerprint)
+        self.assertEqual(raw.raw_defines, {"value": "2+2"})
+        self.assertEqual(typed.variables, {"value": "2+2"})
+
+    def test_raw_define_requires_name_equals_expression(self):
+        with self.assertRaisesRegex(ValueError, "NAME=EXPRESSION"):
+            build_render_plan(
+                document(),
+                Selection(views=("box",), raw_defines=("missing-expression",)),
+                "abc123",
+            )
 
     def test_implicit_job_receives_global_preset_and_cli_scopes(self):
         source = document(
