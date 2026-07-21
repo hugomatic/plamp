@@ -85,6 +85,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 self.assertIn(command, documentation)
         self.assertIn("$PLAMP_DATA_DIR/cad/prints", documentation)
         self.assertIn("plan before generate", documentation.lower().replace("`", ""))
+        self.assertIn(
+            "SCAD defaults → global → view → outer-to-inner preset variables → "
+            "outer-to-inner matching preset-view variables → CLI global → CLI per-view",
+            " ".join(documentation.split()),
+        )
         self.assertNotIn("web", documentation.lower())
         self.assertNotIn("three.js", documentation.lower())
 

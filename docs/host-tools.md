@@ -134,6 +134,10 @@ render begins. Command-line `--define NAME=EXPR` and
 `--view-define VIEW:NAME=EXPR` overrides are repeatable; use them only for
 intentional OpenSCAD expressions because they are archived verbatim.
 
+Nested variables use one exact, later-wins precedence order: SCAD defaults →
+global → view → outer-to-inner preset variables → outer-to-inner matching
+preset-view variables → CLI global → CLI per-view.
+
 ### Run archives and diagnostics
 
 By default each generation is stored at
