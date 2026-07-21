@@ -115,6 +115,19 @@ view = "floor"; // [floor]
         self.assertEqual(diagnostic.source, str(path))
         self.assertEqual((diagnostic.line, diagnostic.column), (3, 12))
 
+    def test_non_finite_json_numbers_are_rejected_with_stable_diagnostic(self):
+        for token in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(token=token):
+                with self.assertRaises(CadMetadataError) as caught:
+                    parse_cad_document(self.write_scad(f'''\n/* generate.json\n{{"global_variables":{{"size":{token}}}}}\n*/\n'''))
+
+                diagnostic = caught.exception.diagnostics[0]
+                self.assertEqual(diagnostic.code, "CAD105")
+                self.assertEqual(diagnostic.kind, "invalid_metadata")
+                self.assertEqual(diagnostic.json_path, "$")
+                self.assertEqual(diagnostic.value, token)
+                self.assertIn("finite", diagnostic.message)
+
     def test_unknown_view_has_stable_code_path_and_suggestion(self):
         with self.assertRaises(CadMetadataError) as caught:
             parse_cad_document(self.write_scad(SCAD_WITH_NORTH_SOUTH_TYPO))

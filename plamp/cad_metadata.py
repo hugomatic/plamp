@@ -172,8 +172,15 @@ def _parse_metadata(source: str, path: Path) -> dict[str, object]:
         )
 
     metadata_source = source[json_offset:end_offset]
+    non_finite: str | None = None
+
+    def reject_non_finite(value: str) -> None:
+        nonlocal non_finite
+        non_finite = value
+        raise ValueError(value)
+
     try:
-        metadata = json.loads(metadata_source)
+        metadata = json.loads(metadata_source, parse_constant=reject_non_finite)
     except json.JSONDecodeError as error:
         raise CadMetadataError(
             (
@@ -184,6 +191,20 @@ def _parse_metadata(source: str, path: Path) -> dict[str, object]:
                     f"Invalid generate.json metadata: {error.msg}",
                     line=error.lineno,
                     column=error.colno,
+                ),
+            )
+        ) from None
+    except ValueError:
+        assert non_finite is not None
+        raise CadMetadataError(
+            (
+                _diagnostic(
+                    path,
+                    "CAD105",
+                    "invalid_metadata",
+                    "generate.json numbers must be finite JSON numbers",
+                    json_path="$",
+                    value=non_finite,
                 ),
             )
         ) from None

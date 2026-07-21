@@ -11,6 +11,10 @@ from plamp.cad_metadata import (
     parse_cad_document,
 )
 from plamp.cad_recipes import (
+    PresetNode,
+    PresetView,
+    RenderJob,
+    RenderPlan,
     Selection,
     build_render_plan,
     plan_as_dict,
@@ -80,6 +84,28 @@ DOCUMENT_WITH_ALL_VARIABLE_SCOPES = document(
 
 
 class CadRecipeTests(unittest.TestCase):
+    def test_frozen_plan_nodes_copy_caller_sequences_to_tuples(self):
+        views = [PresetView("floor", "")]
+        children = []
+        items = list(views)
+        node = PresetNode("print", "", ["print"], views, children, items)
+        jobs = [RenderJob("floor--abc", "floor", "floor", {}, [], "abc")]
+        tree = [node]
+        result = RenderPlan(Selection(), jobs, tree)
+
+        views.append(PresetView("box", ""))
+        children.append(node)
+        items.clear()
+        jobs.clear()
+        tree.clear()
+
+        self.assertEqual(node.path, ("print",))
+        self.assertEqual(tuple(view.name for view in node.views), ("floor",))
+        self.assertEqual(node.children, ())
+        self.assertEqual(tuple(item.name for item in node.items), ("floor",))
+        self.assertEqual(len(result.jobs), 1)
+        self.assertEqual(result.preset_tree, (node,))
+
     def test_plamp8_recipe_catalog_matches_print_workflows(self):
         document = parse_cad_document(REPO_ROOT / "things/plamp8/plamp8.scad")
 

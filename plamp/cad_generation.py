@@ -84,6 +84,17 @@ def _hash_tree(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_snapshot_links(root: Path, *, context: str) -> None:
+    boundary = root.resolve()
+    for path in root.rglob("*"):
+        if not path.is_symlink():
+            continue
+        try:
+            path.resolve(strict=True).relative_to(boundary)
+        except (OSError, ValueError) as error:
+            raise ValueError(f"unsafe symlink in {context}: {path}") from error
+
+
 def prepare_source(
     repo_root: str | os.PathLike[str],
     scad_path: str | os.PathLike[str],
@@ -99,14 +110,24 @@ def prepare_source(
     if dirty:
         if revision is None or not revision.strip():
             raise ValueError("dirty CAD part requires an explicit revision label")
-        return SourceSnapshot(
-            source,
-            _hash_tree(source.parent),
-            None,
-            revision.strip(),
-            True,
-            None,
-        )
+        cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-source-"))
+        try:
+            _validate_snapshot_links(source.parent, context="dirty CAD source")
+            archived_part = cleanup / part_relative
+            archived_part.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source.parent, archived_part, symlinks=True)
+            archived_source = cleanup / relative
+            return SourceSnapshot(
+                archived_source,
+                _hash_tree(archived_part),
+                None,
+                revision.strip(),
+                True,
+                cleanup,
+            )
+        except BaseException:
+            shutil.rmtree(cleanup, ignore_errors=True)
+            raise
 
     commit = _git(root, "log", "-1", "--format=%H", "--", str(part_relative))
     if not commit:
@@ -138,7 +159,24 @@ def prepare_source(
                     member_path = Path(member.name)
                     if member_path.is_absolute() or ".." in member_path.parts:
                         raise ValueError("unsafe path in Git source archive")
+                    is_part_entry = member_path == part_relative
+                    is_descendant = part_relative in member_path.parents
+                    is_ancestor = member_path in part_relative.parents
+                    if not (is_part_entry or is_descendant or is_ancestor):
+                        raise ValueError("unsafe path in Git source archive")
+                    if member.issym():
+                        link_target = Path(member.linkname)
+                        target = link_target if link_target.is_absolute() else member_path.parent / link_target
+                        if link_target.is_absolute() or ".." in target.parts:
+                            raise ValueError("unsafe symlink in Git source archive")
+                        try:
+                            target.relative_to(part_relative)
+                        except ValueError as error:
+                            raise ValueError("unsafe symlink in Git source archive") from error
+                    elif member.islnk():
+                        raise ValueError("unsafe hard link in Git source archive")
                 bundle.extractall(cleanup)
+        _validate_snapshot_links(cleanup / part_relative, context="Git source archive")
         archived_scad = cleanup / relative
         return SourceSnapshot(
             archived_scad,
@@ -375,13 +413,14 @@ def generate_plan(
     env: Mapping[str, str] | None = None,
     stdout: IO[str] | None = None,
     stderr: IO[str] | None = None,
+    snapshot: SourceSnapshot | None = None,
 ) -> GenerationResult:
     """Render a plan sequentially and persist every observable state change."""
 
     root = Path(repo_root).resolve()
     source = resolve_part(scad_path, root)
     part = source.parent.name
-    snapshot = prepare_source(root, source, revision)
+    snapshot = snapshot or prepare_source(root, source, revision)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
     try:
@@ -569,6 +608,10 @@ def list_runs(data_dir: str | os.PathLike[str], part: str | None = None) -> list
     """List instance-data runs newest first."""
 
     root = Path(data_dir) / "cad" / "prints"
+    if part is not None:
+        supplied = Path(part)
+        if not part or supplied.is_absolute() or supplied.name != part or part in {".", ".."}:
+            raise ValueError("CAD part must be a single path component")
     search = root / part if part is not None else root
     manifests = [] if not search.exists() else list(search.glob("*/manifest.json") if part else search.glob("*/*/manifest.json"))
     runs = [load_run(path) for path in manifests]
@@ -584,5 +627,15 @@ def load_job_log(run: str | os.PathLike[str], artifact_id: str) -> str:
     assert isinstance(jobs, list)
     for job in jobs:
         if isinstance(job, Mapping) and job.get("artifact_id") == artifact_id:
-            return (run_dir / str(job["log"])).read_text(encoding="utf-8")
+            expected = Path("logs") / f"{artifact_id}.log"
+            recorded = Path(str(job.get("log", "")))
+            candidate = (run_dir / recorded).resolve()
+            resolved_run = run_dir.resolve()
+            try:
+                candidate.relative_to(resolved_run)
+            except ValueError as error:
+                raise ValueError("unsafe CAD job log path") from error
+            if recorded != expected:
+                raise ValueError("unsafe CAD job log path")
+            return candidate.read_text(encoding="utf-8")
     raise KeyError(artifact_id)

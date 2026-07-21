@@ -259,7 +259,7 @@ def _with_plan(
     selection: Selection | None = None,
     *,
     allow_dirty: bool = False,
-) -> tuple[Path, Any, Any]:
+) -> tuple[Path, Any, Any, Any]:
     source = deps["resolve_part"](args.part, context.root)
     legacy_commit = getattr(args, "legacy_commit", None)
     if (
@@ -278,13 +278,15 @@ def _with_plan(
     if allow_dirty and revision is None:
         revision = "working-tree-plan"
     snapshot = deps["prepare_source"](context.root, source, revision)
+    retain_snapshot = False
     try:
         document = deps["parse_document"](snapshot.scad_path)
         selected = _selection(args, document, menu=selection)
         plan = deps["build_plan"](document, selected, snapshot.source_identity)
-        return source, document, plan
+        retain_snapshot = getattr(args, "action", None) == "generate"
+        return source, document, plan, snapshot
     finally:
-        if snapshot.cleanup_root is not None:
+        if not retain_snapshot and snapshot.cleanup_root is not None:
             shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
 
 
@@ -471,7 +473,7 @@ def _generate(
     stderr: TextIO,
     selection: Selection | None = None,
 ) -> int:
-    source, document, plan = _with_plan(args, context, deps, selection)
+    source, document, plan, snapshot = _with_plan(args, context, deps, selection)
     stream = stderr if args.json else stdout
     try:
         result = deps["generate"](
@@ -485,12 +487,16 @@ def _generate(
             metadata=document.metadata_snapshot,
             stdout=stream,
             stderr=stderr,
+            snapshot=snapshot,
         )
         manifest, status = _generation_manifest(result, deps)
     except KeyboardInterrupt:
         raise
     except Exception as error:
         raise CadOperationError(str(error) or type(error).__name__) from None
+    finally:
+        if snapshot.cleanup_root is not None:
+            shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
     if args.json:
         _json_line(stdout, manifest)
     else:
@@ -533,7 +539,7 @@ def run_cad_command(
             return 0
 
         if args.action == "plan":
-            source, document, plan = _with_plan(args, context, deps, allow_dirty=True)
+            source, document, plan, _snapshot = _with_plan(args, context, deps, allow_dirty=True)
             archived_runs = deps["list_runs"](context.data_dir, source.parent.name)
             source_path = source.relative_to(context.root).as_posix()
             value = _plan_object(plan, document, archived_runs, source_path)

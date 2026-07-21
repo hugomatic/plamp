@@ -87,6 +87,12 @@ class PresetNode:
     children: tuple[PresetNode, ...] = ()
     items: tuple[PresetView | PresetNode, ...] = ()
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", tuple(self.path))
+        object.__setattr__(self, "views", tuple(self.views))
+        object.__setattr__(self, "children", tuple(self.children))
+        object.__setattr__(self, "items", tuple(self.items))
+
 
 @dataclass(frozen=True)
 class RenderJob:
@@ -115,6 +121,10 @@ class RenderPlan:
     selection: Selection
     jobs: tuple[RenderJob, ...]
     preset_tree: tuple[PresetNode, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "jobs", tuple(self.jobs))
+        object.__setattr__(self, "preset_tree", tuple(self.preset_tree))
 
     @property
     def jobs_by_view(self) -> Mapping[str | None, RenderJob]:

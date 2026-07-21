@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import textwrap
@@ -9,6 +10,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from plamp.cad_cli import add_cad_parser, run_cad_command
+from plamp.cad_generation import generate_plan
 from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
@@ -188,6 +190,40 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(selection.views, ("assembly", "box"))
         self.assertEqual(selection.raw_defines, ("quality=$preview ? 2 : 20",))
         self.assertEqual(selection.raw_view_defines["box"], ("fit=0.2",))
+
+    def test_generate_uses_the_same_snapshot_for_planning_and_rendering(self):
+        captured = {}
+
+        def generate(plan, **kwargs):
+            captured["fingerprint"] = plan.jobs[0].fingerprint
+            self.scad.write_text(SOURCE.replace("cube(1)", "cube(99)"))
+            return generate_plan(
+                plan,
+                env={**os.environ, "FAKE_ARGV": str(self.root / "argv")},
+                **kwargs,
+            )
+
+        fake = self.root / "fake-openscad"
+        fake.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = --version ]; then echo fake; exit 0; fi\n'
+            'out="$2"\n'
+            "printf 'solid x\\nendsolid x\\n' > \"$out\"\n"
+        )
+        fake.chmod(0o755)
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "generate", "fixture", "--view", "floor", "--openscad", str(fake), "--json"],
+            env=self.env(), stdout=stdout, stderr=io.StringIO(), cad_generate_func=generate,
+        )
+
+        self.assertEqual(rc, 0)
+        manifest = json.loads(stdout.getvalue())
+        run_dir = self.data / "cad" / "prints" / "fixture" / manifest["run_id"]
+        archived = run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertIn("cube(1)", archived.read_text())
+        self.assertNotIn("cube(99)", archived.read_text())
+        self.assertEqual(manifest["jobs"][0]["fingerprint"], captured["fingerprint"])
 
     def test_preset_and_view_conflict_is_stable_usage_error(self):
         stdout, stderr = io.StringIO(), io.StringIO()

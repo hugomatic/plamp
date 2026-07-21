@@ -131,10 +131,12 @@ class CadGenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "dirty.*revision"):
             prepare_source(self.repo, self.scad)
         snapshot = prepare_source(self.repo, self.scad, revision="fit-test")
+        self.addCleanup(lambda: snapshot.cleanup_root and __import__("shutil").rmtree(snapshot.cleanup_root))
         self.assertTrue(snapshot.dirty)
         self.assertIsNone(snapshot.full_commit)
         self.assertEqual(snapshot.revision_label, "fit-test")
-        self.assertEqual(snapshot.scad_path, self.scad)
+        self.assertNotEqual(snapshot.scad_path, self.scad)
+        self.assertEqual(snapshot.scad_path.read_text(), "cube(2);\n")
 
     def test_dirty_generation_records_revision_and_archives_working_source(self):
         self.scad.write_text("cube(2);\n")
@@ -145,6 +147,37 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(manifest["source"]["revision"], "fit-test")
         archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(2);\n")
+
+    def test_dirty_explicit_output_beneath_part_does_not_copy_itself(self):
+        self.scad.write_text("cube(2);\n")
+        output = self.scad.parent / "prints" / "nested-run"
+
+        result = self.generate(revision="fit-test", output=output)
+
+        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertEqual(archived.read_text(), "cube(2);\n")
+        self.assertFalse((result.run_dir / "source" / "things" / "fixture" / "prints").exists())
+
+    def test_committed_source_rejects_symlink_that_escapes_archive(self):
+        outside = self.repo / "outside.scad"
+        outside.write_text("cube(99);\n")
+        (self.scad.parent / "escape.scad").symlink_to("../../outside.scad")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "escaping link"], check=True)
+
+        with self.assertRaisesRegex(ValueError, "unsafe symlink.*Git source archive"):
+            prepare_source(self.repo, self.scad)
+
+    def test_committed_source_accepts_symlink_within_part(self):
+        (self.scad.parent / "safe.scad").symlink_to("fixture.scad")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "safe link"], check=True)
+
+        snapshot = prepare_source(self.repo, self.scad)
+        self.addCleanup(lambda: snapshot.cleanup_root and __import__("shutil").rmtree(snapshot.cleanup_root))
+        safe = snapshot.scad_path.parent / "safe.scad"
+        self.assertTrue(safe.is_symlink())
+        self.assertEqual(safe.resolve(), snapshot.scad_path)
 
     def test_historical_committed_revision_archives_and_renders_that_content(self):
         old_commit = self.commit
@@ -347,6 +380,26 @@ class CadGenerationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(KeyError, "missing"):
             load_job_log(newer.run_dir, "missing")
+
+    def test_list_runs_rejects_unsafe_part_components(self):
+        for part in ("../fixture", "/tmp/fixture", "fixture/child", ".", ""):
+            with self.subTest(part=part):
+                with self.assertRaisesRegex(ValueError, "single path component"):
+                    list_runs(self.data, part)
+
+    def test_load_job_log_rejects_manifest_path_escape_and_unexpected_path(self):
+        result = self.generate()
+        manifest_path = result.manifest_path
+        manifest = load_run(result.run_dir)
+        job = manifest["jobs"][0]
+        outside = self.root / "outside.log"
+        outside.write_text("secret")
+        for tampered in (str(outside), "../../outside.log", "logs/other.log"):
+            with self.subTest(log=tampered):
+                job["log"] = tampered
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, "unsafe CAD job log path"):
+                    load_job_log(result.run_dir, job["artifact_id"])
 
 
 if __name__ == "__main__":
