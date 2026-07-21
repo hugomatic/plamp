@@ -126,6 +126,72 @@ view = "floor"; // [floor]
         self.assertEqual(diagnostic.value, "missing")
         self.assertEqual(diagnostic.choices, ("all",))
 
+    def test_self_referencing_preset_reports_cycle_and_offending_item(self):
+        with self.assertRaises(CadMetadataError) as caught:
+            parse_cad_document(self.write_scad('''
+view = "floor"; // [floor]
+/* generate.json
+{"presets":{"loop":{"items":["preset:loop"]}}}
+*/
+'''))
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD106")
+        self.assertEqual(diagnostic.kind, "preset_cycle")
+        self.assertEqual(diagnostic.json_path, "$.presets.loop.items[0]")
+        self.assertEqual(diagnostic.value, ("loop", "loop"))
+        self.assertIn("loop -> loop", diagnostic.message)
+
+    def test_indirect_preset_cycle_reports_closing_edge_deterministically(self):
+        with self.assertRaises(CadMetadataError) as caught:
+            parse_cad_document(self.write_scad('''
+view = "floor"; // [floor]
+/* generate.json
+{"presets":{
+  "all":{"items":["preset:tests"]},
+  "tests":{"items":["preset:coupons"]},
+  "coupons":{"items":["preset:all"]}}}
+*/
+'''))
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD106")
+        self.assertEqual(diagnostic.json_path, "$.presets.coupons.items[0]")
+        self.assertEqual(
+            diagnostic.value, ("all", "tests", "coupons", "all")
+        )
+        self.assertIn("all -> tests -> coupons -> all", diagnostic.message)
+
+    def test_all_views_is_reserved_as_a_synthetic_selector(self):
+        with self.assertRaises(CadMetadataError) as caught:
+            parse_cad_document(self.write_scad('''
+view = "floor"; // [floor]
+/* generate.json
+{"presets":{"all-views":{}}}
+*/
+'''))
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD107")
+        self.assertEqual(diagnostic.kind, "reserved_preset")
+        self.assertEqual(diagnostic.json_path, "$.presets.all-views")
+        self.assertEqual(diagnostic.value, "all-views")
+
+    def test_all_presets_is_reserved_as_a_synthetic_selector(self):
+        with self.assertRaises(CadMetadataError) as caught:
+            parse_cad_document(self.write_scad('''
+view = "floor"; // [floor]
+/* generate.json
+{"presets":{"all-presets":{}}}
+*/
+'''))
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD107")
+        self.assertEqual(diagnostic.kind, "reserved_preset")
+        self.assertEqual(diagnostic.json_path, "$.presets.all-presets")
+        self.assertEqual(diagnostic.value, "all-presets")
+
     def test_invalid_item_prefix_reports_allowed_namespaces(self):
         with self.assertRaises(CadMetadataError) as caught:
             parse_cad_document(self.write_scad('''
@@ -173,6 +239,20 @@ view = "floor"; // [floor]
             ["$.views.flor", "$.presets.all.view_variables.flor", "$.default_preset"],
         )
         self.assertTrue(all(diagnostic.suggestion for diagnostic in diagnostics[:2]))
+
+    def test_assigned_default_view_must_be_in_nonempty_customizer_list(self):
+        with self.assertRaises(CadMetadataError) as caught:
+            parse_cad_document(
+                self.write_scad('view = "flor"; // [floor, assembly]\n')
+            )
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD101")
+        self.assertEqual(diagnostic.kind, "unknown_view")
+        self.assertIsNone(diagnostic.json_path)
+        self.assertEqual(diagnostic.value, "flor")
+        self.assertEqual(diagnostic.choices, ("floor", "assembly"))
+        self.assertEqual(diagnostic.suggestion, "floor")
 
     def test_diagnostics_have_human_and_json_formats(self):
         diagnostic = CadDiagnostic(

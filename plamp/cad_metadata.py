@@ -16,6 +16,7 @@ _VIEW_ASSIGNMENT = re.compile(
     re.MULTILINE,
 )
 _CUSTOMIZER_CHOICES = re.compile(r"//\s*\[([^]]*)\]")
+_RESERVED_PRESET_NAMES = ("all-views", "all-presets")
 
 
 @dataclass(frozen=True)
@@ -366,6 +367,35 @@ def _validate_references(
     view_choices = document.views
     preset_choices = tuple(document.presets)
 
+    if document.default_view is not None and view_choices:
+        if document.default_view not in view_choices:
+            diagnostics.append(
+                _diagnostic(
+                    document.path,
+                    "CAD101",
+                    "unknown_view",
+                    f"Default view {document.default_view!r} is not declared",
+                    value=document.default_view,
+                    choices=view_choices,
+                    suggestion=_suggest(document.default_view, view_choices),
+                    fix="Use a view from the Customizer declaration",
+                )
+            )
+
+    for preset_name in document.presets:
+        if preset_name in _RESERVED_PRESET_NAMES:
+            diagnostics.append(
+                _diagnostic(
+                    document.path,
+                    "CAD107",
+                    "reserved_preset",
+                    f"Preset name {preset_name!r} is reserved",
+                    json_path=f"$.presets.{preset_name}",
+                    value=preset_name,
+                    fix="Rename the preset to avoid synthetic selector names",
+                )
+            )
+
     for view_name in document.view_metadata:
         if view_name not in view_choices:
             diagnostics.append(
@@ -474,6 +504,49 @@ def _validate_references(
         )
 
 
+def _validate_preset_cycles(
+    document: CadDocument, diagnostics: list[CadDiagnostic]
+) -> None:
+    states: dict[str, str] = {}
+    active_path: list[str] = []
+
+    def visit(preset_name: str) -> None:
+        states[preset_name] = "visiting"
+        active_path.append(preset_name)
+        preset = document.presets[preset_name]
+        for item_index, item in enumerate(preset.items):
+            if not isinstance(item, str) or not item.startswith("preset:"):
+                continue
+            target = item.split(":", 1)[1]
+            if target not in document.presets:
+                continue
+            target_state = states.get(target)
+            if target_state is None:
+                visit(target)
+            elif target_state == "visiting":
+                cycle_start = active_path.index(target)
+                cycle = tuple(active_path[cycle_start:] + [target])
+                diagnostics.append(
+                    _diagnostic(
+                        document.path,
+                        "CAD106",
+                        "preset_cycle",
+                        f"Preset cycle: {' -> '.join(cycle)}",
+                        json_path=(
+                            f"$.presets.{preset_name}.items[{item_index}]"
+                        ),
+                        value=cycle,
+                        fix="Remove the preset reference that closes the cycle",
+                    )
+                )
+        active_path.pop()
+        states[preset_name] = "visited"
+
+    for preset_name in document.presets:
+        if preset_name not in states:
+            visit(preset_name)
+
+
 def parse_cad_document(path: str | Path) -> CadDocument:
     """Parse one SCAD document and validate all embedded metadata references."""
 
@@ -520,6 +593,7 @@ def parse_cad_document(path: str | Path) -> CadDocument:
         metadata_snapshot=metadata,
     )
     _validate_references(document, diagnostics)
+    _validate_preset_cycles(document, diagnostics)
     if diagnostics:
         raise CadMetadataError(diagnostics)
     return document
