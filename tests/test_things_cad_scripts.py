@@ -62,6 +62,32 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_cad_documentation_covers_the_stable_local_workflow(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        host_tools = (REPO_ROOT / "docs" / "host-tools.md").read_text(
+            encoding="utf-8"
+        )
+        readme_cad = readme.split("## Generate printable CAD", 1)[1].split(
+            "\n## ", 1
+        )[0]
+        host_tools_cad = host_tools.split("## OpenSCAD on a Pi", 1)[1]
+        documentation = f"{readme_cad}\n{host_tools_cad}"
+
+        for command in (
+            "plamp cad views plamp8",
+            "plamp cad validate plamp8",
+            "plamp cad plan plamp8 --preset fuse-box",
+            "plamp cad generate plamp8 --preset fuse-box",
+            "plamp cad runs plamp8",
+            "plamp cad show RUN_ID",
+        ):
+            with self.subTest(command=command):
+                self.assertIn(command, documentation)
+        self.assertIn("$PLAMP_DATA_DIR/cad/prints", documentation)
+        self.assertIn("plan before generate", documentation.lower().replace("`", ""))
+        self.assertNotIn("web", documentation.lower())
+        self.assertNotIn("three.js", documentation.lower())
+
     def test_versioned_scad_sources_embed_generation_metadata(self):
         paths = (
             "things/plamp8/plamp8.scad",

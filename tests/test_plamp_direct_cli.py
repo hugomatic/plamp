@@ -355,6 +355,34 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 0)
         self.assertIn("cad", stdout.getvalue())
 
+    def test_project_neutral_cad_template_supports_no_render_workflow(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        part = "things/3d_template/cad.scad"
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "PLAMP_ROOT": str(repo_root),
+                "PLAMP_DATA_DIR": str(Path(tmp) / "data"),
+            }
+
+            for args in (
+                ["cad", "views", part, "--json"],
+                ["cad", "validate", part, "--json"],
+                ["cad", "plan", part, "--preset", "all-views-default", "--json"],
+            ):
+                with self.subTest(command=args[1]):
+                    stdout = io.StringIO()
+                    rc = main(
+                        args,
+                        env=env,
+                        stdout=stdout,
+                        stderr=io.StringIO(),
+                        cad_generate_func=lambda *a, **k: self.fail(
+                            "no-render workflow must not invoke OpenSCAD"
+                        ),
+                    )
+                    self.assertEqual(rc, 0)
+                    self.assertTrue(json.loads(stdout.getvalue()))
+
     def test_camera_capture_calls_shared_library_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

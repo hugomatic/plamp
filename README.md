@@ -61,6 +61,27 @@ During migration, the explicitly named REST compatibility client remains availab
 See the direct CLI with `plamp --help`, or the
 [REST compatibility reference](./plamp_cli/README.md).
 
+## Generate printable CAD
+
+The direct CLI validates and plans repository CAD before running OpenSCAD. For
+the Plamp8 fused enclosure workflow:
+
+```bash
+plamp cad views plamp8
+plamp cad validate plamp8
+plamp cad plan plamp8 --preset fuse-box
+plamp cad generate plamp8 --preset fuse-box
+plamp cad runs plamp8
+plamp cad show RUN_ID
+```
+
+Use `plan` before `generate`: planning expands the selected recipe and reports
+the exact jobs without rendering. Generation can take several minutes per job
+on a Raspberry Pi. Generated STL files, archived source, manifests, and
+OpenSCAD logs are instance data under `$PLAMP_DATA_DIR/cad/prints`, not source
+files to commit. See [Host tools](./docs/host-tools.md#openscad-on-a-pi) for the
+metadata format, selector behavior, archive layout, and legacy script options.
+
 ## Web and API
 
 Open `http://<raspberry-pi-ip>/` after a public install, or port `8000` otherwise.
