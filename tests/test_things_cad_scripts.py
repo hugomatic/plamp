@@ -809,7 +809,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
             payload = f'label=$(touch "{unwanted}")'
 
             result = run(
-                ["./generate.bash", "--box", "--define", payload],
+                [
+                    "./generate.bash",
+                    "--box",
+                    "--revision",
+                    "--box",
+                    "--define",
+                    "--box",
+                    "-D",
+                    payload,
+                    "--view",
+                    "--box",
+                    "--",
+                    "--box",
+                ],
                 part,
                 env={**os.environ, "ARGS_LOG": str(args_log)},
             )
@@ -825,8 +838,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
                     str(part / "plamp8.scad"),
                     "--preset",
                     "fuse-box",
+                    "--revision",
+                    "--box",
                     "--define",
+                    "--box",
+                    "-D",
                     payload,
+                    "--view",
+                    "--box",
+                    "--",
+                    "--box",
                 ],
             )
             self.assertFalse(unwanted.exists())

@@ -26,11 +26,15 @@ def _normalize_cad_generate_legacy_args(argv: Sequence[str]) -> list[str]:
     """Translate legacy trailing output/commit values into named CLI options."""
 
     values = list(argv)
-    try:
-        cad_index = values.index("cad")
-    except ValueError:
-        return values
-    if values[cad_index : cad_index + 2] != ["cad", "generate"]:
+    cad_index = next(
+        (
+            index
+            for index in range(len(values) - 1)
+            if values[index : index + 2] == ["cad", "generate"]
+        ),
+        None,
+    )
+    if cad_index is None:
         return values
 
     start = cad_index + 2
