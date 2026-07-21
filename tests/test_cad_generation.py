@@ -5,7 +5,9 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 from plamp.cad_generation import (
     generate_plan,
@@ -144,12 +146,43 @@ class CadGenerationTests(unittest.TestCase):
         archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(2);\n")
 
+    def test_historical_committed_revision_archives_and_renders_that_content(self):
+        old_commit = self.commit
+        self.scad.write_text("cube(2);\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.repo), "commit", "-qm", "second fixture"],
+            check=True,
+        )
+
+        result = self.generate(revision=old_commit)
+
+        manifest = load_run(result.run_dir)
+        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertEqual(manifest["source"]["commit"], old_commit)
+        self.assertEqual(archived.read_text(), "cube(1);\n")
+        self.assertEqual(Path(manifest["jobs"][0]["command"][-1]), archived)
+
     def test_default_and_explicit_output_locations(self):
         result = self.generate()
         self.assertEqual(result.run_dir.parent, self.data / "cad" / "prints" / "fixture")
         explicit = self.root / "chosen-run"
         result = self.generate(output=explicit)
         self.assertEqual(result.run_dir, explicit)
+
+    def test_run_ids_are_randomly_unique_and_independent_of_explicit_directory(self):
+        instant = datetime(2026, 7, 21, 8, 1, 44, tzinfo=timezone.utc)
+        with mock.patch("plamp.cad_generation._utc_now", return_value=instant):
+            first = self.generate(output=self.root / "chosen-one")
+            second = self.generate(output=self.root / "chosen-two")
+
+        first_id = load_run(first.run_dir)["run_id"]
+        second_id = load_run(second.run_dir)["run_id"]
+        expected = rf"20260721T080144Z-fixture-print-{self.commit[:7]}-[0-9a-f]{{6}}"
+        self.assertRegex(first_id, rf"^{expected}$")
+        self.assertRegex(second_id, rf"^{expected}$")
+        self.assertNotEqual(first_id, second_id)
+        self.assertNotEqual(first_id, first.run_dir.name)
 
     def test_manifest_schema_and_job_schema_are_frozen(self):
         result = self.generate(metadata={"z": 1})
@@ -251,10 +284,67 @@ class CadGenerationTests(unittest.TestCase):
         self.assertIsNone(job["artifact"])
         self.assertIn("non-empty output", job["errors"][-1])
 
+    def test_process_launch_failure_after_version_check_is_archived_as_failed(self):
+        disappearing = self.root / "disappearing-openscad"
+        disappearing.write_text(textwrap.dedent("""\
+            #!/usr/bin/env python3
+            import pathlib, sys
+            if "--version" in sys.argv:
+                pathlib.Path(__file__).unlink()
+                print("OpenSCAD version 2099.01")
+        """))
+        disappearing.chmod(0o755)
+        output = self.root / "launch-failure"
+
+        result = generate_plan(
+            plan("first"), repo_root=self.repo, data_dir=self.data,
+            scad_path=self.scad, openscad=disappearing, output=output,
+            env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(),
+        )
+
+        manifest = load_run(output)
+        job = manifest["jobs"][0]
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(job["status"], "failed")
+        self.assertIsNotNone(job["finished_at"])
+        self.assertIsNotNone(job["elapsed_seconds"])
+        self.assertTrue(job["errors"])
+        self.assertIsNotNone(manifest["finished_at"])
+        self.assertTrue((output / job["log"]).is_file())
+
+    def test_interrupted_job_records_elapsed_time_before_reraising(self):
+        output = self.root / "interrupted"
+        with mock.patch(
+            "plamp.cad_generation._capture_line", side_effect=KeyboardInterrupt
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                generate_plan(
+                    plan("first"), repo_root=self.repo, data_dir=self.data,
+                    scad_path=self.scad, openscad=self.fake, output=output,
+                    env=self.env(), stdout=io.StringIO(),
+                )
+
+        manifest = load_run(output)
+        self.assertEqual(manifest["status"], "interrupted")
+        self.assertEqual(manifest["jobs"][0]["status"], "interrupted")
+        self.assertIsNotNone(manifest["jobs"][0]["elapsed_seconds"])
+
     def test_catalog_is_newest_first_and_log_uses_exact_artifact_id(self):
-        older = self.generate(output=self.data / "cad" / "prints" / "fixture" / "20260101T000000Z-old")
-        newer = self.generate(output=self.data / "cad" / "prints" / "fixture" / "20260102T000000Z-new")
-        self.assertEqual([item["run_id"] for item in list_runs(self.data, "fixture")], [newer.run_dir.name, older.run_dir.name])
+        old_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        new_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        with mock.patch("plamp.cad_generation._utc_now", return_value=old_time):
+            older = self.generate(
+                output=self.data / "cad" / "prints" / "fixture" / "older"
+            )
+        with mock.patch("plamp.cad_generation._utc_now", return_value=new_time):
+            newer = self.generate(
+                output=self.data / "cad" / "prints" / "fixture" / "newer"
+            )
+        self.assertEqual(
+            [item["run_id"] for item in list_runs(self.data, "fixture")],
+            [load_run(newer.run_dir)["run_id"], load_run(older.run_dir)["run_id"]],
+        )
         with self.assertRaisesRegex(KeyError, "missing"):
             load_job_log(newer.run_dir, "missing")
 

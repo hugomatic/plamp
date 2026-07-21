@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -110,10 +111,21 @@ def prepare_source(
     commit = _git(root, "log", "-1", "--format=%H", "--", str(part_relative))
     if not commit:
         raise ValueError("CAD part has no committed source revision")
+    selected_commit = commit
+    revision_label = commit[:7]
+    if revision is not None and revision.strip():
+        revision_label = revision.strip()
+        try:
+            selected_commit = _git(
+                root, "rev-parse", "--verify", f"{revision_label}^{{commit}}"
+            )
+        except subprocess.CalledProcessError:
+            # Non-Git labels remain valid for explicitly labelled clean renders.
+            selected_commit = commit
     cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-source-"))
     try:
         archive = subprocess.run(
-            ["git", "-C", str(root), "archive", commit, str(part_relative)],
+            ["git", "-C", str(root), "archive", selected_commit, str(part_relative)],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -130,9 +142,9 @@ def prepare_source(
         archived_scad = cleanup / relative
         return SourceSnapshot(
             archived_scad,
-            commit,
-            commit,
-            revision.strip() if revision and revision.strip() else commit[:7],
+            selected_commit,
+            selected_commit,
+            revision_label,
             False,
             cleanup,
         )
@@ -195,6 +207,13 @@ def _write_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
         assert isinstance(job, Mapping)
         lines.append(f"| {job['artifact_id']} | {job['view'] or 'default'} | {job['status']} |")
     _atomic_text(run_dir / "readme.md", "\n".join(lines) + "\n")
+
+
+def _best_effort_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
+    try:
+        _write_readme(run_dir, manifest)
+    except OSError:
+        pass
 
 
 def _geometry() -> dict[str, object]:
@@ -306,6 +325,35 @@ def _safe_component(value: str) -> str:
     return _SAFE_COMPONENT.sub("-", value).strip("-.") or "run"
 
 
+def _error_text(error: BaseException) -> str:
+    return str(error) or type(error).__name__
+
+
+def _remove_temporary_artifact(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _finalize_job_failure(
+    job: dict[str, object],
+    *,
+    started_clock: float,
+    error: BaseException,
+    process: subprocess.Popen[str] | None,
+    temporary_artifact: Path,
+) -> None:
+    job["status"] = "failed"
+    job["exit_code"] = None if process is None else process.returncode
+    job["finished_at"] = _timestamp(_utc_now())
+    job["elapsed_seconds"] = round(time.monotonic() - started_clock, 6)
+    errors = job["errors"]
+    assert isinstance(errors, list)
+    errors.append(_error_text(error))
+    _remove_temporary_artifact(temporary_artifact)
+
+
 def _copy_snapshot(snapshot: SourceSnapshot, repo_root: Path, run_dir: Path) -> Path:
     relative = snapshot.scad_path.relative_to(snapshot.cleanup_root or repo_root)
     target = run_dir / "source" / relative
@@ -346,7 +394,7 @@ def generate_plan(
         openscad_version = version_result.stdout.strip()
         now = _utc_now()
         selector = plan.selection.preset or (plan.jobs[0].variant_name if len(plan.jobs) == 1 else "views")
-        token = plan.jobs[0].fingerprint[:6] if plan.jobs else "empty"
+        token = secrets.token_hex(3)
         run_id = "-".join((
             now.strftime("%Y%m%dT%H%M%SZ"), _safe_component(part),
             _safe_component(selector), _safe_component(snapshot.revision_label), token,
@@ -366,7 +414,7 @@ def generate_plan(
         manifest: dict[str, object] = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "generator_version": GENERATOR_VERSION,
-            "run_id": run_id if output is None else run_dir.name,
+            "run_id": run_id,
             "part": part,
             "status": "running",
             "created_at": created,
@@ -394,7 +442,23 @@ def generate_plan(
             "jobs": jobs,
         }
         _write_manifest(run_dir, manifest)
-        _write_readme(run_dir, manifest)
+        try:
+            _write_readme(run_dir, manifest)
+        except OSError as error:
+            finished_at = _timestamp(_utc_now())
+            manifest["status"] = "failed"
+            manifest["finished_at"] = finished_at
+            if jobs:
+                first_job = jobs[0]
+                first_job["status"] = "failed"
+                first_job["started_at"] = created
+                first_job["finished_at"] = finished_at
+                first_job["elapsed_seconds"] = 0.0
+                first_errors = first_job["errors"]
+                assert isinstance(first_errors, list)
+                first_errors.append(_error_text(error))
+            _write_manifest(run_dir, manifest)
+            return GenerationResult(run_dir, run_dir / "manifest.json", "failed")
 
         failed = False
         for render_job, job in zip(plan.jobs, jobs):
@@ -407,10 +471,10 @@ def generate_plan(
             command = _command(Path(openscad), temporary_artifact, archived_source, snapshot.revision_label, render_job)
             job["command"] = command
             _write_manifest(run_dir, manifest)
-            _write_readme(run_dir, manifest)
             log_path = run_dir / str(job["log"])
             process: subprocess.Popen[str] | None = None
             try:
+                _write_readme(run_dir, manifest)
                 with log_path.open("w", encoding="utf-8") as log:
                     process = subprocess.Popen(
                         command, text=True, stdout=subprocess.PIPE,
@@ -451,14 +515,27 @@ def generate_plan(
                 job["status"] = "interrupted"
                 job["exit_code"] = None if process is None else process.returncode
                 job["finished_at"] = _timestamp(_utc_now())
+                job["elapsed_seconds"] = round(time.monotonic() - started_clock, 6)
                 manifest["status"] = "interrupted"
                 manifest["finished_at"] = job["finished_at"]
-                temporary_artifact.unlink(missing_ok=True)
+                _remove_temporary_artifact(temporary_artifact)
                 _write_manifest(run_dir, manifest)
-                _write_readme(run_dir, manifest)
+                _best_effort_readme(run_dir, manifest)
                 raise
+            except Exception as error:
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    process.wait()
+                _finalize_job_failure(
+                    job,
+                    started_clock=started_clock,
+                    error=error,
+                    process=process,
+                    temporary_artifact=temporary_artifact,
+                )
+                failed = True
             _write_manifest(run_dir, manifest)
-            _write_readme(run_dir, manifest)
+            _best_effort_readme(run_dir, manifest)
             if failed:
                 break
 
@@ -466,7 +543,7 @@ def generate_plan(
         manifest["status"] = "failed" if failed else "complete"
         manifest["finished_at"] = finished_at
         _write_manifest(run_dir, manifest)
-        _write_readme(run_dir, manifest)
+        _best_effort_readme(run_dir, manifest)
         return GenerationResult(run_dir, run_dir / "manifest.json", str(manifest["status"]))
     except OSError as error:
         print(str(error), file=err)
