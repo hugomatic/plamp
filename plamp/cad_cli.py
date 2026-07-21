@@ -7,11 +7,13 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import shutil
+from statistics import median
 import subprocess
 from collections.abc import Callable, Mapping
 from typing import Any, TextIO
 
 from plamp.cad_generation import (
+    GENERATOR_VERSION,
     GenerationResult,
     generate_plan,
     list_runs,
@@ -30,6 +32,10 @@ CadFunction = Callable[..., Any]
 
 class CadOperationError(RuntimeError):
     """An expected failure after CAD generation or archive access began."""
+
+
+class CadSelectionCancelled(ValueError):
+    """Interactive CAD selection ended without a choice."""
 
 
 def _selection_arguments(parser: argparse.ArgumentParser) -> None:
@@ -110,6 +116,12 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
 
 def _json_line(stream: TextIO, value: object) -> None:
     stream.write(json.dumps(value, sort_keys=True) + "\n")
+
+
+def _typed_json(value: object) -> str:
+    """Canonical JSON that preserves scalar types for exact comparisons."""
+
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def _diagnostic(
@@ -229,29 +241,14 @@ def _with_plan(
 
 
 def _plan_object(
-    plan: Any, document: Any, archived_runs: list[Mapping[str, object]]
+    plan: Any,
+    document: Any,
+    archived_runs: list[Mapping[str, object]],
+    source_path: str,
 ) -> dict[str, object]:
     value = plan_as_dict(plan)
     value["job_count"] = len(plan.jobs)
     value["shared_job_count"] = sum(1 for job in plan.jobs if len(job.preset_paths) > 1)
-    comparable: dict[str, dict[str, object]] = {}
-    for run in archived_runs:
-        jobs = run.get("jobs", [])
-        if not isinstance(jobs, list):
-            continue
-        for job in jobs:
-            if not isinstance(job, Mapping) or job.get("status") != "complete":
-                continue
-            fingerprint = job.get("fingerprint")
-            if not isinstance(fingerprint, str) or fingerprint in comparable:
-                continue
-            estimate = {
-                key: job[key]
-                for key in ("elapsed_seconds", "artifact_bytes")
-                if job.get(key) is not None
-            }
-            if estimate:
-                comparable[fingerprint] = estimate
     for job in value["jobs"]:  # type: ignore[assignment]
         view = job["view"]
         job["description"] = (
@@ -259,7 +256,44 @@ def _plan_object(
             if view in document.view_metadata
             else ""
         )
-        job["estimate"] = comparable.get(job["fingerprint"])
+        elapsed_samples: list[float] = []
+        size_samples: list[int] = []
+        for run in archived_runs:
+            source = run.get("source")
+            generator_version = run.get("generator_version")
+            if (
+                not isinstance(source, Mapping)
+                or source.get("scad_path") != source_path
+                or type(generator_version) is not int
+                or generator_version != GENERATOR_VERSION
+            ):
+                continue
+            archived_jobs = run.get("jobs", [])
+            if not isinstance(archived_jobs, list):
+                continue
+            for archived_job in archived_jobs:
+                if (
+                    not isinstance(archived_job, Mapping)
+                    or archived_job.get("status") != "complete"
+                    or archived_job.get("view") != job["view"]
+                    or _typed_json(archived_job.get("variables"))
+                    != _typed_json(job["variables"])
+                    or _typed_json(archived_job.get("raw_defines", {}))
+                    != _typed_json(job["raw_defines"])
+                ):
+                    continue
+                elapsed = archived_job.get("elapsed_seconds")
+                artifact_bytes = archived_job.get("artifact_bytes")
+                if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool):
+                    elapsed_samples.append(float(elapsed))
+                if isinstance(artifact_bytes, int) and not isinstance(artifact_bytes, bool):
+                    size_samples.append(artifact_bytes)
+        estimate: dict[str, object] = {}
+        if elapsed_samples:
+            estimate["elapsed_seconds"] = median(elapsed_samples)
+        if size_samples:
+            estimate["artifact_bytes"] = median(size_samples)
+        job["estimate"] = estimate or None
     estimated = [job["estimate"] for job in value["jobs"] if job["estimate"]]  # type: ignore[index]
     value["estimated_job_count"] = len(estimated)
     value["estimated_elapsed_seconds"] = sum(
@@ -305,14 +339,32 @@ def _print_plan(value: Mapping[str, object], stdout: TextIO) -> None:
             stdout.write(f"  estimate: {json.dumps(job['estimate'], sort_keys=True)}\n")
 
 
-def _resolve_run_argument(value: str, data_dir: Path) -> Path | str:
+def _load_exact_run(
+    value: str, data_dir: Path, deps: Mapping[str, CadFunction]
+) -> tuple[Path, Mapping[str, object]]:
     supplied = Path(value)
-    if supplied.exists() or supplied.parent != Path("."):
-        return supplied
-    matches = list((data_dir / "cad" / "prints").glob(f"*/{value}"))
-    if len(matches) == 1:
-        return matches[0]
-    return value
+    if supplied.name != value or value in {"", ".", ".."}:
+        raise FileNotFoundError(f"CAD run ID not found: {value}")
+    archive_root = (data_dir / "cad" / "prints").resolve()
+    matches: list[Path] = []
+    if archive_root.is_dir():
+        for part_dir in archive_root.iterdir():
+            candidate = part_dir / value
+            if not part_dir.is_dir() or not candidate.is_dir():
+                continue
+            resolved = candidate.resolve()
+            try:
+                relative = resolved.relative_to(archive_root)
+            except ValueError:
+                continue
+            if len(relative.parts) == 2:
+                matches.append(resolved)
+    if len(matches) != 1:
+        raise FileNotFoundError(f"CAD run ID not found: {value}")
+    manifest = deps["load_run"](matches[0])
+    if not isinstance(manifest, Mapping) or manifest.get("run_id") != value:
+        raise ValueError(f"CAD manifest run_id does not match requested ID: {value}")
+    return matches[0], manifest
 
 
 def _menu_selection(document: Any, stdin: TextIO, output: TextIO) -> Selection:
@@ -329,7 +381,13 @@ def _menu_selection(document: Any, stdin: TextIO, output: TextIO) -> Selection:
     for attempt in range(2):
         output.write("Select one preset or one or more views: ")
         output.flush()
-        tokens = stdin.readline().split()
+        try:
+            line = stdin.readline()
+        except KeyboardInterrupt:
+            raise CadSelectionCancelled("CAD menu selection cancelled") from None
+        if line == "":
+            raise CadSelectionCancelled("CAD menu selection cancelled at end of input")
+        tokens = line.split()
         try:
             numbers = [int(token) for token in tokens]
         except ValueError:
@@ -404,6 +462,8 @@ def run_cad_command(
 
     deps = _dependencies(dependencies)
     try:
+        if args.action == "menu" and args.json:
+            raise ValueError("cad menu does not support --json")
         if args.action in {"views", "validate"}:
             source = deps["resolve_part"](args.part, context.root)
             document = deps["parse_document"](source)
@@ -427,7 +487,8 @@ def run_cad_command(
         if args.action == "plan":
             source, document, plan = _with_plan(args, context, deps, allow_dirty=True)
             archived_runs = deps["list_runs"](context.data_dir, source.parent.name)
-            value = _plan_object(plan, document, archived_runs)
+            source_path = source.relative_to(context.root).as_posix()
+            value = _plan_object(plan, document, archived_runs, source_path)
             _json_line(stdout, value) if args.json else _print_plan(value, stdout)
             return 0
 
@@ -452,18 +513,26 @@ def run_cad_command(
                     )
             return 0
 
-        run = _resolve_run_argument(args.run, context.data_dir)
+        run, manifest = _load_exact_run(args.run, context.data_dir, deps)
         if args.action == "show":
-            value = deps["load_run"](run)
             if args.json:
-                _json_line(stdout, value)
+                _json_line(stdout, manifest)
             else:
-                stdout.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+                stdout.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
             return 0
 
         value = deps["load_job_log"](run, args.artifact)
         _json_line(stdout, value) if args.json else stdout.write(value)
         return 0
+    except CadSelectionCancelled as error:
+        diagnostic = _diagnostic(
+            error,
+            str(getattr(args, "part", "cad")),
+            code="CAD200",
+            kind="cancelled",
+        )
+        _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
+        return 2
     except KeyboardInterrupt:
         diagnostic = _diagnostic(
             RuntimeError("CAD generation interrupted"),

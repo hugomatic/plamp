@@ -19,7 +19,7 @@ SOURCE = textwrap.dedent("""\
     {
       "default_preset": "split",
       "views": {
-        "floor": {"description": "Printable floor"},
+        "floor": {"description": "Printable floor", "variables": {"flag": true}},
         "box": {"description": "Fused box"},
         "assembly": {"description": "Complete assembly"}
       },
@@ -122,20 +122,34 @@ class CadCliTests(unittest.TestCase):
         self.assertIn("artifact:", stdout.getvalue())
         self.assertIn("variables:", stdout.getvalue())
 
-    def test_direct_view_plan_has_description_and_archived_estimate(self):
+    def test_direct_view_plan_uses_median_of_strictly_comparable_history(self):
         stdout = io.StringIO()
-        archived = [{
-            "jobs": [{
-                "fingerprint": "unused until captured", "elapsed_seconds": 12.5,
-                "artifact_bytes": 4096, "status": "complete",
-            }]
-        }]
-        first = io.StringIO()
-        main(
-            ["cad", "plan", "fixture", "--view", "floor", "--json"], env=self.env(),
-            stdout=first, stderr=io.StringIO(),
-        )
-        archived[0]["jobs"][0]["fingerprint"] = json.loads(first.getvalue())["jobs"][0]["fingerprint"]
+        def run(path="things/fixture/fixture.scad", generator=1, *, view="floor",
+                variables=None, raw_defines=None, status="complete", elapsed=10.0,
+                size=1000):
+            return {
+                "source": {"scad_path": path}, "generator_version": generator,
+                "jobs": [{
+                    "view": view,
+                    "variables": {"flag": True} if variables is None else variables,
+                    "raw_defines": raw_defines or {},
+                    "elapsed_seconds": elapsed, "artifact_bytes": size, "status": status,
+                }],
+            }
+
+        archived = [
+            run(elapsed=99.0, size=9900),  # newest is intentionally not the median
+            run(elapsed=10.0, size=1000),
+            run(elapsed=11.0, size=1100),
+            run(path="things/other/fixture.scad", elapsed=1.0, size=1),
+            run(generator=2, elapsed=2.0, size=2),
+            run(view="box", elapsed=3.0, size=3),
+            run(variables={"quality": 2}, elapsed=4.0, size=4),
+            run(status="failed", elapsed=5.0, size=5),
+            run(variables={"flag": 1}, elapsed=0.0, size=0),
+            run(generator=True, elapsed=1.0, size=1),
+            run(raw_defines={"quality": "2"}, elapsed=2.0, size=2),
+        ]
         rc = main(
             ["cad", "plan", "fixture", "--view", "floor", "--json"], env=self.env(),
             stdout=stdout, stderr=io.StringIO(), cad_list_runs_func=lambda *a, **k: archived,
@@ -144,7 +158,7 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(result["jobs"][0]["description"], "Printable floor")
         self.assertEqual(result["jobs"][0]["estimate"], {
-            "elapsed_seconds": 12.5, "artifact_bytes": 4096,
+            "elapsed_seconds": 11.0, "artifact_bytes": 1100,
         })
 
     def test_dirty_source_can_be_planned_without_revision(self):
@@ -191,7 +205,7 @@ class CadCliTests(unittest.TestCase):
             captured = []
             with self.subTest(answer=answer):
                 rc = main(
-                    ["cad", "menu", "fixture", "--json"], env=self.env(), stdin=io.StringIO(answer),
+                    ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO(answer),
                     stdout=io.StringIO(), stderr=io.StringIO(),
                     cad_generate_func=lambda plan, **kwargs: captured.append(plan.selection) or {
                         "run_id": "run-1", "status": "complete", "jobs": []
@@ -199,6 +213,58 @@ class CadCliTests(unittest.TestCase):
                 )
                 self.assertEqual(rc, 0)
                 self.assertEqual((captured[0].preset, captured[0].views), expected)
+
+    def test_menu_json_is_rejected_before_stdin_or_generation(self):
+        reads = []
+
+        class UnreadableInput:
+            def readline(self):
+                reads.append(True)
+                raise AssertionError("stdin must not be read")
+
+        calls = []
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "menu", "fixture", "--json"], env=self.env(),
+            stdin=UnreadableInput(), stdout=stdout, stderr=io.StringIO(),
+            cad_generate_func=lambda *a, **k: calls.append((a, k)),
+        )
+        diagnostic = json.loads(stdout.getvalue())[0]
+        self.assertEqual(rc, 2)
+        self.assertEqual(diagnostic["kind"], "invalid_selection")
+        self.assertIn("--json", diagnostic["message"])
+        self.assertEqual(reads, [])
+        self.assertEqual(calls, [])
+
+    def test_menu_eof_cancels_without_retry_or_generation(self):
+        calls = []
+        stdout, stderr = io.StringIO(), io.StringIO()
+        rc = main(
+            ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO(""),
+            stdout=stdout, stderr=stderr,
+            cad_generate_func=lambda *a, **k: calls.append((a, k)),
+        )
+        self.assertEqual(rc, 2)
+        self.assertEqual(stdout.getvalue().count("Select"), 1)
+        self.assertIn("cancelled", stderr.getvalue().lower())
+        self.assertEqual(calls, [])
+
+    def test_menu_interrupt_is_selection_cancellation(self):
+        class InterruptingInput:
+            def readline(self):
+                raise KeyboardInterrupt()
+
+        calls = []
+        stderr = io.StringIO()
+        rc = main(
+            ["cad", "menu", "fixture"], env=self.env(), stdin=InterruptingInput(),
+            stdout=io.StringIO(), stderr=stderr,
+            cad_generate_func=lambda *a, **k: calls.append((a, k)),
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("cancelled", stderr.getvalue().lower())
+        self.assertNotIn("CAD400", stderr.getvalue())
+        self.assertEqual(calls, [])
 
     def test_menu_reprompts_once_then_returns_diagnostic(self):
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -216,6 +282,9 @@ class CadCliTests(unittest.TestCase):
             "schema_version": 1, "run_id": "new", "part": "fixture", "status": "complete",
             "created_at": "2026-07-21T10:00:00Z", "jobs": [],
         }
+        run_dir = self.data / "cad" / "prints" / "fixture" / "new"
+        run_dir.mkdir(parents=True)
+        (run_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         dependencies = {
             "list_runs": lambda data_dir, part=None: [manifest],
             "load_run": lambda run: manifest,
@@ -224,7 +293,7 @@ class CadCliTests(unittest.TestCase):
         parser = build_parser()
         cases = (
             (["cad", "runs", "fixture", "--json"], [manifest]),
-            (["cad", "show", "some-run", "--json"], manifest),
+            (["cad", "show", "new", "--json"], manifest),
         )
         for argv, expected in cases:
             stdout = io.StringIO()
@@ -233,11 +302,38 @@ class CadCliTests(unittest.TestCase):
             self.assertEqual(json.loads(stdout.getvalue()), expected)
         stdout = io.StringIO()
         rc = run_cad_command(
-            parser.parse_args(["cad", "log", "some-run", "artifact"]), self.context,
+            parser.parse_args(["cad", "log", "new", "artifact"]), self.context,
             io.StringIO(), stdout, io.StringIO(), dependencies,
         )
         self.assertEqual(rc, 0)
         self.assertEqual(stdout.getvalue(), "OpenSCAD output\n")
+
+    def test_show_and_log_reject_paths_prefixes_and_manifest_id_mismatch(self):
+        archive = self.data / "cad" / "prints" / "fixture"
+        exact = archive / "20260721T100000Z-fixture-split-abc1234-abcdef"
+        exact.mkdir(parents=True)
+        manifest = {
+            "schema_version": 1,
+            "run_id": "different-id",
+            "part": "fixture",
+            "status": "complete",
+            "jobs": [],
+        }
+        (exact / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        outside = self.root / "outside-run"
+        outside.mkdir()
+        (outside / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        for action in ("show", "log"):
+            for run in (str(outside), "20260721T100000Z-fixture-split", exact.name):
+                with self.subTest(action=action, run=run):
+                    stderr = io.StringIO()
+                    argv = ["cad", action, run]
+                    if action == "log":
+                        argv.append("artifact")
+                    rc = main(argv, env=self.env(), stdout=io.StringIO(), stderr=stderr)
+                    self.assertEqual(rc, 4)
+                    self.assertIn("CAD400", stderr.getvalue())
 
     def test_expected_archive_error_has_no_traceback(self):
         stderr = io.StringIO()
@@ -248,7 +344,10 @@ class CadCliTests(unittest.TestCase):
             {"load_run": lambda run: (_ for _ in ()).throw(FileNotFoundError("missing run"))},
         )
         self.assertEqual(rc, 4)
-        self.assertEqual(stderr.getvalue(), "missing: CAD400: missing run\n")
+        self.assertEqual(
+            stderr.getvalue(),
+            "missing: CAD400: CAD run ID not found: missing\n",
+        )
 
     def test_generation_subprocess_error_returns_four_without_traceback(self):
         stderr = io.StringIO()
