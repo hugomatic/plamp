@@ -250,6 +250,42 @@ class CadCliTests(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 self.assertEqual((captured[0].preset, captured[0].views), expected)
 
+    def test_menu_retains_planned_snapshot_through_real_generation_then_cleans_it(self):
+        fake = self.root / "fake-openscad"
+        fake.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = --version ]; then echo fake; exit 0; fi\n'
+            'out="$2"\n'
+            "printf 'solid x\\nendsolid x\\n' > \"$out\"\n"
+        )
+        fake.chmod(0o755)
+        observed = {}
+
+        def generate(plan, **kwargs):
+            snapshot_root = kwargs["snapshot"].cleanup_root
+            observed["snapshot_root"] = snapshot_root
+            self.assertIsNotNone(snapshot_root)
+            self.assertTrue(snapshot_root.is_dir())
+            self.assertTrue(kwargs["snapshot"].scad_path.is_file())
+            return generate_plan(plan, env=os.environ, **kwargs)
+
+        rc = main(
+            ["cad", "menu", "fixture", "--openscad", str(fake)],
+            env=self.env(),
+            stdin=io.StringIO("1\n"),
+            stdout=io.StringIO(),
+            stderr=io.StringIO(),
+            cad_generate_func=generate,
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertFalse(observed["snapshot_root"].exists())
+        manifests = list(
+            (self.data / "cad" / "prints" / "fixture").glob("*/manifest.json")
+        )
+        self.assertEqual(len(manifests), 1)
+        self.assertEqual(json.loads(manifests[0].read_text())["status"], "complete")
+
     def test_menu_json_is_rejected_before_stdin_or_generation(self):
         reads = []
 

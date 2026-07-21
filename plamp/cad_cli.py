@@ -259,6 +259,7 @@ def _with_plan(
     selection: Selection | None = None,
     *,
     allow_dirty: bool = False,
+    retain_snapshot: bool = False,
 ) -> tuple[Path, Any, Any, Any]:
     source = deps["resolve_part"](args.part, context.root)
     legacy_commit = getattr(args, "legacy_commit", None)
@@ -278,15 +279,15 @@ def _with_plan(
     if allow_dirty and revision is None:
         revision = "working-tree-plan"
     snapshot = deps["prepare_source"](context.root, source, revision)
-    retain_snapshot = False
+    snapshot_returned = False
     try:
         document = deps["parse_document"](snapshot.scad_path)
         selected = _selection(args, document, menu=selection)
         plan = deps["build_plan"](document, selected, snapshot.source_identity)
-        retain_snapshot = getattr(args, "action", None) == "generate"
+        snapshot_returned = retain_snapshot
         return source, document, plan, snapshot
     finally:
-        if not retain_snapshot and snapshot.cleanup_root is not None:
+        if not snapshot_returned and snapshot.cleanup_root is not None:
             shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
 
 
@@ -473,7 +474,9 @@ def _generate(
     stderr: TextIO,
     selection: Selection | None = None,
 ) -> int:
-    source, document, plan, snapshot = _with_plan(args, context, deps, selection)
+    source, document, plan, snapshot = _with_plan(
+        args, context, deps, selection, retain_snapshot=True
+    )
     stream = stderr if args.json else stdout
     try:
         result = deps["generate"](
