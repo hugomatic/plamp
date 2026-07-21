@@ -244,7 +244,6 @@ corner_tab_boss_r = 5;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
-bore_tangent_a = corner_screw_d / 2 / sqrt(2);
 corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
@@ -350,7 +349,6 @@ assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
-assert(2 * bore_tangent_a > corner_screw_d / 2, "teardrop roof must clear the round screw envelope");
 echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
 echo(str("bottom M3x25 nut-face offset: ",
     corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
@@ -1519,15 +1517,21 @@ module side_loaded_panel_nut_trap(direction = 1) {
 // and Z runs from the exterior build-plate face toward the box interior.
 module support_free_bore_profile(d) {
     r = d / 2;
-    a = r / sqrt(2);
+    roof_x = r * sin(support_free_roof_angle);
+    roof_y = r * cos(support_free_roof_angle);
+    apex_y = roof_y + roof_x * tan(support_free_roof_angle);
 
     union() {
         intersection() {
             circle(d = d);
             translate([-r, -r])
-                square([d, r + a]);
+                square([d, r + roof_y]);
         }
-        polygon([[-a, a], [0, 2 * a], [a, a]]);
+        polygon([
+            [-roof_x, roof_y],
+            [0, apex_y],
+            [roof_x, roof_y]
+        ]);
     }
 }
 

@@ -69,7 +69,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn("corner_tab_inner_x = corner_tab_w / 2;", source)
-        self.assertIn("bore_tangent_a = corner_screw_d / 2 / sqrt(2);", source)
+        bore_profile = source.split("module support_free_bore_profile", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("roof_x = r * sin(support_free_roof_angle);", bore_profile)
+        self.assertIn("roof_y = r * cos(support_free_roof_angle);", bore_profile)
+        self.assertIn(
+            "apex_y = roof_y + roof_x * tan(support_free_roof_angle);",
+            bore_profile,
+        )
+        self.assertNotIn("sqrt(2)", bore_profile)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
         self.assertIn("corner_nut_tab_extension = 16;", source)
