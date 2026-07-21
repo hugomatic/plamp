@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make the Plamp8 corner nut traps, screw bores, and wall ribs printable without generated support in both manufacturing arrangements:
+Make the fused Plamp8 `box` printable without generated support while giving both manufacturing arrangements easier center-facing nut access:
 
 - standalone walls printed exterior-face down; and
 - the fused `box` printed floor-down.
@@ -19,7 +19,7 @@ Wall-local coordinates remain authoritative:
 
 For a standalone wall, print-up is wall-local +Z. In `box`, print-up is assembled/global +Z, which is wall-local +Y for the north and south nut-owning walls.
 
-Wall modules receive an explicit print-orientation parameter. They must not inspect the global `view` value. Standalone wall calls retain the default flat-wall orientation; `box` passes the box orientation explicitly.
+Wall modules receive an explicit print-orientation parameter only where box geometry must differ. They must not inspect the global `view` value. Standalone wall calls retain their current geometry by default; `box` passes the box orientation explicitly.
 
 The support-free threshold is a surface rising at least 30 degrees above horizontal. Point-up regular-hex roof facets satisfy this threshold.
 
@@ -29,26 +29,25 @@ All top and bottom nut entries point 45 degrees from inward toward the box cente
 
 This same geometry has a manufacturing benefit for standalone walls: the 45-degree center-facing path combines wall-local X and +Z, so its rectangular tunnel rises 45 degrees above the build plane and is support-free.
 
-The nut clearance core is rectangular and sized from the existing M3 nut dimensions and clearances. Only the print-facing roof is added:
+Standalone walls preserve the existing point-up hexagonal nut pocket, detents, and support-free geometry. Only the rectangular entry channel and its throat turn 45 degrees; the nut pocket itself does not rotate or change shape.
 
-- flat-wall orientation uses a point-up roof in wall-local +Z;
-- box orientation uses a point-up roof in wall-local +Y/global +Z.
+In box orientation, the nut clearance core is rectangular and sized from the existing M3 nut dimensions and clearances. Its print-facing roof points in wall-local +Y/global +Z.
 
 The roof is the upper, support-relevant portion of a point-up regular hex: vertical clearance walls below and the two 30-degree rising facets meeting at the ridge. It does not add lower hexagonal facets to the nut clearance core.
 
-In flat-wall orientation, the rising 45-degree entry does not need a second longitudinal roof. In box orientation, the entry is horizontal in assembled XY and receives the same global-up roof as the pocket. Existing nut-entry detents remain, transformed with the complete pocket and entry so their retention behavior follows the new access direction.
+In flat-wall orientation, the rising 45-degree entry does not need a second longitudinal roof. In box orientation, the entry is horizontal in assembled XY and receives the same global-up roof as the pocket. Existing nut-entry detents turn with the entry and throat so retention remains at the mouth of the new access path.
 
 ## Corner screw bores
 
-Standalone wall screw bores are horizontal. They use a circular clearance region with a point-up support-free roof in wall-local +Z.
+Standalone wall screw bores remain exactly as implemented: horizontal circular clearance regions with the existing point-up support-free roof in wall-local +Z.
 
 Box corner screw bores are vertical. They remain true round M3 clearance bores; no pointed roof is applied. The bore choice follows the explicit print-orientation parameter and does not change the screw axis or nominal clearance diameter.
 
 ## Wall ribs
 
-Rectangular rib projections are replaced with support-aware profiles built by one shared rib helper. The helper selects a smooth or faceted profile from the explicit print orientation; it does not duplicate rib placement loops.
+Standalone wall ribs change from rectangular projections to smooth semicylinders. Their flat diameter lies on the face-up wall, so successive layers recede without requiring support.
 
-For standalone walls, every rib grows from the wall face toward wall-local +Z with a smooth semicylindrical cross-section. Its flat diameter lies on the wall face, so successive layers recede rather than creating an unsupported underside. Both vertical and horizontal assembled ribs lie in the build plane in this manufacturing view.
+Box ribs use support-aware profiles selected inside the existing placement module; rib loops are not duplicated.
 
 For `box`:
 
