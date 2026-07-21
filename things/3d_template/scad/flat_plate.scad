@@ -2,6 +2,18 @@ render_fn = 96;
 $fn = render_fn;
 view = "assembly"; // [assembly, plate]
 
+/* generate.json
+{
+  "default_preset": "all-views-default",
+  "presets": {
+    "all-views-default": {
+      "description": "Generate every declared flat-plate view",
+      "items": ["view:assembly", "view:plate"]
+    }
+  }
+}
+*/
+
 revision_string = "dev";
 
 plate_w = 100;

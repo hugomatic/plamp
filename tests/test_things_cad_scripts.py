@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from plamp.cad_metadata import parse_cad_document
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,6 +62,21 @@ printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_versioned_scad_sources_embed_generation_metadata(self):
+        paths = (
+            "things/plamp8/plamp8.scad",
+            "things/plamp_stand/plamp_stand.scad",
+            "things/iharvest_cover/iharvest_cover.scad",
+            "things/3d_template/cad.scad",
+            "things/3d_template/scad/flat_plate.scad",
+            "things/3d_template/scad/positive_negative.scad",
+        )
+
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                document = parse_cad_document(REPO_ROOT / relative_path)
+                self.assertTrue(document.metadata_snapshot)
+
     def make_wrapper_repo(self, tmp_path: Path, part_name: str, scad_source: str):
         repo = tmp_path / "repo"
         part = repo / "things" / part_name

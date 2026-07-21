@@ -1,5 +1,17 @@
 view = "assembly"; // [assembly, tripod, camera_clip, plate]
 
+/* generate.json
+{
+  "default_preset": "all-views-default",
+  "presets": {
+    "all-views-default": {
+      "description": "Generate every declared Plamp Stand view",
+      "items": ["view:assembly", "view:tripod", "view:camera_clip", "view:plate"]
+    }
+  }
+}
+*/
+
 letter_size = 7;
 revision_string = "1234567";
 
@@ -278,5 +290,4 @@ if (view == "assembly" || view == "plate") {
    camera_clip();
    translate([-5, -25, 0]) instrument_hook();
 }
-
 

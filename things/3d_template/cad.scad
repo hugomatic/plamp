@@ -2,6 +2,18 @@ render_fn = 64;
 $fn = render_fn;
 view = "assembly"; // [assembly, plate]
 
+/* generate.json
+{
+  "default_preset": "all-views-default",
+  "presets": {
+    "all-views-default": {
+      "description": "Generate every declared part view",
+      "items": ["view:assembly", "view:plate"]
+    }
+  }
+}
+*/
+
 letter_size = 6;
 revision_string = "1234567";
 

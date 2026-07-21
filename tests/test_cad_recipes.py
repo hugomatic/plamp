@@ -4,13 +4,21 @@ import sys
 import unittest
 from pathlib import Path
 
-from plamp.cad_metadata import CadDocument, PresetMetadata, ViewMetadata
+from plamp.cad_metadata import (
+    CadDocument,
+    PresetMetadata,
+    ViewMetadata,
+    parse_cad_document,
+)
 from plamp.cad_recipes import (
     Selection,
     build_render_plan,
     plan_as_dict,
     serialize_scad_value,
 )
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def document(
@@ -72,6 +80,87 @@ DOCUMENT_WITH_ALL_VARIABLE_SCOPES = document(
 
 
 class CadRecipeTests(unittest.TestCase):
+    def test_plamp8_recipe_catalog_matches_print_workflows(self):
+        document = parse_cad_document(REPO_ROOT / "things/plamp8/plamp8.scad")
+
+        self.assertEqual(document.default_preset, "split-box")
+        self.assertEqual(
+            tuple(document.presets),
+            (
+                "split-box",
+                "fuse-box",
+                "assembly",
+                "component-floorplans",
+                "top-panel-fit",
+                "corner-coupons",
+                "test-fit",
+            ),
+        )
+        self.assertEqual(set(document.view_metadata), set(document.views))
+        self.assertTrue(
+            all(metadata.description for metadata in document.view_metadata.values())
+        )
+        self.assertTrue(
+            all(preset.description for preset in document.presets.values())
+        )
+        expected = {
+            "split-box": (
+                "floor", "north_south_walls", "east_west_walls",
+                "top_panel", "sub_panel",
+            ),
+            "fuse-box": ("box", "top_panel", "sub_panel"),
+            "assembly": ("assembly",),
+            "component-floorplans": (
+                "relay_footprint", "psu_footprint", "converter_footprint",
+            ),
+            "top-panel-fit": (
+                "ac_duplex_channel", "dc_barrel_channel", "usb_c_panel", "c13_inlet",
+            ),
+            "corner-coupons": (
+                "panel_corner_fastener_test", "corner_coupon",
+                "wall_corner_fastener_assembly",
+            ),
+            "test-fit": (
+                "relay_footprint", "psu_footprint", "converter_footprint",
+                "ac_duplex_channel", "dc_barrel_channel", "usb_c_panel", "c13_inlet",
+                "panel_corner_fastener_test", "corner_coupon",
+                "wall_corner_fastener_assembly",
+            ),
+        }
+        for preset, view_names in expected.items():
+            with self.subTest(preset=preset):
+                plan = build_render_plan(
+                    document, Selection(preset=preset), source_identity="test"
+                )
+                self.assertEqual(tuple(job.view for job in plan.jobs), view_names)
+
+        self.assertEqual(
+            document.presets["test-fit"].items,
+            (
+                "preset:component-floorplans",
+                "preset:top-panel-fit",
+                "preset:corner-coupons",
+            ),
+        )
+        self.assertEqual(
+            len(build_render_plan(document, Selection(preset="all-views"), "test").jobs),
+            len(document.views),
+        )
+        self.assertEqual(
+            len(build_render_plan(document, Selection(preset="all-presets"), "test").jobs),
+            17,
+        )
+
+    def test_existing_parts_default_to_all_declared_views(self):
+        for relative_path in (
+            "things/plamp_stand/plamp_stand.scad",
+            "things/iharvest_cover/iharvest_cover.scad",
+        ):
+            with self.subTest(path=relative_path):
+                document = parse_cad_document(REPO_ROOT / relative_path)
+                plan = build_render_plan(document, Selection(), source_identity="test")
+                self.assertEqual(tuple(job.view for job in plan.jobs), document.views)
+
     def test_nested_presets_expand_depth_first_in_declared_item_order(self):
         source = document(
             presets={
