@@ -26,6 +26,8 @@ show_top_panel = true;
 
 // Use point-up hexagonal vents when printing the fused box floor-down.
 box_coarse_vents = true;
+// Give fused wall mitres a microscopic overlap so the exported mesh is manifold.
+box_wall_mitre_overlap = 0.02;
 
 
 /* [box features] */
@@ -1705,30 +1707,30 @@ module mitred_wall_segment(l = corner_coupon_wall_l, h = corner_coupon_wall_h) {
     );
 }
 
-module wall_mitre_negative(length, h = wall_z_height) {
+module wall_mitre_negative(length, h = wall_z_height, mitre_overlap = 0) {
     translate([0, h + 0.1, 0])
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [-0.1, -0.1],
-                    [wall_t + 0.1, wall_t + 0.1],
-                    [-0.1, wall_t + 0.1]
+                    [-0.1 - mitre_overlap, -0.1],
+                    [wall_t + 0.1 - mitre_overlap, wall_t + 0.1],
+                    [-0.1 - mitre_overlap, wall_t + 0.1]
                 ]);
 
     translate([0, h + 0.1, 0])
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [length + 0.1, -0.1],
-                    [length + 0.1, wall_t + 0.1],
-                    [length - wall_t - 0.1, wall_t + 0.1]
+                    [length + 0.1 + mitre_overlap, -0.1],
+                    [length + 0.1 + mitre_overlap, wall_t + 0.1],
+                    [length - wall_t - 0.1 + mitre_overlap, wall_t + 0.1]
                 ]);
 }
 
-module wall_body_positive(length, h = wall_z_height) {
+module wall_body_positive(length, h = wall_z_height, mitre_overlap = 0) {
     difference() {
         cube([length, h, wall_t]);
-        wall_mitre_negative(length, h);
+        wall_mitre_negative(length, h, mitre_overlap);
     }
 }
 
@@ -1869,11 +1871,12 @@ module flat_wall(
     nut_owner = false,
     vent_mode = "none",
     h = wall_z_height,
-    coarse_vents = false
+    coarse_vents = false,
+    mitre_overlap = 0
 ) {
     difference() {
         union() {
-            wall_body_positive(length, h);
+            wall_body_positive(length, h, mitre_overlap);
             wall_corner_tabs(length, h, nut_owner);
             wall_stiffening_ribs(length, h, vent_mode);
         }
@@ -1884,7 +1887,7 @@ module flat_wall(
     }
 }
 
-module south_wall_context(coarse_vents = false) {
+module south_wall_context(coarse_vents = false, mitre_overlap = 0) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1892,10 +1895,13 @@ module south_wall_context(coarse_vents = false) {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            south_wall(coarse_vents = coarse_vents);
+            south_wall(
+                coarse_vents = coarse_vents,
+                mitre_overlap = mitre_overlap
+            );
 }
 
-module north_wall_context(coarse_vents = false) {
+module north_wall_context(coarse_vents = false, mitre_overlap = 0) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1903,10 +1909,13 @@ module north_wall_context(coarse_vents = false) {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            north_wall(coarse_vents = coarse_vents);
+            north_wall(
+                coarse_vents = coarse_vents,
+                mitre_overlap = mitre_overlap
+            );
 }
 
-module west_wall_context(coarse_vents = false) {
+module west_wall_context(coarse_vents = false, mitre_overlap = 0) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, 1, 0],
@@ -1914,10 +1923,13 @@ module west_wall_context(coarse_vents = false) {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            west_wall(coarse_vents = coarse_vents);
+            west_wall(
+                coarse_vents = coarse_vents,
+                mitre_overlap = mitre_overlap
+            );
 }
 
-module east_wall_context(coarse_vents = false) {
+module east_wall_context(coarse_vents = false, mitre_overlap = 0) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, -1, box_w],
@@ -1925,46 +1937,53 @@ module east_wall_context(coarse_vents = false) {
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
-            east_wall(coarse_vents = coarse_vents);
+            east_wall(
+                coarse_vents = coarse_vents,
+                mitre_overlap = mitre_overlap
+            );
 }
 
-module north_wall(coarse_vents = false) {
+module north_wall(coarse_vents = false, mitre_overlap = 0) {
     flat_wall(
         box_w,
         wall_name = "NORTH",
         nut_owner = true,
         vent_mode = "half",
-        coarse_vents = coarse_vents
+        coarse_vents = coarse_vents,
+        mitre_overlap = mitre_overlap
     );
 }
 
-module south_wall(coarse_vents = false) {
+module south_wall(coarse_vents = false, mitre_overlap = 0) {
     flat_wall(
         box_w,
         wall_name = "SOUTH",
         nut_owner = true,
         vent_mode = "half",
-        coarse_vents = coarse_vents
+        coarse_vents = coarse_vents,
+        mitre_overlap = mitre_overlap
     );
 }
 
-module west_wall(coarse_vents = false) {
+module west_wall(coarse_vents = false, mitre_overlap = 0) {
     flat_wall(
         box_d,
         wall_name = "WEST",
         nut_owner = false,
         vent_mode = "none",
-        coarse_vents = coarse_vents
+        coarse_vents = coarse_vents,
+        mitre_overlap = mitre_overlap
     );
 }
 
-module east_wall(coarse_vents = false) {
+module east_wall(coarse_vents = false, mitre_overlap = 0) {
     flat_wall(
         box_d,
         wall_name = "EAST",
         nut_owner = false,
         vent_mode = "full",
-        coarse_vents = coarse_vents
+        coarse_vents = coarse_vents,
+        mitre_overlap = mitre_overlap
     );
 }
 
@@ -2234,10 +2253,22 @@ module relay_footprint() {
 module box() {
     echo_hardware(true, true, true, true);
     union() {
-        north_wall_context(coarse_vents = box_coarse_vents);
-        south_wall_context(coarse_vents = box_coarse_vents);
-        west_wall_context(coarse_vents = box_coarse_vents);
-        east_wall_context(coarse_vents = box_coarse_vents);
+        north_wall_context(
+            coarse_vents = box_coarse_vents,
+            mitre_overlap = box_wall_mitre_overlap
+        );
+        south_wall_context(
+            coarse_vents = box_coarse_vents,
+            mitre_overlap = box_wall_mitre_overlap
+        );
+        west_wall_context(
+            coarse_vents = box_coarse_vents,
+            mitre_overlap = box_wall_mitre_overlap
+        );
+        east_wall_context(
+            coarse_vents = box_coarse_vents,
+            mitre_overlap = box_wall_mitre_overlap
+        );
         floor_context();
     }
 }

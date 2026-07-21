@@ -196,8 +196,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for name in ("north_wall", "south_wall", "west_wall", "east_wall"):
             self.assertIn(name, view_line)
-            self.assertIn(f"module {name}_context(coarse_vents = false)", source)
-            self.assertIn(f"module {name}(coarse_vents = false)", source)
+            self.assertIn(
+                f"module {name}_context(coarse_vents = false, mitre_overlap = 0)",
+                source,
+            )
+            self.assertIn(
+                f"module {name}(coarse_vents = false, mitre_overlap = 0)",
+                source,
+            )
             self.assertIn(f'view == "{name}"', source)
         self.assertNotIn(" walls,", view_line)
         self.assertNotIn('view == "walls"', source)
@@ -259,9 +265,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertEqual(source.count("for (x = vent_xs, y = vent_ys)"), 1)
 
         for wall in ("north", "south", "west", "east"):
-            self.assertIn(f"module {wall}_wall(coarse_vents = false)", source)
             self.assertIn(
-                f"module {wall}_wall_context(coarse_vents = false)", source
+                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)",
+                source,
+            )
+            self.assertIn(
+                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)",
+                source,
             )
 
     def test_plamp8_box_view_reuses_complete_wall_and_floor_geometry(self):
@@ -278,7 +288,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for wall in ("north", "south", "west", "east"):
             self.assertIn(
-                f"{wall}_wall_context(coarse_vents = box_coarse_vents);",
+                f"{wall}_wall_context(",
+                box_module,
+            )
+            self.assertIn(
+                "mitre_overlap = box_wall_mitre_overlap",
                 box_module,
             )
         self.assertIn("floor_context();", box_module)
@@ -293,6 +307,27 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("floor_locator_lands();", source)
         self.assertIn("floor_locator_keys();", source)
         self.assertIn("floor_locator_notches(length);", source)
+
+    def test_plamp8_box_uses_box_only_mitre_overlap(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("box_wall_mitre_overlap = 0.02;", source)
+        mitre_module = source.split("module wall_mitre_negative", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("mitre_overlap = 0", mitre_module)
+        self.assertIn("- mitre_overlap", mitre_module)
+        self.assertIn("+ mitre_overlap", mitre_module)
+
+        for wall in ("north", "south", "west", "east"):
+            self.assertIn(
+                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)",
+                source,
+            )
+            self.assertIn(
+                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)",
+                source,
+            )
 
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -328,9 +363,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("wall_assembly_name_negative(length, wall_name);", flat_wall)
 
         for wall in ("north", "south", "east", "west"):
-            wall_signature = f"module {wall}_wall(coarse_vents = false)"
+            wall_signature = (
+                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)"
+            )
             context_signature = (
-                f"module {wall}_wall_context(coarse_vents = false)"
+                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)"
             )
             self.assertIn(wall_signature, source)
             self.assertIn(context_signature, source)
@@ -342,9 +379,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             context_module = source.split(context_signature, 1)[1].split(
                 "module ", 1
             )[0]
-            self.assertIn(
-                f"{wall}_wall(coarse_vents = coarse_vents);", context_module
-            )
+            self.assertIn("coarse_vents = coarse_vents", context_module)
+            self.assertIn("mitre_overlap = mitre_overlap", context_module)
 
     def test_plamp8_floor_has_matching_oriented_compass_names(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
