@@ -313,6 +313,11 @@ sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
 sub_panel_revision_depth = 0.6;
+sub_panel_usb_support_rib_w = 10;
+sub_panel_usb_support_rib_h = sub_panel_h - sub_panel_base_h;
+sub_panel_usb_support_rib_gap = 1;
+sub_panel_revision_clearance = 1;
+sub_panel_revision_font = 4;
 top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t;
 bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
@@ -342,6 +347,13 @@ echo(str("M3x30 extra enclosed travel: ",
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
 usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
 usb_c_panel_y = 14;
+sub_panel_usb_support_rib_y =
+    usb_c_panel_y - sub_panel_usb_c_cutout_h / 2
+    - sub_panel_usb_support_rib_gap
+    - sub_panel_usb_support_rib_w / 2;
+sub_panel_revision_y =
+    sub_panel_usb_support_rib_y - sub_panel_usb_support_rib_w / 2
+    - sub_panel_revision_clearance - sub_panel_revision_font / 2;
 c13_panel_x = outlet_right_x - c13_group_w / 2;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
@@ -394,7 +406,7 @@ top_panel_brand_y_offset = 19;
 box_revision_font = 6;
 letter_size = 6;
 write_t = 0.75;
-revision_string = "dev";
+revision_string = "revision";
 
 dc_devices = ["PH Up", "PH Down", "Agitator", "Nutrients"];
 dc_details = ["CH1 GP21 12V DC", "CH2 GP20 12V DC", "CH3 GP19 12V DC", "CH4 GP18 12V DC"];
@@ -547,6 +559,20 @@ module outlet_cover_negative(include_revision = true) {
             round_hull(outlet_group_w, outlet_group_h, hr, hh);
 }
 
+module sub_panel_usb_support_rib_positive() {
+    translate([
+        sub_panel_wall,
+        layout_offset_y + sub_panel_usb_support_rib_y
+            - sub_panel_usb_support_rib_w / 2,
+        sub_panel_base_h
+    ])
+        cube([
+            top_panel_w - 2 * sub_panel_wall,
+            sub_panel_usb_support_rib_w,
+            sub_panel_usb_support_rib_h
+        ]);
+}
+
 module sub_panel_8ch_positive() {
     base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
@@ -563,6 +589,8 @@ module sub_panel_8ch_positive() {
             translate([top_panel_w - sub_panel_wall, sub_panel_wall, 0])
                 cube([sub_panel_wall, top_panel_h - 2 * sub_panel_wall, lip_h]);
         }
+
+        sub_panel_usb_support_rib_positive();
     }
 }
 
@@ -652,8 +680,12 @@ module sub_panel_8ch_negative() {
 
     panel_corner_screw_holes();
 
-    translate([revision_x, revision_y, sub_panel_base_h])
-        write_text(revision_string, 4, -sub_panel_revision_depth);
+    translate([revision_x, sub_panel_revision_y, sub_panel_base_h])
+        write_text(
+            revision_string,
+            sub_panel_revision_font,
+            -sub_panel_revision_depth
+        );
 
     sub_panel_back_labels_negative();
 }

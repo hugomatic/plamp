@@ -614,6 +614,41 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("mirror([1, 0, 0])", source)
         self.assertIn("sub_panel_back_labels_negative();", source)
 
+    def test_plamp8_sub_panel_has_full_width_usb_support_rib(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        self.assertIn("module sub_panel_usb_support_rib_positive", source)
+        rib = source.split("module sub_panel_usb_support_rib_positive", 1)[1].split(
+            "module ", 1
+        )[0]
+
+        self.assertIn("sub_panel_usb_support_rib_w = 10;", source)
+        self.assertIn(
+            "sub_panel_usb_support_rib_h = sub_panel_h - sub_panel_base_h;", source
+        )
+        self.assertIn("sub_panel_usb_support_rib_gap = 1;", source)
+        self.assertRegex(
+            source,
+            r"sub_panel_usb_support_rib_y\s*=\s*"
+            r"usb_c_panel_y - sub_panel_usb_c_cutout_h / 2\s*"
+            r"- sub_panel_usb_support_rib_gap\s*"
+            r"- sub_panel_usb_support_rib_w / 2;",
+        )
+        self.assertIn("sub_panel_wall,", rib)
+        self.assertIn("top_panel_w - 2 * sub_panel_wall,", rib)
+        self.assertIn("sub_panel_base_h", rib)
+        self.assertIn("sub_panel_usb_support_rib_h", rib)
+        self.assertIn("sub_panel_usb_support_rib_positive();", source)
+
+    def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn('revision_string = "revision";', source)
+        self.assertIn("sub_panel_revision_clearance = 1;", source)
+        self.assertIn(
+            "translate([revision_x, sub_panel_revision_y, sub_panel_base_h])",
+            source,
+        )
+
     def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -624,9 +659,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
             r"module sub_panel_left_xt60_nut_clearances_negative\(\) \{[\s\S]*?for \(i = \[0, 2\]\)[\s\S]*?dc_channel_x\(i\) \+ dc_connector_x\(\) - xt60_screw_spacing / 2[\s\S]*?sub_panel_base_h[\s\S]*?cylinder\([\s\S]*?h = sub_panel_h - sub_panel_base_h \+ 0\.1,[\s\S]*?d = xt60_nut_clearance_d",
         )
         self.assertIn("sub_panel_left_xt60_nut_clearances_negative();", source)
-        self.assertIn(
-            "write_text(revision_string, 4, -sub_panel_revision_depth);",
+        self.assertRegex(
             source,
+            r"write_text\(\s*revision_string,\s*sub_panel_revision_font,\s*"
+            r"-sub_panel_revision_depth\s*\);",
         )
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
