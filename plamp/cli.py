@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from plamp.camera import CameraError, capture_camera
+from plamp.cad_cli import add_cad_parser, run_cad_command
+from plamp.cad_generation import generate_plan, list_runs, load_job_log, load_run
 from plamp.config import ConfigError, controller_pico_serial, load_config, save_config
 from plamp.context import resolve_context
 from plamp.locks import LockTimeout
@@ -40,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     areas = parser.add_subparsers(dest="area", required=True)
+    add_cad_parser(areas)
     areas.add_parser("context")
     config = areas.add_parser("config")
     config_actions = config.add_subparsers(dest="action", required=True)
@@ -79,9 +82,27 @@ def main(
     camera_capture_func: Callable[..., dict[str, Any]] = capture_camera,
     configure_func: Callable[..., dict[str, Any]] = configure_scheduler,
     upgrade_func: Callable[..., dict[str, Any]] = upgrade_scheduler,
+    cad_generate_func: Callable[..., Any] = generate_plan,
+    cad_list_runs_func: Callable[..., Any] = list_runs,
+    cad_load_run_func: Callable[..., Any] = load_run,
+    cad_load_log_func: Callable[..., Any] = load_job_log,
 ) -> int:
     args = build_parser().parse_args(argv)
     context = resolve_context(env=env)
+    if args.area == "cad":
+        return run_cad_command(
+            args,
+            context,
+            stdin,
+            stdout,
+            stderr,
+            {
+                "generate": cad_generate_func,
+                "list_runs": cad_list_runs_func,
+                "load_run": cad_load_run_func,
+                "load_job_log": cad_load_log_func,
+            },
+        )
     lock_dir = args.lock_dir or context.lock_dir
     try:
         if args.area == "context":

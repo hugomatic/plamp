@@ -318,6 +318,13 @@ class DirectCliTests(unittest.TestCase):
         self.assertIn("configure", stdout.getvalue())
         self.assertIn("upgrade", stdout.getvalue())
 
+    def test_root_help_lists_local_cad_commands(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
+            main(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("cad", stdout.getvalue())
+
     def test_camera_capture_calls_shared_library_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
