@@ -442,7 +442,7 @@ git rev-parse HEAD
 git rev-parse origin/feature/plamp8-box
 ```
 
-Expected: 18 tests PASS; diff/status output is empty; local and remote full hashes match.
+Expected: 19 tests PASS; diff/status output is empty; local and remote full hashes match.
 
 - [ ] **Step 2: Render only the committed default coarse-vent box**
 
@@ -465,11 +465,11 @@ test -s "/tmp/plamp8-box-${plamp8_box_commit}/plamp8_box_${plamp8_box_commit}.st
 ! rg -n "WARNING:|ERROR:|Current top level object is empty" \
   "/tmp/plamp8-box-${plamp8_box_commit}/readme.md"
 rg -n "Simple:[[:space:]]+yes" "/tmp/plamp8-box-${plamp8_box_commit}/readme.md"
-rg -n "Volumes:[[:space:]]+1" "/tmp/plamp8-box-${plamp8_box_commit}/readme.md"
+rg -n "Volumes:[[:space:]]+2" "/tmp/plamp8-box-${plamp8_box_commit}/readme.md"
 ```
 
-Expected: the STL is non-empty; no warning/error match; the log reports `Simple: yes` and `Volumes: 1`.
+Expected: the STL is non-empty; no warning/error match; the log reports `Simple: yes` and `Volumes: 2`. OpenSCAD's Nef-polyhedron report counts the exterior volume plus the single bounded solid, so `Volumes: 2` is the normal result for one connected printable part.
 
 - [ ] **Step 4: Report the review checkpoint**
 
-Report the pushed commit, 18/18 passing CAD tests, exact STL path, OpenSCAD simplicity/connectivity result, and that the full assembly was not rendered. If `Volumes` is not 1, stop and diagnose the existing mating faces before proposing any geometry change.
+Report the pushed commit, 19/19 passing CAD tests, exact STL path, OpenSCAD simplicity/connectivity result, and that the full assembly was not rendered. If `Simple` is not `yes`, warnings appear, or `Volumes` is not 2, stop and diagnose the existing mating faces before proposing any geometry change.
