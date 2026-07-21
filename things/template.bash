@@ -4,6 +4,8 @@ set -euo pipefail
 name="$0"
 part=""
 template="cad"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+template_root="$script_dir/3d_template"
 
 usage() {
   cat <<EOF
@@ -21,7 +23,7 @@ EOF
 }
 
 list_templates() {
-  local template_dir="./3d_template/scad"
+  local template_dir="$template_root/scad"
   local template_file
   if [[ -d "$template_dir" ]]; then
     for template_file in "$template_dir"/*.scad; do
@@ -29,7 +31,7 @@ list_templates() {
       printf '  %s\n' "$(basename "$template_file" .scad)"
     done | sort
   fi
-  [[ -f ./3d_template/cad.scad ]] && printf '  cad\n'
+  [[ -f "$template_root/cad.scad" ]] && printf '  cad\n'
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -78,9 +80,9 @@ if [[ ! "$template" =~ ^[A-Za-z0-9_-]+$ ]]; then
   exit 2
 fi
 
-template_path="./3d_template/scad/${template}.scad"
+template_path="$template_root/scad/${template}.scad"
 if [[ "$template" == "cad" && ! -f "$template_path" ]]; then
-  template_path="./3d_template/cad.scad"
+  template_path="$template_root/cad.scad"
 fi
 
 if [[ ! -f "$template_path" ]]; then
@@ -99,7 +101,7 @@ echo "Creating new OpenSCAD part: $part"
 echo "Template: $template"
 
 mkdir "$part"
-cp ./3d_template/generate.bash "./$part/generate.bash"
+cp "$template_root/generate.bash" "./$part/generate.bash"
 cp "$template_path" "./$part/$part.scad"
 sed -i -e "s/__cad__name__/$part/g" "./$part/generate.bash"
 rm -f "./$part/generate.bash-e"

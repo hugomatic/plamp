@@ -86,13 +86,28 @@ strace -f -e trace=file ./plampctl status
 
 ## OpenSCAD on a Pi
 
-Use a part's generator so revision engraving and source selection remain
-reproducible:
+Use the local Plamp CAD commands so validation, revision engraving, source
+selection, manifests, and logs all follow the same reproducible path:
 
 ```bash
-cd things/plamp8
-./generate.bash --preview --view sub_panel prints/plamp8_preview
+plamp cad validate plamp8
+plamp cad plan plamp8 --view sub_panel
+plamp cad generate plamp8 --view sub_panel --output prints/plamp8_sub_panel
 ```
+
+The scripts beside existing parts are compatibility shortcuts. They delegate
+to `plamp cad generate`, so older positional output and commit invocations still
+work:
+
+```bash
+things/plamp8/generate.bash --view sub_panel prints/plamp8_sub_panel
+things/plamp8/generate.bash --box prints/plamp8_fuse_box
+things/plamp8/generate.bash --preview --view sub_panel prints/plamp8_preview HEAD
+```
+
+Use `--revision LABEL` when intentionally rendering uncommitted part changes.
+The legacy `--preview` shortcut disables rendered text and sets `render_fn=24`;
+repeatable `--define`/`-D` arguments can override those defaults.
 
 OpenSCAD CGAL rendering is CPU- and memory-heavy on a Raspberry Pi. Headless
 STL generation works, but complex parts can be slow. Graphical image previews

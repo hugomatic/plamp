@@ -41,7 +41,9 @@ class CadSelectionCancelled(ValueError):
 def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--preset", action="append", metavar="NAME")
     parser.add_argument("--view", action="append", default=[], metavar="NAME")
-    parser.add_argument("--define", action="append", default=[], metavar="NAME=EXPR")
+    parser.add_argument(
+        "--define", "-D", action="append", default=[], metavar="NAME=EXPR"
+    )
     parser.add_argument(
         "--view-define", action="append", default=[], metavar="VIEW:NAME=EXPR"
     )
@@ -80,9 +82,22 @@ def add_cad_parser(
     generate = actions.add_parser("generate")
     generate.add_argument("part")
     _selection_arguments(generate)
+    generate.add_argument(
+        "--preview",
+        action="store_true",
+        help="disable rendered text and use render_fn=24",
+    )
     generate.add_argument("--output", type=Path)
     generate.add_argument("--openscad", default="openscad")
     generate.add_argument("--json", action="store_true")
+    generate.add_argument("legacy_output", nargs="?", metavar="target_directory")
+    generate.add_argument("legacy_commit", nargs="?", metavar="commit")
+    generate.add_argument(
+        "--legacy-output", dest="legacy_output", type=Path, help=argparse.SUPPRESS
+    )
+    generate.add_argument(
+        "--legacy-commit", dest="legacy_commit", help=argparse.SUPPRESS
+    )
 
     runs = actions.add_parser("runs")
     runs.add_argument("part", nargs="?")
@@ -209,12 +224,32 @@ def _selection(
         preset=preset_values[0] if preset_values else None,
         views=tuple(getattr(args, "view", []) or []),
     )
+    raw_defines = []
+    if getattr(args, "preview", False):
+        raw_defines.extend(("render_text=false", "render_fn=24"))
+    raw_defines.extend(getattr(args, "define", []) or [])
     return Selection(
         preset=base.preset,
         views=base.views,
-        raw_defines=tuple(getattr(args, "define", []) or []),
+        raw_defines=tuple(raw_defines),
         raw_view_defines=raw_view_defines,
     )
+
+
+def _generation_revision(args: argparse.Namespace) -> str | None:
+    revision = getattr(args, "revision", None)
+    legacy_commit = getattr(args, "legacy_commit", None)
+    if revision is not None and legacy_commit is not None:
+        raise ValueError("commit positional argument cannot be combined with --revision")
+    return legacy_commit if legacy_commit is not None else revision
+
+
+def _generation_output(args: argparse.Namespace) -> Path | None:
+    output = getattr(args, "output", None)
+    legacy_output = getattr(args, "legacy_output", None)
+    if output is not None and legacy_output is not None:
+        raise ValueError("target_directory positional argument cannot be combined with --output")
+    return Path(legacy_output) if legacy_output is not None else output
 
 
 def _with_plan(
@@ -226,7 +261,20 @@ def _with_plan(
     allow_dirty: bool = False,
 ) -> tuple[Path, Any, Any]:
     source = deps["resolve_part"](args.part, context.root)
-    revision = getattr(args, "revision", None)
+    legacy_commit = getattr(args, "legacy_commit", None)
+    if (
+        getattr(args, "action", None) == "generate"
+        and legacy_commit is not None
+        and getattr(args, "revision", None) is None
+    ):
+        probe = deps["prepare_source"](context.root, source, None)
+        if probe.cleanup_root is not None:
+            shutil.rmtree(probe.cleanup_root, ignore_errors=True)
+    revision = (
+        _generation_revision(args)
+        if getattr(args, "action", None) == "generate"
+        else getattr(args, "revision", None)
+    )
     if allow_dirty and revision is None:
         revision = "working-tree-plan"
     snapshot = deps["prepare_source"](context.root, source, revision)
@@ -431,9 +479,9 @@ def _generate(
             repo_root=context.root,
             data_dir=context.data_dir,
             scad_path=source,
-            output=getattr(args, "output", None),
+            output=_generation_output(args),
             openscad=getattr(args, "openscad", "openscad"),
-            revision=getattr(args, "revision", None),
+            revision=_generation_revision(args),
             metadata=document.metadata_snapshot,
             stdout=stream,
             stderr=stderr,

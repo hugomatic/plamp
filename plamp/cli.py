@@ -22,6 +22,69 @@ from plamp.scheduler_state import normalize_scheduler_state
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _normalize_cad_generate_legacy_args(argv: Sequence[str]) -> list[str]:
+    """Translate legacy trailing output/commit values into named CLI options."""
+
+    values = list(argv)
+    try:
+        cad_index = values.index("cad")
+    except ValueError:
+        return values
+    if values[cad_index : cad_index + 2] != ["cad", "generate"]:
+        return values
+
+    start = cad_index + 2
+    options_with_values = {
+        "--preset",
+        "--view",
+        "--define",
+        "-D",
+        "--view-define",
+        "--revision",
+        "--output",
+        "--openscad",
+    }
+    part_seen = False
+    positional_indexes: list[int] = []
+    index = start
+    while index < len(values):
+        value = values[index]
+        if value in options_with_values:
+            index += 2
+            continue
+        if value == "--":
+            for remaining in range(index + 1, len(values)):
+                if not part_seen:
+                    part_seen = True
+                else:
+                    positional_indexes.append(remaining)
+            break
+        if value.startswith("-"):
+            index += 1
+            continue
+        if not part_seen:
+            part_seen = True
+        else:
+            positional_indexes.append(index)
+        index += 1
+
+    if not positional_indexes:
+        return values
+    if len(positional_indexes) > 2:
+        return values
+    legacy = [values[index] for index in positional_indexes]
+    positional_set = set(positional_indexes)
+    normalized = [
+        value
+        for index, value in enumerate(values)
+        if index not in positional_set and not (value == "--" and index < positional_indexes[0])
+    ]
+    normalized.extend(("--legacy-output", legacy[0]))
+    if len(legacy) == 2:
+        normalized.extend(("--legacy-commit", legacy[1]))
+    return normalized
+
+
 def _non_negative_finite_timeout(value: str) -> float:
     timeout = float(value)
     if not math.isfinite(timeout) or timeout < 0:
@@ -87,7 +150,9 @@ def main(
     cad_load_run_func: Callable[..., Any] = load_run,
     cad_load_log_func: Callable[..., Any] = load_job_log,
 ) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = sys.argv[1:] if argv is None else argv
+    normalized_argv = _normalize_cad_generate_legacy_args(raw_argv)
+    args = build_parser().parse_args(normalized_argv)
     context = resolve_context(env=env)
     if args.area == "cad":
         return run_cad_command(
