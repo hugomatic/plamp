@@ -20,6 +20,7 @@ show_relay = true;
 show_top_outline = false;
 show_sub_panel = true;
 show_top_panel = true;
+assembly_preview_gap = $preview ? 0.01 : 0;
 
 
 /* [box view options] */
@@ -2313,7 +2314,7 @@ module mounted_sub_panel() {
 }
 
 module mounted_top_panel() {
-    translate([0, 0, -plate_t])
+    translate([0, 0, -plate_t + assembly_preview_gap])
         top_panel_8ch(true);
 }
 

@@ -349,6 +349,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
             box_module.count("print_orientation = box_print_orientation"), 4
         )
 
+    def test_plamp8_preview_separates_panels_only_in_preview(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("assembly_preview_gap = $preview ? 0.01 : 0;", source)
+        mounted = source.split("module mounted_top_panel", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn("-plate_t + assembly_preview_gap", mounted)
+
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
