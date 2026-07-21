@@ -18,7 +18,7 @@
 - Box screw bores are round and vertical.
 - Push every checkpoint before running OpenSCAD.
 - Never render the full assembly or commit generated artifacts.
-- Defer the fifth top-panel-to-sub-panel screw near Pump/Fan/Nutrients.
+- Defer additional center support; the later USB-rib design supersedes the proposed fifth screw.
 
 ---
 

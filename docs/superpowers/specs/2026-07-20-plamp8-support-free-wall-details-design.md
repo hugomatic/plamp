@@ -111,4 +111,4 @@ Changes are committed and pushed before OpenSCAD runs. Verification renders only
 
 ## Deferred follow-up
 
-A separate next change will add the fifth central fastener through the top panel into a nut catch in the sub-panel near the Pump/Fan/Nutrients junction. It is intentionally outside this support-free wall-detail change.
+The initially proposed fifth central fastener was superseded by the full-width sub-panel USB support rib described in `2026-07-20-plamp8-subpanel-usb-rib-design.md`.
