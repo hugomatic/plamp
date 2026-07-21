@@ -228,6 +228,11 @@ psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
 wall_t = 3;
+flat_wall_print_orientation = "flat_wall";
+box_print_orientation = "box";
+corner_nut_entry_angle = 45;
+support_free_roof_angle = 30;
+boolean_shim = 0.01;
 panel_screw_inset = 4;
 corner_axis_inset = wall_t + panel_screw_inset;
 corner_fit_clearance = 0.25;
@@ -1532,6 +1537,24 @@ module support_free_horizontal_bore(length, d, axis_z = wall_t + panel_screw_ins
                 support_free_bore_profile(d);
 }
 
+module round_horizontal_bore(length, d, axis_z = wall_t + panel_screw_inset) {
+    translate([0, 0, axis_z])
+        rotate([90, 0, 0])
+            cylinder(h = length, d = d, center = true);
+}
+
+module corner_screw_bore(
+    length,
+    d,
+    print_orientation = flat_wall_print_orientation,
+    axis_z = wall_t + panel_screw_inset
+) {
+    if (print_orientation == box_print_orientation)
+        round_horizontal_bore(length, d, axis_z);
+    else
+        support_free_horizontal_bore(length, d, axis_z);
+}
+
 module corner_tab_boss_positive(length, center_y = 0) {
     intersection() {
         translate([0, center_y, wall_t + panel_screw_inset])
@@ -1596,10 +1619,87 @@ module corner_nut_retention_detents(
         ]);
 }
 
+module box_nut_roof_negative(width, length, y0, z0) {
+    roof_h = width / 2 * tan(support_free_roof_angle);
+
+    hull() {
+        translate([
+            -width / 2,
+            y0 - boolean_shim,
+            z0 - length / 2
+        ])
+            cube([width, 2 * boolean_shim, length]);
+        translate([
+            -boolean_shim / 2,
+            y0 + roof_h,
+            z0 - length / 2
+        ])
+            cube([boolean_shim, boolean_shim, length]);
+    }
+}
+
+module corner_nut_entry_negative(
+    nut_flat_w,
+    throat_w,
+    pocket_center_y,
+    detent_bottom_z,
+    axis_z,
+    print_orientation = flat_wall_print_orientation
+) {
+    entry_h = detent_bottom_z - corner_nut_detent_ramp_h - axis_z;
+
+    translate([0, 0, axis_z])
+        rotate([0, corner_nut_entry_angle, 0])
+            translate([0, 0, -axis_z]) {
+                translate([
+                    -nut_flat_w / 2,
+                    pocket_center_y - corner_nut_slot_l / 2,
+                    axis_z
+                ])
+                    cube([
+                        nut_flat_w,
+                        corner_nut_slot_l,
+                        entry_h
+                    ]);
+
+                if (print_orientation == box_print_orientation)
+                    box_nut_roof_negative(
+                        nut_flat_w,
+                        entry_h,
+                        pocket_center_y + corner_nut_slot_l / 2,
+                        axis_z + entry_h / 2
+                    );
+
+                corner_nut_retention_detents(
+                    nut_flat_w,
+                    throat_w,
+                    pocket_center_y,
+                    detent_bottom_z
+                );
+            }
+}
+
+module box_m3_nut_pocket_negative(nut_w, pocket_center_y, axis_z) {
+    translate([
+        -nut_w / 2,
+        pocket_center_y - corner_nut_slot_l / 2,
+        axis_z - nut_w / 2
+    ])
+        cube([nut_w, corner_nut_slot_l, nut_w]);
+
+    box_nut_roof_negative(
+        nut_w,
+        nut_w,
+        pocket_center_y + corner_nut_slot_l / 2,
+        axis_z
+    );
+}
+
 module support_free_m3_nut_trap(
     bearing_side = 1,
     pocket_offset_y = 0,
-    axis_z = wall_t + panel_screw_inset
+    axis_z = wall_t + panel_screw_inset,
+    print_orientation = flat_wall_print_orientation
 ) {
     nut_d = corner_nut_d + corner_nut_clearance;
     nut_flat_w = nut_d * cos(30);
@@ -1608,39 +1708,39 @@ module support_free_m3_nut_trap(
         + pocket_offset_y;
     detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
 
-    translate([0, pocket_center_y, axis_z])
-        rotate([0, 30, 0])
-            rotate([90, 0, 0])
-                cylinder(h = corner_nut_slot_l, d = nut_d, center = true, $fn = 6);
+    if (print_orientation == box_print_orientation)
+        box_m3_nut_pocket_negative(nut_d, pocket_center_y, axis_z);
+    else
+        translate([0, pocket_center_y, axis_z])
+            rotate([0, 30, 0])
+                rotate([90, 0, 0])
+                    cylinder(h = corner_nut_slot_l, d = nut_d, center = true, $fn = 6);
 
-    // The main entry is open toward the wall's Z-positive interior face.
-    translate([
-        -nut_flat_w / 2,
-        pocket_center_y - corner_nut_slot_l / 2,
-        axis_z
-    ])
-        cube([
-            nut_flat_w,
-            corner_nut_slot_l,
-            detent_bottom_z - corner_nut_detent_ramp_h - axis_z
-        ]);
-
-    corner_nut_retention_detents(
+    corner_nut_entry_negative(
         nut_flat_w,
         throat_w,
         pocket_center_y,
-        detent_bottom_z
+        detent_bottom_z,
+        axis_z,
+        print_orientation
     );
 }
 
-module corner_clearance_tab() {
+module corner_clearance_tab(print_orientation = flat_wall_print_orientation) {
     difference() {
         corner_tab_positive();
-        support_free_horizontal_bore(corner_tab_t + 0.2, corner_screw_d);
+        corner_screw_bore(
+            corner_tab_t + 0.2,
+            corner_screw_d,
+            print_orientation
+        );
     }
 }
 
-module corner_nut_tab_negatives(bearing_side = 1) {
+module corner_nut_tab_negatives(
+    bearing_side = 1,
+    print_orientation = flat_wall_print_orientation
+) {
     corner_nut_tab_length = corner_tab_t
         + corner_nut_retainer_t
         + corner_nut_tab_extension;
@@ -1649,20 +1749,25 @@ module corner_nut_tab_negatives(bearing_side = 1) {
     nut_offset_y = bearing_side < 0 ? bottom_corner_nut_offset : 0;
 
     translate([0, corner_nut_tab_bore_center_y, 0])
-        support_free_horizontal_bore(
+        corner_screw_bore(
             corner_nut_tab_length + 0.2,
-            corner_screw_d
+            corner_screw_d,
+            print_orientation
         );
     support_free_m3_nut_trap(
         bearing_side,
-        pocket_offset_y = nut_offset_y
+        pocket_offset_y = nut_offset_y,
+        print_orientation = print_orientation
     );
 }
 
-module corner_nut_tab(bearing_side = 1) {
+module corner_nut_tab(
+    bearing_side = 1,
+    print_orientation = flat_wall_print_orientation
+) {
     difference() {
         corner_nut_tab_positive(bearing_side);
-        corner_nut_tab_negatives(bearing_side);
+        corner_nut_tab_negatives(bearing_side, print_orientation);
     }
 }
 
@@ -1674,16 +1779,22 @@ function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_ta
 function corner_spine_y0() = bottom_nut_tab_center_y() - corner_tab_t / 2;
 function corner_spine_y1(h) = top_nut_tab_center_y(h) + corner_tab_t / 2;
 
-module corner_nut_spine(h) {
+module corner_nut_spine(h, print_orientation = flat_wall_print_orientation) {
     spine_y0 = corner_spine_y0();
     spine_l = corner_spine_y1(h) - spine_y0;
 
     difference() {
         corner_tab_boss_positive(spine_l, spine_y0 + spine_l / 2);
         translate([0, top_nut_tab_center_y(h), 0])
-            corner_nut_tab_negatives(bearing_side = 1);
+            corner_nut_tab_negatives(
+                bearing_side = 1,
+                print_orientation = print_orientation
+            );
         translate([0, bottom_nut_tab_center_y(), 0])
-            corner_nut_tab_negatives(bearing_side = -1);
+            corner_nut_tab_negatives(
+                bearing_side = -1,
+                print_orientation = print_orientation
+            );
     }
 }
 
@@ -1850,17 +1961,22 @@ module wall_end_feature(right = false, length = box_w) {
         children();
 }
 
-module wall_corner_tabs(length, h, nut_owner) {
+module wall_corner_tabs(
+    length,
+    h,
+    nut_owner,
+    print_orientation = flat_wall_print_orientation
+) {
     for (right = [false, true])
         wall_end_feature(right = right, length = length) {
             if (nut_owner)
                 translate([corner_axis_inset, 0, 0])
-                    corner_nut_spine(h);
+                    corner_nut_spine(h, print_orientation);
             else {
                 translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
-                    corner_clearance_tab();
+                    corner_clearance_tab(print_orientation);
                 translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
-                    corner_clearance_tab();
+                    corner_clearance_tab(print_orientation);
             }
         }
 }
@@ -1872,12 +1988,13 @@ module flat_wall(
     vent_mode = "none",
     h = wall_z_height,
     coarse_vents = false,
-    mitre_overlap = 0
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
 ) {
     difference() {
         union() {
             wall_body_positive(length, h, mitre_overlap);
-            wall_corner_tabs(length, h, nut_owner);
+            wall_corner_tabs(length, h, nut_owner, print_orientation);
             wall_stiffening_ribs(length, h, vent_mode);
         }
         floor_locator_notches(length);
@@ -1887,7 +2004,11 @@ module flat_wall(
     }
 }
 
-module south_wall_context(coarse_vents = false, mitre_overlap = 0) {
+module south_wall_context(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1897,11 +2018,16 @@ module south_wall_context(coarse_vents = false, mitre_overlap = 0) {
         ])
             south_wall(
                 coarse_vents = coarse_vents,
-                mitre_overlap = mitre_overlap
+                mitre_overlap = mitre_overlap,
+                print_orientation = print_orientation
             );
 }
 
-module north_wall_context(coarse_vents = false, mitre_overlap = 0) {
+module north_wall_context(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     color([0.15, 0.45, 0.9, 1])
         multmatrix([
             [1, 0, 0, 0],
@@ -1911,11 +2037,16 @@ module north_wall_context(coarse_vents = false, mitre_overlap = 0) {
         ])
             north_wall(
                 coarse_vents = coarse_vents,
-                mitre_overlap = mitre_overlap
+                mitre_overlap = mitre_overlap,
+                print_orientation = print_orientation
             );
 }
 
-module west_wall_context(coarse_vents = false, mitre_overlap = 0) {
+module west_wall_context(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, 1, 0],
@@ -1925,11 +2056,16 @@ module west_wall_context(coarse_vents = false, mitre_overlap = 0) {
         ])
             west_wall(
                 coarse_vents = coarse_vents,
-                mitre_overlap = mitre_overlap
+                mitre_overlap = mitre_overlap,
+                print_orientation = print_orientation
             );
 }
 
-module east_wall_context(coarse_vents = false, mitre_overlap = 0) {
+module east_wall_context(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     color([0.2, 0.75, 0.35, 1])
         multmatrix([
             [0, 0, -1, box_w],
@@ -1939,51 +2075,72 @@ module east_wall_context(coarse_vents = false, mitre_overlap = 0) {
         ])
             east_wall(
                 coarse_vents = coarse_vents,
-                mitre_overlap = mitre_overlap
+                mitre_overlap = mitre_overlap,
+                print_orientation = print_orientation
             );
 }
 
-module north_wall(coarse_vents = false, mitre_overlap = 0) {
+module north_wall(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     flat_wall(
         box_w,
         wall_name = "NORTH",
         nut_owner = true,
         vent_mode = "half",
         coarse_vents = coarse_vents,
-        mitre_overlap = mitre_overlap
+        mitre_overlap = mitre_overlap,
+        print_orientation = print_orientation
     );
 }
 
-module south_wall(coarse_vents = false, mitre_overlap = 0) {
+module south_wall(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     flat_wall(
         box_w,
         wall_name = "SOUTH",
         nut_owner = true,
         vent_mode = "half",
         coarse_vents = coarse_vents,
-        mitre_overlap = mitre_overlap
+        mitre_overlap = mitre_overlap,
+        print_orientation = print_orientation
     );
 }
 
-module west_wall(coarse_vents = false, mitre_overlap = 0) {
+module west_wall(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     flat_wall(
         box_d,
         wall_name = "WEST",
         nut_owner = false,
         vent_mode = "none",
         coarse_vents = coarse_vents,
-        mitre_overlap = mitre_overlap
+        mitre_overlap = mitre_overlap,
+        print_orientation = print_orientation
     );
 }
 
-module east_wall(coarse_vents = false, mitre_overlap = 0) {
+module east_wall(
+    coarse_vents = false,
+    mitre_overlap = 0,
+    print_orientation = flat_wall_print_orientation
+) {
     flat_wall(
         box_d,
         wall_name = "EAST",
         nut_owner = false,
         vent_mode = "full",
         coarse_vents = coarse_vents,
-        mitre_overlap = mitre_overlap
+        mitre_overlap = mitre_overlap,
+        print_orientation = print_orientation
     );
 }
 
@@ -2255,19 +2412,23 @@ module box() {
     union() {
         north_wall_context(
             coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap
+            mitre_overlap = box_wall_mitre_overlap,
+            print_orientation = box_print_orientation
         );
         south_wall_context(
             coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap
+            mitre_overlap = box_wall_mitre_overlap,
+            print_orientation = box_print_orientation
         );
         west_wall_context(
             coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap
+            mitre_overlap = box_wall_mitre_overlap,
+            print_orientation = box_print_orientation
         );
         east_wall_context(
             coarse_vents = box_coarse_vents,
-            mitre_overlap = box_wall_mitre_overlap
+            mitre_overlap = box_wall_mitre_overlap,
+            print_orientation = box_print_orientation
         );
         floor_context();
     }

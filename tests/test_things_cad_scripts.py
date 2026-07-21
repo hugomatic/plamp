@@ -112,25 +112,27 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("function corner_spine_y0()", source)
         self.assertIn("function corner_spine_y1(h)", source)
         self.assertIn("module corner_nut_tab_negatives", source)
-        self.assertIn("module corner_nut_spine(h)", source)
+        self.assertIn("module corner_nut_spine(h, print_orientation", source)
         self.assertIn(
             "corner_tab_boss_positive(spine_l, spine_y0 + spine_l / 2);",
             source,
         )
         self.assertEqual(source.count("corner_nut_tab_negatives("), 4)
-        self.assertIn("corner_nut_spine(h);", source)
+        self.assertIn("corner_nut_spine(h, print_orientation);", source)
         wall_tabs = source.split("module wall_corner_tabs", 1)[1].split(
             "module flat_wall", 1
         )[0]
         self.assertIn("if (nut_owner)", wall_tabs)
-        self.assertIn("corner_nut_spine(h);", wall_tabs)
-        self.assertEqual(wall_tabs.count("corner_clearance_tab();"), 2)
+        self.assertIn("corner_nut_spine(h, print_orientation);", wall_tabs)
+        self.assertEqual(
+            wall_tabs.count("corner_clearance_tab(print_orientation);"), 2
+        )
         self.assertIn("module support_free_m3_nut_trap", source)
         self.assertIn("module corner_nut_retention_detents", source)
-        nut_trap = source.split("module support_free_m3_nut_trap", 1)[1].split(
+        nut_entry = source.split("module corner_nut_entry_negative", 1)[1].split(
             "module ", 1
         )[0]
-        self.assertIn("corner_nut_retention_detents(", nut_trap)
+        self.assertIn("corner_nut_retention_detents(", nut_entry)
         self.assertIn("module corner_wall_coupon", source)
         self.assertIn("module corner_coupon", source)
         self.assertIn("module wall_corner_fastener_assembly", source)
@@ -197,11 +199,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for name in ("north_wall", "south_wall", "west_wall", "east_wall"):
             self.assertIn(name, view_line)
             self.assertIn(
-                f"module {name}_context(coarse_vents = false, mitre_overlap = 0)",
+                f"module {name}_context(",
                 source,
             )
             self.assertIn(
-                f"module {name}(coarse_vents = false, mitre_overlap = 0)",
+                f"module {name}(",
                 source,
             )
             self.assertIn(f'view == "{name}"', source)
@@ -266,11 +268,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for wall in ("north", "south", "west", "east"):
             self.assertIn(
-                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)",
+                f"module {wall}_wall(",
                 source,
             )
             self.assertIn(
-                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)",
+                f"module {wall}_wall_context(",
                 source,
             )
 
@@ -302,7 +304,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("floor_locator_", box_module)
         self.assertNotIn("floor_corner_fastener_holes", box_module)
 
-        self.assertIn("corner_nut_spine(h);", source)
+        self.assertIn("corner_nut_spine(h, print_orientation);", source)
         self.assertIn("floor_corner_fastener_holes();", source)
         self.assertIn("floor_locator_lands();", source)
         self.assertIn("floor_locator_keys();", source)
@@ -321,13 +323,31 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for wall in ("north", "south", "west", "east"):
             self.assertIn(
-                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)",
+                f"module {wall}_wall_context(",
                 source,
             )
             self.assertIn(
-                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)",
+                f"module {wall}_wall(",
                 source,
             )
+
+    def test_plamp8_corner_fasteners_follow_print_orientation(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn('flat_wall_print_orientation = "flat_wall";', source)
+        self.assertIn('box_print_orientation = "box";', source)
+        self.assertIn("corner_nut_entry_angle = 45;", source)
+        self.assertIn("module corner_screw_bore(", source)
+        self.assertIn("module corner_nut_entry_negative(", source)
+        self.assertIn("rotate([0, corner_nut_entry_angle, 0])", source)
+        self.assertIn("print_orientation == box_print_orientation", source)
+
+        box_module = source.split("module box()", 1)[1].split(
+            "module assembly()", 1
+        )[0]
+        self.assertEqual(
+            box_module.count("print_orientation = box_print_orientation"), 4
+        )
 
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -363,12 +383,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("wall_assembly_name_negative(length, wall_name);", flat_wall)
 
         for wall in ("north", "south", "east", "west"):
-            wall_signature = (
-                f"module {wall}_wall(coarse_vents = false, mitre_overlap = 0)"
-            )
-            context_signature = (
-                f"module {wall}_wall_context(coarse_vents = false, mitre_overlap = 0)"
-            )
+            wall_signature = f"module {wall}_wall("
+            context_signature = f"module {wall}_wall_context("
             self.assertIn(wall_signature, source)
             self.assertIn(context_signature, source)
             wall_module = source.split(
