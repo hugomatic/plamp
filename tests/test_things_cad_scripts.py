@@ -418,9 +418,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("vertical_half_hex_rib(", ribs)
         self.assertIn("horizontal_half_hex_rib(", ribs)
         self.assertIn("rib_y0 = floor_rib_y0;", ribs)
-        self.assertIn(
-            "rib_y1 = transverse_rib_y + wall_rib_w / 2;", ribs
-        )
+        self.assertIn("rib_y1 = h + sub_panel_bottom_z;", ribs)
         self.assertEqual(source.count("for (x = rib_xs)"), 1)
 
     def test_plamp8_east_center_rib_sits_between_vent_columns(self):

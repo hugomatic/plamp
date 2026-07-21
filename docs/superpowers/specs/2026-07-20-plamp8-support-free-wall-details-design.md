@@ -39,7 +39,7 @@ In flat-wall orientation, the rising 45-degree entry does not need a second long
 
 ## Corner screw bores
 
-Standalone wall screw bores remain exactly as implemented: horizontal circular clearance regions with the existing point-up support-free roof in wall-local +Z.
+Standalone wall screw bores remain horizontal and support-free, but their old 45-degree roof is replaced by tangent 30-degree facets. This keeps substantially more of the circular clearance while meeting the agreed print threshold.
 
 Box corner screw bores are vertical. They remain true round M3 clearance bores; no pointed roof is applied. The bore choice follows the explicit print-orientation parameter and does not change the screw axis or nominal clearance diameter.
 
@@ -49,13 +49,9 @@ Standalone wall ribs change from rectangular projections to smooth semicylinders
 
 Box ribs use support-aware profiles selected inside the existing placement module; rib loops are not duplicated.
 
-For `box`:
+For `box`, a single `$fn = 6` cylinder clipped at its diameter provides the true regular half-hex cross-section. The vertical ribs extend continuously from the floor-supported horizontal rib, through the upper horizontal rib, to the underside datum of the sub-panel. They therefore provide direct perimeter support without an isolated lower-end ramp. Suspended and floor-touching horizontal ribs reuse the same low-facet core; the floor supports the bottom run directly.
 
-- assembled vertical ribs keep their existing width and projection, but their lower ends rise from the wall with a short 30-degree support-free ramp before reaching full projection;
-- suspended horizontal ribs use a faceted point-up half-hex profile across their long run so their underside rises at least 30 degrees above horizontal; and
-- the floor-touching horizontal rib uses the corresponding faceted quarter profile supported by both wall and floor, without an unnecessary suspended lower half.
-
-Rib centerlines, endpoints, vent clearances, revision-text clearance, and nominal projection remain unchanged unless the support-free end transition requires shortening only the full-height portion of a rib.
+Rib centerlines, vent clearances, and revision-text clearance remain unchanged. The vertical ribs form a continuous ladder and terminate at local Y = `h + sub_panel_bottom_z`, exactly matching the assembled sub-panel underside.
 
 ## Vents, labels, and unchanged geometry
 
@@ -84,6 +80,12 @@ Wall text, floor geometry, corner-tab stack heights, nut offsets, floor locators
 
 No box-specific copy of a wall, rib loop, nut trap, or bore loop is introduced. The existing modules remain authoritative and accept print-orientation/profile parameters.
 
+## Production print plates
+
+Default generation produces five printable jobs: `floor`, paired `north_south_walls`, paired `east_west_walls`, `top_panel`, and `sub_panel`. Box generation uses `generate.bash --box` and produces only `box`, `top_panel`, and `sub_panel`. Individual wall, coupon, component, and assembly views remain available for diagnostics through `--view` and the OpenSCAD view selector.
+
+The obsolete hand-positioned `plate()` presentation layout is removed rather than maintained as a production surface.
+
 ## Assembly preview Z-fighting
 
 The rounded-rectangle label-pocket cutters are not the source of the preview artifact: they already cut from Z = 2.5 mm through Z = 5.5 mm across the top of the 3 mm panel, providing 0.5 mm of intentional penetration.
@@ -98,11 +100,12 @@ Source-contract tests will verify:
 - 45-degree mirrored center-facing nut entries;
 - flat-wall roofed horizontal bores and box round vertical bores;
 - print-up roofs on nut pockets and box entry tunnels;
-- smooth standalone semicylindrical ribs, faceted box half-hex ribs, and floor-touching quarter-profile behavior;
+- smooth standalone semicylindrical ribs and continuous low-`$fn` half-hex box ribs;
 - engraved floor component labels with the required compass orientations and no raised transparent-keepout labels;
 - mirrored sub-panel back labels for CH1-CH8, AC, and USB in the specified wiring layout;
 - preview-only top/sub-panel separation with unchanged render geometry; and
 - continued reuse of complete wall modules by `box`.
+- exactly five default flat-wall print jobs and three `--box` print jobs.
 
 Changes are committed and pushed before OpenSCAD runs. Verification renders only targeted standalone wall/corner geometry and `box`, never the full assembly. Generated STL and render logs stay outside the repository.
 

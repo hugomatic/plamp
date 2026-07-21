@@ -1970,7 +1970,7 @@ module wall_stiffening_ribs(
         - corner_nut_shoulder_t / 2;
     floor_rib_y0 = wall_t;
     rib_y0 = floor_rib_y0;
-    rib_y1 = transverse_rib_y + wall_rib_w / 2;
+    rib_y1 = h + sub_panel_bottom_z;
     transverse_rib_x0 = corner_axis_inset + corner_tab_w / 2;
     transverse_rib_x1 = length - transverse_rib_x0;
     floor_rib_x0 = floor_locator_end_offset

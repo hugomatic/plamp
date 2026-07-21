@@ -14,7 +14,7 @@
 - Roof facets must rise at least 30 degrees above horizontal.
 - All eight nut entries point 45 degrees toward the assembled box center.
 - Standalone nut pockets and screw bores retain their existing support-free geometry.
-- Standalone ribs are smooth semicylinders; box ribs are faceted half-hex profiles; the floor-touching box rib uses a quarter profile.
+- Standalone ribs are smooth semicylinders; box ribs reuse a clipped `$fn = 6` cylinder as a true regular half-hex profile.
 - Box screw bores are round and vertical.
 - Push every checkpoint before running OpenSCAD.
 - Never render the full assembly or commit generated artifacts.
@@ -160,7 +160,7 @@ Expected: all tests PASS and GitHub advances before OpenSCAD runs.
 
 **Interfaces:**
 - Consumes: Task 1 orientation propagation and existing rib positions/ranges.
-- Produces: smooth semicylinder, faceted half-hex, vertical ramp, and floor-supported quarter-profile helpers.
+- Produces: smooth semicylinder and reusable low-`$fn` half-hex rib helpers.
 
 - [ ] **Step 1: Add a failing rib profile test**
 
@@ -168,8 +168,8 @@ Expected: all tests PASS and GitHub advances before OpenSCAD runs.
 def test_plamp8_ribs_select_profiles_by_print_orientation(self):
     source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
     self.assertIn("module smooth_half_rib_profile", source)
-    self.assertIn("module box_half_hex_rib_profile", source)
-    self.assertIn("module vertical_box_rib_ramp", source)
+    self.assertIn("module low_fn_half_hex_rib", source)
+    self.assertIn("$fn = 6", source)
     self.assertIn("module floor_supported_box_rib", source)
     ribs = source.split("module wall_stiffening_ribs", 1)[1].split(
         "module ", 1
@@ -195,25 +195,21 @@ module smooth_half_rib_profile(width, projection) {
 
 Extrude this profile along existing local-X/local-Y rib lengths with its flat diameter on the wall face.
 
-- [ ] **Step 3: Implement the box faceted profile**
+- [ ] **Step 3: Implement the box low-facet profile**
 
-Preserve width/projection and create lower/upper facets at 30 degrees:
+Clip a six-sided cylinder at its diameter so OpenSCAD supplies the regular point-up half-hex proportions directly:
 
 ~~~scad
-module box_half_hex_rib_profile(width, projection) {
-    facet_rise = projection * tan(support_free_roof_angle);
-    assert(2 * facet_rise <= width,
-        "box rib width cannot support 30-degree facets");
-    polygon([
-        [0, -width / 2],
-        [0, width / 2],
-        [projection, width / 2 - facet_rise],
-        [projection, -width / 2 + facet_rise]
-    ]);
+module low_fn_half_hex_rib(length, width = wall_rib_w) {
+    intersection() {
+        cylinder(h = length, r = width / 2, $fn = 6);
+        translate([-width / 2, 0, 0])
+            cube([width, width / 2 + boolean_shim, length]);
+    }
 }
 ~~~
 
-Suspended horizontal ribs use this profile. Vertical box ribs keep full projection but begin with a short ramp of length `wall_rib_h / tan(support_free_roof_angle)`. The floor-touching rib removes the suspended lower facet and fills the wall/floor corner.
+Use this profile for both horizontal and vertical box ribs. Extend each vertical rib from the floor-supported horizontal rib, through the upper horizontal rib, to `h + sub_panel_bottom_z`. This eliminates the unsupported start and its ramp while adding direct support under the sub-panel perimeter.
 
 - [ ] **Step 4: Reuse the existing placement loops**
 
