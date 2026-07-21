@@ -565,6 +565,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('"DC/DC"', labels)
         self.assertIn("90,", labels)
         self.assertIn("180,", labels)
+        self.assertIn("component_origin_y + internal_psu_y + 13.5", labels)
+        self.assertIn("component_origin_y + internal_converter_y + 12", labels)
         self.assertIn("floor_component_label_negatives();", source)
 
     def test_plamp8_transparent_components_keep_colors_without_labels(self):

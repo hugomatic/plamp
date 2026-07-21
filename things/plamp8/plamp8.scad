@@ -1086,14 +1086,14 @@ module floor_component_label_negatives() {
     floor_component_label_negative(
         "PSU",
         component_origin_x + internal_psu_x,
-        component_origin_y + internal_psu_y + 7,
+        component_origin_y + internal_psu_y + 13.5,
         0,
         7
     );
     floor_component_label_negative(
         "DC/DC",
         component_origin_x + internal_converter_x,
-        component_origin_y + internal_converter_y + 3,
+        component_origin_y + internal_converter_y + 12,
         180,
         5
     );
