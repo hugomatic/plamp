@@ -205,8 +205,6 @@ xt60_screw_d = 3.2;
 xt60_nut_clearance_d = 7;
 
 usb_c_panel_rim = 3;
-usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;
-usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;
 usb_c_label_w = 32;
 usb_c_label_h = 9;
 usb_c_group_y = -4;
@@ -230,6 +228,8 @@ c13_group_w = 58;
 c13_group_h = 64;
 service_group_w = c13_group_w;
 service_group_h = usb_c_group_h;
+usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;
+usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;
 inch = 24.5;
 c13_face_w_inch = 1.9;
 c13_face_h_inch = 2.0;
@@ -519,6 +519,8 @@ ac_socket_screw_cutter_top_y = ac_row_y + max(
 );
 ac_socket_screw_cutters_below_separators =
     ac_socket_screw_cutter_top_y <= dc_region_bottom_y;
+content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
+layout_offset_y = panel_margin - content_bottom_y;
 sub_panel_socket_rim_relief_y0 =
     -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
 socket_rim_relief_top_y = sub_panel_socket_rim_relief_y0
@@ -558,7 +560,6 @@ panel_fastener_boss_h = sub_panel_bottom_z - panel_fastener_boss_bottom_z;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
-content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
 content_top_y = c13_region_top_y;
 top_panel_w = content_right_x - content_left_x + 2 * panel_margin;
 top_panel_h = content_top_y - content_bottom_y + 2 * panel_margin;
@@ -572,7 +573,6 @@ assert(east_center_rib_x == 105,
 assert(vent_rib_edge_clearance >= 1,
     "east center rib needs at least 1 mm clearance from adjacent vent holes");
 layout_offset_x = panel_margin - content_left_x;
-layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
 internal_psu_x = 70;
