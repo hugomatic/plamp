@@ -470,6 +470,7 @@ outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
 c13_region_x = outlet_right_x - c13_group_w / 2;
 c13_hardware_x = 67;
 c13_hardware_y = 58;
+c13_panel_hardware_x = c13_hardware_x - c13_region_x;
 service_group_x = c13_region_x;
 service_group_y = c13_hardware_y - c13_group_h / 2
     - panel_region_gap - service_group_h / 2;
@@ -557,7 +558,7 @@ usb_connector_pair_aligned =
     usb_c_panel_x - service_group_x == service_bottom_content_x_offset
     && usb_c_panel_y - service_group_y == -service_row_y_offset;
 c13_connector_pair_aligned =
-    c13_hardware_x - c13_region_x == 0
+    c13_hardware_x - c13_region_x == c13_panel_hardware_x
     && c13_hardware_y - c13_hardware_y == 0;
 xt60_region_x_margin = min(
     dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
@@ -1267,7 +1268,8 @@ module c13_group_negative() {
 
 module c13_inlet_negative() {
     c13_group_negative();
-    c13_hardware_negative();
+    translate([c13_panel_hardware_x, 0, 0])
+        c13_hardware_negative();
 }
 
 module c13_revision_negative() {

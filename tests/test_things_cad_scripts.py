@@ -1034,6 +1034,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_8ch();", crop)
         self.assertIn("intersection()", crop)
         self.assertIn("sub_panel_h+2*boolean_shim", crop)
+        self.assertIn(
+            "c13_panel_hardware_x = c13_hardware_x - c13_region_x;",
+            source,
+        )
+        c13_negative = compact_scad(scad_module_body(source, "c13_inlet_negative"))
+        self.assertIn(
+            "translate([c13_panel_hardware_x,0,0])c13_hardware_negative();",
+            c13_negative,
+        )
 
         expected = {
             "ac_duplex_panel": "left_ac_x,ac_row_y",
