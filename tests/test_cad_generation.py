@@ -179,6 +179,22 @@ class CadGenerationTests(unittest.TestCase):
             executable,
         )
 
+    def test_resolve_openscad_makes_explicit_relative_path_safe_to_execute(self):
+        executable = self.root / "local-openscad"
+        executable.write_text("#!/bin/sh\n")
+        executable.chmod(0o755)
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            resolved = resolve_openscad(
+                "./local-openscad", env={}, system="Plan9",
+                which=lambda _name: None, home=self.root,
+            )
+        finally:
+            os.chdir(previous)
+        self.assertEqual(resolved, executable)
+        self.assertTrue(resolved.is_absolute())
+
     def test_resolve_openscad_uses_platform_fallbacks_in_order(self):
         darwin_system = Path("/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD")
         darwin_user = self.root / "Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"

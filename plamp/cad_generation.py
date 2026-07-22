@@ -85,7 +85,7 @@ def _selected_executable(
 ) -> Path | None:
     if os.sep in value or (os.altsep is not None and os.altsep in value):
         candidate = Path(value).expanduser()
-        return candidate if _is_executable(candidate) else None
+        return candidate.resolve() if _is_executable(candidate) else None
     located = which(value)
     if located is None:
         return None
