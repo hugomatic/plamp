@@ -268,6 +268,30 @@ class CadScaffoldTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         create_part(self.root, f"decoy_{name}", name)
 
+    def test_dispatch_accepts_closing_brace_inside_string(self):
+        valid = VALID_SOURCE.replace(
+            b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
+            b'{ echo("}"); __PLAMP_PART__(); }\nelse if (view == "assembly")',
+            1,
+        )
+        self.write_template("scad/string_close.scad", valid)
+        created = create_part(self.root, "string_close", "string_close")
+        self.assertTrue(created.scad_path.is_file())
+
+    def test_dispatch_rejects_out_of_block_call_after_open_brace_string(self):
+        false_dispatch = VALID_SOURCE.replace(
+            b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
+            b'{ echo("{"); }\n__PLAMP_PART__();\n}\nelse if (view == "assembly")',
+            1,
+        )
+        self.write_template("scad/string_open.scad", false_dispatch)
+        with mock.patch(
+            "plamp.cad_scaffold._make_staging",
+            side_effect=AssertionError("false dispatch reached staging"),
+        ):
+            with self.assertRaises(ValueError):
+                create_part(self.root, "string_open", "string_open")
+
     def test_canonical_metadata_errors_are_rejected_before_staging(self):
         mutations = {
             "non_finite_nested": VALID_SOURCE.replace(

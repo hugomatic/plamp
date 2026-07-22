@@ -244,6 +244,8 @@ def _matching_symbol(
 ) -> int | None:
     depth = 0
     for index in range(start, len(tokens)):
+        if tokens[index].kind != "symbol":
+            continue
         if tokens[index].value == opening:
             depth += 1
         elif tokens[index].value == closing:
