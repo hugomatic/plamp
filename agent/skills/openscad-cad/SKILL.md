@@ -1,48 +1,70 @@
 ---
 name: openscad-cad
-description: Create, modify, template, render, and verify OpenSCAD CAD parts for 3D printing and assemblies. Use when Codex is asked to do CAD, OpenSCAD, STL generation, 3D-printable parts, plate/assembly views, revision/commit engraving, or plamp repo things/ workflows including things/template.bash and things/3d_template/generate.bash.
+description: Use when creating or modifying OpenSCAD CAD, STL files, laser-cut DXF/SVG/PDF output, 3D-printable parts, plate or assembly views, revision engraving, or plamp things/ workflows.
 ---
 
 # OpenSCAD CAD
 
 ## Workflow
 
-1. Inspect the repo's CAD conventions before editing. In plamp, read `things/template.bash`, `things/3d_template/generate.bash`, the selected part directory, and [plamp-things.md](references/plamp-things.md) when working under `things/`.
-2. Keep parts parametric. Put dimensions near the top, name them clearly, and preserve user-provided measurements unless intentionally changing fit.
-3. Preserve a view contract. Prefer `view = "assembly"; // [assembly, plate]` or the part's existing ordered view array/comment. `plate` is for printable orientation/layout; `assembly` is for visual context.
-4. Use the positive/negative pattern for robust parts: model additive geometry in positive modules, subtract holes/cutouts/engraving in negative modules, and compose with `difference()`.
-5. Brand/version physical prints with `revision_string`. Engrave or emboss the string where it will print clearly and not affect critical fit. For generated builds, use the git commit hash or explicit dirty-worktree revision text.
-6. Render and verify requested views when OpenSCAD is available. Check that STL files are non-empty and logs do not report an empty top-level object.
-7. Avoid committing generated STL/print artifacts unless the user explicitly asks. Commit source `.scad` and generator/template changes needed to reproduce outputs.
+1. Inspect the part and repository conventions. Under plamp `things/`, read [plamp-things.md](references/plamp-things.md).
+2. Identify the process and keep dimensions/fit controls parametric.
+3. Preserve printable and assembly views. Compose positive geometry and negative cutters/engraving with `difference()`.
+4. Put `revision_string` where readable without affecting fit.
+5. Render and verify requested views.
+
+## Plamp CAD
+
+Prefer direct `plamp cad` commands over part-local scripts. Discover with `views`, check metadata with `validate`, and always run `plan` before `generate`. Planning expands the exact jobs and variables without invoking OpenSCAD, so it works even when OpenSCAD is unavailable.
+
+```bash
+plamp cad views PART --json
+plamp cad validate PART --json
+plamp cad plan PART --preset PRESET --json
+plamp cad generate PART --preset PRESET --json
+```
+
+Use `--json` for agents. Selection supports repeatable `--view`, `--define NAME=EXPR`, and `--view-define VIEW:NAME=EXPR`. Omit output arguments to use the managed archive.
+
+Read [plamp-things.md](references/plamp-things.md) for metadata, precedence, source snapshots, archives/logs, wrappers, and the exact Plamp8 workflow.
 
 ## New Parts
 
-Use the existing template script when the user asks for a new part and the repo provides one:
+Use the repository template; keep `<part>/<part>.scad`:
 
 ```bash
 cd things
 ./template.bash part_name
 ```
 
-If template selection is supported, use `--template <name>` and keep the generated main file named `<part>/<part>.scad`. If the requested template is unavailable, list available templates and either use the default or ask only when the choice materially affects the part.
+## FDM Printing
 
-For plamp CAD conventions and planned generator behavior, read [plamp-things.md](references/plamp-things.md).
+- Choose orientation deliberately. Check mid-air starts, bridges, overhangs, trapped support, and removal access; prefer support-free geometry.
+- Treat strength as anisotropic. Orient service loads within layers when practical; address separation, thin bonds, cantilevers, and fastener loads with ribs, gussets, radii, or material.
+- Test fit-critical clearances with coupons before long prints.
 
-## Rendering
+## Laser Cutting
 
-Prefer the part's `generate.bash` over direct `openscad` commands because it handles revision strings, output naming, and repo conventions. Common flow:
-
-```bash
-cd things/<part>
-./generate.bash HEAD /tmp/<part>_gen
-```
-
-If the script requires a specific commit hash, commit first when reproducibility matters, then render that commit. If the part directory is dirty and the generator supports explicit revision text, use a meaningful label supplied by the user or a concise local label such as `fit-test-1`.
+- Parameterize thickness, kerf, tab/slot clearance, fasteners, and joint strength.
+- Keep a 2D profile authoritative. For a plane intersection, transform it onto XY at Z=0 and use `projection(cut=true)`; use `cut=false` only for a silhouette. Use `linear_extrude()` for previews.
+- Export DXF/SVG, or PDF when required. Verify scale, closed paths, duplicate lines, cutouts, and LightBurn import.
 
 ## OpenSCAD Practices
 
-- Keep `$fn` high enough for final curved prints, but do not hide preview/performance issues behind excessive resolution.
-- Use `use <...>` when importing modules without executing top-level code; use `include <...>` only when variables/top-level definitions are needed.
-- Keep coordinate systems intentional: document origin and printable orientation when not obvious.
-- Make fit-sensitive features easy to tune: offsets, tolerances, lip thickness, hole diameters, and clearances should be named parameters.
-- For engraving text, subtract shallow text from a printable face or emboss it positively if the face is too thin. Avoid tiny text that will not survive slicing.
+- Set `$fn` high enough for final curves without crippling preview.
+- Use named `shim` as Boolean overlap, not fit clearance; extend cutters through both faces.
+- Use `use <...>` for modules without top-level execution and `include <...>` when definitions are required.
+- Document non-obvious origins/orientations and name offsets, tolerances, thicknesses, holes, and clearances.
+- Engrave shallowly or emboss thin faces; avoid text too small to slice.
+
+## Verification
+
+- Confirm every requested artifact exists and is non-empty.
+- Inspect logs for missing includes, warnings, errors, or empty geometry; check orientation, fit, support, strength, and process constraints.
+- When OpenSCAD is unavailable, run the Plamp plan and report its jobs, effective variables, exact intended generation command, and managed output location.
+
+## Common Mistakes
+
+- Do not treat a successful render as proof of printability, strength, fit, or cut readiness.
+- Do not commit generated STL/DXF/SVG/PDF, manifests, or logs unless explicitly requested; commit reproducible source.
+- Do not use part-local `generate.bash` as the primary Plamp interface.
