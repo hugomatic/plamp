@@ -18,7 +18,7 @@ class PackageMetadataTests(unittest.TestCase):
         self.assertIn("version", config["project"]["dynamic"])
         self.assertEqual(
             config["project"]["dependencies"],
-            ["fastapi", "pyserial", "pyudev", "uvicorn[standard]"],
+            ["fastapi", "Pillow", "pyserial", "pyudev", "uvicorn[standard]"],
         )
 
     def test_readme_exposes_direct_cli_without_uv_setup(self):
