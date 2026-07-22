@@ -568,11 +568,10 @@ def _validate_preset_cycles(
             visit(preset_name)
 
 
-def parse_cad_document(path: str | Path) -> CadDocument:
-    """Parse one SCAD document and validate all embedded metadata references."""
+def parse_cad_source(source: str, path: str | Path) -> CadDocument:
+    """Parse SCAD source and validate all embedded metadata references."""
 
     document_path = Path(path)
-    source = document_path.read_text(encoding="utf-8")
     default_view, views = _parse_view_declaration(source)
     metadata = _parse_metadata(source, document_path)
     diagnostics: list[CadDiagnostic] = []
@@ -618,3 +617,12 @@ def parse_cad_document(path: str | Path) -> CadDocument:
     if diagnostics:
         raise CadMetadataError(diagnostics)
     return document
+
+
+def parse_cad_document(path: str | Path) -> CadDocument:
+    """Parse one SCAD document and validate all embedded metadata references."""
+
+    document_path = Path(path)
+    return parse_cad_source(
+        document_path.read_text(encoding="utf-8"), document_path
+    )

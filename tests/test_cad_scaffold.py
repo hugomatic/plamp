@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from plamp.cad_metadata import parse_cad_document
-from plamp.cad_scaffold import create_part, discover_templates
+from plamp.cad_scaffold import _validate_contract, create_part, discover_templates
 
 
 VALID_SOURCE = b'''view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
@@ -124,7 +124,8 @@ class CadScaffoldTests(unittest.TestCase):
                 self.assertEqual(list((self.root / "things").glob(f".{part}.staging-*")), [])
 
     def test_generates_named_document_for_underscore_and_hyphen_spelling(self):
-        self.write_template("scad/fixture_any_name.scad")
+        content = VALID_SOURCE + b'// preserve exact trailing bytes: "quoted"   \n'
+        self.write_template("scad/fixture_any_name.scad", content)
         for requested in ("pump_bracket", "pump-bracket"):
             with self.subTest(requested=requested):
                 created = create_part(self.root, requested, "fixture_any_name")
@@ -140,6 +141,10 @@ class CadScaffoldTests(unittest.TestCase):
                 self.assertEqual(set(document.view_metadata), {"pump_bracket", "assembly"})
                 self.assertTrue(document.presets)
                 source = expected.read_text(encoding="utf-8")
+                self.assertEqual(
+                    expected.read_bytes(),
+                    content.replace(b"__PLAMP_PART__", b"pump_bracket"),
+                )
                 for declaration in (
                     "module pump_bracket_positive()",
                     "module pump_bracket_negative()",
@@ -150,6 +155,18 @@ class CadScaffoldTests(unittest.TestCase):
                     self.assertNotIn(generic, source)
                 self.assertEqual(len(re.findall(r'view == "(?:pump_bracket|assembly)"[^}]*pump_bracket\(\)', source)), 2)
                 shutil.rmtree(created.directory)
+
+    def test_generated_contract_rejects_leftover_reserved_token(self):
+        generated = VALID_SOURCE.decode("utf-8").replace(
+            "__PLAMP_PART__", "pump_bracket"
+        )
+
+        with self.assertRaisesRegex(ValueError, "retains reserved token"):
+            _validate_contract(
+                generated + "\n// __PLAMP_PART__\n",
+                "pump_bracket",
+                "generated fixture",
+            )
 
     def test_repository_templates_follow_named_geometry_and_bom_contract(self):
         repository = Path(__file__).resolve().parents[1]
@@ -203,6 +220,7 @@ class CadScaffoldTests(unittest.TestCase):
             "wrong_views": VALID_SOURCE.replace(b"[__PLAMP_PART__, assembly]", b"[assembly, __PLAMP_PART__]"),
             "missing_view_metadata": VALID_SOURCE.replace(b',"assembly":{"description":"Assembly"}', b""),
             "no_preset": VALID_SOURCE.replace(b',"presets":{"both":{"items":["view:__PLAMP_PART__","view:assembly"]}}', b""),
+            "missing_default_preset": VALID_SOURCE.replace(b'"default_preset":"both",', b""),
             "wrong_items": VALID_SOURCE.replace(b'"view:__PLAMP_PART__","view:assembly"', b'"view:assembly","view:__PLAMP_PART__"'),
             "unknown_view": VALID_SOURCE.replace(b'"view:assembly"]', b'"view:missing"]'),
         }
@@ -213,6 +231,74 @@ class CadScaffoldTests(unittest.TestCase):
                     create_part(self.root, f"from_{name}", name)
                 self.assertFalse((self.root / "things" / f"from_{name}").exists())
                 self.assertEqual(list((self.root / "things").glob(f".from_{name}.staging-*")), [])
+
+    def test_contract_ignores_module_and_dispatch_decoys_in_comments_and_strings(self):
+        mutations = {
+            "commented_declaration": VALID_SOURCE.replace(
+                b"module __PLAMP_PART___positive()",
+                b"/* module __PLAMP_PART___positive() */ module absent_positive()",
+            ),
+            "string_declaration": VALID_SOURCE.replace(
+                b"module __PLAMP_PART___negative()",
+                b'echo("module __PLAMP_PART___negative()"); module absent_negative()',
+            ),
+            "commented_dispatch": VALID_SOURCE.replace(
+                b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
+                b'{ /* __PLAMP_PART__(); */ }\nelse if (view == "assembly")',
+                1,
+            ),
+            "string_dispatch": VALID_SOURCE.replace(
+                b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
+                b'{ echo("__PLAMP_PART__();"); }\nelse if (view == "assembly")',
+                1,
+            ),
+            "truncated_dispatch": VALID_SOURCE.replace(
+                b'if (view == "__PLAMP_PART__") { __PLAMP_PART__(); }\n'
+                b'else if (view == "assembly") { __PLAMP_PART__(); }',
+                b'if (view == "__PLAMP_PART__")',
+            ),
+        }
+        for name, content in mutations.items():
+            with self.subTest(name=name):
+                self.write_template(f"scad/{name}.scad", content)
+                with mock.patch(
+                    "plamp.cad_scaffold._make_staging",
+                    side_effect=AssertionError("contract reached staging"),
+                ):
+                    with self.assertRaises(ValueError):
+                        create_part(self.root, f"decoy_{name}", name)
+
+    def test_canonical_metadata_errors_are_rejected_before_staging(self):
+        mutations = {
+            "non_finite_nested": VALID_SOURCE.replace(
+                b'"description":"Part"',
+                b'"description":"Part","variables":{"size":NaN}',
+            ),
+            "positive_infinity_nested": VALID_SOURCE.replace(
+                b'"description":"Part"',
+                b'"description":"Part","variables":{"size":Infinity}',
+            ),
+            "negative_infinity_nested": VALID_SOURCE.replace(
+                b'"description":"Part"',
+                b'"description":"Part","variables":{"size":-Infinity}',
+            ),
+            "invalid_nested_description": VALID_SOURCE.replace(
+                b'"description":"Part"', b'"description":42'
+            ),
+            "invalid_nested_preset_item": VALID_SOURCE.replace(
+                b'"view:assembly"]', b'"view:assembly",42]'
+            ),
+        }
+        for name, content in mutations.items():
+            with self.subTest(name=name):
+                self.write_template(f"scad/{name}.scad", content)
+                with mock.patch(
+                    "plamp.cad_scaffold._make_staging",
+                    side_effect=AssertionError("metadata reached staging"),
+                ):
+                    with self.assertRaises(ValueError):
+                        create_part(self.root, f"metadata_{name}", name)
+                self.assertFalse((self.root / "things" / f"metadata_{name}").exists())
 
     def test_generated_modes_follow_umask_and_ignore_source_executable_bits(self):
         source = self.write_template("cad.scad")

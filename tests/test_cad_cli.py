@@ -10,6 +10,7 @@ import textwrap
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest import mock
 
 from plamp.cad_cli import add_cad_parser, run_cad_command
 from plamp.cad_generation import generate_plan
@@ -43,6 +44,17 @@ SOURCE = textwrap.dedent("""\
     */
     cube(1);
 """)
+
+SCAFFOLD_SOURCE = b'''view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
+/* generate.json
+{"default_preset":"both","views":{"__PLAMP_PART__":{"description":"Part"},"assembly":{"description":"Assembly"}},"presets":{"both":{"items":["view:__PLAMP_PART__","view:assembly"]}}}
+*/
+module __PLAMP_PART___positive() { cube(1); }
+module __PLAMP_PART___negative() { cylinder(1); }
+module __PLAMP_PART__() { difference() { __PLAMP_PART___positive(); __PLAMP_PART___negative(); } }
+if (view == "__PLAMP_PART__") { __PLAMP_PART__(); }
+else if (view == "assembly") { __PLAMP_PART__(); }
+'''
 
 
 class CadCliTests(unittest.TestCase):
@@ -235,6 +247,64 @@ class CadCliTests(unittest.TestCase):
                     self.assertEqual(rc, 4)
                     self.assertEqual((diagnostic["code"], diagnostic["kind"]), ("CAD400", "operation_failed"))
                     self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_new_internal_stage_io_failures_are_cad400_and_leave_no_residue(self):
+        template = self.root / "things" / "3d_template" / "cad.scad"
+        template.parent.mkdir(parents=True)
+        template.write_bytes(SCAFFOLD_SOURCE)
+
+        def partial_write(path, _data):
+            path.write_bytes(b"partial")
+            raise OSError(errno.ENOSPC, "staging write full")
+
+        stages = (
+            (
+                "discovery",
+                "plamp.cad_scaffold.discover_templates",
+                PermissionError(errno.EACCES, "discovery denied"),
+            ),
+            (
+                "secure_read",
+                "plamp.cad_scaffold._read_template",
+                PermissionError(errno.EACCES, "secure read denied"),
+            ),
+            (
+                "staging_mkdir",
+                "plamp.cad_scaffold._make_staging",
+                OSError(errno.ENOSPC, "staging mkdir full"),
+            ),
+            (
+                "staging_write_cleanup",
+                "plamp.cad_scaffold._write_exclusive",
+                partial_write,
+            ),
+            (
+                "publication_cleanup",
+                "plamp.cad_scaffold._publish_noreplace",
+                OSError(errno.EIO, "publication failed"),
+            ),
+        )
+        for stage, target, failure in stages:
+            part = f"fault_{stage}"
+            with self.subTest(stage=stage), mock.patch(target, side_effect=failure):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                rc = main(
+                    ["cad", "new", part, "--json"],
+                    env=self.env(),
+                    stdout=stdout,
+                    stderr=stderr,
+                )
+                diagnostic = json.loads(stdout.getvalue())[0]
+                self.assertEqual(rc, 4)
+                self.assertEqual(
+                    (diagnostic["code"], diagnostic["kind"]),
+                    ("CAD400", "operation_failed"),
+                )
+                self.assertNotIn("Traceback", stderr.getvalue())
+                self.assertFalse((self.root / "things" / part).exists())
+                self.assertEqual(
+                    list((self.root / "things").glob(f".{part}.staging-*")), []
+                )
 
     def test_generated_hyphenated_part_supports_views_validate_and_plan(self):
         repository = Path(__file__).resolve().parents[1]

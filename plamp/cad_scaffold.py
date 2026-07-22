@@ -14,7 +14,7 @@ import shutil
 import stat
 import sys
 
-from plamp.cad_metadata import CadMetadataError, parse_cad_document
+from plamp.cad_metadata import CadMetadataError, parse_cad_document, parse_cad_source
 
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -170,6 +170,122 @@ def _metadata(source: str, description: str) -> dict[str, object]:
     return value
 
 
+@dataclass(frozen=True)
+class _ScadToken:
+    kind: str
+    value: str
+
+
+def _scad_tokens(source: str) -> tuple[_ScadToken, ...]:
+    """Tokenize enough OpenSCAD to distinguish code from comments and strings."""
+
+    tokens: list[_ScadToken] = []
+    offset = 0
+    while offset < len(source):
+        character = source[offset]
+        if character.isspace():
+            offset += 1
+            continue
+        if source.startswith("//", offset):
+            newline = source.find("\n", offset + 2)
+            offset = len(source) if newline < 0 else newline + 1
+            continue
+        if source.startswith("/*", offset):
+            end = source.find("*/", offset + 2)
+            offset = len(source) if end < 0 else end + 2
+            continue
+        if character == '"':
+            start = offset
+            offset += 1
+            escaped = False
+            while offset < len(source):
+                current = source[offset]
+                offset += 1
+                if escaped:
+                    escaped = False
+                elif current == "\\":
+                    escaped = True
+                elif current == '"':
+                    break
+            raw = source[start:offset]
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError:
+                value = raw[1:-1]
+            tokens.append(_ScadToken("string", value))
+            continue
+        identifier = re.match(r"[A-Za-z_$][A-Za-z0-9_$]*", source[offset:])
+        if identifier is not None:
+            value = identifier.group(0)
+            tokens.append(_ScadToken("identifier", value))
+            offset += len(value)
+            continue
+        if source.startswith("==", offset):
+            tokens.append(_ScadToken("symbol", "=="))
+            offset += 2
+            continue
+        tokens.append(_ScadToken("symbol", character))
+        offset += 1
+    return tuple(tokens)
+
+
+def _has_module_declaration(tokens: tuple[_ScadToken, ...], name: str) -> bool:
+    expected = ("module", name, "(", ")")
+    return any(
+        tuple(token.value for token in tokens[index:index + 4]) == expected
+        and tuple(token.kind for token in tokens[index:index + 4])
+        == ("identifier", "identifier", "symbol", "symbol")
+        for index in range(len(tokens) - 3)
+    )
+
+
+def _matching_symbol(
+    tokens: tuple[_ScadToken, ...], start: int, opening: str, closing: str
+) -> int | None:
+    depth = 0
+    for index in range(start, len(tokens)):
+        if tokens[index].value == opening:
+            depth += 1
+        elif tokens[index].value == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _dispatch_calls_module(
+    tokens: tuple[_ScadToken, ...], view_name: str, identifier: str
+) -> bool:
+    condition = ("(", "view", "==", view_name, ")")
+    call = (identifier, "(", ")", ";")
+    for index, token in enumerate(tokens):
+        if token.kind != "identifier" or token.value != "if":
+            continue
+        if index + 6 >= len(tokens):
+            continue
+        candidate = tokens[index + 1:index + 6]
+        if (
+            tuple(item.value for item in candidate) != condition
+            or tuple(item.kind for item in candidate)
+            != ("symbol", "identifier", "symbol", "string", "symbol")
+        ):
+            continue
+        if tokens[index + 6].value != "{":
+            continue
+        body_end = _matching_symbol(tokens, index + 6, "{", "}")
+        if body_end is None:
+            continue
+        body = tokens[index + 7:body_end]
+        if any(
+            tuple(item.value for item in body[body_index:body_index + 4]) == call
+            and tuple(item.kind for item in body[body_index:body_index + 4])
+            == ("identifier", "symbol", "symbol", "symbol")
+            for body_index in range(len(body) - 3)
+        ):
+            return True
+    return False
+
+
 def _validate_contract(
     source: str, identifier: str, description: str, *, allow_reserved: bool = False
 ) -> None:
@@ -216,20 +332,25 @@ def _validate_contract(
                     f"{description} preset {preset_name!r} references undeclared view {item[5:]!r}"
                 )
 
+    tokens = _scad_tokens(source)
     for suffix in ("_positive", "_negative", ""):
-        declaration = rf"\bmodule\s+{re.escape(identifier + suffix)}\s*\(\s*\)"
-        if re.search(declaration, source) is None:
+        if not _has_module_declaration(tokens, identifier + suffix):
             raise CadSelectionError(
                 f"{description} is missing module {identifier + suffix}()"
             )
-    if re.search(r"\bmodule\s+part(?:_positive|_negative)?\s*\(", source):
-        raise CadSelectionError(f"{description} retains a forbidden generic part module")
+    for index in range(len(tokens) - 2):
+        if (
+            tokens[index].value == "module"
+            and tokens[index].kind == "identifier"
+            and tokens[index + 1].value in {"part", "part_positive", "part_negative"}
+            and tokens[index + 1].kind == "identifier"
+            and tokens[index + 2].value == "("
+        ):
+            raise CadSelectionError(
+                f"{description} retains a forbidden generic part module"
+            )
     for view_name in expected_views:
-        dispatch = re.compile(
-            rf'\b(?:if|else\s+if)\s*\(\s*view\s*==\s*"{re.escape(view_name)}"\s*\)\s*\{{[^}}]*\b{re.escape(identifier)}\s*\(\s*\)\s*;',
-            re.DOTALL,
-        )
-        if dispatch.search(source) is None:
+        if not _dispatch_calls_module(tokens, view_name, identifier):
             raise CadSelectionError(
                 f"{description} view {view_name!r} must call {identifier}()"
             )
@@ -334,6 +455,16 @@ def create_part(repo_root: Path, part_name: str, template_name: str) -> CreatedP
     template = templates[template_name]
     raw = _read_template(template_root, template)
     generated = _substitute_template(raw, identifier, str(template.path))
+    try:
+        generated_document = parse_cad_source(
+            generated, destination / f"{part_name}.scad"
+        )
+    except (CadMetadataError, UnicodeError, ValueError) as error:
+        raise CadSelectionError(f"generated CAD part is invalid: {error}") from None
+    if not generated_document.metadata_snapshot:
+        raise CadSelectionError(
+            f"generated CAD part has no generation metadata: {destination / f'{part_name}.scad'}"
+        )
 
     staging = _make_staging(things_root, part_name)
     staged_scad = staging / f"{part_name}.scad"
