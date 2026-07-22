@@ -137,7 +137,7 @@ The service region is one rounded rectangle directly below C13. Derive it
 from shared region bounds, not independent nudges:
 
 ```scad
-service_group_x = c13_hardware_x;
+service_group_x = c13_region_x;
 service_group_y = c13_hardware_y - c13_group_h / 2
     - panel_region_gap - service_group_h / 2;
 service_cell_w = service_group_w / 2;
@@ -161,8 +161,10 @@ hidden inside the service region. Both COM and USB belong to this one pocket.
 The standalone USB fit coupon may compose those two modules to retain its
 usefulness.
 
-The exact service centers are `(52.5, 17)` for plamp, `(81.5, 17)` for the
-revision, `(52.5, 3)` for COM, and `(81.5, 3)` for USB.
+The service pocket follows the rounded C13 region rather than the offset C13
+hardware center, retaining the 2 mm gap from the DC region. Its exact centers
+are `(56.5, 17)` for plamp, `(85.5, 17)` for the revision, `(56.5, 3)` for COM,
+and `(85.5, 3)` for USB.
 
 Assertions protect the complete layout: every XT60 face is inside its DC
 rounded bounds with at least 1.2 mm X margin; DC row/column gaps and the

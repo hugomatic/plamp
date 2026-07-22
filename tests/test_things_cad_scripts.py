@@ -957,10 +957,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "c13_hardware_x = 67;",
             "c13_hardware_y = 58;",
             "c13_region_x = outlet_right_x - c13_group_w / 2;",
-            "service_group_x = c13_hardware_x;",
+            "service_group_x = c13_region_x;",
             "assert(c13_hardware_x == 67 && c13_hardware_y == 58,",
-            "assert(service_left_x == 52.5 && service_right_x == 81.5",
+            "assert(service_left_x == 56.5 && service_right_x == 85.5",
             " && service_top_y == 17 && service_bottom_y == 3,",
+            "assert(service_region_left_x == c13_region_left_x",
+            " && service_region_right_x == c13_region_right_x,",
+            "assert(service_region_left_x - dc_region_right_x == panel_region_gap,",
         ):
             with self.subTest(contract=contract):
                 self.assertIn(contract, source)
@@ -979,7 +982,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         compact = compact_scad(source)
 
         for equation in (
-            "service_group_x = c13_hardware_x;",
+            "service_group_x = c13_region_x;",
             "service_group_y = c13_hardware_y - c13_group_h / 2",
             "- panel_region_gap - service_group_h / 2;",
             "service_cell_w = service_group_w / 2;",

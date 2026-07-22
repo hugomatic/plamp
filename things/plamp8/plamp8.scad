@@ -428,7 +428,7 @@ outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
 c13_region_x = outlet_right_x - c13_group_w / 2;
 c13_hardware_x = 67;
 c13_hardware_y = 58;
-service_group_x = c13_hardware_x;
+service_group_x = c13_region_x;
 service_group_y = c13_hardware_y - c13_group_h / 2
     - panel_region_gap - service_group_h / 2;
 service_cell_w = service_group_w / 2;
@@ -600,9 +600,14 @@ assert(c13_cutout_w == 28 && c13_screw_spacing == 40,
     "C13 hardware locations must remain unchanged");
 assert(c13_hardware_x == 67 && c13_hardware_y == 58,
     "C13 hardware center must remain at (67, 58)");
-assert(service_left_x == 52.5 && service_right_x == 81.5
+assert(service_left_x == 56.5 && service_right_x == 85.5
         && service_top_y == 17 && service_bottom_y == 3,
-    "service cell centers must remain fixed below the C13 hardware");
+    "service cell centers must remain fixed below the C13 region");
+assert(service_region_left_x == c13_region_left_x
+        && service_region_right_x == c13_region_right_x,
+    "service region must align with the C13 rounded region");
+assert(service_region_left_x - dc_region_right_x == panel_region_gap,
+    "service region must retain the 2 mm DC gap");
 assert(service_cell_w * 2 == service_group_w
         && service_cell_h * 2 == service_group_h,
     "service cells must exactly tile the region");
