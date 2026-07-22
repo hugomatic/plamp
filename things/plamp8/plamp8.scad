@@ -1991,7 +1991,7 @@ module support_free_m3_nut_trap(
 
     if (print_orientation == box_print_orientation)
         box_m3_nut_pocket_negative(
-            corner_nut_pocket_d,
+            corner_nut_entry_w,
             pocket_center_y,
             axis_z
         );

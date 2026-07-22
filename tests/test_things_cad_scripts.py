@@ -69,7 +69,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             nut_trap,
         )
         self.assertIn(
-            "box_m3_nut_pocket_negative(corner_nut_pocket_d,pocket_center_y,axis_z);",
+            "box_m3_nut_pocket_negative(corner_nut_entry_w,pocket_center_y,axis_z);",
             nut_trap,
         )
         self.assertIn(
@@ -82,6 +82,18 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertNotIn("panel_nut_entry_detent", nut_trap)
         self.assertNotIn("panel_nut_entry_detent_l", nut_trap)
+
+        box_pocket = compact_scad(
+            scad_module_body(source, "box_m3_nut_pocket_negative")
+        )
+        self.assertIn(
+            "cube([nut_w,corner_nut_slot_l,nut_w]);",
+            box_pocket,
+        )
+        self.assertIn(
+            "box_nut_roof_negative(nut_w,nut_w,",
+            box_pocket,
+        )
 
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
