@@ -174,14 +174,16 @@ corner_nut_clearance = 0.3;
 /* [components dimensions] */
 
 barrel_jack_hole_d = 12;
-barrel_channel_w = 70;
+panel_region_gap = 2;
+dc_region_w = 74;
+barrel_channel_w = dc_region_w;
 barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
 barrel_label_x = 7;
-barrel_group_y = -8;
+barrel_group_y = -6;
 barrel_group_x = 5;
-barrel_group_w = 70;
+barrel_group_w = dc_region_w;
 barrel_group_h = 46;
 barrel_jack_x = -13;
 barrel_toggle_x = 8;
@@ -219,8 +221,10 @@ c13_panel_w = 72;
 c13_panel_h = 68;
 c13_label_w = 48;
 c13_label_h = 10;
-c13_group_w = 66;
+c13_group_w = 58;
 c13_group_h = 64;
+service_group_w = c13_group_w;
+service_group_h = usb_c_group_h;
 inch = 24.5;
 c13_face_w_inch = 1.9;
 c13_face_h_inch = 2.0;
@@ -404,8 +408,18 @@ echo(str("M3x30 extra enclosed travel: ",
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
-usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
-usb_c_panel_y = 14;
+c13_panel_x = outlet_right_x - c13_group_w / 2;
+service_group_x = c13_panel_x;
+service_group_y = service_row_y - c13_group_h / 2
+    - panel_region_gap - service_group_h / 2;
+service_cell_w = service_group_w / 2;
+service_cell_h = service_group_h / 2;
+service_left_x = service_group_x - service_cell_w / 2;
+service_right_x = service_group_x + service_cell_w / 2;
+service_top_y = service_group_y + service_cell_h / 2;
+service_bottom_y = service_group_y - service_cell_h / 2;
+usb_c_panel_x = service_right_x;
+usb_c_panel_y = service_bottom_y;
 sub_panel_usb_support_rib_y =
     usb_c_panel_y - sub_panel_usb_c_cutout_h / 2
     - sub_panel_usb_support_rib_gap
@@ -413,20 +427,69 @@ sub_panel_usb_support_rib_y =
 sub_panel_revision_y =
     sub_panel_usb_support_rib_y - sub_panel_usb_support_rib_w / 2
     - sub_panel_revision_clearance - sub_panel_revision_font / 2;
-c13_panel_x = outlet_right_x - c13_group_w / 2;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
-dc_channel_gap = (
-    outlet_right_x - c13_group_w
-    - dc_grid_x - barrel_group_w - barrel_group_x - barrel_group_w / 2
-) / 2;
-dc_col_spacing = barrel_group_w + dc_channel_gap;
-dc_row_spacing = barrel_group_h + dc_channel_gap;
+dc_col_spacing = dc_region_w + panel_region_gap;
+dc_row_spacing = barrel_group_h + panel_region_gap;
+dc_region_left_x = dc_grid_x + barrel_group_x - dc_region_w / 2;
+dc_region_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + dc_region_w / 2;
+dc_region_top_y = dc_grid_y + barrel_group_y + barrel_group_h / 2;
+dc_region_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
+dc_column_gap_left_x = dc_grid_x + barrel_group_x + dc_region_w / 2;
+dc_column_gap_right_x = dc_grid_x + dc_col_spacing + barrel_group_x - dc_region_w / 2;
+dc_column_gap = dc_column_gap_right_x - dc_column_gap_left_x;
+dc_row_gap_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y + barrel_group_h / 2;
+dc_row_gap_top_y = dc_grid_y + barrel_group_y - barrel_group_h / 2;
+dc_row_gap = dc_row_gap_top_y - dc_row_gap_bottom_y;
+c13_region_left_x = c13_panel_x - c13_group_w / 2;
+c13_region_right_x = c13_panel_x + c13_group_w / 2;
+c13_region_bottom_y = service_row_y - c13_group_h / 2;
+c13_region_top_y = service_row_y + c13_group_h / 2;
+service_region_left_x = service_group_x - service_group_w / 2;
+service_region_right_x = service_group_x + service_group_w / 2;
+service_region_bottom_y = service_group_y - service_group_h / 2;
+service_region_top_y = service_group_y + service_group_h / 2;
+c13_service_gap = c13_region_bottom_y - service_region_top_y;
+xt60_region_x_margin = min(
+    dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
+    barrel_group_x + dc_region_w / 2 - (dc_connector_x() + xt60_outside_w / 2)
+);
+dc_hardware_left_x = min(
+    dc_connector_x() - xt60_outside_w / 2,
+    dc_toggle_x() - sub_panel_switch_w / 2
+);
+dc_hardware_right_x = max(
+    dc_connector_x() + xt60_outside_w / 2,
+    dc_toggle_x() + sub_panel_switch_w / 2
+);
+dc_hardware_half_h = max(xt60_face_h / 2, sub_panel_switch_h / 2);
+dc_hardware_inside_region =
+    dc_hardware_left_x >= barrel_group_x - dc_region_w / 2
+    && dc_hardware_right_x <= barrel_group_x + dc_region_w / 2
+    && -dc_hardware_half_h >= barrel_group_y - barrel_group_h / 2
+    && dc_hardware_half_h <= barrel_group_y + barrel_group_h / 2;
+c13_hardware_half_w = max(c13_cutout_w / 2, c13_screw_spacing / 2 + c13_screw_d / 2);
+c13_hardware_inside_region =
+    c13_panel_x - c13_hardware_half_w >= c13_region_left_x
+    && c13_panel_x + c13_hardware_half_w <= c13_region_right_x
+    && service_row_y - c13_cutout_h / 2 >= c13_region_bottom_y
+    && service_row_y + c13_cutout_h / 2 <= c13_region_top_y;
+usb_hardware_half_w = max(usb_c_cutout_w / 2, usb_c_screw_spacing / 2 + usb_c_screw_head_d / 2);
+usb_hardware_inside_region =
+    service_right_x - usb_hardware_half_w >= service_group_x
+    && service_right_x + usb_hardware_half_w <= service_region_right_x
+    && service_bottom_y - usb_c_cutout_h / 2 >= service_region_bottom_y
+    && service_bottom_y + usb_c_cutout_h / 2 <= service_group_y;
+separator_cutters_respect_rib_bounds =
+    dc_column_gap == panel_region_gap
+    && dc_row_gap == panel_region_gap
+    && c13_service_gap == panel_region_gap
+    && dc_hardware_inside_region
+    && c13_hardware_inside_region
+    && usb_hardware_inside_region;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
-revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
-revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
-top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
+revision_x = service_left_x;
 sub_panel_bottom_z = -(plate_t + sub_panel_h);
 panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
 panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
@@ -452,6 +515,28 @@ layout_offset_y = panel_margin - content_bottom_y;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
 internal_psu_x = 70;
+
+assert(dc_column_gap == panel_region_gap,
+    "DC column region gap must be 2 mm");
+assert(dc_row_gap == panel_region_gap,
+    "DC row region gap must be 2 mm");
+assert(c13_service_gap == panel_region_gap,
+    "C13/service gap must be 2 mm");
+assert(xt60_region_x_margin >= 1.2,
+    "every XT60 face needs at least 1.2 mm X margin");
+assert(c13_cutout_w == 28 && c13_screw_spacing == 40,
+    "C13 hardware locations must remain unchanged");
+assert(service_cell_w * 2 == service_group_w
+        && service_cell_h * 2 == service_group_h,
+    "service cells must exactly tile the region");
+assert(dc_hardware_inside_region,
+    "DC hardware must remain inside each region");
+assert(c13_hardware_inside_region,
+    "C13 hardware must remain inside its region");
+assert(usb_hardware_inside_region,
+    "USB hardware must remain inside its service cell");
+assert(separator_cutters_respect_rib_bounds,
+    "separator ribs must follow region bounds without cutter trimming");
 
 alignment_wall_h = 8;
 alignment_wall_t = 2;
@@ -633,6 +718,32 @@ module sub_panel_usb_support_rib_positive() {
         ]);
 }
 
+module sub_panel_separator_rib_positive(x0, y0, w, h) {
+    translate([x0, y0, sub_panel_base_h])
+        cube([w, h, sub_panel_h - sub_panel_base_h]);
+}
+
+module sub_panel_separator_ribs_positive() {
+    sub_panel_separator_rib_positive(
+        layout_offset_x + dc_column_gap_left_x,
+        layout_offset_y + dc_region_bottom_y,
+        panel_region_gap,
+        dc_region_top_y - dc_region_bottom_y
+    );
+    sub_panel_separator_rib_positive(
+        layout_offset_x + dc_region_left_x,
+        layout_offset_y + dc_row_gap_bottom_y,
+        dc_region_right_x - dc_region_left_x,
+        panel_region_gap
+    );
+    sub_panel_separator_rib_positive(
+        layout_offset_x + c13_region_left_x,
+        layout_offset_y + service_region_top_y,
+        c13_group_w,
+        panel_region_gap
+    );
+}
+
 module sub_panel_8ch_positive() {
     base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
@@ -651,6 +762,7 @@ module sub_panel_8ch_positive() {
         }
 
         sub_panel_usb_support_rib_positive();
+        sub_panel_separator_ribs_positive();
     }
 }
 
@@ -902,15 +1014,22 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
             flush_revision_label();
 }
 
-module usb_c_panel_negative() {
+module usb_c_connector_negative() {
     rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
             topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
+}
 
+module service_group_negative() {
+    label_pocket(service_group_w, service_group_h);
+}
+
+module usb_c_panel_negative() {
+    usb_c_connector_negative();
     translate([0, usb_c_group_y, 0])
-        label_pocket(usb_c_group_w, usb_c_group_h);
+        service_group_negative();
 }
 
 module usb_c_revision_negative() {
@@ -1028,18 +1147,14 @@ module top_panel_8ch(include_revision = true) {
                         translate([dc_channel_x(i), dc_channel_y(i), 0])
                             barrel_channel_negative();
 
-                    translate([usb_c_panel_x, usb_c_panel_y, 0])
-                        usb_c_panel_negative();
+                    translate([service_group_x, service_group_y, 0])
+                        service_group_negative();
+
+                    translate([service_right_x, service_bottom_y, 0])
+                        usb_c_connector_negative();
 
                     translate([c13_panel_x, service_row_y, 0])
                         c13_inlet_negative();
-
-                    if (include_revision) {
-                        translate([revision_x, revision_y, 0])
-                            label_pocket(top_panel_revision_label_w, revision_label_h);
-                        translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
-                            label_pocket(top_panel_revision_label_w, revision_label_h);
-                    }
                 }
 
                 panel_corner_screw_lands();
@@ -1061,14 +1176,14 @@ module top_panel_8ch(include_revision = true) {
             translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
-        translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 4, 0])
+        translate([service_left_x, service_bottom_y, 0])
             flush_label("COM", 5);
 
         if (include_revision) {
-            translate([revision_x, revision_y, 0])
-                flush_revision_label();
-            translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
+            translate([service_left_x, service_top_y, 0])
                 flush_label(top_panel_brand_text, top_panel_brand_font);
+            translate([service_right_x, service_top_y, 0])
+                flush_revision_label();
         }
     }
 }

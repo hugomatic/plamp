@@ -837,6 +837,151 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_usb_support_rib_h", rib)
         self.assertIn("sub_panel_usb_support_rib_positive();", source)
 
+    def test_plamp8_panel_regions_have_two_mm_gaps_and_xt60_margin(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for declaration in (
+            "panel_region_gap = 2;",
+            "dc_region_w = 74;",
+            "barrel_group_w = dc_region_w;",
+            "barrel_channel_w = dc_region_w;",
+            "c13_group_w = 58;",
+            "service_group_w = c13_group_w;",
+            "service_group_h = usb_c_group_h;",
+            "c13_cutout_w = 28;",
+            "c13_screw_spacing = 40;",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(declaration, source)
+
+        self.assertIn("dc_col_spacing=dc_region_w+panel_region_gap;", compact)
+        self.assertIn("dc_row_spacing=barrel_group_h+panel_region_gap;", compact)
+        self.assertIn(
+            "assert(dc_column_gap==panel_region_gap,"
+            '"DCcolumnregiongapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(dc_row_gap==panel_region_gap,"
+            '"DCrowregiongapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(c13_service_gap==panel_region_gap,"
+            '"C13/servicegapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(xt60_region_x_margin>=1.2,"
+            '"everyXT60faceneedsatleast1.2mmXmargin");',
+            compact,
+        )
+        self.assertIn(
+            "assert(c13_cutout_w==28&&c13_screw_spacing==40,"
+            '"C13hardwarelocationsmustremainunchanged");',
+            compact,
+        )
+
+    def test_plamp8_service_region_is_one_equal_cell_grid(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for equation in (
+            "service_group_x = c13_panel_x;",
+            "service_group_y = service_row_y - c13_group_h / 2",
+            "- panel_region_gap - service_group_h / 2;",
+            "service_cell_w = service_group_w / 2;",
+            "service_cell_h = service_group_h / 2;",
+            "service_left_x = service_group_x - service_cell_w / 2;",
+            "service_right_x = service_group_x + service_cell_w / 2;",
+            "service_top_y = service_group_y + service_cell_h / 2;",
+            "service_bottom_y = service_group_y - service_cell_h / 2;",
+        ):
+            with self.subTest(equation=equation):
+                self.assertIn(equation, source)
+
+        self.assertIn("module service_group_negative()", source)
+        self.assertIn("module usb_c_connector_negative()", source)
+        service_negative = (
+            compact_scad(scad_module_body(source, "service_group_negative"))
+            if "module service_group_negative()" in source
+            else ""
+        )
+        usb_hardware = (
+            compact_scad(scad_module_body(source, "usb_c_connector_negative"))
+            if "module usb_c_connector_negative()" in source
+            else ""
+        )
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        usb_coupon = compact_scad(scad_module_body(source, "usb_c_panel_negative"))
+
+        self.assertEqual(top_panel.count("service_group_negative();"), 1)
+        self.assertIn("label_pocket(service_group_w,service_group_h);", service_negative)
+        self.assertNotIn("label_pocket", usb_hardware)
+        self.assertIn("rounded_rect_cutout(usb_c_cutout_w,usb_c_cutout_h,usb_c_cutout_r);", usb_hardware)
+        self.assertIn("usb_c_connector_negative();", usb_coupon)
+        self.assertIn("service_group_negative();", usb_coupon)
+        self.assertIn(
+            "assert(service_cell_w*2==service_group_w&&"
+            "service_cell_h*2==service_group_h,"
+            '"servicecellsmustexactlytiletheregion");',
+            compact,
+        )
+        for contract in (
+            'translate([service_left_x,service_top_y,0])flush_label(top_panel_brand_text,top_panel_brand_font);',
+            "translate([service_right_x,service_top_y,0])flush_revision_label();",
+            'translate([service_left_x,service_bottom_y,0])flush_label("COM",5);',
+            "translate([service_right_x,service_bottom_y,0])usb_c_connector_negative();",
+            "assert(c13_hardware_inside_region,\"C13hardwaremustremaininsideitsregion\");",
+            "assert(usb_hardware_inside_region,\"USBhardwaremustremaininsideitsservicecell\");",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, compact)
+
+    def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module sub_panel_separator_rib_positive(x0, y0, w, h)", source)
+        self.assertIn("module sub_panel_separator_ribs_positive()", source)
+        helper = (
+            compact_scad(scad_module_body(source, "sub_panel_separator_rib_positive"))
+            if "module sub_panel_separator_rib_positive(" in source
+            else ""
+        )
+        ribs = (
+            compact_scad(scad_module_body(source, "sub_panel_separator_ribs_positive"))
+            if "module sub_panel_separator_ribs_positive(" in source
+            else ""
+        )
+        positive = compact_scad(scad_module_body(source, "sub_panel_8ch_positive"))
+
+        self.assertIn("translate([x0,y0,sub_panel_base_h])", helper)
+        self.assertIn(
+            "cube([w,h,sub_panel_h-sub_panel_base_h]);", helper
+        )
+        expected_calls = (
+            "sub_panel_separator_rib_positive(layout_offset_x+dc_column_gap_left_x,"
+            "layout_offset_y+dc_region_bottom_y,panel_region_gap,"
+            "dc_region_top_y-dc_region_bottom_y);",
+            "sub_panel_separator_rib_positive(layout_offset_x+dc_region_left_x,"
+            "layout_offset_y+dc_row_gap_bottom_y,"
+            "dc_region_right_x-dc_region_left_x,panel_region_gap);",
+            "sub_panel_separator_rib_positive(layout_offset_x+c13_region_left_x,"
+            "layout_offset_y+service_region_top_y,c13_group_w,panel_region_gap);",
+        )
+        for call in expected_calls:
+            with self.subTest(call=call):
+                self.assertIn(call, ribs)
+        self.assertEqual(ribs.count("sub_panel_separator_rib_positive("), 3)
+        self.assertIn("sub_panel_separator_ribs_positive();", positive)
+        self.assertIn("sub_panel_usb_support_rib_positive();", positive)
+        self.assertIn(
+            "assert(separator_cutters_respect_rib_bounds,"
+            '"separatorribsmustfollowregionboundswithoutcuttertrimming");',
+            compact,
+        )
+
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -875,7 +1020,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
         self.assertRegex(
             source,
-            r"module usb_c_panel_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+            r"module usb_c_connector_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
         )
         self.assertRegex(
             source,
