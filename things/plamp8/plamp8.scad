@@ -463,6 +463,7 @@ top_panel_brand_text = "plamp";
 top_panel_brand_font = 4;
 top_panel_brand_y_offset = 19;
 box_revision_font = 6;
+floor_revision_depth = 0.6;
 letter_size = 6;
 write_t = 0.75;
 revision_string = "revision";
@@ -1220,7 +1221,7 @@ module floor_context(colorize = true) {
                 converter_bottom_mount_holes();
             }
             floor_corner_fastener_holes();
-            box_bottom_revision_negative();
+            floor_revision_negative();
             floor_assembly_name_negatives();
             floor_component_label_negatives();
         }
@@ -1499,10 +1500,10 @@ module converter_mount_holes(z0 = -box_h) {
             bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d, z0, wall_t + component_raise_h);
 }
 
-module box_bottom_revision_negative() {
-    translate([box_w / 2, box_d / 2, -box_h])
-        mirror([1, 0, 0])
-            write_text(revision_string, box_revision_font, -0.01);
+module floor_revision_negative() {
+    translate([box_w / 2, box_d / 2, -box_h + wall_t])
+        rotate([0, 0, 0])
+            write_text(revision_string, box_revision_font, -floor_revision_depth);
 }
 
 module top_panel_outline() {
@@ -1945,8 +1946,17 @@ module wall_assembly_name_negative(length, wall_name) {
             write_text(wall_name, assembly_name_font, -assembly_name_depth);
 }
 
-module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
-    revision_x = vent_mode == "half" ? length / 3 : length / 2;
+module wall_revision_negative(
+    length,
+    h = wall_z_height,
+    vent_mode = "none",
+    vent_side = "right"
+) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
+    revision_x = vent_mode == "half"
+        ? (vent_side == "left" ? 3 * length / 4 : length / 4)
+        : length / 2;
     revision_y = vent_mode == "full" ? h - wall_revision_top_margin : h / 2;
 
     translate([revision_x, revision_y, wall_t])
@@ -1966,16 +1976,20 @@ module wall_vent_negative(x, y, coarse_vents = false) {
 module wall_vent_negatives(
     length,
     vent_mode = "none",
+    vent_side = "right",
     h = wall_z_height,
     coarse_vents = false
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     vent_ys = [
         vent_floor_clearance:
         vent_hole_spacing:
         h - vent_top_margin - vent_top_clearance
     ];
-    vent_start_x = vent_mode == "half" ? length / 2 : vent_wall_margin;
-    vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
+    vent_start_x = vent_mode == "half" && vent_side == "right" ? length / 2 : vent_wall_margin;
+    vent_end_x = vent_mode == "half" && vent_side == "left" ? length / 2 : length - vent_wall_margin;
+    vent_xs = [vent_start_x:vent_hole_spacing:vent_end_x];
     joint_min_x = corner_axis_inset + corner_tab_w / 2;
     joint_max_x = length - joint_min_x;
     joint_min_y = bottom_nut_tab_center_y() + corner_tab_t / 2;
@@ -2059,10 +2073,15 @@ module wall_stiffening_ribs(
     length,
     h,
     vent_mode = "none",
+    vent_side = "right",
     print_orientation = flat_wall_print_orientation
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     rib_xs = vent_mode == "half"
-        ? [length / 4, length / 2 + vent_hole_spacing / 2]
+        ? (vent_side == "left"
+            ? [length / 2 - vent_hole_spacing / 2, 3 * length / 4]
+            : [length / 4, length / 2 + vent_hole_spacing / 2])
         : (vent_mode == "full"
             ? [vent_wall_margin + vent_hole_spacing / 2, full_vent_center_rib_x(length), length - 21]
             : [length / 3, 2 * length / 3]);
@@ -2160,11 +2179,14 @@ module flat_wall(
     wall_name = "",
     nut_owner = false,
     vent_mode = "none",
+    vent_side = "right",
     h = wall_z_height,
     coarse_vents = false,
     mitre_overlap = 0,
     print_orientation = flat_wall_print_orientation
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     difference() {
         union() {
             wall_body_positive(length, h, mitre_overlap);
@@ -2173,12 +2195,13 @@ module flat_wall(
                 length,
                 h,
                 vent_mode,
+                vent_side,
                 print_orientation
             );
         }
         floor_locator_notches(length);
-        wall_vent_negatives(length, vent_mode, h, coarse_vents);
-        wall_revision_negative(length, h, vent_mode);
+        wall_vent_negatives(length, vent_mode, vent_side, h, coarse_vents);
+        wall_revision_negative(length, h, vent_mode, vent_side);
         wall_assembly_name_negative(length, wall_name);
     }
 }
@@ -2191,7 +2214,7 @@ module south_wall_context(
 ) {
     optional_color([0.15, 0.45, 0.9, 1], colorize)
         multmatrix([
-            [1, 0, 0, 0],
+            [-1, 0, 0, box_w],
             [0, 0, 1, 0],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
@@ -2232,7 +2255,7 @@ module west_wall_context(
     optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, 1, 0],
-            [-1, 0, 0, box_d],
+            [1, 0, 0, 0],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
@@ -2252,7 +2275,7 @@ module east_wall_context(
     optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, -1, box_w],
-            [1, 0, 0, 0],
+            [-1, 0, 0, box_d],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
@@ -2273,6 +2296,7 @@ module north_wall(
         wall_name = "NORTH",
         nut_owner = true,
         vent_mode = "half",
+        vent_side = "right",
         coarse_vents = coarse_vents,
         mitre_overlap = mitre_overlap,
         print_orientation = print_orientation
@@ -2289,6 +2313,7 @@ module south_wall(
         wall_name = "SOUTH",
         nut_owner = true,
         vent_mode = "half",
+        vent_side = "left",
         coarse_vents = coarse_vents,
         mitre_overlap = mitre_overlap,
         print_orientation = print_orientation

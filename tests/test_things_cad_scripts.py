@@ -1,3 +1,4 @@
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -20,6 +21,170 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_wall_contexts_are_proper_rotations(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        expected_matrices = {
+            "north": [
+                ["1", "0", "0", "0"],
+                ["0", "0", "-1", "box_d"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "south": [
+                ["-1", "0", "0", "box_w"],
+                ["0", "0", "1", "0"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "west": [
+                ["0", "0", "1", "0"],
+                ["1", "0", "0", "0"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "east": [
+                ["0", "0", "-1", "box_w"],
+                ["-1", "0", "0", "box_d"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+        }
+
+        for wall, expected in expected_matrices.items():
+            with self.subTest(wall=wall):
+                context = source.split(
+                    f"module {wall}_wall_context(", 1
+                )[1].split("module ", 1)[0]
+                matrix_literal = re.search(
+                    r"multmatrix\(\[\s*((?:\[[^\]]+\],?\s*){4})\]\)",
+                    context,
+                )
+                self.assertIsNotNone(matrix_literal)
+                rows = [
+                    [value.strip() for value in row.split(",")]
+                    for row in re.findall(r"\[([^\]]+)\]", matrix_literal.group(1))
+                ]
+                self.assertEqual(rows, expected)
+
+                orientation = [[int(value) for value in row[:3]] for row in rows[:3]]
+                determinant = (
+                    orientation[0][0]
+                    * (
+                        orientation[1][1] * orientation[2][2]
+                        - orientation[1][2] * orientation[2][1]
+                    )
+                    - orientation[0][1]
+                    * (
+                        orientation[1][0] * orientation[2][2]
+                        - orientation[1][2] * orientation[2][0]
+                    )
+                    + orientation[0][2]
+                    * (
+                        orientation[1][0] * orientation[2][1]
+                        - orientation[1][1] * orientation[2][0]
+                    )
+                )
+                self.assertEqual(determinant, 1)
+
+        north_context = source.split("module north_wall_context(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            """multmatrix([
+            [1, 0, 0, 0],
+            [0, 0, -1, box_d],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])""",
+            north_context,
+        )
+
+    def test_plamp8_half_vents_are_explicitly_handed(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        for module_name in (
+            "flat_wall",
+            "wall_vent_negatives",
+            "wall_revision_negative",
+            "wall_stiffening_ribs",
+        ):
+            with self.subTest(module=module_name):
+                module = source.split(f"module {module_name}(", 1)[1].split(
+                    "module ", 1
+                )[0]
+                self.assertIn('vent_side = "right"', module)
+                self.assertIn(
+                    'vent_mode != "half" || vent_side == "left" || vent_side == "right"',
+                    module,
+                )
+
+        flat_wall = source.split("module flat_wall(", 1)[1].split("module ", 1)[0]
+        self.assertIn("wall_vent_negatives(", flat_wall)
+        self.assertIn("wall_revision_negative(", flat_wall)
+        self.assertIn("wall_stiffening_ribs(", flat_wall)
+        self.assertGreaterEqual(flat_wall.count("vent_side"), 4)
+
+        vent_grid = source.split("module wall_vent_negatives(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "right" ? length / 2',
+            vent_grid,
+        )
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "left" ? length / 2',
+            vent_grid,
+        )
+        self.assertIn(
+            "vent_xs = [vent_start_x:vent_hole_spacing:vent_end_x];", vent_grid
+        )
+
+        ribs = source.split("module wall_stiffening_ribs(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn('vent_side == "left"', ribs)
+        self.assertIn(
+            "[length / 2 - vent_hole_spacing / 2, 3 * length / 4]", ribs
+        )
+        self.assertIn(
+            "[length / 4, length / 2 + vent_hole_spacing / 2]", ribs
+        )
+
+        revision = source.split("module wall_revision_negative(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            'vent_side == "left" ? 3 * length / 4 : length / 4', revision
+        )
+
+        north = source.split("module north_wall(", 1)[1].split("module ", 1)[0]
+        south = source.split("module south_wall(", 1)[1].split("module ", 1)[0]
+        self.assertIn('vent_side = "right"', north)
+        self.assertIn('vent_side = "left"', south)
+
+    def test_plamp8_floor_revision_is_readable_from_inside(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("floor_revision_depth = 0.6;", source)
+        self.assertNotIn("box_bottom_revision_negative", source)
+        revision = source.split("module floor_revision_negative()", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            "translate([box_w / 2, box_d / 2, -box_h + wall_t])", revision
+        )
+        self.assertIn("rotate([0, 0, 0])", revision)
+        self.assertIn(
+            "write_text(revision_string, box_revision_font, -floor_revision_depth);",
+            revision,
+        )
+        self.assertNotIn("mirror(", revision)
+
+        floor_context = source.split("module floor_context(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertEqual(floor_context.count("floor_revision_negative();"), 1)
+
     def test_cad_documentation_covers_the_stable_local_workflow(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         host_tools = (REPO_ROOT / "docs" / "host-tools.md").read_text(
@@ -294,7 +459,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("floor_rib_x0 = floor_locator_end_offset", source)
         self.assertIn("floor_rib_x1 = length - floor_rib_x0;", source)
         self.assertIn("transverse_rib_x0", source)
-        self.assertIn('vent_mode == "half" ? length / 2', source)
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "right" ? length / 2', source
+        )
         self.assertNotIn("module bottom_corner_locator_key", source)
 
     def test_plamp8_box_coarse_vents_are_point_up_hexagons(self):
