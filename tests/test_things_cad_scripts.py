@@ -29,6 +29,60 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_corner_nut_fit_uses_measured_independent_dimensions(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for definition in (
+            "corner_nut_slot_l=2.7;",
+            "corner_nut_entry_w=6.1;",
+            "corner_nut_throat_w=5.8;",
+            "corner_nut_entry_detent=(corner_nut_entry_w-corner_nut_throat_w)/2;",
+            "corner_nut_entry_detent_l=1.5;",
+            "corner_nut_pocket_d=corner_nut_entry_w/cos(30);",
+        ):
+            with self.subTest(definition=definition):
+                self.assertIn(definition, compact)
+
+        for measured_assertion in (
+            "assert(abs(corner_nut_slot_l-2.7)<0.000001",
+            "assert(abs(corner_nut_entry_w-6.1)<0.000001",
+            "assert(abs(corner_nut_throat_w-5.8)<0.000001",
+            "assert(abs(corner_nut_entry_detent_l-1.5)<0.000001",
+            "assert(abs(corner_nut_entry_detent-0.15)<0.000001",
+            "assert(abs(corner_nut_entry_w-2*corner_nut_entry_detent-corner_nut_throat_w)<0.000001",
+        ):
+            with self.subTest(assertion=measured_assertion):
+                self.assertIn(measured_assertion, compact)
+
+        self.assertIn(
+            "corner_nut_detent_ramp_h=corner_nut_entry_detent*tan(corner_nut_detent_angle);",
+            compact,
+        )
+
+    def test_plamp8_corner_nut_fit_is_shared_by_flat_and_box_paths(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        nut_trap = compact_scad(scad_module_body(source, "support_free_m3_nut_trap"))
+
+        self.assertIn(
+            "detent_bottom_z=corner_tab_h-corner_nut_entry_detent_l;",
+            nut_trap,
+        )
+        self.assertIn(
+            "box_m3_nut_pocket_negative(corner_nut_pocket_d,pocket_center_y,axis_z);",
+            nut_trap,
+        )
+        self.assertIn(
+            "cylinder(h=corner_nut_slot_l,d=corner_nut_pocket_d,center=true,$fn=6);",
+            nut_trap,
+        )
+        self.assertIn(
+            "corner_nut_entry_negative(corner_nut_entry_w,corner_nut_throat_w,",
+            nut_trap,
+        )
+        self.assertNotIn("panel_nut_entry_detent", nut_trap)
+        self.assertNotIn("panel_nut_entry_detent_l", nut_trap)
+
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         expected_matrices = {
@@ -287,7 +341,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("corner_nut_tab_extension = 16;", source)
         self.assertIn("corner_nut_detent_angle = 30;", source)
         self.assertIn(
-            "corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);",
+            "corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);",
             source,
         )
         self.assertIn(

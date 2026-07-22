@@ -166,9 +166,13 @@ panel_nut_entry_detent_l = 1.5;
 panel_fastener_boss_d = 11;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
-corner_nut_d = screw_nut_trap_d(corner_screw_size);
-corner_nut_h = screw_nut_trap_h(corner_screw_size);
-corner_nut_clearance = 0.3;
+corner_nut_slot_l = 2.7;
+corner_nut_entry_w = 6.1;
+corner_nut_throat_w = 5.8;
+corner_nut_entry_detent =
+    (corner_nut_entry_w - corner_nut_throat_w) / 2;
+corner_nut_entry_detent_l = 1.5;
+corner_nut_pocket_d = corner_nut_entry_w / cos(30);
 
 
 /* [components dimensions] */
@@ -293,12 +297,11 @@ corner_tab_boss_r = 5;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
-corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = 16;
 corner_nut_detent_angle = 30;
-corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);
+corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -401,6 +404,19 @@ assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
+assert(abs(corner_nut_slot_l - 2.7) < 0.000001,
+    "corner nut slot length must match the measured fit");
+assert(abs(corner_nut_entry_w - 6.1) < 0.000001,
+    "corner nut entry width must match the measured fit");
+assert(abs(corner_nut_throat_w - 5.8) < 0.000001,
+    "corner nut throat width must match the measured fit");
+assert(abs(corner_nut_entry_detent_l - 1.5) < 0.000001,
+    "corner nut detent length must match the measured fit");
+assert(abs(corner_nut_entry_detent - 0.15) < 0.000001,
+    "corner nut detent must retain 0.15 mm per side");
+assert(abs(corner_nut_entry_w - 2 * corner_nut_entry_detent
+        - corner_nut_throat_w) < 0.000001,
+    "corner nut detents must reduce the entry to the throat width");
 echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
 echo(str("bottom M3x25 nut-face offset: ",
     corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
@@ -1969,24 +1985,30 @@ module support_free_m3_nut_trap(
     axis_z = wall_t + panel_screw_inset,
     print_orientation = flat_wall_print_orientation
 ) {
-    nut_d = corner_nut_d + corner_nut_clearance;
-    nut_flat_w = nut_d * cos(30);
-    throat_w = nut_flat_w - 2 * panel_nut_entry_detent;
     pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
         + pocket_offset_y;
-    detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
+    detent_bottom_z = corner_tab_h - corner_nut_entry_detent_l;
 
     if (print_orientation == box_print_orientation)
-        box_m3_nut_pocket_negative(nut_d, pocket_center_y, axis_z);
+        box_m3_nut_pocket_negative(
+            corner_nut_pocket_d,
+            pocket_center_y,
+            axis_z
+        );
     else
         translate([0, pocket_center_y, axis_z])
             rotate([0, 30, 0])
                 rotate([90, 0, 0])
-                    cylinder(h = corner_nut_slot_l, d = nut_d, center = true, $fn = 6);
+                    cylinder(
+                        h = corner_nut_slot_l,
+                        d = corner_nut_pocket_d,
+                        center = true,
+                        $fn = 6
+                    );
 
     corner_nut_entry_negative(
-        nut_flat_w,
-        throat_w,
+        corner_nut_entry_w,
+        corner_nut_throat_w,
         pocket_center_y,
         detent_bottom_z,
         axis_z,
