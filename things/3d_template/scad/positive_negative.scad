@@ -1,82 +1,46 @@
 render_fn = 64;
 $fn = render_fn;
-view = "assembly"; // [assembly, plate]
+view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
 
 /* generate.json
 {
   "default_preset": "all-views-default",
+  "views": {
+    "__PLAMP_PART__": {"description": "Printable positive-negative part"},
+    "assembly": {"description": "Initial positive-negative assembly"}
+  },
   "presets": {
     "all-views-default": {
-      "description": "Generate every declared positive-negative part view",
-      "items": ["view:assembly", "view:plate"]
+      "description": "Generate the part and initial assembly",
+      "items": ["view:__PLAMP_PART__", "view:assembly"]
     }
   }
 }
 */
 
-letter_size = 6;
-revision_string = "dev";
+part_w = 70;
+part_d = 130;
+part_h = 12;
+boolean_overlap = 0.1;
 
-part_dx = 70;
-part_dy = 130;
-part_dz = 12;
-corner_r = 20;
-
-module write_text(string) {
-    translate([0, 0, -0.25])
-        linear_extrude(0.5)
-            text(
-                string,
-                size = letter_size,
-                font = "DejaVu Sans",
-                halign = "center",
-                valign = "center"
-            );
+module __PLAMP_PART___positive() {
+    cube([part_w, part_d, part_h], center = true);
 }
 
-module rounded_box(x, y, z, r) {
-    dx = x - 2 * r;
-    dy = y - 2 * r;
-    translate([-dx / 2, -dy / 2, -z / 2])
-        hull() {
-            translate([0, 0, 0]) cylinder(h = z, r = r);
-            translate([dx, 0, 0]) cylinder(h = z, r = r);
-            translate([dx, dy, 0]) cylinder(h = z, r = r);
-            translate([0, dy, 0]) cylinder(h = z, r = r);
-        }
+module __PLAMP_PART___negative() {
+    echo("BOM", "M3x16 screw", 1);
+    cylinder(d = 3.4, h = part_h + 2 * boolean_overlap, center = true);
 }
 
-module part_positive() {
-    translate([0, 0, -part_dz / 2])
-        rounded_box(part_dx, part_dy, part_dz, corner_r);
-}
-
-module part_negative() {
-    translate([0, 0, -part_dz])
-        rotate([0, 180, 0])
-            write_text(revision_string);
-}
-
-module part() {
+module __PLAMP_PART__() {
     difference() {
-        part_positive();
-        part_negative();
+        __PLAMP_PART___positive();
+        __PLAMP_PART___negative();
     }
 }
 
-module plate() {
-    rotate([180, 0, 0])
-        part();
-}
-
-module assembly() {
-    part();
-}
-
-if (view == "plate") {
-    plate();
+if (view == "__PLAMP_PART__") {
+    __PLAMP_PART__();
 } else if (view == "assembly") {
-    assembly();
-} else {
-    assembly();
+    __PLAMP_PART__();
 }

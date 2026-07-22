@@ -1,7 +1,9 @@
 import contextlib
+import errno
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -11,7 +13,12 @@ from pathlib import Path
 
 from plamp.cad_cli import add_cad_parser, run_cad_command
 from plamp.cad_generation import generate_plan
-from plamp.cad_scaffold import CadTemplate, CreatedPart
+from plamp.cad_scaffold import (
+    CadDestinationExistsError,
+    CadSelectionError,
+    CadTemplate,
+    CreatedPart,
+)
 from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
@@ -186,6 +193,96 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("available: cad", json.loads(stdout.getvalue())[0]["message"])
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_new_selection_failures_remain_cad200(self):
+        parser = build_parser()
+        for error in (
+            CadSelectionError("invalid template contract"),
+            CadDestinationExistsError("destination exists"),
+            ValueError("invalid command selection"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                rc = run_cad_command(
+                    parser.parse_args(["cad", "new", "pump-bracket", "--json"]),
+                    self.context, io.StringIO(), stdout, stderr,
+                    {"create_part": lambda *args, error=error: (_ for _ in ()).throw(error)},
+                )
+                diagnostic = json.loads(stdout.getvalue())[0]
+                self.assertEqual(rc, 2)
+                self.assertEqual((diagnostic["code"], diagnostic["kind"]), ("CAD200", "invalid_selection"))
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_new_operational_io_failures_are_cad400(self):
+        parser = build_parser()
+        failures = (
+            PermissionError(errno.EACCES, "template read denied"),
+            OSError(errno.ENOSPC, "staging write full"),
+            OSError(errno.EIO, "commit failed"),
+            FileExistsError(errno.EEXIST, "staging collision"),
+        )
+        for list_templates in (False, True):
+            for error in failures:
+                with self.subTest(list_templates=list_templates, errno=error.errno):
+                    argv = ["cad", "new", "--list-templates", "--json"] if list_templates else ["cad", "new", "pump-bracket", "--json"]
+                    dependency = "discover_templates" if list_templates else "create_part"
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    rc = run_cad_command(
+                        parser.parse_args(argv), self.context, io.StringIO(), stdout, stderr,
+                        {dependency: lambda *args, error=error: (_ for _ in ()).throw(error)},
+                    )
+                    diagnostic = json.loads(stdout.getvalue())[0]
+                    self.assertEqual(rc, 4)
+                    self.assertEqual((diagnostic["code"], diagnostic["kind"]), ("CAD400", "operation_failed"))
+                    self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_generated_hyphenated_part_supports_views_validate_and_plan(self):
+        repository = Path(__file__).resolve().parents[1]
+        shutil.copytree(
+            repository / "things" / "3d_template",
+            self.root / "things" / "3d_template",
+        )
+        openscad_calls = []
+
+        created_output = io.StringIO()
+        self.assertEqual(
+            main(
+                ["cad", "new", "pump-bracket", "--json"],
+                env=self.env(),
+                stdout=created_output,
+                stderr=io.StringIO(),
+                cad_generate_func=lambda *args, **kwargs: openscad_calls.append((args, kwargs)),
+            ),
+            0,
+        )
+        self.assertEqual(json.loads(created_output.getvalue())["part"], "pump-bracket")
+
+        outputs = {}
+        for action in ("views", "validate", "plan"):
+            stream = io.StringIO()
+            self.assertEqual(
+                main(
+                    ["cad", action, "pump-bracket", "--json"],
+                    env=self.env(),
+                    stdout=stream,
+                    stderr=io.StringIO(),
+                    cad_generate_func=lambda *args, **kwargs: openscad_calls.append((args, kwargs)),
+                ),
+                0,
+            )
+            outputs[action] = json.loads(stream.getvalue())
+
+        self.assertEqual(
+            [item["name"] for item in outputs["views"]["views"]],
+            ["pump_bracket", "assembly"],
+        )
+        self.assertTrue(outputs["validate"]["valid"])
+        self.assertEqual(outputs["plan"]["job_count"], 2)
+        self.assertEqual(
+            [job["view"] for job in outputs["plan"]["jobs"]],
+            ["pump_bracket", "assembly"],
+        )
+        self.assertEqual(openscad_calls, [])
 
     def test_views_resolves_part_name_and_path_and_keeps_assembly_last(self):
         for part in ("fixture", "things/fixture/fixture.scad"):

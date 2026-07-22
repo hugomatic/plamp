@@ -1,71 +1,46 @@
 render_fn = 96;
 $fn = render_fn;
-view = "assembly"; // [assembly, plate]
+view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
 
 /* generate.json
 {
   "default_preset": "all-views-default",
+  "views": {
+    "__PLAMP_PART__": {"description": "Printable flat plate"},
+    "assembly": {"description": "Initial flat-plate assembly"}
+  },
   "presets": {
     "all-views-default": {
-      "description": "Generate every declared flat-plate view",
-      "items": ["view:assembly", "view:plate"]
+      "description": "Generate the plate and initial assembly",
+      "items": ["view:__PLAMP_PART__", "view:assembly"]
     }
   }
 }
 */
 
-revision_string = "dev";
+part_w = 100;
+part_d = 60;
+part_h = 4;
+boolean_overlap = 0.1;
 
-plate_w = 100;
-plate_d = 60;
-plate_h = 4;
-corner_r = 5;
-letter_size = 5;
-
-module rounded_rect_2d(w, d, r) {
-    hull() {
-        for (x = [-1, 1], y = [-1, 1])
-            translate([x * (w / 2 - r), y * (d / 2 - r)])
-                circle(r = r);
-    }
+module __PLAMP_PART___positive() {
+    cube([part_w, part_d, part_h], center = true);
 }
 
-module plate_positive() {
-    linear_extrude(height = plate_h)
-        rounded_rect_2d(plate_w, plate_d, corner_r);
+module __PLAMP_PART___negative() {
+    echo("BOM", "M3x16 screw", 1);
+    cylinder(d = 3.4, h = part_h + 2 * boolean_overlap, center = true);
 }
 
-module plate_negative() {
-    translate([0, 0, plate_h - 0.35])
-        linear_extrude(height = 0.45)
-            text(
-                revision_string,
-                size = letter_size,
-                font = "DejaVu Sans",
-                halign = "center",
-                valign = "center"
-            );
-}
-
-module part() {
+module __PLAMP_PART__() {
     difference() {
-        plate_positive();
-        plate_negative();
+        __PLAMP_PART___positive();
+        __PLAMP_PART___negative();
     }
 }
 
-module plate() {
-    part();
-}
-
-module assembly() {
-    part();
-}
-
-if (view == "plate") {
-    plate();
+if (view == "__PLAMP_PART__") {
+    __PLAMP_PART__();
 } else if (view == "assembly") {
-    assembly();
-} else {
-    assembly();
+    __PLAMP_PART__();
 }

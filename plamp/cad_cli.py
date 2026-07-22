@@ -24,7 +24,12 @@ from plamp.cad_generation import (
 )
 from plamp.cad_metadata import CadDiagnostic, CadMetadataError, parse_cad_document
 from plamp.cad_recipes import Selection, build_render_plan, plan_as_dict
-from plamp.cad_scaffold import create_part, discover_templates
+from plamp.cad_scaffold import (
+    CadDestinationExistsError,
+    CadSelectionError,
+    create_part,
+    discover_templates,
+)
 from plamp.context import RuntimeContext
 
 
@@ -651,7 +656,7 @@ def run_cad_command(
     except CadMetadataError as error:
         _emit_diagnostics(error.diagnostics, args.json, stdout, stderr)
         return 2
-    except (ValueError, TypeError) as error:
+    except (CadSelectionError, ValueError, TypeError) as error:
         archive_action = args.action in {"runs", "show", "log"}
         code = "CAD400" if archive_action else "CAD200"
         kind = "operation_failed" if archive_action else "invalid_selection"
@@ -664,7 +669,7 @@ def run_cad_command(
         _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
         return 4 if archive_action else 2
     except (OSError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
-        if args.action == "new":
+        if args.action == "new" and isinstance(error, CadDestinationExistsError):
             diagnostic = _diagnostic(
                 error,
                 str(getattr(args, "part", "cad")),
