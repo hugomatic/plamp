@@ -5,10 +5,10 @@ Use this reference only in the plamp repository's `things/` CAD tree.
 ## Contents
 
 - [Installed Workflow](#installed-workflow)
+- [Create a New Part](#create-a-new-part)
 - [SCAD View and Generation Contract](#scad-view-and-generation-contract)
 - [Managed Runs, Revisions, and Source](#managed-runs-revisions-and-source)
 - [Exact Plamp8 Split-Box Example](#exact-plamp8-split-box-example)
-- [Legacy Compatibility Wrapper](#legacy-compatibility-wrapper)
 - [Archive Verification](#archive-verification)
 
 ## Installed Workflow
@@ -26,6 +26,23 @@ A part name such as `plamp8` resolves to `things/plamp8/plamp8.scad`. Repository
 | Read one artifact's complete log | `plamp cad log RUN_ID ARTIFACT_ID --json` |
 
 Run `plan` before `generate`. It performs source selection and recipe expansion but never invokes OpenSCAD. Prefer `--json` for agents.
+
+## Create a New Part
+
+Create parts from the repository root. The generated source is
+`things/PART/PART.scad` and already contains the required named-module, view,
+metadata, and BOM structure:
+
+```bash
+plamp cad new --list-templates --json
+plamp cad new PART --template TEMPLATE --json
+plamp cad validate PART --json
+plamp cad plan PART --json
+plamp cad generate PART --json
+```
+
+Omit `--template` to use the default `cad` template. The command refuses unsafe
+names, normalized sibling collisions, and any pre-existing destination.
 
 ## SCAD View and Generation Contract
 
@@ -131,17 +148,6 @@ plamp cad log RUN_ID ARTIFACT_ID --json
 ```
 
 Plamp8 declares `split-box` as its default preset. It expands, in order, `floor`, `north_south_walls`, `east_west_walls`, `top_panel`, and `sub_panel`. Replace `RUN_ID` with the generated/listed run and `ARTIFACT_ID` with one `jobs[].artifact_id` from `show`. On dirty Plamp8 source, add the same honest `--revision LABEL` to `plan` when documenting intent and to `generate` when rendering.
-
-## Legacy Compatibility Wrapper
-
-Part-local `generate.bash` is a thin compatibility wrapper around `plamp cad generate`, not the preferred interface. Its legacy positional order is target directory first, then optional commit:
-
-```bash
-things/plamp8/generate.bash --view sub_panel prints/plamp8_sub_panel
-things/plamp8/generate.bash --preview --view sub_panel prints/plamp8_preview HEAD
-```
-
-Use direct `plamp cad` for discovery, validation, dry planning, managed archives, manifests, and logs. Use the wrapper only when maintaining an existing legacy invocation.
 
 ## Archive Verification
 

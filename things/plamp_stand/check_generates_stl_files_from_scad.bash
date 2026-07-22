@@ -14,10 +14,11 @@ commit=$(git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCRIPT_DIR/plamp_s
 outdir=$(mktemp -d /tmp/plamp-stand-check-XXXXXX)
 trap 'rm -rf "$outdir"' EXIT
 
-bash ./generate.bash "$outdir/out" "$commit"
+"$REPO_ROOT/bin/plamp" cad generate plamp_stand --preset all-views-default --revision "$commit" --output "$outdir/out"
 
 for f in \
   "$outdir/out/plamp_stand_assembly_${commit}.stl" \
+  "$outdir/out/plamp_stand_tripod_${commit}.stl" \
   "$outdir/out/plamp_stand_plate_${commit}.stl" \
   "$outdir/out/plamp_stand_camera_clip_${commit}.stl" \
   "$outdir/out/readme.md"
@@ -28,4 +29,4 @@ do
   fi
 done
 
-echo "PASS: generate.bash produced STL files from plamp_stand.scad for commit $commit"
+echo "PASS: plamp cad produced STL files from plamp_stand.scad for commit $commit"

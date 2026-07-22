@@ -1,10 +1,19 @@
 # things
 
-## Local generation note
+## CAD workflow
 
-- `openscad` is installed on this machine and expected to be available on `PATH`
-- Use it for local STL generation from scripts like `things/*/generate.bash`
-- If a generator fails with `openscad: command not found`, check the shell `PATH` before assuming OpenSCAD is missing
+Run CAD commands from the repository root after `source ./setup.sh`, or invoke
+the checkout launcher as `bin/plamp`:
+
+```bash
+plamp cad new PART --template cad
+plamp cad validate PART
+plamp cad plan PART
+plamp cad generate PART
+```
+
+`openscad` must be available on `PATH` for generation. Discovery, validation,
+and planning remain useful without it.
 
 ## Checklist
 

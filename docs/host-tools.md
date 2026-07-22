@@ -8,7 +8,7 @@ ready for a human or cloud agent to inspect, diagnose, and modify.
 
 | Debian package | Main commands or service | Why Plamp installs it |
 | --- | --- | --- |
-| `bash` | `bash` | Runs `plampctl`, bootstrap, deployment, and CAD scripts. |
+| `bash` | `bash` | Runs `plampctl`, bootstrap, deployment, and the Plamp checkout launcher. |
 | `coreutils` | `ls`, `cp`, `mv`, `realpath`, `mktemp` | Provides fundamental filesystem and shell operations. |
 | `findutils` | `find`, `xargs` | Finds files and safely batches filesystem operations. |
 | `grep` | `grep` | Supports portable text matching inside repository scripts. |
@@ -102,6 +102,16 @@ plamp cad runs plamp8
 plamp cad show RUN_ID
 ```
 
+Create a new named part with the same interface:
+
+```bash
+plamp cad new --list-templates
+plamp cad new pump_bracket --template cad
+plamp cad validate pump_bracket
+plamp cad plan pump_bracket
+plamp cad generate pump_bracket
+```
+
 Use `plan` before `generate`. `plan` never invokes OpenSCAD: it expands the
 recipe, shows the render jobs and effective variables, and uses compatible
 archived runs for time and size estimates. The same selection options work for
@@ -157,18 +167,6 @@ graphical image previews may require an X display or another display server.
 Run archives are local instance data; do not commit them as manufacturing
 source.
 
-### Legacy wrappers
-
-The scripts beside existing parts are compatibility shortcuts. They delegate
-to `plamp cad generate`, so older positional output and commit invocations still
-work:
-
-```bash
-things/plamp8/generate.bash --view sub_panel prints/plamp8_sub_panel
-things/plamp8/generate.bash --box prints/plamp8_fuse_box
-things/plamp8/generate.bash --preview --view sub_panel prints/plamp8_preview HEAD
-```
-
 Use `--revision LABEL` when intentionally rendering uncommitted part changes.
-The legacy `--preview` shortcut disables rendered text and sets `render_fn=24`;
-repeatable `--define`/`-D` arguments can override those defaults.
+`--preview` disables rendered text and sets `render_fn=24`; repeatable
+`--define`/`-D` arguments can override those defaults.

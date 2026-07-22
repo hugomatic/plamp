@@ -7,15 +7,16 @@ Simple printed stand / camera mount parts for the plamp setup.
 ## Files
 
 - `plamp_stand.scad` - OpenSCAD source
-- `generate.bash` - render helper
 - `check_generates_stl_files_from_scad.bash` - manual smoke test
 
 ## Generate
 
-From this directory:
+From the repository root after `source ./setup.sh`:
 
 ```bash
-bash ./generate.bash
+plamp cad validate plamp_stand
+plamp cad plan plamp_stand --preset all-views-default
+plamp cad generate plamp_stand --preset all-views-default
 ```
 
 If you are changing the model or generation flow, run the manual check from the repo checklist:
@@ -32,4 +33,4 @@ A local reference image may exist at:
 - `./doc/stand.jpg`
 
 If that file is missing in GitHub or another checkout, treat it as optional documentation, not as part of the generation contract.
-The source of truth for this part is the SCAD file plus the generation/check scripts.
+The source of truth for this part is the SCAD file and its embedded generation metadata.

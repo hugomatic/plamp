@@ -15,7 +15,7 @@ description: Use when creating or modifying OpenSCAD CAD, STL files, laser-cut D
 
 ## Plamp CAD
 
-Prefer direct `plamp cad` commands over part-local scripts. Discover with `views`, check metadata with `validate`, and always run `plan` before `generate`. Planning expands the exact jobs and variables without invoking OpenSCAD, so it works even when OpenSCAD is unavailable.
+Use `plamp cad` as the only Plamp CAD generation interface. Discover with `views`, check metadata with `validate`, and always run `plan` before `generate`. Planning expands the exact jobs and variables without invoking OpenSCAD, so it works even when OpenSCAD is unavailable.
 
 ```bash
 plamp cad views PART --json
@@ -30,11 +30,13 @@ Read [plamp-things.md](references/plamp-things.md) for metadata, precedence, sou
 
 ## New Parts
 
-Use the repository template; keep `<part>/<part>.scad`:
+Create a named part from the repository template; the command writes
+`things/PART/PART.scad`. List templates when you need a non-default starting
+point:
 
 ```bash
-cd things
-./template.bash part_name
+plamp cad new --list-templates --json
+plamp cad new PART --template TEMPLATE --json
 ```
 
 ## FDM Printing
@@ -67,4 +69,4 @@ cd things
 
 - Do not treat a successful render as proof of printability, strength, fit, or cut readiness.
 - Do not commit generated STL/DXF/SVG/PDF, manifests, or logs unless explicitly requested; commit reproducible source.
-- Do not use part-local `generate.bash` as the primary Plamp interface.
+- Do not invent or call part-local generation wrappers; use `plamp cad`.

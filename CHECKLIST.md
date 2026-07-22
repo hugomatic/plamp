@@ -66,10 +66,10 @@ Each check includes:
 
 ## Script / generation changes
 
-### Check: Generator prints a sane default command
-- **Description:** A script with no args should teach the human how to run it correctly.
-- **How to run:** Run `generate.bash` or the equivalent with no arguments.
-- **Success:** It prints a useful suggested command.
+### Check: CAD command exposes current usage
+- **Description:** The checkout CLI should teach the human how to create, plan, and generate parts.
+- **How to run:** Run `bin/plamp cad --help`, `bin/plamp cad new --help`, and `bin/plamp cad generate --help` from the repository root.
+- **Success:** Help lists the current commands, selections, revision, and output options.
 
 ### Check: Suggested generator command actually works
 - **Description:** Example usage should be executable, not aspirational.
@@ -181,7 +181,7 @@ bash ./check_generates_stl_files_from_scad.bash
 
 What it checks:
 - renders the latest `plamp_stand.scad`
-- generates STL files for `assembly`, `plate`, and `camera_clip`
+- generates STL files for `assembly`, `tripod`, `plate`, and `camera_clip`
 - verifies the generated files and `readme.md` exist and are non-empty
 
 Why this is manual:
