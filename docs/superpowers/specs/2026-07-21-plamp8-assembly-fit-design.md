@@ -228,12 +228,12 @@ enclosed-travel assertions must still pass.
 
 ## Verification and delivery
 
-Implementation follows red-green-refactor in four reviewable commits:
+Implementation follows red-green-refactor in four reviewable increments:
 
 1. wall rotations/vent handedness and the interior floor revision;
 2. DC/C13/service layout and sub-panel separator supports;
 3. corner-wall nut fit; and
-4. integrated source-contract and `plamp cad` validation.
+4. integrated source-contract and `plamp cad` validation (no empty commit).
 
 Before each source edit, add and run the focused failing source-contract test.
 Use `plamp cad views plamp8 --json`, `plamp cad validate plamp8 --json`, and
