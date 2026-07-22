@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
+view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 /* generate.json
 {
@@ -21,10 +21,10 @@ view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel
     "relay_footprint": {"description": "Relay mounting footprint test"},
     "psu_footprint": {"description": "Power-supply mounting footprint test"},
     "converter_footprint": {"description": "DC converter mounting footprint test"},
-    "ac_duplex_channel": {"description": "AC duplex top-panel fit test"},
-    "dc_barrel_channel": {"description": "DC connector top-panel fit test"},
+    "ac_duplex_panel": {"description": "AC duplex top-panel fit test"},
+    "dc_connector_panel": {"description": "DC connector top-panel fit test"},
     "usb_c_panel": {"description": "USB-C top-panel fit test"},
-    "c13_inlet": {"description": "C13 inlet top-panel fit test"},
+    "c13_panel": {"description": "C13 inlet top-panel fit test"},
     "panel_corner_fastener_test": {"description": "Panel corner fastener fit test"},
     "corner_coupon": {"description": "Printable enclosure corner coupon"},
     "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly"},
@@ -49,7 +49,7 @@ view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel
     },
     "top-panel-fit": {
       "description": "Top-panel connector fit tests",
-      "items": ["view:ac_duplex_channel", "view:dc_barrel_channel", "view:usb_c_panel", "view:c13_inlet"]
+      "items": ["view:ac_duplex_panel", "view:dc_connector_panel", "view:usb_c_panel", "view:c13_panel"]
     },
     "corner-coupons": {
       "description": "Panel and wall corner fastener tests",
@@ -1098,7 +1098,7 @@ module barrel_revision_negative() {
         label_pocket(revision_label_w, revision_label_h);
 }
 
-module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", include_revision = true) {
+module dc_connector_panel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", include_revision = true) {
     difference() {
         union() {
             fit_plate(barrel_channel_w, barrel_channel_h);
@@ -2739,19 +2739,19 @@ module panel_corner_fastener_test() {
 
 // ---------------- views ----------------
 
-module ac_duplex_channel() {
+module ac_duplex_panel() {
     outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
 }
 
-module dc_barrel_channel() {
-    dc_barrel_channel_unit(dc_devices[0], dc_details[0], true);
+module dc_connector_panel() {
+    dc_connector_panel_unit(dc_devices[0], dc_details[0], true);
 }
 
 module usb_c_panel() {
     usb_c_panel_unit(true);
 }
 
-module c13_inlet() {
+module c13_panel() {
     c13_inlet_unit(true);
 }
 
@@ -2944,14 +2944,14 @@ if (view == "relay_footprint") {
     north_south_walls();
 } else if (view == "east_west_walls") {
     east_west_walls();
-} else if (view == "ac_duplex_channel") {
-    ac_duplex_channel();
-} else if (view == "dc_barrel_channel") {
-    dc_barrel_channel();
+} else if (view == "ac_duplex_panel") {
+    ac_duplex_panel();
+} else if (view == "dc_connector_panel") {
+    dc_connector_panel();
 } else if (view == "usb_c_panel") {
     usb_c_panel();
-} else if (view == "c13_inlet") {
-    c13_inlet();
+} else if (view == "c13_panel") {
+    c13_panel();
 } else if (view == "panel_corner_fastener_test") {
     panel_corner_fastener_test();
 } else if (view == "corner_coupon") {

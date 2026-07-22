@@ -29,6 +29,27 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_connector_fit_views_use_panel_names(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        for name in (
+            "ac_duplex_panel", "dc_connector_panel", "usb_c_panel", "c13_panel",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(f'view == "{name}"', source)
+                self.assertIn(f'module {name}()', source)
+
+        for retired in ("ac_duplex_channel", "dc_barrel_channel", "c13_inlet"):
+            with self.subTest(retired=retired):
+                self.assertNotIn(f'view == "{retired}"', source)
+                self.assertNotIn(f'module {retired}()', source)
+
+        self.assertIn(
+            '"items": ["view:ac_duplex_panel", "view:dc_connector_panel", '
+            '"view:usb_c_panel", "view:c13_panel"]',
+            source,
+        )
+
     def test_plamp8_derived_dimensions_follow_their_dependencies(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
