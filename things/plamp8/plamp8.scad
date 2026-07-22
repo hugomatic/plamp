@@ -200,8 +200,9 @@ xt60_screw_spacing = 25;
 xt60_screw_d = 3.2;
 xt60_nut_clearance_d = 7;
 
-usb_c_panel_w = 44;
-usb_c_panel_h = 34;
+usb_c_panel_rim = 3;
+usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;
+usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;
 usb_c_label_w = 32;
 usb_c_label_h = 9;
 usb_c_group_y = -4;
@@ -418,6 +419,12 @@ service_left_x = service_group_x - service_cell_w / 2;
 service_right_x = service_group_x + service_cell_w / 2;
 service_top_y = service_group_y + service_cell_h / 2;
 service_bottom_y = service_group_y - service_cell_h / 2;
+usb_coupon_pocket_inside_plate =
+    service_group_w + 2 * usb_c_panel_rim <= usb_c_panel_w
+    && service_group_h + 2 * usb_c_panel_rim <= usb_c_panel_h;
+usb_coupon_connector_matches_service_offset =
+    service_cell_w / 2 == service_right_x - service_group_x
+    && -service_cell_h / 2 == service_bottom_y - service_group_y;
 usb_c_panel_x = service_right_x;
 usb_c_panel_y = service_bottom_y;
 sub_panel_usb_support_rib_y =
@@ -454,6 +461,16 @@ xt60_region_x_margin = min(
     dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
     barrel_group_x + dc_region_w / 2 - (dc_connector_x() + xt60_outside_w / 2)
 );
+xt60_screw_nut_radius = max(xt60_screw_d, xt60_nut_clearance_d) / 2;
+xt60_screw_nut_left_x =
+    dc_connector_x() - xt60_screw_spacing / 2 - xt60_screw_nut_radius;
+xt60_screw_nut_right_x =
+    dc_connector_x() + xt60_screw_spacing / 2 + xt60_screw_nut_radius;
+xt60_screw_nut_envelope_inside_region =
+    xt60_screw_nut_left_x >= barrel_group_x - dc_region_w / 2
+    && xt60_screw_nut_right_x <= barrel_group_x + dc_region_w / 2
+    && -xt60_screw_nut_radius >= barrel_group_y - barrel_group_h / 2
+    && xt60_screw_nut_radius <= barrel_group_y + barrel_group_h / 2;
 dc_hardware_left_x = min(
     dc_connector_x() - xt60_outside_w / 2,
     dc_toggle_x() - sub_panel_switch_w / 2
@@ -468,6 +485,28 @@ dc_hardware_inside_region =
     && dc_hardware_right_x <= barrel_group_x + dc_region_w / 2
     && -dc_hardware_half_h >= barrel_group_y - barrel_group_h / 2
     && dc_hardware_half_h <= barrel_group_y + barrel_group_h / 2;
+dc_separator_cutter_left_x = min(dc_hardware_left_x, xt60_screw_nut_left_x);
+dc_separator_cutter_right_x = max(dc_hardware_right_x, xt60_screw_nut_right_x);
+dc_separator_cutter_half_h = max(dc_hardware_half_h, xt60_screw_nut_radius);
+dc_column_cutters_clear_separator =
+    dc_grid_x + dc_separator_cutter_right_x <= dc_column_gap_left_x
+    && dc_grid_x + dc_col_spacing + dc_separator_cutter_left_x >= dc_column_gap_right_x;
+dc_row_cutters_clear_separator =
+    dc_grid_y - dc_separator_cutter_half_h >= dc_row_gap_top_y
+    && dc_grid_y - dc_row_spacing + dc_separator_cutter_half_h <= dc_row_gap_bottom_y;
+ac_socket_screw_cutter_top_y = ac_row_y + max(
+    sub_panel_socket_h / 2,
+    sub_panel_socket_screw_spacing / 2 + screw_d / 2,
+    outlet_spacing / 2 + sub_panel_switch_h / 2
+);
+ac_socket_screw_cutters_below_separators =
+    ac_socket_screw_cutter_top_y <= dc_region_bottom_y;
+sub_panel_socket_rim_relief_y0 =
+    -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
+socket_rim_relief_top_y = sub_panel_socket_rim_relief_y0
+    + sub_panel_socket_rim_relief_d + 0.1;
+socket_rim_relief_below_separators =
+    socket_rim_relief_top_y <= dc_region_bottom_y;
 c13_hardware_half_w = max(c13_cutout_w / 2, c13_screw_spacing / 2 + c13_screw_d / 2);
 c13_hardware_inside_region =
     c13_panel_x - c13_hardware_half_w >= c13_region_left_x
@@ -480,13 +519,17 @@ usb_hardware_inside_region =
     && service_right_x + usb_hardware_half_w <= service_region_right_x
     && service_bottom_y - usb_c_cutout_h / 2 >= service_region_bottom_y
     && service_bottom_y + usb_c_cutout_h / 2 <= service_group_y;
+c13_service_cutters_clear_separator =
+    service_row_y - c13_cutout_h / 2 >= c13_region_bottom_y
+    && service_bottom_y + max(usb_c_cutout_h / 2, usb_c_screw_head_d / 2)
+        <= service_region_top_y;
 separator_cutters_respect_rib_bounds =
-    dc_column_gap == panel_region_gap
-    && dc_row_gap == panel_region_gap
-    && c13_service_gap == panel_region_gap
-    && dc_hardware_inside_region
-    && c13_hardware_inside_region
-    && usb_hardware_inside_region;
+    xt60_screw_nut_envelope_inside_region
+    && dc_column_cutters_clear_separator
+    && dc_row_cutters_clear_separator
+    && ac_socket_screw_cutters_below_separators
+    && socket_rim_relief_below_separators
+    && c13_service_cutters_clear_separator;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
 revision_x = service_left_x;
@@ -529,12 +572,28 @@ assert(c13_cutout_w == 28 && c13_screw_spacing == 40,
 assert(service_cell_w * 2 == service_group_w
         && service_cell_h * 2 == service_group_h,
     "service cells must exactly tile the region");
+assert(usb_coupon_pocket_inside_plate,
+    "USB coupon must retain a rim around the service pocket");
+assert(usb_coupon_connector_matches_service_offset,
+    "USB coupon connector must match the production service-cell offset");
 assert(dc_hardware_inside_region,
     "DC hardware must remain inside each region");
 assert(c13_hardware_inside_region,
     "C13 hardware must remain inside its region");
 assert(usb_hardware_inside_region,
     "USB hardware must remain inside its service cell");
+assert(xt60_screw_nut_envelope_inside_region,
+    "XT60 screw and nut envelope must remain inside each DC region");
+assert(dc_column_cutters_clear_separator,
+    "DC cutters must clear the finite column separator");
+assert(dc_row_cutters_clear_separator,
+    "DC cutters must clear the finite row separator");
+assert(ac_socket_screw_cutters_below_separators,
+    "AC socket, switch, and screw cutters must remain below separator rib extents");
+assert(socket_rim_relief_below_separators,
+    "AC socket rim relief must remain below separator rib extents");
+assert(c13_service_cutters_clear_separator,
+    "C13 and USB cutters must clear their finite separator");
 assert(separator_cutters_respect_rib_bounds,
     "separator ribs must follow region bounds without cutter trimming");
 
@@ -767,13 +826,12 @@ module sub_panel_8ch_positive() {
 }
 
 module sub_panel_socket_bottom_rim_relief_negative() {
-    bottom_rim_inner_y = -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
     lip_h = sub_panel_h - sub_panel_base_h;
 
     for (x = [left_ac_x, right_ac_x])
         translate([
             x + outlet_feature_x - sub_panel_socket_rim_relief_w / 2,
-            bottom_rim_inner_y,
+            sub_panel_socket_rim_relief_y0,
             sub_panel_base_h - 0.1
         ])
             cube([
@@ -1027,13 +1085,13 @@ module service_group_negative() {
 }
 
 module usb_c_panel_negative() {
-    usb_c_connector_negative();
-    translate([0, usb_c_group_y, 0])
-        service_group_negative();
+    service_group_negative();
+    translate([service_cell_w / 2, -service_cell_h / 2, 0])
+        usb_c_connector_negative();
 }
 
 module usb_c_revision_negative() {
-    translate([0, usb_c_panel_h / 2 - 8, 0])
+    translate([service_cell_w / 2, service_cell_h / 2, 0])
         label_pocket(revision_label_w, revision_label_h);
 }
 
@@ -1046,11 +1104,11 @@ module usb_c_panel_unit(include_revision = true) {
             usb_c_revision_negative();
     }
 
-    translate([0, -usb_c_panel_h / 2 + 4, 0])
+    translate([-service_cell_w / 2, -service_cell_h / 2, 0])
         flush_label("COM", 5);
 
     if (include_revision)
-        translate([0, usb_c_panel_h / 2 - 8, 0])
+        translate([service_cell_w / 2, service_cell_h / 2, 0])
             flush_revision_label();
 }
 
