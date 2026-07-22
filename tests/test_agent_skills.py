@@ -51,6 +51,15 @@ class AgentSkillsTests(unittest.TestCase):
         self.assertIn("skills/openscad-cad/SKILL.md", readme)
         self.assertRegex(readme, r"(?i)start.*plamp-workflow")
 
+    def test_workflow_separates_workstation_cli_setup_from_service_host_reinstall(self):
+        workflow = self.read("agent/skills/plamp-workflow/SKILL.md")
+
+        self.assertIn('python3 -m venv "$PLAMP_ROOT/.venv"', workflow)
+        self.assertIn('uv sync --project "$PLAMP_ROOT"', workflow)
+        self.assertRegex(workflow, r"(?i)workstation|CAD-only")
+        self.assertRegex(workflow, r"(?i)service host|appliance")
+        self.assertRegex(workflow, r"(?is)plampctl reinstall.*plamp-web")
+
     def test_live_docs_use_direct_new_and_generate_commands(self):
         documentation = "\n".join(
             self.read(path)

@@ -7,7 +7,8 @@ plamp_root="$(cd -- "${launcher_dir}/.." && pwd -P)"
 python_bin="${plamp_root}/.venv/bin/python"
 if [[ ! -x "${python_bin}" ]]; then
   printf 'Plamp environment is missing: %s\n' "${python_bin}" >&2
-  printf 'Run: %s/plampctl reinstall\n' "${plamp_root}" >&2
+  printf 'For CAD-only use, run: python3 -m venv %s/.venv\n' "${plamp_root}" >&2
+  printf 'For optional full device and web dependencies, run: uv sync --project %s\n' "${plamp_root}" >&2
   exit 1
 fi
 

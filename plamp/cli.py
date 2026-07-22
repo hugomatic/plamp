@@ -9,15 +9,10 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
-from plamp.camera import CameraError, capture_camera
 from plamp.cad_cli import add_cad_parser, run_cad_command
 from plamp.cad_generation import generate_plan, list_runs, load_job_log, load_run
 from plamp.config import ConfigError, controller_pico_serial, load_config, save_config
 from plamp.context import resolve_context
-from plamp.locks import LockTimeout
-from plamp.pico_commands import configure_scheduler, upgrade_scheduler
-from plamp.pico_transport import PicoCommandError, PicoFlashError, PicoReportTimeout, PicoUnavailable, pulse_gpio, request_report
-from plamp.scheduler_state import normalize_scheduler_state
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -144,11 +139,11 @@ def main(
     stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
-    report_func: Callable[..., dict[str, Any]] = request_report,
-    pulse_func: Callable[..., dict[str, Any]] = pulse_gpio,
-    camera_capture_func: Callable[..., dict[str, Any]] = capture_camera,
-    configure_func: Callable[..., dict[str, Any]] = configure_scheduler,
-    upgrade_func: Callable[..., dict[str, Any]] = upgrade_scheduler,
+    report_func: Callable[..., dict[str, Any]] | None = None,
+    pulse_func: Callable[..., dict[str, Any]] | None = None,
+    camera_capture_func: Callable[..., dict[str, Any]] | None = None,
+    configure_func: Callable[..., dict[str, Any]] | None = None,
+    upgrade_func: Callable[..., dict[str, Any]] | None = None,
     cad_generate_func: Callable[..., Any] = generate_plan,
     cad_list_runs_func: Callable[..., Any] = list_runs,
     cad_load_run_func: Callable[..., Any] = load_run,
@@ -172,6 +167,24 @@ def main(
                 "load_job_log": cad_load_log_func,
             },
         )
+    from plamp.camera import CameraError, capture_camera
+    from plamp.locks import LockTimeout
+    from plamp.pico_commands import configure_scheduler, upgrade_scheduler
+    from plamp.pico_transport import (
+        PicoCommandError,
+        PicoFlashError,
+        PicoReportTimeout,
+        PicoUnavailable,
+        pulse_gpio,
+        request_report,
+    )
+    from plamp.scheduler_state import normalize_scheduler_state
+
+    report_func = report_func or request_report
+    pulse_func = pulse_func or pulse_gpio
+    camera_capture_func = camera_capture_func or capture_camera
+    configure_func = configure_func or configure_scheduler
+    upgrade_func = upgrade_func or upgrade_scheduler
     lock_dir = args.lock_dir or context.lock_dir
     try:
         if args.area == "context":

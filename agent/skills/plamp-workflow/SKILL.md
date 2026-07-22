@@ -18,6 +18,18 @@ plamp --help
 alter their shell may invoke `bin/plamp` directly. Do not assume a globally
 installed `plamp` belongs to the checkout being inspected.
 
+On a CAD-only workstation, a missing environment needs only the standard
+library interpreter environment:
+
+```bash
+python3 -m venv "$PLAMP_ROOT/.venv"
+```
+
+Run `uv sync --project "$PLAMP_ROOT"` only when full device or web dependencies
+are needed. Do not use `plampctl reinstall` to repair a workstation CLI
+environment: that is a service host or appliance workflow which installs and
+starts `plamp-web`.
+
 ## Choose the interface
 
 - Use `plampctl` for host lifecycle and filesystem actions: install/reinstall,
