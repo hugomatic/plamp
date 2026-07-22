@@ -4,7 +4,7 @@
 
 **Goal:** Make `plamp cad` the sole CAD generation interface and ship one canonical, safely installable agent knowledge tree containing everything a Plamp kit buyer's agent needs to set up, operate, maintain, and troubleshoot the system.
 
-**Architecture:** Keep the existing Python CAD parser, recipe engine, renderer, metadata, and CLI behavior unchanged while deleting every alternate CAD entry point and mention. Move operating documentation into focused skills under `agent/`, retain old documentation paths as relative filesystem symlinks, and expose a root `AGENTS.md` router. Install skills through a stdlib-only, registry-managed symlink tool that plans before writing, protects unrelated state, and integrates with bootstrap/upgrade only after explicit opt-in.
+**Architecture:** Keep the existing Python CAD parser, recipe engine, renderer, metadata, and CLI behavior unchanged while deleting every alternate CAD entry point and mention. Move operating documentation into focused skills under `agent/`, retain old documentation paths as minimal forwarding pages, and expose a root `AGENTS.md` router. Install skills through a stdlib-only, registry-managed symlink tool that plans before writing, protects unrelated state, and integrates with bootstrap/upgrade only after explicit opt-in.
 
 **Tech Stack:** Python 3.11 standard library, Bash, Git, OpenSCAD CLI contract, `unittest`
 
@@ -38,7 +38,7 @@
 - `agent/skills/{plamp-workflow,plamp-setup,plamp-operate,plamp-pico,plamp-troubleshoot,openscad-cad}`: focused canonical skills and operating references.
 - `docs/spec-current.md`, `docs/host-tools.md`, `plamp_cli/README.md`, `plamp_web/README.md`, `pico_scheduler/README.md`, `things/README.md`, and `things/plamp_stand/README.md`: compatibility forwarding pages containing only a title and canonical link.
 - `agent/skills/openscad-cad/SKILL.md`, `agent/skills/openscad-cad/references/plamp-things.md`: authoritative agent workflow with no alternate interface.
-- Historical plan/spec files listed in Task 4: accurate archival wording and direct commands, with no stale entry-point references.
+- Historical plan/spec files listed in Task 5: accurate archival wording and direct commands, with no stale entry-point references.
 - `agent/install-skills`: safe, idempotent registry-managed discovery/linking of every immediate repository skill directory containing `SKILL.md`.
 - `tests/test_agent_docs.py`: canonical-document, forwarding-page, root-agent-symlink, skill-schema, and Markdown-link contract.
 - `tests/test_agent_skills.py`: isolated installer tests using temporary repositories/checkouts and Codex-home paths.
@@ -117,7 +117,74 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 2: Remove both retired shell interfaces
+### Task 2: Close direct CLI parity gaps before shell removal
+
+**Files:**
+- Modify: `plamp/cad_generation.py`
+- Modify: `plamp/cad_cli.py`
+- Modify: `tests/test_cad_generation.py`
+- Modify: `tests/test_cad_cli.py`
+
+**Interfaces:**
+- Produces `resolve_openscad(explicit, *, env, system, which, home) -> Path` with strict precedence: explicit `--openscad`, `OPENSCAD_BIN`, `PATH`, then supported platform paths.
+- Render argv explicitly requests ASCII STL.
+- Legacy positional commit selection archives that commit and engraves its resolved short hash; explicit `--revision LABEL` keeps literal-label engraving semantics.
+- Direct `generate --help` fully documents selection, definitions, source/revision, output/archive, preview, and executable resolution.
+
+- [ ] **Step 1: Write failing executable-resolution tests**
+
+Test the pure resolver with injected environment/platform/`which`: an executable explicit path or explicitly named command wins over every other source; invalid explicit selection fails without fallback; executable `OPENSCAD_BIN` is second and invalid env override fails; `PATH` is third; Darwin fallbacks are `/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD` then `$HOME/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD`; Linux fallbacks are `/usr/bin/openscad`, `/usr/local/bin/openscad`, `/snap/bin/openscad`, `/var/lib/flatpak/exports/bin/org.openscad.OpenSCAD`, then `$HOME/.local/share/flatpak/exports/bin/org.openscad.OpenSCAD`. Unsupported/missing cases return a humane error recommending `--openscad` or `OPENSCAD_BIN`.
+
+Change `menu` and `generate` parser defaults for `--openscad` to `None`; resolve once at the command boundary and pass the resolved `Path` into generation. Tests must prove menu and generate share the same resolver.
+
+- [ ] **Step 2: Write failing exact-argv and preview-order tests**
+
+Update `test_exact_argv_uses_argument_list_and_effective_plan_values` to compare the complete argv, including exactly one adjacent pair:
+
+```python
+["--export-format", "asciistl"]
+```
+
+Keep the existing argument-list/no-shell guarantee. Place the export pair immediately before the final source path while preserving the existing `-o`, output, and ordered `-D` arguments; assert the manifest command and fake executable argv are identical.
+
+Move preview parity to the direct CLI with:
+
+```bash
+plamp cad generate fixture --preview \
+  --define render_fn=48 --define render_text=true --openscad FAKE --json
+```
+
+Assert preview defaults are inserted first (`render_fn=24`, `render_text=false`), later explicit definitions win, no `ball_quality` definition appears, and the effective manifest/argv contains `render_fn=48` and `render_text=true` exactly once.
+
+- [ ] **Step 3: Write failing positional-commit versus literal-revision tests**
+
+Create two commits touching a fixture part. For legacy positional `OUTPUT OLD_COMMIT`, assert archived source comes from the old commit while `source.revision`, STL naming, and `revision_string` use `git rev-parse --short OLD_COMMIT`, never the supplied long hash or token. For `--revision HEAD`, assert committed source resolves from HEAD but engraving remains literal `HEAD`; for dirty source with `--revision fit-test-1`, assert the current working copy is archived and literal `fit-test-1` is engraved. Keep the mutual-exclusion error for positional commit plus `--revision`.
+
+Implement this distinction explicitly in source preparation, for example `prepare_source(..., revision_is_commit: bool = False)`: positional commit passes `True` and always derives the label from the resolved commit; `--revision` passes `False` and retains its supplied label even when it identifies historical source.
+
+- [ ] **Step 4: Write failing comprehensive help tests**
+
+Capture `plamp cad generate --help` and require examples/explanations for: mutually exclusive preset versus repeatable views; repeatable `--define NAME=EXPR` and `--view-define VIEW:NAME=EXPR` with later-wins precedence; dirty-source literal `--revision LABEL`; historical positional commit and short-hash engraving; default managed archive versus `--output DIR`; `--preview` defaults and explicit override order; and executable precedence `--openscad`, `OPENSCAD_BIN`, `PATH`, platform fallback. Keep help truthful if positional compatibility remains supported.
+
+- [ ] **Step 5: Run RED, implement minimally, and verify GREEN**
+
+Run RED before edits, then implement the resolver, revision-mode distinction, export argv, help text, and direct preview behavior. Verify:
+
+```bash
+.venv/bin/python -m unittest tests.test_cad_generation tests.test_cad_cli -v
+python3 -m py_compile plamp/cad_generation.py plamp/cad_cli.py \
+  tests/test_cad_generation.py tests/test_cad_cli.py
+git diff --check
+git add plamp/cad_generation.py plamp/cad_cli.py tests/test_cad_generation.py tests/test_cad_cli.py
+git commit -m "Preserve direct CAD generation behavior"
+git push origin feature/remove-generate-bash
+```
+
+Expected: all parity tests pass with fake executables only.
+
+---
+
+### Task 3: Remove both retired shell interfaces
 
 **Files:**
 - Delete: the legacy generator file in each of `things/3d_template/`, `things/iharvest_cover/`, `things/plamp8/`, and `things/plamp_stand/`
@@ -125,7 +192,7 @@ git push origin feature/remove-generate-bash
 - Modify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: tested `plamp cad new` from Task 1.
+- Consumes: tested `plamp cad new` from Task 1 and direct-generation parity from Task 2.
 - Produces: no tracked per-part generator and no tracked shell scaffolder; new parts are created only through Python CLI.
 - Does not modify CAD behavior or SCAD metadata.
 
@@ -181,7 +248,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 3: Convert live documentation, the CAD skill, and the Stand smoke check
+### Task 4: Convert live documentation, the CAD skill, and the Stand smoke check
 
 **Files:**
 - Modify: `README.md`
@@ -208,7 +275,7 @@ self.assertIn('--preset all-views-default', stand_check)
 self.assertIn('--output "$outdir/out"', stand_check)
 ```
 
-Also assert current new-part instructions use `plamp cad new PART --template NAME` and template discovery uses `plamp cad new --list-templates --json`. Task 4 adds the final repository-wide wording guard after historical records are migrated.
+Also assert current new-part instructions use `plamp cad new PART --template NAME` and template discovery uses `plamp cad new --list-templates --json`. Task 5 adds the final repository-wide wording guard after historical records are migrated.
 
 - [ ] **Step 2: Run the focused tests and verify RED**
 
@@ -286,7 +353,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 4: Purge stale shell-interface references from historical plans and specs
+### Task 5: Purge stale shell-interface references from historical plans and specs
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-05-13-plamp8-box-builder-design.md`
@@ -308,7 +375,7 @@ git push origin feature/remove-generate-bash
 - Modify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: the current direct CLI flags documented in Task 3.
+- Consumes: the current direct CLI flags documented in Task 4.
 - Produces: historical context that remains accurate without advertising, requiring, testing, or naming a removed interface.
 
 - [ ] **Step 1: Confirm the repository gate fails on historical documents**
@@ -375,7 +442,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 5: Move operating documentation into the canonical agent tree
+### Task 6: Move operating documentation into the canonical agent tree
 
 **Files:**
 - Create: `agent/skills/plamp-workflow/references/current-contract.md`
@@ -443,7 +510,7 @@ Expected: all content and link tests pass, and every compatibility page is point
 
 ---
 
-### Task 6: Add the complete Plamp skill set and automatic repo routing
+### Task 7: Add the complete Plamp skill set and automatic repo routing
 
 **Files:**
 - Create: `agent/AGENTS.md`, `agent/README.md`
@@ -479,7 +546,7 @@ Expected: five skill directories, routing docs, metadata, and root agent entrypo
 
 - [ ] **Step 3: Write concise skills and routing**
 
-Keep each `SKILL.md` procedural and short, routing detail to Task 5 references. Establish the exact tool boundary: `plampctl` changes hosts/services and performs upgrades/migrations; `plamp` performs local direct operations including CAD; `python3 -m plamp_cli` is the explicitly named REST compatibility client. Require JSON discovery for agents, evidence before mutation, and narrow skill selection. `agent/AGENTS.md` must point agents first to `agent/README.md` and instruct them to use the matching skill.
+Keep each `SKILL.md` procedural and short, routing detail to Task 6 references. Establish the exact tool boundary: `plampctl` changes hosts/services and performs upgrades/migrations; `plamp` performs local direct operations including CAD; `python3 -m plamp_cli` is the explicitly named REST compatibility client. Require JSON discovery for agents, evidence before mutation, and narrow skill selection. `agent/AGENTS.md` must point agents first to `agent/README.md` and instruct them to use the matching skill.
 
 Create the root symlink with:
 
@@ -503,7 +570,7 @@ Expected: schema, link, taxonomy, and root entrypoint tests pass.
 
 ---
 
-### Task 7: Build the safe registry-managed skill installer
+### Task 8: Build the safe registry-managed skill installer
 
 **Files:**
 - Create: `agent/install-skills`
@@ -554,7 +621,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 8: Add explicit install and opted-in upgrade lifecycle
+### Task 9: Add explicit install and opted-in upgrade lifecycle
 
 **Files:**
 - Modify: `deploy/bootstrap/install-plamp.sh`, `plampctl`
@@ -595,7 +662,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 9: End-to-end acceptance, forward tests, and stable-main handoff
+### Task 10: End-to-end acceptance, forward tests, and stable-main handoff
 
 **Files:**
 - Modify only within earlier task file groups if verification finds an omission.
