@@ -166,22 +166,28 @@ panel_nut_entry_detent_l = 1.5;
 panel_fastener_boss_d = 11;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
-corner_nut_d = screw_nut_trap_d(corner_screw_size);
-corner_nut_h = screw_nut_trap_h(corner_screw_size);
-corner_nut_clearance = 0.3;
+corner_nut_slot_l = 2.7;
+corner_nut_entry_w = 6.1;
+corner_nut_throat_w = 5.8;
+corner_nut_entry_detent =
+    (corner_nut_entry_w - corner_nut_throat_w) / 2;
+corner_nut_entry_detent_l = 1.5;
+corner_nut_pocket_d = corner_nut_entry_w / cos(30);
 
 
 /* [components dimensions] */
 
 barrel_jack_hole_d = 12;
-barrel_channel_w = 70;
+panel_region_gap = 2;
+dc_region_w = 74;
+barrel_channel_w = dc_region_w;
 barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
 barrel_label_x = 7;
-barrel_group_y = -8;
+barrel_group_y = -6;
 barrel_group_x = 5;
-barrel_group_w = 70;
+barrel_group_w = dc_region_w;
 barrel_group_h = 46;
 barrel_jack_x = -13;
 barrel_toggle_x = 8;
@@ -198,8 +204,9 @@ xt60_screw_spacing = 25;
 xt60_screw_d = 3.2;
 xt60_nut_clearance_d = 7;
 
-usb_c_panel_w = 44;
-usb_c_panel_h = 34;
+usb_c_panel_rim = 3;
+usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;
+usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;
 usb_c_label_w = 32;
 usb_c_label_h = 9;
 usb_c_group_y = -4;
@@ -219,8 +226,10 @@ c13_panel_w = 72;
 c13_panel_h = 68;
 c13_label_w = 48;
 c13_label_h = 10;
-c13_group_w = 66;
+c13_group_w = 58;
 c13_group_h = 64;
+service_group_w = c13_group_w;
+service_group_h = usb_c_group_h;
 inch = 24.5;
 c13_face_w_inch = 1.9;
 c13_face_h_inch = 2.0;
@@ -288,12 +297,11 @@ corner_tab_boss_r = 5;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
-corner_nut_slot_l = corner_nut_h + corner_nut_clearance;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = 16;
 corner_nut_detent_angle = 30;
-corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);
+corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -396,6 +404,19 @@ assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
+assert(abs(corner_nut_slot_l - 2.7) < 0.000001,
+    "corner nut slot length must match the measured fit");
+assert(abs(corner_nut_entry_w - 6.1) < 0.000001,
+    "corner nut entry width must match the measured fit");
+assert(abs(corner_nut_throat_w - 5.8) < 0.000001,
+    "corner nut throat width must match the measured fit");
+assert(abs(corner_nut_entry_detent_l - 1.5) < 0.000001,
+    "corner nut detent length must match the measured fit");
+assert(abs(corner_nut_entry_detent - 0.15) < 0.000001,
+    "corner nut detent must retain 0.15 mm per side");
+assert(abs(corner_nut_entry_w - 2 * corner_nut_entry_detent
+        - corner_nut_throat_w) < 0.000001,
+    "corner nut detents must reduce the entry to the throat width");
 echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
 echo(str("bottom M3x25 nut-face offset: ",
     corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
@@ -404,8 +425,26 @@ echo(str("M3x30 extra enclosed travel: ",
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
-usb_c_panel_x = outlet_right_x - usb_c_group_w / 2;
-usb_c_panel_y = 14;
+c13_region_x = outlet_right_x - c13_group_w / 2;
+c13_hardware_x = 67;
+c13_hardware_y = 58;
+service_group_x = c13_region_x;
+service_group_y = c13_hardware_y - c13_group_h / 2
+    - panel_region_gap - service_group_h / 2;
+service_cell_w = service_group_w / 2;
+service_cell_h = service_group_h / 2;
+service_left_x = service_group_x - service_cell_w / 2;
+service_right_x = service_group_x + service_cell_w / 2;
+service_top_y = service_group_y + service_cell_h / 2;
+service_bottom_y = service_group_y - service_cell_h / 2;
+usb_coupon_pocket_inside_plate =
+    service_group_w + 2 * usb_c_panel_rim <= usb_c_panel_w
+    && service_group_h + 2 * usb_c_panel_rim <= usb_c_panel_h;
+usb_coupon_connector_matches_service_offset =
+    service_cell_w / 2 == service_right_x - service_group_x
+    && -service_cell_h / 2 == service_bottom_y - service_group_y;
+usb_c_panel_x = service_right_x;
+usb_c_panel_y = service_bottom_y;
 sub_panel_usb_support_rib_y =
     usb_c_panel_y - sub_panel_usb_c_cutout_h / 2
     - sub_panel_usb_support_rib_gap
@@ -413,20 +452,105 @@ sub_panel_usb_support_rib_y =
 sub_panel_revision_y =
     sub_panel_usb_support_rib_y - sub_panel_usb_support_rib_w / 2
     - sub_panel_revision_clearance - sub_panel_revision_font / 2;
-c13_panel_x = outlet_right_x - c13_group_w / 2;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
-dc_channel_gap = (
-    outlet_right_x - c13_group_w
-    - dc_grid_x - barrel_group_w - barrel_group_x - barrel_group_w / 2
-) / 2;
-dc_col_spacing = barrel_group_w + dc_channel_gap;
-dc_row_spacing = barrel_group_h + dc_channel_gap;
+dc_col_spacing = dc_region_w + panel_region_gap;
+dc_row_spacing = barrel_group_h + panel_region_gap;
+dc_region_left_x = dc_grid_x + barrel_group_x - dc_region_w / 2;
+dc_region_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + dc_region_w / 2;
+dc_region_top_y = dc_grid_y + barrel_group_y + barrel_group_h / 2;
+dc_region_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
+dc_column_gap_left_x = dc_grid_x + barrel_group_x + dc_region_w / 2;
+dc_column_gap_right_x = dc_grid_x + dc_col_spacing + barrel_group_x - dc_region_w / 2;
+dc_column_gap = dc_column_gap_right_x - dc_column_gap_left_x;
+dc_row_gap_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y + barrel_group_h / 2;
+dc_row_gap_top_y = dc_grid_y + barrel_group_y - barrel_group_h / 2;
+dc_row_gap = dc_row_gap_top_y - dc_row_gap_bottom_y;
+c13_region_left_x = c13_region_x - c13_group_w / 2;
+c13_region_right_x = c13_region_x + c13_group_w / 2;
+c13_region_bottom_y = c13_hardware_y - c13_group_h / 2;
+c13_region_top_y = c13_hardware_y + c13_group_h / 2;
+service_region_left_x = service_group_x - service_group_w / 2;
+service_region_right_x = service_group_x + service_group_w / 2;
+service_region_bottom_y = service_group_y - service_group_h / 2;
+service_region_top_y = service_group_y + service_group_h / 2;
+c13_service_gap = c13_region_bottom_y - service_region_top_y;
+xt60_region_x_margin = min(
+    dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
+    barrel_group_x + dc_region_w / 2 - (dc_connector_x() + xt60_outside_w / 2)
+);
+xt60_screw_nut_radius = max(xt60_screw_d, xt60_nut_clearance_d) / 2;
+xt60_screw_nut_left_x =
+    dc_connector_x() - xt60_screw_spacing / 2 - xt60_screw_nut_radius;
+xt60_screw_nut_right_x =
+    dc_connector_x() + xt60_screw_spacing / 2 + xt60_screw_nut_radius;
+xt60_screw_nut_envelope_inside_region =
+    xt60_screw_nut_left_x >= barrel_group_x - dc_region_w / 2
+    && xt60_screw_nut_right_x <= barrel_group_x + dc_region_w / 2
+    && -xt60_screw_nut_radius >= barrel_group_y - barrel_group_h / 2
+    && xt60_screw_nut_radius <= barrel_group_y + barrel_group_h / 2;
+dc_hardware_left_x = min(
+    dc_connector_x() - xt60_outside_w / 2,
+    dc_toggle_x() - sub_panel_switch_w / 2
+);
+dc_hardware_right_x = max(
+    dc_connector_x() + xt60_outside_w / 2,
+    dc_toggle_x() + sub_panel_switch_w / 2
+);
+dc_hardware_half_h = max(xt60_face_h / 2, sub_panel_switch_h / 2);
+dc_hardware_inside_region =
+    dc_hardware_left_x >= barrel_group_x - dc_region_w / 2
+    && dc_hardware_right_x <= barrel_group_x + dc_region_w / 2
+    && -dc_hardware_half_h >= barrel_group_y - barrel_group_h / 2
+    && dc_hardware_half_h <= barrel_group_y + barrel_group_h / 2;
+dc_separator_cutter_left_x = min(dc_hardware_left_x, xt60_screw_nut_left_x);
+dc_separator_cutter_right_x = max(dc_hardware_right_x, xt60_screw_nut_right_x);
+dc_separator_cutter_half_h = max(dc_hardware_half_h, xt60_screw_nut_radius);
+dc_column_cutters_clear_separator =
+    dc_grid_x + dc_separator_cutter_right_x <= dc_column_gap_left_x
+    && dc_grid_x + dc_col_spacing + dc_separator_cutter_left_x >= dc_column_gap_right_x;
+dc_row_cutters_clear_separator =
+    dc_grid_y - dc_separator_cutter_half_h >= dc_row_gap_top_y
+    && dc_grid_y - dc_row_spacing + dc_separator_cutter_half_h <= dc_row_gap_bottom_y;
+ac_socket_screw_cutter_top_y = ac_row_y + max(
+    sub_panel_socket_h / 2,
+    sub_panel_socket_screw_spacing / 2 + screw_d / 2,
+    outlet_spacing / 2 + sub_panel_switch_h / 2
+);
+ac_socket_screw_cutters_below_separators =
+    ac_socket_screw_cutter_top_y <= dc_region_bottom_y;
+sub_panel_socket_rim_relief_y0 =
+    -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
+socket_rim_relief_top_y = sub_panel_socket_rim_relief_y0
+    + sub_panel_socket_rim_relief_d + 0.1;
+socket_rim_relief_below_separators =
+    socket_rim_relief_top_y <= dc_region_bottom_y;
+c13_hardware_half_w = max(c13_cutout_w / 2, c13_screw_spacing / 2 + c13_screw_d / 2);
+c13_hardware_inside_region =
+    c13_hardware_x - c13_hardware_half_w >= c13_region_left_x
+    && c13_hardware_x + c13_hardware_half_w <= c13_region_right_x
+    && c13_hardware_y - c13_cutout_h / 2 >= c13_region_bottom_y
+    && c13_hardware_y + c13_cutout_h / 2 <= c13_region_top_y;
+usb_hardware_half_w = max(usb_c_cutout_w / 2, usb_c_screw_spacing / 2 + usb_c_screw_head_d / 2);
+usb_hardware_inside_region =
+    service_right_x - usb_hardware_half_w >= service_group_x
+    && service_right_x + usb_hardware_half_w <= service_region_right_x
+    && service_bottom_y - usb_c_cutout_h / 2 >= service_region_bottom_y
+    && service_bottom_y + usb_c_cutout_h / 2 <= service_group_y;
+c13_service_cutters_clear_separator =
+    c13_hardware_y - c13_cutout_h / 2 >= c13_region_bottom_y
+    && service_bottom_y + max(usb_c_cutout_h / 2, usb_c_screw_head_d / 2)
+        <= service_region_top_y;
+separator_cutters_respect_rib_bounds =
+    xt60_screw_nut_envelope_inside_region
+    && dc_column_cutters_clear_separator
+    && dc_row_cutters_clear_separator
+    && ac_socket_screw_cutters_below_separators
+    && socket_rim_relief_below_separators
+    && c13_service_cutters_clear_separator;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
-revision_x = (nutrients_recess_right_x + usb_c_panel_x - usb_c_group_w / 2) / 2;
-revision_y = usb_c_panel_y + usb_c_group_y - usb_c_group_h / 2 + 9 / 2;
-top_panel_revision_label_w = 2 * (revision_x - (c13_panel_x - c13_group_w / 2));
+revision_x = service_left_x;
 sub_panel_bottom_z = -(plate_t + sub_panel_h);
 panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
 panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
@@ -435,7 +559,7 @@ panel_fastener_boss_h = sub_panel_bottom_z - panel_fastener_boss_bottom_z;
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
 content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
-content_top_y = service_row_y + c13_group_h / 2;
+content_top_y = c13_region_top_y;
 top_panel_w = content_right_x - content_left_x + 2 * panel_margin;
 top_panel_h = content_top_y - content_bottom_y + 2 * panel_margin;
 box_inner_w = top_panel_w;
@@ -453,6 +577,65 @@ box_inner_x = wall_t;
 box_inner_y = wall_t;
 internal_psu_x = 70;
 
+// The DC rows are shifted 2 mm from their legacy centers so the 32.5 mm
+// switch envelope clears the continuous 2 mm separator at y = 42..44.
+dc_channel_origins = [
+    [dc_channel_x(0), dc_channel_y(0)],
+    [dc_channel_x(1), dc_channel_y(1)],
+    [dc_channel_x(2), dc_channel_y(2)],
+    [dc_channel_x(3), dc_channel_y(3)]
+];
+
+assert(dc_column_gap == panel_region_gap,
+    "DC column region gap must be 2 mm");
+assert(dc_row_gap == panel_region_gap,
+    "DC row region gap must be 2 mm");
+assert(dc_channel_origins == [[-78, 73], [-2, 73], [-78, 25], [-2, 25]],
+    "DC channel origins must preserve continuous separator clearance");
+assert(c13_service_gap == panel_region_gap,
+    "C13/service gap must be 2 mm");
+assert(xt60_region_x_margin >= 1.2,
+    "every XT60 face needs at least 1.2 mm X margin");
+assert(c13_cutout_w == 28 && c13_screw_spacing == 40,
+    "C13 hardware locations must remain unchanged");
+assert(c13_hardware_x == 67 && c13_hardware_y == 58,
+    "C13 hardware center must remain at (67, 58)");
+assert(service_left_x == 56.5 && service_right_x == 85.5
+        && service_top_y == 17 && service_bottom_y == 3,
+    "service cell centers must remain fixed below the C13 region");
+assert(service_region_left_x == c13_region_left_x
+        && service_region_right_x == c13_region_right_x,
+    "service region must align with the C13 rounded region");
+assert(service_region_left_x - dc_region_right_x == panel_region_gap,
+    "service region must retain the 2 mm DC gap");
+assert(service_cell_w * 2 == service_group_w
+        && service_cell_h * 2 == service_group_h,
+    "service cells must exactly tile the region");
+assert(usb_coupon_pocket_inside_plate,
+    "USB coupon must retain a rim around the service pocket");
+assert(usb_coupon_connector_matches_service_offset,
+    "USB coupon connector must match the production service-cell offset");
+assert(dc_hardware_inside_region,
+    "DC hardware must remain inside each region");
+assert(c13_hardware_inside_region,
+    "C13 hardware must remain inside its region");
+assert(usb_hardware_inside_region,
+    "USB hardware must remain inside its service cell");
+assert(xt60_screw_nut_envelope_inside_region,
+    "XT60 screw and nut envelope must remain inside each DC region");
+assert(dc_column_cutters_clear_separator,
+    "DC cutters must clear the finite column separator");
+assert(dc_row_cutters_clear_separator,
+    "DC cutters must clear the finite row separator");
+assert(ac_socket_screw_cutters_below_separators,
+    "AC socket, switch, and screw cutters must remain below separator rib extents");
+assert(socket_rim_relief_below_separators,
+    "AC socket rim relief must remain below separator rib extents");
+assert(c13_service_cutters_clear_separator,
+    "C13 and USB cutters must clear their finite separator");
+assert(separator_cutters_respect_rib_bounds,
+    "separator ribs must follow region bounds without cutter trimming");
+
 alignment_wall_h = 8;
 alignment_wall_t = 2;
 label_pocket_h = 3;
@@ -463,6 +646,7 @@ top_panel_brand_text = "plamp";
 top_panel_brand_font = 4;
 top_panel_brand_y_offset = 19;
 box_revision_font = 6;
+floor_revision_depth = 0.6;
 letter_size = 6;
 write_t = 0.75;
 revision_string = "revision";
@@ -632,6 +816,32 @@ module sub_panel_usb_support_rib_positive() {
         ]);
 }
 
+module sub_panel_separator_rib_positive(x0, y0, w, h) {
+    translate([x0, y0, sub_panel_base_h])
+        cube([w, h, sub_panel_h - sub_panel_base_h]);
+}
+
+module sub_panel_separator_ribs_positive() {
+    sub_panel_separator_rib_positive(
+        layout_offset_x + dc_column_gap_left_x,
+        layout_offset_y + dc_region_bottom_y,
+        panel_region_gap,
+        dc_region_top_y - dc_region_bottom_y
+    );
+    sub_panel_separator_rib_positive(
+        layout_offset_x + dc_region_left_x,
+        layout_offset_y + dc_row_gap_bottom_y,
+        dc_region_right_x - dc_region_left_x,
+        panel_region_gap
+    );
+    sub_panel_separator_rib_positive(
+        layout_offset_x + c13_region_left_x,
+        layout_offset_y + service_region_top_y,
+        c13_group_w,
+        panel_region_gap
+    );
+}
+
 module sub_panel_8ch_positive() {
     base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
@@ -650,17 +860,17 @@ module sub_panel_8ch_positive() {
         }
 
         sub_panel_usb_support_rib_positive();
+        sub_panel_separator_ribs_positive();
     }
 }
 
 module sub_panel_socket_bottom_rim_relief_negative() {
-    bottom_rim_inner_y = -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
     lip_h = sub_panel_h - sub_panel_base_h;
 
     for (x = [left_ac_x, right_ac_x])
         translate([
             x + outlet_feature_x - sub_panel_socket_rim_relief_w / 2,
-            bottom_rim_inner_y,
+            sub_panel_socket_rim_relief_y0,
             sub_panel_base_h - 0.1
         ])
             cube([
@@ -734,7 +944,7 @@ module sub_panel_8ch_negative() {
     translate([usb_c_panel_x, usb_c_panel_y, 0])
         sub_panel_usb_c_negative();
 
-    translate([c13_panel_x, service_row_y, 0])
+    translate([c13_hardware_x, c13_hardware_y, 0])
         sub_panel_c13_negative();
 
     panel_corner_screw_holes();
@@ -901,19 +1111,26 @@ module dc_barrel_channel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", incl
             flush_revision_label();
 }
 
-module usb_c_panel_negative() {
+module usb_c_connector_negative() {
     rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
             topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
+}
 
-    translate([0, usb_c_group_y, 0])
-        label_pocket(usb_c_group_w, usb_c_group_h);
+module service_group_negative() {
+    label_pocket(service_group_w, service_group_h);
+}
+
+module usb_c_panel_negative() {
+    service_group_negative();
+    translate([service_cell_w / 2, -service_cell_h / 2, 0])
+        usb_c_connector_negative();
 }
 
 module usb_c_revision_negative() {
-    translate([0, usb_c_panel_h / 2 - 8, 0])
+    translate([service_cell_w / 2, service_cell_h / 2, 0])
         label_pocket(revision_label_w, revision_label_h);
 }
 
@@ -926,23 +1143,30 @@ module usb_c_panel_unit(include_revision = true) {
             usb_c_revision_negative();
     }
 
-    translate([0, -usb_c_panel_h / 2 + 4, 0])
+    translate([-service_cell_w / 2, -service_cell_h / 2, 0])
         flush_label("COM", 5);
 
     if (include_revision)
-        translate([0, usb_c_panel_h / 2 - 8, 0])
+        translate([service_cell_w / 2, service_cell_h / 2, 0])
             flush_revision_label();
 }
 
-module c13_inlet_negative() {
+module c13_hardware_negative() {
     rect_cutout(c13_cutout_w, c13_cutout_h);
     rect_cutout(c13_wire_cutout_w, c13_wire_cutout_h);
 
     for (x = [-c13_screw_spacing / 2, c13_screw_spacing / 2])
         translate([x, 0, 0])
             screw_hole(c13_screw_d);
+}
 
+module c13_group_negative() {
     label_pocket(c13_group_w, c13_group_h);
+}
+
+module c13_inlet_negative() {
+    c13_group_negative();
+    c13_hardware_negative();
 }
 
 module c13_revision_negative() {
@@ -1027,18 +1251,17 @@ module top_panel_8ch(include_revision = true) {
                         translate([dc_channel_x(i), dc_channel_y(i), 0])
                             barrel_channel_negative();
 
-                    translate([usb_c_panel_x, usb_c_panel_y, 0])
-                        usb_c_panel_negative();
+                    translate([service_group_x, service_group_y, 0])
+                        service_group_negative();
 
-                    translate([c13_panel_x, service_row_y, 0])
-                        c13_inlet_negative();
+                    translate([service_right_x, service_bottom_y, 0])
+                        usb_c_connector_negative();
 
-                    if (include_revision) {
-                        translate([revision_x, revision_y, 0])
-                            label_pocket(top_panel_revision_label_w, revision_label_h);
-                        translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
-                            label_pocket(top_panel_revision_label_w, revision_label_h);
-                    }
+                    translate([c13_region_x, c13_hardware_y, 0])
+                        c13_group_negative();
+
+                    translate([c13_hardware_x, c13_hardware_y, 0])
+                        c13_hardware_negative();
                 }
 
                 panel_corner_screw_lands();
@@ -1060,14 +1283,14 @@ module top_panel_8ch(include_revision = true) {
             translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
-        translate([usb_c_panel_x, usb_c_panel_y - usb_c_panel_h / 2 + 4, 0])
+        translate([service_left_x, service_bottom_y, 0])
             flush_label("COM", 5);
 
         if (include_revision) {
-            translate([revision_x, revision_y, 0])
-                flush_revision_label();
-            translate([revision_x, revision_y + top_panel_brand_y_offset, 0])
+            translate([service_left_x, service_top_y, 0])
                 flush_label(top_panel_brand_text, top_panel_brand_font);
+            translate([service_right_x, service_top_y, 0])
+                flush_revision_label();
         }
     }
 }
@@ -1137,8 +1360,8 @@ module sub_panel_back_labels_negative() {
 
     sub_panel_back_label_negative(
         "AC",
-        c13_panel_x,
-        service_row_y + c13_cutout_h / 2 + 4
+        c13_hardware_x,
+        c13_hardware_y + c13_cutout_h / 2 + 4
     );
     sub_panel_back_label_negative(
         "USB",
@@ -1220,7 +1443,7 @@ module floor_context(colorize = true) {
                 converter_bottom_mount_holes();
             }
             floor_corner_fastener_holes();
-            box_bottom_revision_negative();
+            floor_revision_negative();
             floor_assembly_name_negatives();
             floor_component_label_negatives();
         }
@@ -1499,10 +1722,10 @@ module converter_mount_holes(z0 = -box_h) {
             bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d, z0, wall_t + component_raise_h);
 }
 
-module box_bottom_revision_negative() {
-    translate([box_w / 2, box_d / 2, -box_h])
-        mirror([1, 0, 0])
-            write_text(revision_string, box_revision_font, -0.01);
+module floor_revision_negative() {
+    translate([box_w / 2, box_d / 2, -box_h + wall_t])
+        rotate([0, 0, 0])
+            write_text(revision_string, box_revision_font, -floor_revision_depth);
 }
 
 module top_panel_outline() {
@@ -1795,24 +2018,30 @@ module support_free_m3_nut_trap(
     axis_z = wall_t + panel_screw_inset,
     print_orientation = flat_wall_print_orientation
 ) {
-    nut_d = corner_nut_d + corner_nut_clearance;
-    nut_flat_w = nut_d * cos(30);
-    throat_w = nut_flat_w - 2 * panel_nut_entry_detent;
     pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
         + pocket_offset_y;
-    detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
+    detent_bottom_z = corner_tab_h - corner_nut_entry_detent_l;
 
     if (print_orientation == box_print_orientation)
-        box_m3_nut_pocket_negative(nut_d, pocket_center_y, axis_z);
+        box_m3_nut_pocket_negative(
+            corner_nut_entry_w,
+            pocket_center_y,
+            axis_z
+        );
     else
         translate([0, pocket_center_y, axis_z])
             rotate([0, 30, 0])
                 rotate([90, 0, 0])
-                    cylinder(h = corner_nut_slot_l, d = nut_d, center = true, $fn = 6);
+                    cylinder(
+                        h = corner_nut_slot_l,
+                        d = corner_nut_pocket_d,
+                        center = true,
+                        $fn = 6
+                    );
 
     corner_nut_entry_negative(
-        nut_flat_w,
-        throat_w,
+        corner_nut_entry_w,
+        corner_nut_throat_w,
         pocket_center_y,
         detent_bottom_z,
         axis_z,
@@ -1945,8 +2174,17 @@ module wall_assembly_name_negative(length, wall_name) {
             write_text(wall_name, assembly_name_font, -assembly_name_depth);
 }
 
-module wall_revision_negative(length, h = wall_z_height, vent_mode = "none") {
-    revision_x = vent_mode == "half" ? length / 3 : length / 2;
+module wall_revision_negative(
+    length,
+    h = wall_z_height,
+    vent_mode = "none",
+    vent_side = "right"
+) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
+    revision_x = vent_mode == "half"
+        ? (vent_side == "left" ? 3 * length / 4 : length / 4)
+        : length / 2;
     revision_y = vent_mode == "full" ? h - wall_revision_top_margin : h / 2;
 
     translate([revision_x, revision_y, wall_t])
@@ -1966,16 +2204,20 @@ module wall_vent_negative(x, y, coarse_vents = false) {
 module wall_vent_negatives(
     length,
     vent_mode = "none",
+    vent_side = "right",
     h = wall_z_height,
     coarse_vents = false
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     vent_ys = [
         vent_floor_clearance:
         vent_hole_spacing:
         h - vent_top_margin - vent_top_clearance
     ];
-    vent_start_x = vent_mode == "half" ? length / 2 : vent_wall_margin;
-    vent_xs = [vent_start_x:vent_hole_spacing:length - vent_wall_margin];
+    vent_start_x = vent_mode == "half" && vent_side == "right" ? length / 2 : vent_wall_margin;
+    vent_end_x = vent_mode == "half" && vent_side == "left" ? length / 2 : length - vent_wall_margin;
+    vent_xs = [vent_start_x:vent_hole_spacing:vent_end_x];
     joint_min_x = corner_axis_inset + corner_tab_w / 2;
     joint_max_x = length - joint_min_x;
     joint_min_y = bottom_nut_tab_center_y() + corner_tab_t / 2;
@@ -2059,10 +2301,15 @@ module wall_stiffening_ribs(
     length,
     h,
     vent_mode = "none",
+    vent_side = "right",
     print_orientation = flat_wall_print_orientation
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     rib_xs = vent_mode == "half"
-        ? [length / 4, length / 2 + vent_hole_spacing / 2]
+        ? (vent_side == "left"
+            ? [length / 2 - vent_hole_spacing / 2, 3 * length / 4]
+            : [length / 4, length / 2 + vent_hole_spacing / 2])
         : (vent_mode == "full"
             ? [vent_wall_margin + vent_hole_spacing / 2, full_vent_center_rib_x(length), length - 21]
             : [length / 3, 2 * length / 3]);
@@ -2160,11 +2407,14 @@ module flat_wall(
     wall_name = "",
     nut_owner = false,
     vent_mode = "none",
+    vent_side = "right",
     h = wall_z_height,
     coarse_vents = false,
     mitre_overlap = 0,
     print_orientation = flat_wall_print_orientation
 ) {
+    assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
+        "half-wall vent_side must be left or right");
     difference() {
         union() {
             wall_body_positive(length, h, mitre_overlap);
@@ -2173,12 +2423,13 @@ module flat_wall(
                 length,
                 h,
                 vent_mode,
+                vent_side,
                 print_orientation
             );
         }
         floor_locator_notches(length);
-        wall_vent_negatives(length, vent_mode, h, coarse_vents);
-        wall_revision_negative(length, h, vent_mode);
+        wall_vent_negatives(length, vent_mode, vent_side, h, coarse_vents);
+        wall_revision_negative(length, h, vent_mode, vent_side);
         wall_assembly_name_negative(length, wall_name);
     }
 }
@@ -2191,7 +2442,7 @@ module south_wall_context(
 ) {
     optional_color([0.15, 0.45, 0.9, 1], colorize)
         multmatrix([
-            [1, 0, 0, 0],
+            [-1, 0, 0, box_w],
             [0, 0, 1, 0],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
@@ -2232,7 +2483,7 @@ module west_wall_context(
     optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, 1, 0],
-            [-1, 0, 0, box_d],
+            [1, 0, 0, 0],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
@@ -2252,7 +2503,7 @@ module east_wall_context(
     optional_color([0.2, 0.75, 0.35, 1], colorize)
         multmatrix([
             [0, 0, -1, box_w],
-            [1, 0, 0, 0],
+            [-1, 0, 0, box_d],
             [0, 1, 0, -box_h],
             [0, 0, 0, 1]
         ])
@@ -2273,6 +2524,7 @@ module north_wall(
         wall_name = "NORTH",
         nut_owner = true,
         vent_mode = "half",
+        vent_side = "right",
         coarse_vents = coarse_vents,
         mitre_overlap = mitre_overlap,
         print_orientation = print_orientation
@@ -2289,6 +2541,7 @@ module south_wall(
         wall_name = "SOUTH",
         nut_owner = true,
         vent_mode = "half",
+        vent_side = "left",
         coarse_vents = coarse_vents,
         mitre_overlap = mitre_overlap,
         print_orientation = print_orientation

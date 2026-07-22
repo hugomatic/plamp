@@ -1,3 +1,4 @@
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -6,6 +7,14 @@ from plamp.cad_metadata import parse_cad_document
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def scad_module_body(source, module_name):
+    return source.split(f"module {module_name}(", 1)[1].split("module ", 1)[0]
+
+
+def compact_scad(source):
+    return re.sub(r"\s+", "", source)
 
 
 def run(cmd, cwd, **kwargs):
@@ -20,6 +29,249 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_corner_nut_fit_uses_measured_independent_dimensions(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for definition in (
+            "corner_nut_slot_l=2.7;",
+            "corner_nut_entry_w=6.1;",
+            "corner_nut_throat_w=5.8;",
+            "corner_nut_entry_detent=(corner_nut_entry_w-corner_nut_throat_w)/2;",
+            "corner_nut_entry_detent_l=1.5;",
+            "corner_nut_pocket_d=corner_nut_entry_w/cos(30);",
+        ):
+            with self.subTest(definition=definition):
+                self.assertIn(definition, compact)
+
+        for measured_assertion in (
+            "assert(abs(corner_nut_slot_l-2.7)<0.000001",
+            "assert(abs(corner_nut_entry_w-6.1)<0.000001",
+            "assert(abs(corner_nut_throat_w-5.8)<0.000001",
+            "assert(abs(corner_nut_entry_detent_l-1.5)<0.000001",
+            "assert(abs(corner_nut_entry_detent-0.15)<0.000001",
+            "assert(abs(corner_nut_entry_w-2*corner_nut_entry_detent-corner_nut_throat_w)<0.000001",
+        ):
+            with self.subTest(assertion=measured_assertion):
+                self.assertIn(measured_assertion, compact)
+
+        self.assertIn(
+            "corner_nut_detent_ramp_h=corner_nut_entry_detent*tan(corner_nut_detent_angle);",
+            compact,
+        )
+
+    def test_plamp8_corner_nut_fit_is_shared_by_flat_and_box_paths(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        nut_trap = compact_scad(scad_module_body(source, "support_free_m3_nut_trap"))
+
+        self.assertIn(
+            "detent_bottom_z=corner_tab_h-corner_nut_entry_detent_l;",
+            nut_trap,
+        )
+        self.assertIn(
+            "box_m3_nut_pocket_negative(corner_nut_entry_w,pocket_center_y,axis_z);",
+            nut_trap,
+        )
+        self.assertIn(
+            "cylinder(h=corner_nut_slot_l,d=corner_nut_pocket_d,center=true,$fn=6);",
+            nut_trap,
+        )
+        self.assertIn(
+            "corner_nut_entry_negative(corner_nut_entry_w,corner_nut_throat_w,",
+            nut_trap,
+        )
+        self.assertNotIn("panel_nut_entry_detent", nut_trap)
+        self.assertNotIn("panel_nut_entry_detent_l", nut_trap)
+
+        box_pocket = compact_scad(
+            scad_module_body(source, "box_m3_nut_pocket_negative")
+        )
+        self.assertIn(
+            "cube([nut_w,corner_nut_slot_l,nut_w]);",
+            box_pocket,
+        )
+        self.assertIn(
+            "box_nut_roof_negative(nut_w,nut_w,",
+            box_pocket,
+        )
+
+    def test_plamp8_wall_contexts_are_proper_rotations(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        expected_matrices = {
+            "north": [
+                ["1", "0", "0", "0"],
+                ["0", "0", "-1", "box_d"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "south": [
+                ["-1", "0", "0", "box_w"],
+                ["0", "0", "1", "0"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "west": [
+                ["0", "0", "1", "0"],
+                ["1", "0", "0", "0"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+            "east": [
+                ["0", "0", "-1", "box_w"],
+                ["-1", "0", "0", "box_d"],
+                ["0", "1", "0", "-box_h"],
+                ["0", "0", "0", "1"],
+            ],
+        }
+
+        for wall, expected in expected_matrices.items():
+            with self.subTest(wall=wall):
+                context = source.split(
+                    f"module {wall}_wall_context(", 1
+                )[1].split("module ", 1)[0]
+                matrix_literal = re.search(
+                    r"multmatrix\(\[\s*((?:\[[^\]]+\],?\s*){4})\]\)",
+                    context,
+                )
+                self.assertIsNotNone(matrix_literal)
+                rows = [
+                    [value.strip() for value in row.split(",")]
+                    for row in re.findall(r"\[([^\]]+)\]", matrix_literal.group(1))
+                ]
+                self.assertEqual(rows, expected)
+
+                orientation = [[int(value) for value in row[:3]] for row in rows[:3]]
+                determinant = (
+                    orientation[0][0]
+                    * (
+                        orientation[1][1] * orientation[2][2]
+                        - orientation[1][2] * orientation[2][1]
+                    )
+                    - orientation[0][1]
+                    * (
+                        orientation[1][0] * orientation[2][2]
+                        - orientation[1][2] * orientation[2][0]
+                    )
+                    + orientation[0][2]
+                    * (
+                        orientation[1][0] * orientation[2][1]
+                        - orientation[1][1] * orientation[2][0]
+                    )
+                )
+                self.assertEqual(determinant, 1)
+
+        north_context = source.split("module north_wall_context(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            """multmatrix([
+            [1, 0, 0, 0],
+            [0, 0, -1, box_d],
+            [0, 1, 0, -box_h],
+            [0, 0, 0, 1]
+        ])""",
+            north_context,
+        )
+
+    def test_plamp8_half_vents_are_explicitly_handed(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        for module_name in (
+            "flat_wall",
+            "wall_vent_negatives",
+            "wall_revision_negative",
+            "wall_stiffening_ribs",
+        ):
+            with self.subTest(module=module_name):
+                module = scad_module_body(source, module_name)
+                self.assertIn('vent_side = "right"', module)
+                self.assertIn(
+                    'vent_mode != "half" || vent_side == "left" || vent_side == "right"',
+                    module,
+                )
+
+        flat_wall = compact_scad(scad_module_body(source, "flat_wall"))
+        self.assertIn(
+            "wall_stiffening_ribs(length,h,vent_mode,vent_side,print_orientation);",
+            flat_wall,
+        )
+        self.assertIn(
+            "wall_vent_negatives(length,vent_mode,vent_side,h,coarse_vents);",
+            flat_wall,
+        )
+        self.assertIn(
+            "wall_revision_negative(length,h,vent_mode,vent_side);", flat_wall
+        )
+
+        vent_grid = source.split("module wall_vent_negatives(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "right" ? length / 2',
+            vent_grid,
+        )
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "left" ? length / 2',
+            vent_grid,
+        )
+        self.assertIn(
+            "vent_xs = [vent_start_x:vent_hole_spacing:vent_end_x];", vent_grid
+        )
+
+        ribs = source.split("module wall_stiffening_ribs(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn('vent_side == "left"', ribs)
+        self.assertIn(
+            "[length / 2 - vent_hole_spacing / 2, 3 * length / 4]", ribs
+        )
+        self.assertIn(
+            "[length / 4, length / 2 + vent_hole_spacing / 2]", ribs
+        )
+
+        revision = source.split("module wall_revision_negative(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            'vent_side == "left" ? 3 * length / 4 : length / 4', revision
+        )
+
+        north = compact_scad(scad_module_body(source, "north_wall"))
+        south = compact_scad(scad_module_body(source, "south_wall"))
+        self.assertIn(
+            'flat_wall(box_w,wall_name="NORTH",nut_owner=true,'
+            'vent_mode="half",vent_side="right",',
+            north,
+        )
+        self.assertIn(
+            'flat_wall(box_w,wall_name="SOUTH",nut_owner=true,'
+            'vent_mode="half",vent_side="left",',
+            south,
+        )
+
+    def test_plamp8_floor_revision_is_readable_from_inside(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn("floor_revision_depth = 0.6;", source)
+        self.assertNotIn("box_bottom_revision_negative", source)
+        revision = source.split("module floor_revision_negative()", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertIn(
+            "translate([box_w / 2, box_d / 2, -box_h + wall_t])", revision
+        )
+        self.assertIn("rotate([0, 0, 0])", revision)
+        self.assertIn(
+            "write_text(revision_string, box_revision_font, -floor_revision_depth);",
+            revision,
+        )
+        self.assertNotIn("mirror(", revision)
+
+        floor_context = source.split("module floor_context(", 1)[1].split(
+            "module ", 1
+        )[0]
+        self.assertEqual(floor_context.count("floor_revision_negative();"), 1)
+
     def test_cad_documentation_covers_the_stable_local_workflow(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         host_tools = (REPO_ROOT / "docs" / "host-tools.md").read_text(
@@ -101,7 +353,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("corner_nut_tab_extension = 16;", source)
         self.assertIn("corner_nut_detent_angle = 30;", source)
         self.assertIn(
-            "corner_nut_detent_ramp_h = panel_nut_entry_detent * tan(corner_nut_detent_angle);",
+            "corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);",
             source,
         )
         self.assertIn(
@@ -294,7 +546,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("floor_rib_x0 = floor_locator_end_offset", source)
         self.assertIn("floor_rib_x1 = length - floor_rib_x0;", source)
         self.assertIn("transverse_rib_x0", source)
-        self.assertIn('vent_mode == "half" ? length / 2', source)
+        self.assertIn(
+            'vent_mode == "half" && vent_side == "right" ? length / 2', source
+        )
         self.assertNotIn("module bottom_corner_locator_key", source)
 
     def test_plamp8_box_coarse_vents_are_point_up_hexagons(self):
@@ -617,7 +871,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(f'"{label}"', labels)
         self.assertIn("dc_label_x_offset = -3;", labels)
-        self.assertIn("service_row_y + c13_cutout_h / 2 + 4", labels)
+        self.assertIn("c13_hardware_y + c13_cutout_h / 2 + 4", labels)
         self.assertIn(
             "usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 4", labels
         )
@@ -648,6 +902,247 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_base_h", rib)
         self.assertIn("sub_panel_usb_support_rib_h", rib)
         self.assertIn("sub_panel_usb_support_rib_positive();", source)
+
+    def test_plamp8_panel_regions_have_two_mm_gaps_and_xt60_margin(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for declaration in (
+            "panel_region_gap = 2;",
+            "dc_region_w = 74;",
+            "barrel_group_w = dc_region_w;",
+            "barrel_channel_w = dc_region_w;",
+            "c13_group_w = 58;",
+            "service_group_w = c13_group_w;",
+            "service_group_h = usb_c_group_h;",
+            "c13_cutout_w = 28;",
+            "c13_screw_spacing = 40;",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertIn(declaration, source)
+
+        self.assertIn("dc_col_spacing=dc_region_w+panel_region_gap;", compact)
+        self.assertIn("dc_row_spacing=barrel_group_h+panel_region_gap;", compact)
+        self.assertIn(
+            "assert(dc_column_gap==panel_region_gap,"
+            '"DCcolumnregiongapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(dc_row_gap==panel_region_gap,"
+            '"DCrowregiongapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(c13_service_gap==panel_region_gap,"
+            '"C13/servicegapmustbe2mm");',
+            compact,
+        )
+        self.assertIn(
+            "assert(xt60_region_x_margin>=1.2,"
+            '"everyXT60faceneedsatleast1.2mmXmargin");',
+            compact,
+        )
+        self.assertIn(
+            "assert(c13_cutout_w==28&&c13_screw_spacing==40,"
+            '"C13hardwarelocationsmustremainunchanged");',
+            compact,
+        )
+
+    def test_plamp8_c13_hardware_and_service_centers_are_frozen(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for contract in (
+            "c13_hardware_x = 67;",
+            "c13_hardware_y = 58;",
+            "c13_region_x = outlet_right_x - c13_group_w / 2;",
+            "service_group_x = c13_region_x;",
+            "assert(c13_hardware_x == 67 && c13_hardware_y == 58,",
+            "assert(service_left_x == 56.5 && service_right_x == 85.5",
+            " && service_top_y == 17 && service_bottom_y == 3,",
+            "assert(service_region_left_x == c13_region_left_x",
+            " && service_region_right_x == c13_region_right_x,",
+            "assert(service_region_left_x - dc_region_right_x == panel_region_gap,",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, source)
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        self.assertIn(
+            "translate([c13_region_x,c13_hardware_y,0])c13_group_negative();",
+            top_panel,
+        )
+        self.assertIn(
+            "translate([c13_hardware_x,c13_hardware_y,0])c13_hardware_negative();",
+            top_panel,
+        )
+
+    def test_plamp8_service_region_is_one_equal_cell_grid(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for equation in (
+            "service_group_x = c13_region_x;",
+            "service_group_y = c13_hardware_y - c13_group_h / 2",
+            "- panel_region_gap - service_group_h / 2;",
+            "service_cell_w = service_group_w / 2;",
+            "service_cell_h = service_group_h / 2;",
+            "service_left_x = service_group_x - service_cell_w / 2;",
+            "service_right_x = service_group_x + service_cell_w / 2;",
+            "service_top_y = service_group_y + service_cell_h / 2;",
+            "service_bottom_y = service_group_y - service_cell_h / 2;",
+        ):
+            with self.subTest(equation=equation):
+                self.assertIn(equation, source)
+
+        self.assertIn("module service_group_negative()", source)
+        self.assertIn("module usb_c_connector_negative()", source)
+        service_negative = (
+            compact_scad(scad_module_body(source, "service_group_negative"))
+            if "module service_group_negative()" in source
+            else ""
+        )
+        usb_hardware = (
+            compact_scad(scad_module_body(source, "usb_c_connector_negative"))
+            if "module usb_c_connector_negative()" in source
+            else ""
+        )
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        usb_coupon = compact_scad(scad_module_body(source, "usb_c_panel_negative"))
+        usb_coupon_unit = compact_scad(scad_module_body(source, "usb_c_panel_unit"))
+
+        self.assertEqual(top_panel.count("service_group_negative();"), 1)
+        self.assertIn("label_pocket(service_group_w,service_group_h);", service_negative)
+        self.assertNotIn("label_pocket", usb_hardware)
+        self.assertIn("rounded_rect_cutout(usb_c_cutout_w,usb_c_cutout_h,usb_c_cutout_r);", usb_hardware)
+        self.assertIn("usb_c_panel_rim = 3;", source)
+        self.assertIn(
+            "usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;", source
+        )
+        self.assertIn(
+            "usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;", source
+        )
+        self.assertIn(
+            "service_group_negative();translate([service_cell_w/2,-service_cell_h/2,0])"
+            "usb_c_connector_negative();",
+            usb_coupon,
+        )
+        self.assertIn("fit_plate(usb_c_panel_w,usb_c_panel_h);", usb_coupon_unit)
+        self.assertIn(
+            "assert(usb_coupon_pocket_inside_plate,"
+            '"USBcouponmustretainarimaroundtheservicepocket");',
+            compact,
+        )
+        self.assertIn(
+            "assert(usb_coupon_connector_matches_service_offset,"
+            '"USBcouponconnectormustmatchtheproductionservice-celloffset");',
+            compact,
+        )
+        self.assertIn(
+            "usb_coupon_pocket_inside_plate=service_group_w+2*usb_c_panel_rim"
+            "<=usb_c_panel_w&&service_group_h+2*usb_c_panel_rim<=usb_c_panel_h;",
+            compact,
+        )
+        self.assertIn(
+            "usb_coupon_connector_matches_service_offset=service_cell_w/2=="
+            "service_right_x-service_group_x&&-service_cell_h/2=="
+            "service_bottom_y-service_group_y;",
+            compact,
+        )
+        self.assertIn(
+            "assert(service_cell_w*2==service_group_w&&"
+            "service_cell_h*2==service_group_h,"
+            '"servicecellsmustexactlytiletheregion");',
+            compact,
+        )
+        for contract in (
+            'translate([service_left_x,service_top_y,0])flush_label(top_panel_brand_text,top_panel_brand_font);',
+            "translate([service_right_x,service_top_y,0])flush_revision_label();",
+            'translate([service_left_x,service_bottom_y,0])flush_label("COM",5);',
+            "translate([service_right_x,service_bottom_y,0])usb_c_connector_negative();",
+            "assert(c13_hardware_inside_region,\"C13hardwaremustremaininsideitsregion\");",
+            "assert(usb_hardware_inside_region,\"USBhardwaremustremaininsideitsservicecell\");",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, compact)
+    def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module sub_panel_separator_rib_positive(x0, y0, w, h)", source)
+        self.assertIn("module sub_panel_separator_ribs_positive()", source)
+        helper = (
+            compact_scad(scad_module_body(source, "sub_panel_separator_rib_positive"))
+            if "module sub_panel_separator_rib_positive(" in source
+            else ""
+        )
+        ribs = (
+            compact_scad(scad_module_body(source, "sub_panel_separator_ribs_positive"))
+            if "module sub_panel_separator_ribs_positive(" in source
+            else ""
+        )
+        positive = compact_scad(scad_module_body(source, "sub_panel_8ch_positive"))
+
+        self.assertIn("translate([x0,y0,sub_panel_base_h])", helper)
+        self.assertIn(
+            "cube([w,h,sub_panel_h-sub_panel_base_h]);", helper
+        )
+        expected_calls = (
+            "sub_panel_separator_rib_positive(layout_offset_x+dc_column_gap_left_x,"
+            "layout_offset_y+dc_region_bottom_y,panel_region_gap,"
+            "dc_region_top_y-dc_region_bottom_y);",
+            "sub_panel_separator_rib_positive(layout_offset_x+dc_region_left_x,"
+            "layout_offset_y+dc_row_gap_bottom_y,"
+            "dc_region_right_x-dc_region_left_x,panel_region_gap);",
+            "sub_panel_separator_rib_positive(layout_offset_x+c13_region_left_x,"
+            "layout_offset_y+service_region_top_y,c13_group_w,panel_region_gap);",
+        )
+        for call in expected_calls:
+            with self.subTest(call=call):
+                self.assertIn(call, ribs)
+        self.assertEqual(ribs.count("sub_panel_separator_rib_positive("), 3)
+        self.assertIn("sub_panel_separator_ribs_positive();", positive)
+        self.assertIn("sub_panel_usb_support_rib_positive();", positive)
+        self.assertIn(
+            "assert(separator_cutters_respect_rib_bounds,"
+            '"separatorribsmustfollowregionboundswithoutcuttertrimming");',
+            compact,
+        )
+        for contract in (
+            "assert(xt60_screw_nut_envelope_inside_region,"
+            '"XT60screwandnutenvelopemustremaininsideeachDCregion");',
+            "assert(dc_column_cutters_clear_separator,"
+            '"DCcuttersmustclearthefinitecolumnseparator");',
+            "assert(dc_row_cutters_clear_separator,"
+            '"DCcuttersmustclearthefiniterowseparator");',
+            "assert(ac_socket_screw_cutters_below_separators,"
+            '"ACsocket,switch,andscrewcuttersmustremainbelowseparatorribextents");',
+            "assert(socket_rim_relief_below_separators,"
+            '"ACsocketrimreliefmustremainbelowseparatorribextents");',
+            "assert(c13_service_cutters_clear_separator,"
+            '"C13andUSBcuttersmustcleartheirfiniteseparator");',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, compact)
+        for bounds in (
+            "xt60_screw_nut_envelope_inside_region=xt60_screw_nut_left_x>="
+            "barrel_group_x-dc_region_w/2&&xt60_screw_nut_right_x<="
+            "barrel_group_x+dc_region_w/2",
+            "dc_column_cutters_clear_separator=dc_grid_x+"
+            "dc_separator_cutter_right_x<=dc_column_gap_left_x&&dc_grid_x+"
+            "dc_col_spacing+dc_separator_cutter_left_x>=dc_column_gap_right_x;",
+            "dc_row_cutters_clear_separator=dc_grid_y-dc_separator_cutter_half_h>="
+            "dc_row_gap_top_y&&dc_grid_y-dc_row_spacing+dc_separator_cutter_half_h"
+            "<=dc_row_gap_bottom_y;",
+            "ac_socket_screw_cutters_below_separators=ac_socket_screw_cutter_top_y"
+            "<=dc_region_bottom_y;",
+            "socket_rim_relief_below_separators=socket_rim_relief_top_y"
+            "<=dc_region_bottom_y;",
+            "c13_service_cutters_clear_separator=c13_hardware_y-c13_cutout_h/2>="
+            "c13_region_bottom_y&&service_bottom_y+max(usb_c_cutout_h/2,"
+            "usb_c_screw_head_d/2)<=service_region_top_y;",
+        ):
+            with self.subTest(bounds=bounds):
+                self.assertIn(bounds, compact)
 
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -687,7 +1182,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
         self.assertRegex(
             source,
-            r"module usb_c_panel_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+            r"module usb_c_connector_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
         )
         self.assertRegex(
             source,
