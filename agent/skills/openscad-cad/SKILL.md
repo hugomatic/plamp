@@ -26,7 +26,7 @@ plamp cad generate PART --preset PRESET --json
 
 Use `--json` for agents. Selection supports repeatable `--view`, `--define NAME=EXPR`, and `--view-define VIEW:NAME=EXPR`. Omit output arguments to use the managed archive.
 
-Read [plamp-things.md](references/plamp-things.md) for metadata, precedence, source snapshots, archives/logs, wrappers, and the exact Plamp8 workflow.
+Read [plamp-things.md](references/plamp-things.md) for metadata, precedence, source snapshots, archives/logs, and the exact Plamp8 workflow.
 
 ## New Parts
 
@@ -69,4 +69,4 @@ plamp cad new PART --template TEMPLATE --json
 
 - Do not treat a successful render as proof of printability, strength, fit, or cut readiness.
 - Do not commit generated STL/DXF/SVG/PDF, manifests, or logs unless explicitly requested; commit reproducible source.
-- Do not invent or call part-local generation wrappers; use `plamp cad`.
+- Do not invent alternate part-local generation interfaces; use `plamp cad`.

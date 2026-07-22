@@ -111,7 +111,7 @@ $PLAMP_DATA_DIR/cad/prints/<part>/<RUN_ID>/
 ├── manifest.json
 ├── readme.md
 ├── source/
-├── artifacts/<ARTIFACT_ID>.stl
+├── artifacts/<ARTIFACT_ID>--<REVISION>.stl
 └── logs/<ARTIFACT_ID>.log
 ```
 

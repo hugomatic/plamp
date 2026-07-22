@@ -80,7 +80,7 @@ the exact jobs without rendering. Generation can take several minutes per job
 on a Raspberry Pi. Generated STL files, archived source, manifests, and
 OpenSCAD logs are instance data under `$PLAMP_DATA_DIR/cad/prints`, not source
 files to commit. See [Host tools](./docs/host-tools.md#openscad-on-a-pi) for the
-metadata format, selector behavior, archive layout, and legacy script options.
+metadata format, selector behavior, and archive layout.
 
 ## Web and API
 
