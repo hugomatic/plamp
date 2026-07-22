@@ -1,9 +1,5 @@
-import json
-import os
 import shutil
-import stat
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,42 +19,6 @@ def run(cmd, cwd, **kwargs):
         stderr=subprocess.PIPE,
         **kwargs,
     )
-
-
-def init_git_repo(path: Path):
-    run(["git", "init"], path, check=True)
-    run(["git", "config", "user.email", "test@example.invalid"], path, check=True)
-    run(["git", "config", "user.name", "Test User"], path, check=True)
-
-
-def make_fake_openscad(path: Path):
-    path.write_text(
-        """#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${1:-}" == "--version" ]]; then
-  printf 'OpenSCAD version test\\n'
-  exit 0
-fi
-out=""
-view=""
-defines=()
-input="${@: -1}"
-while [[ "$#" -gt 0 ]]; do
-  case "$1" in
-    -o) shift; out="$1" ;;
-    -D)
-      shift
-      defines+=("$1")
-      [[ "$1" == view=* ]] && view="${1#view=}"
-      ;;
-  esac
-  shift || true
-done
-printf 'view=%s input=%s defines=%s\\n' "$view" "$input" "${defines[*]}" >> "$OPENSCAD_LOG"
-printf 'solid %s\\nendsolid %s\\n' "$view" "$view" > "$out"
-""",
-    )
-    path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
@@ -107,24 +67,6 @@ class ThingsCadScriptsTest(unittest.TestCase):
             with self.subTest(path=relative_path):
                 document = parse_cad_document(REPO_ROOT / relative_path)
                 self.assertTrue(document.metadata_snapshot)
-
-    def make_wrapper_repo(self, tmp_path: Path, part_name: str, scad_source: str):
-        repo = tmp_path / "repo"
-        part = repo / "things" / part_name
-        part.mkdir(parents=True)
-        shutil.copytree(REPO_ROOT / "plamp", repo / "plamp")
-        shutil.copytree(REPO_ROOT / "pico_scheduler", repo / "pico_scheduler")
-        wrapper = (REPO_ROOT / "things" / "3d_template" / "generate.bash").read_text()
-        (part / "generate.bash").write_text(
-            wrapper.replace("__cad__name__", part_name)
-        )
-        (part / "generate.bash").chmod(0o755)
-        (part / f"{part_name}.scad").write_text(scad_source)
-        python_bin = repo / ".venv" / "bin" / "python"
-        python_bin.parent.mkdir(parents=True)
-        python_bin.symlink_to(sys.executable)
-        init_git_repo(repo)
-        return repo, part
 
     def test_plamp8_flat_wall_corner_stack_contract(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -788,117 +730,31 @@ class ThingsCadScriptsTest(unittest.TestCase):
             shutil.copy2(REPO_ROOT / "things" / "template.bash", things / "template.bash")
             templates = things / "3d_template" / "scad"
             templates.mkdir(exist_ok=True)
-            (templates / "cover.scad").write_text('view = "plate"; // [plate]\n// cover template\n')
+            source = '''view = "plate"; // [plate]
+/* generate.json
+{
+  "presets": {
+    "plate": {
+      "items": ["view:plate"]
+    }
+  }
+}
+*/
+// cover template
+'''
+            (templates / "cover.scad").write_text(source)
 
             result = run(["bash", "template.bash", "new_cover", "--template", "cover"], things)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertTrue((things / "new_cover" / "generate.bash").exists())
+            created = things / "new_cover"
             self.assertEqual(
-                (things / "new_cover" / "new_cover.scad").read_text(),
-                'view = "plate"; // [plate]\n// cover template\n',
+                [path.name for path in created.iterdir()],
+                ["new_cover.scad"],
             )
-            wrapper = (things / "new_cover" / "generate.bash").read_text()
-            self.assertIn('cad="new_cover"', wrapper)
-            self.assertIn('-m plamp cad generate "$script_dir/$cad.scad"', wrapper)
-            self.assertIn(
-                'export PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}"',
-                wrapper,
-            )
-            self.assertNotIn("find_openscad", wrapper)
-            self.assertNotIn("extract_views", wrapper)
-
-    def test_all_generate_bash_files_are_thin_cli_wrappers(self):
-        wrappers = (
-            REPO_ROOT / "things" / "3d_template" / "generate.bash",
-            REPO_ROOT / "things" / "plamp8" / "generate.bash",
-            REPO_ROOT / "things" / "plamp_stand" / "generate.bash",
-            REPO_ROOT / "things" / "iharvest_cover" / "generate.bash",
-        )
-        for wrapper_path in wrappers:
-            with self.subTest(wrapper=wrapper_path.parent.name):
-                wrapper = wrapper_path.read_text()
-                self.assertIn(
-                    'git -C "$script_dir" rev-parse --show-toplevel', wrapper
-                )
-                self.assertIn('python_bin="$repo_root/.venv/bin/python"', wrapper)
-                self.assertIn("command -v python3", wrapper)
-                self.assertIn(
-                    'exec "$python_bin" -m plamp cad generate', wrapper
-                )
-                self.assertNotIn("find_openscad", wrapper)
-                self.assertNotIn("extract_views", wrapper)
-
-        plamp8 = (REPO_ROOT / "things" / "plamp8" / "generate.bash").read_text()
-        self.assertIn("--preset fuse-box", plamp8)
-        self.assertNotIn("eval", plamp8)
-
-    def test_plamp8_wrapper_translates_box_without_evaluating_values(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            part = repo / "things" / "plamp8"
-            part.mkdir(parents=True)
-            shutil.copy2(
-                REPO_ROOT / "things" / "plamp8" / "generate.bash",
-                part / "generate.bash",
-            )
-            (part / "plamp8.scad").write_text('view = "box"; // [box]\n')
-            python_bin = repo / ".venv" / "bin" / "python"
-            python_bin.parent.mkdir(parents=True)
-            python_bin.write_text(
-                "#!/usr/bin/env bash\n"
-                "set -euo pipefail\n"
-                "printf '%s\\n' \"$@\" > \"$ARGS_LOG\"\n"
-            )
-            python_bin.chmod(0o755)
-            init_git_repo(repo)
-            args_log = Path(tmp) / "args.log"
-            unwanted = Path(tmp) / "must-not-exist"
-            payload = f'label=$(touch "{unwanted}")'
-
-            result = run(
-                [
-                    "./generate.bash",
-                    "--box",
-                    "--revision",
-                    "--box",
-                    "--define",
-                    "--box",
-                    "-D",
-                    payload,
-                    "--view",
-                    "--box",
-                    "--",
-                    "--box",
-                ],
-                part,
-                env={**os.environ, "ARGS_LOG": str(args_log)},
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(
-                args_log.read_text().splitlines(),
-                [
-                    "-m",
-                    "plamp",
-                    "cad",
-                    "generate",
-                    str(part / "plamp8.scad"),
-                    "--preset",
-                    "fuse-box",
-                    "--revision",
-                    "--box",
-                    "--define",
-                    "--box",
-                    "-D",
-                    payload,
-                    "--view",
-                    "--box",
-                    "--",
-                    "--box",
-                ],
-            )
-            self.assertFalse(unwanted.exists())
+            self.assertEqual((created / "new_cover.scad").read_text(), source)
+            document = parse_cad_document(created / "new_cover.scad")
+            self.assertTrue(document.metadata_snapshot)
 
     def test_template_bash_lists_available_templates_when_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -916,137 +772,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn("Available templates:", result.stderr)
             self.assertIn("basic", result.stderr)
 
-    def test_generate_bash_defaults_to_latest_part_commit_and_uses_ordered_views(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            repo, part = self.make_wrapper_repo(
-                tmp_path,
-                "multi_part",
-                'include <lib.scad>\nview = "assembly"; '
-                '// [assembly, camera_clip, plate]\n'
-                'revision_string = "dev";\nhelper();\n',
-            )
-            (part / "lib.scad").write_text("module helper() { cube([1, 1, 1]); }\n")
-            run(["git", "add", "."], repo, check=True)
-            source_commit_env = {
-                **os.environ,
-                "GIT_AUTHOR_DATE": "2020-09-02T03:04:05+00:00",
-                "GIT_COMMITTER_DATE": "2020-09-02T03:04:05+00:00",
-            }
-            run(
-                ["git", "commit", "-m", "add cad part"],
-                repo,
-                check=True,
-                env=source_commit_env,
-            )
-            part_commit = run(
-                ["git", "rev-parse", "HEAD"], repo, check=True
-            ).stdout.strip()
-            (repo / "README.md").write_text("unrelated change\n")
-            run(["git", "add", "README.md"], repo, check=True)
-            run(["git", "commit", "-m", "change unrelated file"], repo, check=True)
+    def test_repository_has_only_the_plamp_cad_generation_interface(self):
+        tracked = run(["git", "ls-files", "-z"], REPO_ROOT, check=True).stdout.split("\0")
+        removed_name = "generate" + ".bash"
+        self.assertNotIn(removed_name, [Path(path).name for path in tracked if path])
 
-            help_result = run(["./generate.bash", "--help"], part)
-            self.assertEqual(help_result.returncode, 0, help_result.stderr)
-            self.assertIn("usage: plamp cad generate", help_result.stdout)
-            self.assertIn("target_directory", help_result.stdout)
-            self.assertIn("commit", help_result.stdout)
-
-            fake_openscad = tmp_path / "openscad"
-            make_fake_openscad(fake_openscad)
-            log = tmp_path / "openscad.log"
-            target = tmp_path / "rendered"
-
-            env = {
-                **os.environ,
-                "OPENSCAD_LOG": str(log),
-                "PATH": f"{tmp_path}:{os.environ['PATH']}",
-                "PLAMP_DATA_DIR": str(tmp_path / "data"),
-            }
-            result = run(
-                [
-                    "./generate.bash",
-                    "--view",
-                    "assembly",
-                    "--view",
-                    "camera_clip",
-                    "--view",
-                    "plate",
-                    str(target),
-                ],
-                part,
-                env=env,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout)["source"]["commit"], part_commit)
-            self.assertEqual(
-                [
-                    p.name.split("--", 1)[0]
-                    for p in sorted((target / "artifacts").glob("*.stl"))
-                ],
-                ["assembly", "camera_clip", "plate"],
-            )
-            rendered_views = [
-                line.split()[0].removeprefix("view=").strip('"')
-                for line in log.read_text().splitlines()
-            ]
-            self.assertEqual(rendered_views, ["camera_clip", "plate", "assembly"])
-
-    def test_generate_bash_preview_uses_render_fn_without_ball_quality(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            wrapper = (
-                REPO_ROOT / "things" / "3d_template" / "generate.bash"
-            ).read_text()
-            self.assertNotIn("find_openscad", wrapper)
-            repo, part = self.make_wrapper_repo(
-                tmp_path,
-                "preview_part",
-                'view = "plate"; // [plate]\ncube([1,1,1]);\n',
-            )
-            run(["git", "add", "."], repo, check=True)
-            run(["git", "commit", "-m", "add cad part"], repo, check=True)
-            fake_openscad = tmp_path / "openscad"
-            make_fake_openscad(fake_openscad)
-            log = tmp_path / "openscad.log"
-            target = tmp_path / "rendered"
-
-            env = {
-                **os.environ,
-                "OPENSCAD_LOG": str(log),
-                "PATH": f"{tmp_path}:{os.environ['PATH']}",
-                "PLAMP_DATA_DIR": str(tmp_path / "data"),
-            }
-            result = run(["./generate.bash", "--preview", str(target), "HEAD"], part, env=env)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("render_fn=24", log.read_text())
-            self.assertIn("render_text=false", log.read_text())
-            self.assertNotIn("ball_quality=", log.read_text())
-
-    def test_generate_bash_refuses_dirty_part_without_revision_text(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            repo, part = self.make_wrapper_repo(
-                tmp_path,
-                "dirty_part",
-                'view = "plate"; // [plate]\ncube([1,1,1]);\n',
-            )
-            other = repo / "app"
-            other.mkdir()
-            (other / "unrelated.py").write_text("print('clean enough')\n")
-            run(["git", "add", "."], repo, check=True)
-            run(["git", "commit", "-m", "add files"], repo, check=True)
-            (other / "unrelated.py").write_text("print('ignored dirty')\n")
-            result_with_unrelated_dirty = run(["./generate.bash", str(tmp_path / "ok"), "HEAD"], part)
-            (part / "dirty_part.scad").write_text('view = "plate"; // [plate]\nsphere(1);\n')
-
-            result = run(["./generate.bash", str(tmp_path / "blocked"), "HEAD"], part)
-
-            self.assertNotIn("dirty CAD part", result_with_unrelated_dirty.stderr)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("dirty CAD part requires an explicit revision label", result.stderr)
+        references = run(
+            ["git", "grep", "-n", "-I", "-e", "generate[.]bash", "--"],
+            REPO_ROOT,
+        )
+        self.assertEqual(references.returncode, 1, references.stdout + references.stderr)
 
 
 if __name__ == "__main__":

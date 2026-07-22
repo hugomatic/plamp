@@ -101,7 +101,4 @@ echo "Creating new OpenSCAD part: $part"
 echo "Template: $template"
 
 mkdir "$part"
-cp "$template_root/generate.bash" "./$part/generate.bash"
 cp "$template_path" "./$part/$part.scad"
-sed -i -e "s/__cad__name__/$part/g" "./$part/generate.bash"
-rm -f "./$part/generate.bash-e"
