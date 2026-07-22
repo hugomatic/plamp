@@ -46,9 +46,15 @@ The `top-panel-fit` preset must expand, in order, to:
 
 All four connector fit views must produce a flat plate whose solid extent begins at Z=0 and whose base thickness is `plate_t`, currently 3 mm. Existing cutouts, countersinks, recessed label pockets, flush text, and revision engraving remain unchanged unless a name must change to follow the public view rename.
 
+Introduce one shared `connector_panel_rim` of 3 mm. Size and position each coupon plate from the complete XY envelope of all of its recessed rounded pockets, including revision pockets. Every pocket edge must remain inside the plate by at least `connector_panel_rim` on every side. Do not assume a pocket and its plate share a center: the DC rounded pocket is intentionally offset, and its coupon boundary must account for that offset instead of clipping the pocket. AC must account for both rounded outlet pockets; USB-C must account for all three service pockets; C13 must account for its connector and revision pockets.
+
+The panel may retain additional material where connector hardware, labels, or existing layout needs more than the minimum rim. The 3 mm value is a minimum, not a requirement to crop every side to exactly 3 mm. Add derived-bound assertions so a future pocket or panel dimension change fails clearly if any rim becomes smaller than 3 mm.
+
 Remove `alignment_walls()` from both the DC connector coupon and the C13 coupon. Do not remove alignment or support geometry from production `top_panel`, `sub_panel`, assembly, box, or wall paths. The fit coupons remain representative of the production top-panel face and connector holes; they no longer model an underside locating border.
 
-The AC duplex and USB-C coupons already satisfy the flat-plate requirement and should receive no geometry redesign.
+The AC duplex and USB-C coupons already satisfy the flat-plate requirement and need no underside-geometry redesign. Their outer plate bounds may still change where required to satisfy the shared 3 mm rim contract.
+
+The user's physical XT60 fit is confirmed. Freeze the existing XT60 fit dimensions and relative layout: the 19 by 12 mm cutout, 25 mm screw spacing, 3.2 mm screw holes, and current XT60-to-toggle spacing and position must not change. Expanding or repositioning the surrounding coupon plate must not move those features relative to one another.
 
 ## Internal naming
 
@@ -85,6 +91,9 @@ Automated source-contract tests must verify:
 - `top-panel-fit` expands to the four canonical views in the specified order.
 - The DC view still dispatches through connector-type-aware geometry.
 - DC and C13 fit units contain a single flat `fit_plate(...)` positive and no `alignment_walls(...)` call.
+- Every recessed rounded pocket has at least 3 mm of plate to each corresponding coupon edge.
+- Derived rim assertions cover offset and multi-pocket panels rather than only comparing nominal widths and heights.
+- The confirmed XT60 cutout, screw-hole, and toggle-spacing constants remain unchanged.
 - Production top-panel connector cutouts retain their existing dimension and center contracts.
 
 Run `plamp cad validate` and `plamp cad plan` before OpenSCAD. Compile all four connector-panel views through the fast CSG gate and inspect logs for warnings, errors, failed assertions, or empty geometry. Run the complete repository test suite. Full STL rendering may be performed on the user's workstation when local OpenSCAD rendering is too slow; the user will inspect the four coupons for flat build-plate contact and support-free slicing.
