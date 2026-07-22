@@ -45,73 +45,107 @@
 
 ---
 
-### Task 1: Add project-neutral `plamp cad new` scaffolding
+### Task 1: Fix named, race-safe `plamp cad new` scaffolding
+
+**Starting point:** Commit `8c13b09` added the command and discovery surface, but its byte-for-byte copy contract failed review. This fix wave implements the approved `docs/superpowers/specs/2026-07-21-named-cad-scaffold-design.md` and replaces those obsolete copy assertions with named-template substitution.
 
 **Files:**
-- Create: `plamp/cad_scaffold.py`
-- Create: `tests/test_cad_scaffold.py`
+- Modify: `plamp/cad_scaffold.py`
 - Modify: `plamp/cad_cli.py`
+- Modify: `things/3d_template/cad.scad`
+- Modify: `things/3d_template/scad/flat_plate.scad`
+- Modify: `things/3d_template/scad/positive_negative.scad`
+- Modify: `tests/test_cad_scaffold.py`
 - Modify: `tests/test_cad_cli.py`
 
 **Interfaces:**
-- `discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]` discovers `things/3d_template/cad.scad` as `cad` plus sorted `things/3d_template/scad/*.scad`; no part or template name is hard-coded.
-- `create_part(repo_root: Path, part_name: str, template_name: str) -> CreatedPart` creates `things/<part_name>/<part_name>.scad` atomically from a discovered template.
-- CLI: `plamp cad new PART [--template NAME] [--json]`; `plamp cad new --list-templates [--json]` lists choices without requiring `PART`.
+- Preserve `discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]`, `create_part(repo_root: Path, part_name: str, template_name: str) -> CreatedPart`, `plamp cad new PART [--template NAME] [--json]`, and `plamp cad new --list-templates [--json]`.
+- Derive the OpenSCAD identifier with `part_identifier = part_name.replace("-", "_")`; require `[A-Za-z_][A-Za-z0-9_]*`, while the directory and exact `<PART>.scad` filename retain the requested spelling.
+- Every selectable template uses only the reserved token `__PLAMP_PART__` for the part-named view/module stem; creation replaces every exact occurrence and performs no other rewriting.
+- Selection/contract errors remain CAD200 `invalid_selection` with exit 2. Unanticipated `OSError`/I/O failures are CAD400 `operation_failed` with exit 4.
 
-- [ ] **Step 1: Write failing pure scaffolding tests**
+- [ ] **Step 1: Replace the obsolete copy test with failing named-output tests**
 
-In a temporary repository fixture, cover sorted discovery of root `cad.scad` and arbitrary named templates; missing template root; unknown template with available choices; part/template names containing separators, traversal, whitespace, or shell syntax; refusal when any destination path already exists; invalid/missing generation metadata with zero destination mutation; and successful byte-for-byte copying to the exact SCAD filename.
-
-Use this result contract:
+Delete `test_success_copies_exact_bytes_to_exact_part_scad_path`. Add tests for both `pump_bracket` and `pump-bracket`; the latter must create `things/pump-bracket/pump-bracket.scad` while both generate identifier `pump_bracket`. Parse the result and assert:
 
 ```python
-@dataclass(frozen=True)
-class CadTemplate:
-    name: str
-    path: Path
-
-@dataclass(frozen=True)
-class CreatedPart:
-    part: str
-    template: str
-    directory: Path
-    scad_path: Path
+self.assertEqual(document.default_view, "pump_bracket")
+self.assertEqual(document.views, ("pump_bracket", "assembly"))
+self.assertEqual(
+    document.presets[document.default_preset].items,
+    ("view:pump_bracket", "view:assembly"),
+)
 ```
 
-- [ ] **Step 2: Write failing CLI and JSON tests**
+Assert metadata contains entries for both views and at least one preset. Assert exact declarations `module pump_bracket_positive()`, `module pump_bracket_negative()`, and `module pump_bracket()`; no `module part(`, `module part_positive(`, or `module part_negative(` remains. Assert the part view and assembly path each call `pump_bracket()`.
 
-Add parser/command tests for:
+- [ ] **Step 2: Add failing geometry and BOM template-contract tests**
 
-```bash
-plamp cad new --list-templates --json
-plamp cad new pump_bracket --json
-plamp cad new access_cover --template flat_plate --json
+For all three selectable repository templates, require the reserved token in the default view, both declared view choices, both metadata view keys, both default-preset items, the positive/negative/composed module declarations, and both dispatch paths. After generation, isolate each named module body and assert:
+
+```scad
+echo("BOM", "M3x16 screw", 1);
 ```
 
-Require listing JSON shaped as `{"templates":[{"name":"cad","path":"things/3d_template/cad.scad"}]}` and creation JSON with `part`, `template`, repository-relative `directory`, repository-relative `scad_path`, and `metadata_valid: true`. Text mode prints the created SCAD path and the exact follow-up `plamp cad validate <part> --json`. Expected user errors return exit 2, structured diagnostics under `--json`, no traceback, and no partial destination.
+appears inside `<id>_negative()` beside a `d = 3.4` centered cylinder whose height is the cube thickness plus Boolean overlap beyond both faces. Assert `<id>_positive()` contains a simple `cube`, and `<id>()` uses `difference()` to subtract the negative module from the positive module. Assembly initially renders that same composed module.
 
-- [ ] **Step 3: Run focused tests and verify RED**
+- [ ] **Step 3: Add failing naming, collision, and template-validation tests**
 
-```bash
-.venv/bin/python -m unittest tests.test_cad_scaffold tests.test_cad_cli -v
-```
+Retain path-safety cases and add: names beginning with a digit fail without mutation; hyphen-to-underscore identifiers pass; creating `pump-bracket` when sibling `things/pump_bracket/` exists (and the reverse) reports both requested/existing names plus shared stem; case remains significant. Before staging, reject invalid UTF-8, no reserved token, a leftover token after substitution, a missing required named-module declaration, generic `part*` aliases, missing/default-wrong view, anything other than exactly `<id>, assembly`, missing metadata for either view, no preset, default preset not containing both views in order, and a preset referencing an undeclared view. Every case leaves no destination or staging artifact.
 
-Expected: import/parser failures because the scaffolder and `new` action do not exist.
+- [ ] **Step 4: Add failing permission, race, and containment tests**
 
-- [ ] **Step 4: Implement minimal safe discovery and creation**
+Create an executable (`0755`) source template and assert the generated SCAD has ordinary non-executable mode `0666 & ~umask`. Run creation under a controlled umask and assert the published directory is `0777 & ~umask`, never `tempfile`'s `0700`.
 
-Validate names with the existing shell contract `^[A-Za-z0-9_-]+$`, require `Path(name).name == name`, and resolve every source/destination beneath its expected root. Parse the selected template with `parse_cad_document()` and require nonempty `metadata_snapshot` before creating a staging directory beneath `things/`. Copy only the SCAD file, validate the staged copy again, then atomically rename the staging directory to the nonexistent destination. Clean staging on every exception; never delete or replace an existing destination.
+Inject a commit hook that creates the destination after preflight but immediately before publication. Assert creation raises `FileExistsError`, preserves the competing directory and sentinel byte-for-byte, and removes staging. This test must exercise the atomic no-replace primitive itself, not a second `exists()` check.
 
-Wire `new` into `add_cad_parser()` and `run_cad_command()` through dependency injection so CLI tests need no real filesystem or OpenSCAD. `--list-templates` conflicts with `PART` and `--template`; creation requires `PART`.
+Add a template race test that discovers a contained template, replaces its path with a symlink to an outside file before read, and asserts failure without reading outside content or creating a destination. Open templates descriptor-relatively beneath the validated template root with `O_NOFOLLOW`; compare `fstat` identity with discovery and decode only bytes read from that descriptor.
 
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 5: Add failing CLI operation-classification tests**
+
+Keep unknown template, invalid name/identifier, normalized collision, invalid metadata/template contract, and existing destination as JSON CAD200/exit 2. Inject `PermissionError`, `ENOSPC`, and generic `OSError` from discovery, read, staging write, and commit; require JSON CAD400 with `kind: operation_failed`, exit 4, no traceback, and no partial destination. Do not classify raw operational `OSError` as a bad user selection.
+
+- [ ] **Step 6: Run focused tests and verify RED**
 
 ```bash
 .venv/bin/python -m unittest tests.test_cad_scaffold tests.test_cad_cli -v
-python3 -m py_compile plamp/cad_scaffold.py plamp/cad_cli.py tests/test_cad_scaffold.py tests/test_cad_cli.py
+```
+
+Expected: failures show byte copying, generic module names, missing BOM/hole geometry, normalized-name acceptance, unsafe publication, `0700` staging permissions, executable-mode handling, symlink race exposure, and CAD200 misclassification of operational errors.
+
+- [ ] **Step 7: Implement exact substitution and preflight validation**
+
+Decode the securely opened template as UTF-8, require at least one `__PLAMP_PART__`, replace every exact token with the derived identifier, and reject any remainder. Validate source/substituted structure before mutation with focused helpers for identifier, sibling-stem collision, exact views, metadata/default preset, required modules, forbidden generic aliases, and dispatch. Preserve all template bytes except UTF-8 token substitution.
+
+Rewrite all three repository templates to the same named contract. Use a centered cube in positive geometry; in negative geometry emit the exact BOM echo immediately before a centered `cylinder(d = 3.4, h = part_h + 2 * boolean_overlap, center = true)`; compose with `difference()`; dispatch both the named view and `assembly` to `__PLAMP_PART__()`.
+
+- [ ] **Step 8: Implement ordinary permissions and atomic no-replace publication**
+
+Create the random staging directory with `os.mkdir(path, 0o777)` beneath `things/` so the process umask supplies ordinary permissions; write the staged SCAD with exclusive create mode `0o666` rather than copying template mode. Validate the staged result.
+
+Publish the complete directory with a platform no-replace rename helper: Linux uses `renameat2(..., RENAME_NOREPLACE)`, macOS uses `renamex_np(..., RENAME_EXCL)`, and an unsupported platform fails operationally rather than falling back to overwrite-capable `rename()`. Map `EEXIST` to the expected existing-destination selection error; preserve all other `OSError` values as operational failures. Always remove staging after failure.
+
+- [ ] **Step 9: Fix CLI error boundaries and verify GREEN**
+
+Convert expected scaffold validation/existence failures to a dedicated selection exception caught as CAD200/exit 2. Let operational filesystem failures reach the CAD400/exit-4 boundary. Then run:
+
+```bash
+.venv/bin/python -m unittest tests.test_cad_scaffold tests.test_cad_cli -v
+python3 -m py_compile plamp/cad_scaffold.py plamp/cad_cli.py \
+  tests/test_cad_scaffold.py tests/test_cad_cli.py
 git diff --check
-git add plamp/cad_scaffold.py plamp/cad_cli.py tests/test_cad_scaffold.py tests/test_cad_cli.py
-git commit -m "Add plamp cad part scaffolding"
+```
+
+Expected: all focused tests pass without invoking OpenSCAD.
+
+- [ ] **Step 10: Exercise generated output through CAD discovery and commit**
+
+In a temporary Git repository, generate `pump-bracket`, then run the direct command boundary for `views`, `validate`, and `plan` against it. Assert ordered views `pump_bracket, assembly`, valid metadata/default preset, two planned jobs in that order, and zero OpenSCAD calls.
+
+```bash
+git add plamp/cad_scaffold.py plamp/cad_cli.py things/3d_template \
+  tests/test_cad_scaffold.py tests/test_cad_cli.py
+git commit -m "Generate named CAD part scaffolds"
 git push origin feature/remove-generate-bash
 ```
 
