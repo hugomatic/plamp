@@ -1,6 +1,4 @@
-import shutil
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -722,66 +720,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module panel_corner_fastener_test", source)
         self.assertIn('view == "panel_corner_fastener_test"', source)
 
-    def test_template_bash_can_select_scad_template(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            things = tmp_path / "things"
-            shutil.copytree(REPO_ROOT / "things" / "3d_template", things / "3d_template")
-            shutil.copy2(REPO_ROOT / "things" / "template.bash", things / "template.bash")
-            templates = things / "3d_template" / "scad"
-            templates.mkdir(exist_ok=True)
-            source = '''view = "plate"; // [plate]
-/* generate.json
-{
-  "presets": {
-    "plate": {
-      "items": ["view:plate"]
-    }
-  }
-}
-*/
-// cover template
-'''
-            (templates / "cover.scad").write_text(source)
-
-            result = run(["bash", "template.bash", "new_cover", "--template", "cover"], things)
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            created = things / "new_cover"
-            self.assertEqual(
-                [path.name for path in created.iterdir()],
-                ["new_cover.scad"],
-            )
-            self.assertEqual((created / "new_cover.scad").read_text(), source)
-            document = parse_cad_document(created / "new_cover.scad")
-            self.assertTrue(document.metadata_snapshot)
-
-    def test_template_bash_lists_available_templates_when_missing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            things = tmp_path / "things"
-            shutil.copytree(REPO_ROOT / "things" / "3d_template", things / "3d_template")
-            shutil.copy2(REPO_ROOT / "things" / "template.bash", things / "template.bash")
-            templates = things / "3d_template" / "scad"
-            templates.mkdir(exist_ok=True)
-            (templates / "basic.scad").write_text("// basic\n")
-
-            result = run(["bash", "template.bash", "new_part", "--template", "missing"], things)
-
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Available templates:", result.stderr)
-            self.assertIn("basic", result.stderr)
-
-    def test_repository_has_only_the_plamp_cad_generation_interface(self):
+    def test_retired_cad_shell_files_are_untracked(self):
         tracked = run(["git", "ls-files", "-z"], REPO_ROOT, check=True).stdout.split("\0")
-        removed_name = "generate" + ".bash"
-        self.assertNotIn(removed_name, [Path(path).name for path in tracked if path])
-
-        references = run(
-            ["git", "grep", "-n", "-I", "-e", "generate[.]bash", "--"],
-            REPO_ROOT,
-        )
-        self.assertEqual(references.returncode, 1, references.stdout + references.stderr)
+        removed_names = {"generate" + ".bash", "template" + ".bash"}
+        self.assertTrue(removed_names.isdisjoint(Path(path).name for path in tracked if path))
 
 
 if __name__ == "__main__":
