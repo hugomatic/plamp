@@ -267,7 +267,7 @@ git commit -m "Label Plamp8 assembly components"
 
 **Files:**
 - Verify: `things/plamp8/plamp8.scad`
-- Verify: `things/plamp8/generate.bash`
+- Verify: the `plamp cad` interface and Plamp8 metadata
 - Verify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
@@ -279,39 +279,40 @@ git commit -m "Label Plamp8 assembly components"
 Run:
 
 ```bash
-bash -n things/plamp8/generate.bash
+plamp cad validate plamp8 --json
+plamp cad plan plamp8 --preset split-box --json
 python3 -m unittest tests.test_things_cad_scripts -v
 git diff --check
 ```
 
-Expected: Bash exits 0, all tests report `OK`, and `git diff --check` prints nothing.
+Expected: validation and planning exit 0, all tests report `OK`, and `git diff --check` prints nothing.
 
 - [ ] **Step 2: Render the nut-owner wall**
 
-Run from `things/plamp8`:
+Run from the repository root:
 
 ```bash
-./generate.bash --view north_wall /tmp/plamp8-north-spine HEAD
+plamp cad generate plamp8 --view north_wall --revision HEAD --output /tmp/plamp8-north-spine
 ```
 
 Expected: one non-empty `plamp8_north_wall_<revision>.stl`; the log has no empty top-level object, missing include, or manifold warning.
 
 - [ ] **Step 3: Render the corner fastener assembly**
 
-Run from `things/plamp8`:
+Run from the repository root:
 
 ```bash
-./generate.bash --view wall_corner_fastener_assembly /tmp/plamp8-corner-spine HEAD
+plamp cad generate plamp8 --view wall_corner_fastener_assembly --revision HEAD --output /tmp/plamp8-corner-spine
 ```
 
 Expected: one non-empty `plamp8_wall_corner_fastener_assembly_<revision>.stl` and no empty-object or missing-include warnings. This compatibility view verifies the preserved individual joint negatives and captured nuts.
 
 - [ ] **Step 4: Render the labeled assembly**
 
-Run from `things/plamp8`:
+Run from the repository root:
 
 ```bash
-./generate.bash --view assembly /tmp/plamp8-labeled-assembly HEAD
+plamp cad generate plamp8 --view assembly --revision HEAD --output /tmp/plamp8-labeled-assembly
 ```
 
 Expected: one non-empty `plamp8_assembly_<revision>.stl` and no empty-object or missing-include warnings.

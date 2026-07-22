@@ -12,11 +12,10 @@ Use the existing part directory:
 
 ```text
 things/plamp8/
-  generate.bash
   plamp8.scad
 ```
 
-Use the existing `things/template.bash` and `things/3d_template/generate.bash` conventions.
+Use the existing part metadata conventions and the direct `plamp cad` interface. Create future parts with `plamp cad new PART [--template NAME]`.
 
 The SCAD file must expose ordered views:
 
@@ -132,13 +131,14 @@ Label construction should follow the successful `plamp8` approach: text is extru
 Use the CAD generator rather than direct OpenSCAD calls:
 
 ```bash
-things/plamp8/generate.bash --revision fit-test-1 /tmp/plamp8_fit HEAD
+plamp cad generate plamp8 --preset all-views --revision fit-test-1 --output /tmp/plamp8_fit
 ```
 
 Expected verification:
 
-- `bash -n things/plamp8/generate.bash`
-- Render all declared views using the generator.
+- `plamp cad validate plamp8 --json`
+- `plamp cad plan plamp8 --preset all-views --json`
+- Render all declared views through `plamp cad generate`.
 - Confirm STL files are created and non-empty.
 - Treat OpenSCAD non-manifold warnings as informational for early fit-test coupons unless the geometry is visibly empty or broken.
 

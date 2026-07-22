@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the switch and label positions unchanged. Model the measured XT60 width, switch diameter, and requested clearance as named OpenSCAD parameters, then derive the XT60 x-position from the switch position and required center spacing. A top-level assertion protects the fit relationship for every rendered view.
 
-**Tech Stack:** OpenSCAD, Bash, the existing `things/plamp8/generate.bash` renderer.
+**Tech Stack:** OpenSCAD and the direct `plamp cad` renderer.
 
 ## Global Constraints
 
@@ -100,9 +100,9 @@ Do not run OpenSCAD locally. Provide these commands after pushing so the user ca
 
 ```bash
 rm -rf /tmp/plamp8_xt60_clearance
-things/plamp8/generate.bash --revision xt60-clearance --preview --view dc_barrel_channel /tmp/plamp8_xt60_clearance/dc HEAD
-things/plamp8/generate.bash --revision xt60-clearance --preview --view top_panel /tmp/plamp8_xt60_clearance/top HEAD
-things/plamp8/generate.bash --revision xt60-clearance --preview --view sub_panel /tmp/plamp8_xt60_clearance/sub HEAD
+plamp cad generate plamp8 --revision xt60-clearance --preview --view dc_barrel_channel --output /tmp/plamp8_xt60_clearance/dc
+plamp cad generate plamp8 --revision xt60-clearance --preview --view top_panel --output /tmp/plamp8_xt60_clearance/top
+plamp cad generate plamp8 --revision xt60-clearance --preview --view sub_panel --output /tmp/plamp8_xt60_clearance/sub
 ```
 
 The user should expect each command to exit 0, create a non-empty STL, and produce no assertion, empty-top-level-object, or missing-include warnings.

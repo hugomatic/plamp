@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the implementation in `things/plamp8/plamp8.scad`, following its existing parameter and view conventions. Build reusable corner-joint and wall-body modules once, then transform those same modules for the four printable wall views and the assembly. Use source-contract tests for stable interfaces, targeted OpenSCAD renders for geometry, a physical corner coupon for fit, and a bounded intersection diagnostic for unintended overlap.
 
-**Tech Stack:** OpenSCAD, Bash `things/plamp8/generate.bash`, Python `unittest`, Git directory-specific revision labels.
+**Tech Stack:** OpenSCAD, the direct `plamp cad` CLI, Python `unittest`, Git directory-specific revision labels.
 
 ## Global Constraints
 
@@ -26,7 +26,7 @@
 
 - Modify `things/plamp8/plamp8.scad`: parameters, joint primitives, ring, four walls, floor joints, views, assembly, and bounded collision diagnostic.
 - Modify `tests/test_things_cad_scripts.py`: source-contract tests for named views, dimensions, ownership, print orientation, M3 floor conversion, and assembly toggles.
-- Preserve `things/plamp8/generate.bash`: no generator behavior change is required.
+- Preserve the existing CAD metadata and direct CLI behavior; no generation behavior change is required.
 
 ---
 
@@ -137,8 +137,8 @@ Run:
 ```bash
 /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_flat_wall_corner_stack_contract -v
-things/plamp8/generate.bash --revision corner-fit-1 --view wall_corner_fastener_test \
-  prints/plamp8_corner_fit_1
+plamp cad generate plamp8 --revision corner-fit-1 --view wall_corner_fastener_test \
+  --output prints/plamp8_corner_fit_1
 ```
 
 Expected: test PASS; one non-empty `wall_corner_fastener_test` STL; no empty-object or missing-include warning.
@@ -230,12 +230,12 @@ Run:
 /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_ledge_ring_is_separate_and_preserves_panel_stack \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth -v
-things/plamp8/generate.bash --revision ring-fit-1 --preview --view ledge_ring \
-  prints/plamp8_ledge_ring_preview
-things/plamp8/generate.bash --revision ring-fit-1 --preview --view sub_panel \
-  prints/plamp8_sub_panel_preview
-things/plamp8/generate.bash --revision ring-fit-1 --preview --view top_panel \
-  prints/plamp8_top_panel_preview
+plamp cad generate plamp8 --revision ring-fit-1 --preview --view ledge_ring \
+  --output prints/plamp8_ledge_ring_preview
+plamp cad generate plamp8 --revision ring-fit-1 --preview --view sub_panel \
+  --output prints/plamp8_sub_panel_preview
+plamp cad generate plamp8 --revision ring-fit-1 --preview --view top_panel \
+  --output prints/plamp8_top_panel_preview
 ```
 
 Expected: tests PASS; all three outputs non-empty; no quarter-circle geometry remains; two PH switch reliefs remain visible while the 3 mm outer north rail keeps the ring closed.
@@ -308,8 +308,8 @@ Run the new wall test, then render each view individually:
 /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_has_four_flat_printed_mitred_wall_views -v
 for wall in north_wall south_wall west_wall east_wall; do
-  things/plamp8/generate.bash --revision flat-wall-1 --preview --view "$wall" \
-    "prints/plamp8_${wall}_preview"
+  plamp cad generate plamp8 --revision flat-wall-1 --preview --view "$wall" \
+    --output "prints/plamp8_${wall}_preview"
 done
 ```
 
@@ -375,10 +375,10 @@ Run:
 /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_floor_uses_corner_m3_wall_fasteners \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_flat_wall_corner_stack_contract -v
-things/plamp8/generate.bash --revision floor-fit-1 --preview --view floor \
-  prints/plamp8_floor_preview
-things/plamp8/generate.bash --revision floor-fit-1 --preview --view wall_corner_fastener_test \
-  prints/plamp8_corner_floor_preview
+plamp cad generate plamp8 --revision floor-fit-1 --preview --view floor \
+  --output prints/plamp8_floor_preview
+plamp cad generate plamp8 --revision floor-fit-1 --preview --view wall_corner_fastener_test \
+  --output prints/plamp8_corner_floor_preview
 ```
 
 Expected: four corner M3 holes with heads underneath; no midpoint enclosure holes; coupon bottom stack is floor, west/east clearance tab, north/south nut tab.
@@ -450,15 +450,15 @@ Run the assembly test, then render:
 ```bash
 /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_assembly_has_individual_wall_controls_and_height -v
-things/plamp8/generate.bash --revision assembly-all --preview --view assembly \
+plamp cad generate plamp8 --revision assembly-all --preview --view assembly \
   --define 'show_north_wall=true' --define 'show_south_wall=true' \
   --define 'show_west_wall=true' --define 'show_east_wall=true' \
-  prints/plamp8_assembly_all
+  --output prints/plamp8_assembly_all
 
-things/plamp8/generate.bash --revision assembly-wiring --preview --view assembly \
+plamp cad generate plamp8 --revision assembly-wiring --preview --view assembly \
   --define 'show_north_wall=true' --define 'show_south_wall=true' \
   --define 'show_west_wall=false' --define 'show_east_wall=false' \
-  prints/plamp8_assembly_wiring
+  --output prints/plamp8_assembly_wiring
 ```
 
 Expected: full enclosure in the first view; both relay long sides open in the second; panels and ring remain correctly positioned.
@@ -570,7 +570,8 @@ Expected: empty collision result. Designed coincident seating surfaces may touch
 
 ```bash
 /home/hugo/.local/bin/uv run python -m unittest tests.test_things_cad_scripts -v
-bash -n things/plamp8/generate.bash
+plamp cad validate plamp8 --json
+plamp cad plan plamp8 --preset split-box --json
 git diff --check
 ```
 
@@ -626,8 +627,8 @@ Keep the vertical hex pocket and solid screw-bearing shoulder. Replace the full-
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_flat_wall_corner_stack_contract -v
-things/plamp8/generate.bash --revision detent-fit-1 --view corner_coupon \
-  things/plamp8/prints/plamp8_corner_coupon_detent_1
+plamp cad generate plamp8 --revision detent-fit-1 --view corner_coupon \
+  --output things/plamp8/prints/plamp8_corner_coupon_detent_1
 ```
 
 Expected: test PASS; non-empty manifold `plamp8_corner_coupon_detent-fit-1.stl`; no missing geometry warning.

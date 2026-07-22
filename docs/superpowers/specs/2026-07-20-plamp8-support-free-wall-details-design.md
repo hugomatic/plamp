@@ -82,7 +82,7 @@ No box-specific copy of a wall, rib loop, nut trap, or bore loop is introduced. 
 
 ## Production print plates
 
-Default generation produces five printable jobs: `floor`, paired `north_south_walls`, paired `east_west_walls`, `top_panel`, and `sub_panel`. Box generation uses `generate.bash --box` and produces only `box`, `top_panel`, and `sub_panel`. Individual wall, coupon, component, and assembly views remain available for diagnostics through `--view` and the OpenSCAD view selector.
+Default generation produces five printable jobs: `floor`, paired `north_south_walls`, paired `east_west_walls`, `top_panel`, and `sub_panel`. Fused-box generation uses `plamp cad generate plamp8 --preset fuse-box` and produces only `box`, `top_panel`, and `sub_panel`. Individual wall, coupon, component, and assembly views remain available for diagnostics through `plamp cad generate plamp8 --view VIEW --output DIR` and the OpenSCAD view selector.
 
 The obsolete hand-positioned `plate()` presentation layout is removed rather than maintained as a production surface.
 

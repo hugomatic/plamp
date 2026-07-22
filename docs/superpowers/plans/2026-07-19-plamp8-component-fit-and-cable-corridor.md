@@ -6,7 +6,7 @@
 
 **Architecture:** Change only the three existing parametric inputs that already drive the relevant geometry. The converter's calibrated body and mount definitions remain fixed, while the shared PSU and relay X offsets move their complete floor and illustration feature groups together.
 
-**Tech Stack:** OpenSCAD, Bash `things/plamp8/generate.bash`, Git
+**Tech Stack:** OpenSCAD, the direct `plamp cad` CLI, Git
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Do not change any component Y offset or move the DC/DC converter.
 - Add no automated test for these user-directed fit changes.
 - Push the source commit before running OpenSCAD.
-- Render only through `things/plamp8/generate.bash` and leave generated files outside the repository.
+- Render only through `plamp cad generate` and leave generated files outside the repository.
 - Do not push this checkpoint to `main` until the user approves the rendered geometry.
 
 ---
@@ -86,7 +86,7 @@ Run from `things/plamp8`:
 
 ```bash
 fit_preview_root="$(mktemp -d)"
-./generate.bash --view converter_footprint "$fit_preview_root/converter"
+plamp cad generate plamp8 --view converter_footprint --output "$fit_preview_root/converter"
 converter_revision="$(git rev-parse --short HEAD)"
 test -s "$fit_preview_root/converter/plamp8_converter_footprint_${converter_revision}.stl"
 ! rg -n "WARNING|ERROR|empty top level object" "$fit_preview_root/converter/readme.md"
@@ -99,7 +99,7 @@ Expected: the converter STL is non-empty and the log contains no warning, error,
 Using the same `fit_preview_root` and `converter_revision` values:
 
 ```bash
-./generate.bash --view assembly "$fit_preview_root/assembly"
+plamp cad generate plamp8 --view assembly --output "$fit_preview_root/assembly"
 test -s "$fit_preview_root/assembly/plamp8_assembly_${converter_revision}.stl"
 ! rg -n "WARNING|ERROR|empty top level object" "$fit_preview_root/assembly/readme.md"
 ```

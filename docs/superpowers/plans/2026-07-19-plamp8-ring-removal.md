@@ -6,7 +6,7 @@
 
 **Architecture:** Preserve the top/sub-panel datum and make the sub-panel the top structural plane. Shift the complete top wall-tab stack upward by the removed 3 mm ring thickness, express both fastener paths with explicit stack equations, and remove every ring-specific source/view/control. Compute the east center rib from the vent grid instead of the wall midpoint.
 
-**Tech Stack:** OpenSCAD, Python 3.11 `unittest`, Bash `things/plamp8/generate.bash`, Git
+**Tech Stack:** OpenSCAD, Python 3.11 `unittest`, the direct `plamp cad` CLI, Git
 
 ## Global Constraints
 
@@ -397,8 +397,8 @@ Run from `things/plamp8`:
 ```bash
 ringless_preview_root="$(mktemp -d)"
 ringless_revision="$(git rev-parse --short HEAD)"
-./generate.bash --view corner_coupon "$ringless_preview_root/corner"
-./generate.bash --view east_wall "$ringless_preview_root/east"
+plamp cad generate plamp8 --view corner_coupon --output "$ringless_preview_root/corner"
+plamp cad generate plamp8 --view east_wall --output "$ringless_preview_root/east"
 test -s "$ringless_preview_root/corner/plamp8_corner_coupon_${ringless_revision}.stl"
 test -s "$ringless_preview_root/east/plamp8_east_wall_${ringless_revision}.stl"
 ! rg -n "WARNING|ERROR|empty top level object" "$ringless_preview_root"/*/readme.md

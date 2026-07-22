@@ -4,9 +4,9 @@
 
 **Goal:** Replace copied OpenSCAD generation scripts with a tested local `plamp cad` engine supporting embedded metadata, nested presets, scoped variables, dry planning, reproducible instance-local artifacts, and humane diagnostics.
 
-**Architecture:** Separate pure source parsing and recipe expansion from Git/OpenSCAD side effects. `plamp.cad_metadata` owns the embedded schema and diagnostics, `plamp.cad_recipes` produces deterministic render jobs, `plamp.cad_generation` owns archived-source rendering and manifests, and `plamp.cad_cli` exposes the engine through the direct local CLI and thin Bash wrappers.
+**Architecture:** Separate pure source parsing and recipe expansion from Git/OpenSCAD side effects. `plamp.cad_metadata` owns the embedded schema and diagnostics, `plamp.cad_recipes` produces deterministic render jobs, `plamp.cad_generation` owns archived-source rendering and manifests, and `plamp.cad_cli` exposes the engine through one direct local CLI.
 
-**Tech Stack:** Python 3.11 standard library, `argparse`, OpenSCAD CLI, Git, Bash compatibility wrappers, `unittest`
+**Tech Stack:** Python 3.11 standard library, `argparse`, OpenSCAD CLI, Git, `unittest`
 
 ## Global Constraints
 
@@ -21,16 +21,16 @@
 - Manifests are written atomically and retain partial/failed runs, logs, echoes, geometry statistics, commands, versions, and timings.
 - CAD messages are recorded but never executed.
 - Expected user errors produce stable structured diagnostics and no traceback.
-- Existing per-part `generate.bash` commands remain compatibility wrappers; Plamp8 `--box` aliases `--preset fuse-box`.
+- `plamp cad` is the sole generation interface; Plamp8 fused-box generation uses `--preset fuse-box`.
 - Plate 2 web generation, Three.js, onboarding, distributed caches, robots, and the preset-authoring skill are out of scope.
 - Do not run real Plamp8 OpenSCAD renders during implementation; use a fake executable for integration tests.
 
 ## Compatibility and contract decisions
 
 - Synthetic `all-views` and `all-presets` are reserved names accepted through `--preset`; metadata collisions are errors.
-- Preserve legacy wrapper positional `target_directory [commit]`, `--revision`, `--preview`, `--view`, `--define`, and Plamp8 `--box`; omitting a target uses the instance archive.
+- Support `--output`, `--revision`, `--preview`, repeatable `--view`, and repeatable `--define` directly; omitting `--output` uses the instance archive.
 - Preserve the existing default clean revision rule: use the latest commit touching the part directory, not unrelated repository HEAD changes.
-- Direct and wrapper generation both allow an explicit historical commit; clean generation archives the complete part directory at that commit.
+- Direct generation allows an explicit historical commit through `--revision`; clean generation archives the complete part directory at that commit.
 - Run IDs are globally unique UTC `YYYYMMDDTHHMMSSZ-<part>-<selector>-<revision>-<random6>` strings; archive lookup uses the complete run ID.
 - `log` accepts the manifest artifact ID, not a fuzzy filename.
 - Legacy repository `things/*/prints` discovery is deferred; Plate 1 catalogs new instance-data manifests only.
@@ -425,72 +425,49 @@ Expected: CAD CLI and existing direct CLI tests pass.
 
 ---
 
-### Task 5: Replace copied generator implementations with compatibility wrappers
+### Task 5: Establish the direct generation and scaffolding interface
 
 **Files:**
-- Modify: `things/3d_template/generate.bash`
-- Modify: `things/plamp8/generate.bash`
-- Modify: `things/plamp_stand/generate.bash`
-- Modify: `things/iharvest_cover/generate.bash`
-- Modify: `things/template.bash`
 - Modify: `tests/test_things_cad_scripts.py`
+- Modify: `tests/test_cad_cli.py`
 - Modify: `docs/host-tools.md`
 
 **Interfaces:**
-- Every wrapper discovers repository root, chooses `.venv/bin/python` with a clear fallback/error, exports repository `PYTHONPATH`, and executes `python -m plamp cad generate <scad> "$@"`.
-- Plamp8 translates legacy `--box` to `--preset fuse-box` without shell-evaluating user values.
-- Legacy optional positional output and commit remain accepted by `cad generate` so existing documented invocations continue working.
+- Every part is generated directly with `plamp cad generate PART`, where `PART` is a repository name or explicit SCAD path.
+- Plamp8 fused-box generation uses `--preset fuse-box`.
+- `plamp cad new PART [--template NAME]` creates metadata-valid source without overwriting existing files.
 
-- [ ] **Step 1: Rewrite wrapper tests to fail against copied implementations**
+- [ ] **Step 1: Write direct-interface and scaffolding tests**
 
-Require all wrappers to contain only bootstrap/delegation logic, template substitution to choose the SCAD filename, `--help` delegation, legacy explicit-output generation with fake OpenSCAD, dirty-source behavior, preview defines, and Plamp8 `--box` translation. Remove assertions for hard-coded `flat_wall_views` and `box_views` arrays.
+Require direct named-part and explicit-path generation with fake OpenSCAD, explicit output, dirty-source behavior, preview defines, `--preset fuse-box`, safe new-part creation, and named template selection. Remove assertions for hard-coded per-part generation arrays.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
 Run:
 
 ```bash
-.venv/bin/python -m unittest \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_template_bash_can_select_scad_template \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_generate_bash_defaults_to_latest_part_commit_and_uses_ordered_views \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_generate_bash_preview_uses_render_fn_without_ball_quality \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_generate_bash_refuses_dirty_part_without_revision_text -v
+.venv/bin/python -m unittest tests.test_cad_cli tests.test_things_cad_scripts -v
 ```
 
-Expected: wrapper-shape and delegation assertions fail.
+Expected: direct-generation and scaffolding assertions fail.
 
-- [ ] **Step 3: Implement thin wrappers and update documentation**
+- [ ] **Step 3: Implement direct scaffolding and update documentation**
 
-Use this wrapper structure, with only the `cad` placeholder substituted:
+Implement project-neutral template discovery and safe creation behind `plamp cad new`. Update host documentation to show only direct validation, planning, named-view generation, preset generation, and new-part commands.
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-cad="__cad__name__"
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-repo_root="$(git -C "$script_dir" rev-parse --show-toplevel)"
-python_bin="$repo_root/.venv/bin/python"
-[[ -x "$python_bin" ]] || python_bin="$(command -v python3)"
-export PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}"
-exec "$python_bin" -m plamp cad generate "$script_dir/$cad.scad" "$@"
-```
-
-Keep Plamp8's wrapper-specific argument translation small and explicit. Update host documentation to prefer `plamp cad` while showing wrappers as shortcuts.
-
-- [ ] **Step 4: Verify wrappers and commit**
+- [ ] **Step 4: Verify the direct interface and commit**
 
 Run:
 
 ```bash
-.venv/bin/python -m unittest tests.test_things_cad_scripts -v
+.venv/bin/python -m unittest tests.test_cad_cli tests.test_things_cad_scripts -v
 git diff --check
-git add things/3d_template/generate.bash things/plamp8/generate.bash \
-  things/plamp_stand/generate.bash things/iharvest_cover/generate.bash \
-  things/template.bash tests/test_things_cad_scripts.py docs/host-tools.md
-git commit -m "Delegate CAD generators to Plamp CLI"
+git add plamp/cad_cli.py plamp/cad_scaffold.py tests/test_cad_cli.py \
+  tests/test_things_cad_scripts.py docs/host-tools.md
+git commit -m "Establish direct Plamp CAD interface"
 ```
 
-Expected: all things/CAD script tests pass.
+Expected: all direct CAD and things source-contract tests pass.
 
 ---
 
@@ -582,7 +559,7 @@ Expected: all listed tests pass, compilation succeeds, and the branch is clean e
 - Test: all CAD/direct CLI test modules
 
 **Interfaces:**
-- Documents stable commands, storage paths, fallback behavior, metadata location, plan-before-generate workflow, and legacy wrapper compatibility.
+- Documents stable commands, storage paths, fallback behavior, metadata location, plan-before-generate workflow, and new-part scaffolding.
 - Does not document deferred web/Three.js features as implemented.
 
 - [ ] **Step 1: Add documentation contract assertions where appropriate**

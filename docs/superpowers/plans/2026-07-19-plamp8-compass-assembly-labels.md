@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing single-file parametric OpenSCAD structure. Add one reusable wall-name negative and one reusable floor-name negative, pass each wall's identity explicitly at its standalone wall module, and reuse those modules in assembly context transforms. Source-contract tests lock down the names, dimensions, pairings, orientation, and positive/negative composition before OpenSCAD rendering verifies the printable geometry.
 
-**Tech Stack:** OpenSCAD, Python 3.11 `unittest`, Bash `things/plamp8/generate.bash`, Git
+**Tech Stack:** OpenSCAD, Python 3.11 `unittest`, the direct `plamp cad` CLI, Git
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - Wall names must remain below the first vent row and clear of the floor rib, stiffening ribs, vents, locator notches, corner hardware, and mating faces.
 - Floor names must remain clear of component mounts, tie-wrap anchors, corner fasteners, locator lands, and wall seating faces.
 - Orient floor names to read from the enclosure center while facing their matching wall: north `0°`, east `-90°`, south `180°`, west `90°` in the standard assembly top view.
-- Render printable verification through `things/plamp8/generate.bash`; keep generated STL and preview artifacts outside the repository.
+- Render printable verification through `plamp cad generate`; keep generated STL and preview artifacts outside the repository.
 - Commit and push after each task so geometry can receive early feedback.
 
 ---
@@ -178,10 +178,10 @@ Run from `things/plamp8` with a fresh temporary parent:
 
 ```bash
 label_preview_root="$(mktemp -d)"
-./generate.bash --revision compass-walls-1 --view north_wall "$label_preview_root/north"
-./generate.bash --revision compass-walls-1 --view south_wall "$label_preview_root/south"
-./generate.bash --revision compass-walls-1 --view east_wall "$label_preview_root/east"
-./generate.bash --revision compass-walls-1 --view west_wall "$label_preview_root/west"
+plamp cad generate plamp8 --revision compass-walls-1 --view north_wall --output "$label_preview_root/north"
+plamp cad generate plamp8 --revision compass-walls-1 --view south_wall --output "$label_preview_root/south"
+plamp cad generate plamp8 --revision compass-walls-1 --view east_wall --output "$label_preview_root/east"
+plamp cad generate plamp8 --revision compass-walls-1 --view west_wall --output "$label_preview_root/west"
 test -s "$label_preview_root/north/plamp8_north_wall_compass-walls-1.stl"
 test -s "$label_preview_root/south/plamp8_south_wall_compass-walls-1.stl"
 test -s "$label_preview_root/east/plamp8_east_wall_compass-walls-1.stl"
@@ -304,8 +304,8 @@ Run from `things/plamp8`:
 
 ```bash
 label_preview_root="$(mktemp -d)"
-./generate.bash --revision compass-floor-1 --view floor "$label_preview_root/floor"
-./generate.bash --revision compass-floor-1 --view assembly "$label_preview_root/assembly"
+plamp cad generate plamp8 --revision compass-floor-1 --view floor --output "$label_preview_root/floor"
+plamp cad generate plamp8 --revision compass-floor-1 --view assembly --output "$label_preview_root/assembly"
 test -s "$label_preview_root/floor/plamp8_floor_compass-floor-1.stl"
 test -s "$label_preview_root/assembly/plamp8_assembly_compass-floor-1.stl"
 ! rg -n "WARNING|ERROR|empty top level object" "$label_preview_root"/*/readme.md

@@ -279,7 +279,7 @@ The coupon should answer four physical questions before a full-wall print:
 
 The initial implementation may remain in `things/plamp8/plamp8.scad`, but the redesigned geometry should be divided into clearly named modules for wall bodies, mitres, clearance tabs, continuous nut-bearing corner spines, nut traps, bottom locating keys, ledge ring, printable orientations, and assembly transforms. Do not duplicate corner geometry four times; derive corner handedness and ownership from small reusable modules.
 
-Avoid unrelated refactoring of the connector, label, PSU, converter, relay, or generator code. Preserve the directory-specific Git revision behavior in `things/plamp8/generate.bash`.
+Avoid unrelated refactoring of the connector, label, PSU, converter, relay, or CAD engine code. Preserve directory-specific Git revision identity through `plamp cad`.
 
 ## Verification
 
@@ -297,9 +297,9 @@ Automated source-level tests should verify at least:
 - Each printable part receives `revision_string` where required.
 - Every wall carries its full compass name on the interior face, and every floor edge carries the matching name in the correct orientation.
 
-OpenSCAD verification must use `things/plamp8/generate.bash`, not ad hoc direct render commands:
+OpenSCAD verification must use `plamp cad`, not ad hoc direct OpenSCAD commands:
 
-1. Run shell syntax and existing CAD-script tests.
+1. Run `plamp cad validate plamp8 --json`, plan the intended selection, and run existing CAD tests.
 2. Render the corner fit-test first with an explicit honest dirty-worktree revision.
 3. Confirm its STL is present, non-empty, and has no empty-object or missing-include warnings.
 4. Inspect the coupon mesh or preview for minimized, deliberate support and obvious interference.

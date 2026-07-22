@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the correction inside `plamp8.scad`: named fit parameters define the nut diameter and engraving depth, one negative module cuts only the PH Up and Agitator outboard lip positions, and the existing revision cutter uses a meaningful overlap. A source-contract test protects the exact dimensions and target positions; real OpenSCAD renders verify the final meshes.
 
-**Tech Stack:** OpenSCAD, Python `unittest`, existing `things/plamp8/generate.bash`.
+**Tech Stack:** OpenSCAD, Python `unittest`, and the direct `plamp cad` CLI.
 
 ## Global Constraints
 
@@ -106,8 +106,8 @@ Expected: all tests pass.
 Run from clean `/tmp` targets:
 
 ```bash
-things/plamp8/generate.bash --revision nut-clearance-1 --view sub_panel /tmp/plamp8_sub_panel_fit
-things/plamp8/generate.bash --revision nut-clearance-1 --preview --view top_panel /tmp/plamp8_top_panel_regression
+plamp cad generate plamp8 --revision nut-clearance-1 --view sub_panel --output /tmp/plamp8_sub_panel_fit
+plamp cad generate plamp8 --revision nut-clearance-1 --preview --view top_panel --output /tmp/plamp8_top_panel_regression
 ```
 
 Expected: both STL files are non-empty; neither log reports an empty top-level object. The sub-panel log reports a simple 3D object. The top-panel preview verifies aligned holes without paying the final text and `$fn=96` render cost.

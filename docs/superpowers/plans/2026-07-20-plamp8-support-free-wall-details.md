@@ -331,7 +331,7 @@ git push origin feature/plamp8-support-free
 - Generate outside repository under `/tmp/` using the pushed short commit in each directory name.
 
 **Interfaces:**
-- Consumes: clean, pushed Tasks 1-3 and `things/plamp8/generate.bash`.
+- Consumes: clean, pushed Tasks 1-3 and direct `plamp cad` generation.
 - Produces: verification evidence only.
 
 - [ ] **Step 1: Verify clean pushed source**
@@ -352,19 +352,24 @@ From `things/plamp8`:
 
 ~~~bash
 support_commit=$(git rev-parse --short HEAD)
-./generate.bash --preview --view north_wall "/tmp/plamp8-wall-${support_commit}" "${support_commit}"
-./generate.bash --preview --view floor "/tmp/plamp8-floor-${support_commit}" "${support_commit}"
-./generate.bash --preview --view box "/tmp/plamp8-box-preview-${support_commit}" "${support_commit}"
+plamp cad generate plamp8 --preview --view north_wall --revision "${support_commit}" \
+  --output "/tmp/plamp8-wall-${support_commit}"
+plamp cad generate plamp8 --preview --view floor --revision "${support_commit}" \
+  --output "/tmp/plamp8-floor-${support_commit}"
+plamp cad generate plamp8 --preview --preset fuse-box --revision "${support_commit}" \
+  --output "/tmp/plamp8-box-preview-${support_commit}"
 ~~~
 
-Expected: non-empty simple objects and no warnings. Stop and diagnose before production rendering on any failure.
+Expected: non-empty simple objects for the two named views and all three fused-box preset jobs, with no warnings. Stop and diagnose before production rendering on any failure.
 
-- [ ] **Step 3: Render production wall and box only**
+- [ ] **Step 3: Render the production wall and fused-box preset only**
 
 ~~~bash
 support_commit=$(git rev-parse --short HEAD)
-./generate.bash --view north_wall "/tmp/plamp8-wall-final-${support_commit}" "${support_commit}"
-./generate.bash --view box "/tmp/plamp8-box-final-${support_commit}" "${support_commit}"
+plamp cad generate plamp8 --view north_wall --revision "${support_commit}" \
+  --output "/tmp/plamp8-wall-final-${support_commit}"
+plamp cad generate plamp8 --preset fuse-box --revision "${support_commit}" \
+  --output "/tmp/plamp8-box-final-${support_commit}"
 ~~~
 
 Do not render `assembly`.

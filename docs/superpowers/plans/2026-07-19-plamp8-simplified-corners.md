@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing shared `flat_wall()` model and its four assembly transforms. Simplify the shared corner primitives so every printable and assembly view receives the same change: tabs become rectangular columns, wall-to-wall locating exists only at the bottom, and the remaining key/notch pair is straight and clearance-controlled.
 
-**Tech Stack:** OpenSCAD 2021.01, Python `unittest`, Bash, existing `things/plamp8/generate.bash`.
+**Tech Stack:** OpenSCAD 2021.01, Python `unittest`, and the direct `plamp cad` CLI.
 
 ## Global Constraints
 
@@ -230,7 +230,7 @@ git commit -m "Remove Plamp8 top wall locators"
 
 **Files:**
 - Verify: `things/plamp8/plamp8.scad`
-- Verify: `things/plamp8/generate.bash`
+- Verify: the `plamp cad` interface and Plamp8 metadata
 - Verify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
@@ -241,25 +241,26 @@ git commit -m "Remove Plamp8 top wall locators"
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest tests.test_things_cad_scripts -v
-bash -n things/plamp8/generate.bash
+plamp cad validate plamp8 --json
+plamp cad plan plamp8 --preset split-box --json
 git diff --check
 ```
 
-Expected: 12 tests PASS; Bash and diff checks exit zero.
+Expected: 12 tests PASS; CAD validation, planning, and diff checks exit zero.
 
 - [ ] **Step 2: Render the affected dirty-worktree views through the generator**
 
-From `things/plamp8`, use separate new target directories:
+From the repository root, use separate new target directories:
 
 ```bash
-./generate.bash --revision simplified-corners --preview --view north_wall \
-  prints/plamp8_north_wall_simplified
-./generate.bash --revision simplified-corners --preview --view east_wall \
-  prints/plamp8_east_wall_simplified
-./generate.bash --revision simplified-corners --preview --view corner_coupon \
-  prints/plamp8_corner_coupon_simplified
-./generate.bash --revision simplified-corners --preview --view assembly \
-  prints/plamp8_assembly_simplified
+plamp cad generate plamp8 --revision simplified-corners --preview --view north_wall \
+  --output prints/plamp8_north_wall_simplified
+plamp cad generate plamp8 --revision simplified-corners --preview --view east_wall \
+  --output prints/plamp8_east_wall_simplified
+plamp cad generate plamp8 --revision simplified-corners --preview --view corner_coupon \
+  --output prints/plamp8_corner_coupon_simplified
+plamp cad generate plamp8 --revision simplified-corners --preview --view assembly \
+  --output prints/plamp8_assembly_simplified
 ```
 
 Expected: each requested STL exists and is non-empty; wall and coupon logs report `Simple: yes`; no empty-object or missing-geometry warning occurs. The assembly is a multi-part visualization and is not required to report one manifold volume.
@@ -280,7 +281,8 @@ Confirm in OpenSCAD or the generated meshes:
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run python -m unittest discover -s tests -v
-bash -n things/plamp8/generate.bash
+plamp cad validate plamp8 --json
+plamp cad plan plamp8 --preset split-box --json
 git diff --check
 git status --short
 ```

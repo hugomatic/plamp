@@ -4,16 +4,15 @@
 
 **Goal:** Evolve the existing OpenSCAD `plamp8` part with reusable channel modules, fit-test views, and a rough assembly/top-panel layout.
 
-**Architecture:** Evolve the existing `things/plamp8` part using its current CAD generator. Keep geometry correctness primarily human/print-verified; automated checks focus on Bash syntax and SCAD view/module structure. Use top-level parameters for all known and unknown hardware dimensions.
+**Architecture:** Evolve the existing `things/plamp8` part through the direct `plamp cad` interface. Keep geometry correctness primarily human/print-verified; automated checks focus on CAD validation/planning and SCAD view/module structure. Use top-level parameters for all known and unknown hardware dimensions.
 
-**Tech Stack:** Bash, OpenSCAD, existing `things/template.bash` and `things/3d_template/generate.bash`.
+**Tech Stack:** OpenSCAD and the direct `plamp cad` CLI.
 
 ---
 
 ### Task 1: Evolve `plamp8`
 
 **Files:**
-- Modify: `things/plamp8/generate.bash`
 - Modify: `things/plamp8/plamp8.scad`
 
 - [ ] Replace the existing `plamp8.scad` with a modular SCAD file exposing `view = "assembly"; // [assembly, plate, ac_duplex_channel, dc_barrel_channel, usb_c_panel, c13_inlet, top_panel]`.
@@ -42,11 +41,10 @@
 ### Task 4: Lightweight verification
 
 **Files:**
-- Verify: `things/plamp8/generate.bash`
 - Verify: `things/plamp8/plamp8.scad`
 
-- [ ] Run `bash -n things/plamp8/generate.bash`.
-- [ ] Run `things/plamp8/generate.bash --revision plamp8-wip /tmp/plamp8_wip HEAD` only if OpenSCAD is available and time is reasonable. If rendering is slow, render a single coupon directly with OpenSCAD or report that full rendering was skipped.
+- [ ] Run `plamp cad validate plamp8 --json` and `plamp cad plan plamp8 --preset all-views --json`.
+- [ ] Run `plamp cad generate plamp8 --preset all-views --revision plamp8-wip --output /tmp/plamp8_wip` only if OpenSCAD is available and time is reasonable. If rendering is slow, generate a single coupon with `plamp cad generate plamp8 --view VIEW --output DIR` or report that full rendering was skipped.
 - [ ] Confirm no generated STL files were added to git.
 
 ### Task 5: Commit and push branch

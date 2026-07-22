@@ -423,10 +423,10 @@ Expected: GitHub contains the exact source commit that will be rendered.
 
 **Files:**
 - Verify: `things/plamp8/plamp8.scad`
-- Generated outside the repository: `/tmp/plamp8-box-${plamp8_box_commit}/plamp8_box_${plamp8_box_commit}.stl`
+- Generated outside the repository: fused-box preset artifacts under `/tmp/plamp8-box-${plamp8_box_commit}/`
 
 **Interfaces:**
-- Consumes: the clean, pushed Task 2 commit and `things/plamp8/generate.bash`.
+- Consumes: the clean, pushed Task 2 commit and direct `plamp cad` generation.
 - Produces: verification evidence only; no tracked artifacts.
 
 - [ ] **Step 1: Re-run tests and confirm the render source is clean and pushed**
@@ -444,16 +444,17 @@ git rev-parse origin/feature/plamp8-box
 
 Expected: 19 tests PASS; diff/status output is empty; local and remote full hashes match.
 
-- [ ] **Step 2: Render only the committed default coarse-vent box**
+- [ ] **Step 2: Render the committed fused-box preset**
 
 From `things/plamp8`, run with the literal hash from Step 1:
 
 ```bash
 plamp8_box_commit=$(git rev-parse --short HEAD)
-./generate.bash --view box "/tmp/plamp8-box-${plamp8_box_commit}" "${plamp8_box_commit}"
+plamp cad generate plamp8 --preset fuse-box --revision "${plamp8_box_commit}" \
+  --output "/tmp/plamp8-box-${plamp8_box_commit}"
 ```
 
-Expected: OpenSCAD exits 0 and reports a non-empty top-level 3D object. Do not run `assembly`.
+Expected: OpenSCAD exits 0 for the `box`, `top_panel`, and `sub_panel` jobs and reports non-empty top-level 3D objects. Do not run `assembly`.
 
 - [ ] **Step 3: Verify the STL, warnings, simplicity, and connectivity**
 
@@ -472,4 +473,4 @@ Expected: the STL is non-empty; no warning/error match; the log reports `Simple:
 
 - [ ] **Step 4: Report the review checkpoint**
 
-Report the pushed commit, 19/19 passing CAD tests, exact STL path, OpenSCAD simplicity/connectivity result, and that the full assembly was not rendered. If `Simple` is not `yes`, warnings appear, or `Volumes` is not 2, stop and diagnose the existing mating faces before proposing any geometry change.
+Report the pushed commit, 19/19 passing CAD tests, fused-box output directory, exact box STL path, OpenSCAD simplicity/connectivity result, and that the full assembly was not rendered. If `Simple` is not `yes`, warnings appear, or `Volumes` is not 2, stop and diagnose the existing mating faces before proposing any geometry change.

@@ -23,7 +23,7 @@ plamp cad log RUN ARTIFACT
 
 `PART` accepts either an in-repository part name such as `plamp8`, resolving to `things/plamp8/plamp8.scad`, or an explicit SCAD path.
 
-Existing `things/<part>/generate.bash` commands remain executable compatibility wrappers over the same Python implementation. New projects created from `things/3d_template` receive the same thin wrapper. No generation behavior is duplicated in Bash.
+`plamp cad` is the sole generation interface. Existing parts are addressed by repository name or explicit SCAD path, and new projects are created with `plamp cad new PART [--template NAME]`; no generation behavior is duplicated in per-part shell entry points.
 
 The HTTP-oriented `plamp_cli` does not own CAD generation. CAD requires local Git, filesystem, OpenSCAD, and instance-data access, so it belongs to the direct local `plamp` command.
 
@@ -264,9 +264,9 @@ Plamp8 receives these initial presets:
 - synthetic `all-views`; and
 - synthetic `all-presets`.
 
-The existing Plamp8 `--box` wrapper option remains a compatibility alias for `--preset fuse-box` during migration.
+Plamp8 fused-box generation uses the explicit `--preset fuse-box` selection.
 
-Other existing part generators move to the shared engine while preserving their current view availability and special variable defaults. Tests cover template-generated wrappers so new projects do not regress into copied generator logic.
+Other existing parts move to the shared engine while preserving their current view availability and special variable defaults. Tests cover `plamp cad new` output and direct generation so new projects do not regress into copied generator logic.
 
 ## Preset-authoring skill
 
