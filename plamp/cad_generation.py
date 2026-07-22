@@ -190,7 +190,7 @@ def prepare_source(
     relative = source.relative_to(root)
     part_relative = relative.parent
     dirty = bool(_git(root, "status", "--porcelain", "--", str(part_relative)))
-    if dirty:
+    if dirty and not revision_is_commit:
         if revision is None or not revision.strip():
             raise ValueError("dirty CAD part requires an explicit revision label")
         cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-source-"))
@@ -593,8 +593,11 @@ def generate_plan(
             started_clock = time.monotonic()
             job["status"] = "running"
             job["started_at"] = _timestamp(started)
-            temporary_artifact = run_dir / "artifacts" / f".{render_job.artifact_id}.tmp.stl"
-            final_artifact = run_dir / "artifacts" / f"{render_job.artifact_id}.stl"
+            artifact_stem = (
+                f"{render_job.artifact_id}--{_safe_component(snapshot.revision_label)}"
+            )
+            temporary_artifact = run_dir / "artifacts" / f".{artifact_stem}.tmp.stl"
+            final_artifact = run_dir / "artifacts" / f"{artifact_stem}.stl"
             command = _command(Path(openscad), temporary_artifact, archived_source, snapshot.revision_label, render_job)
             job["command"] = command
             _write_manifest(run_dir, manifest)

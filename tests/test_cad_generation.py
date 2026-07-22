@@ -335,7 +335,23 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(manifest["source"]["revision"], short)
         self.assertIn(f"-{short}-", manifest["run_id"])
         self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
+        self.assertIn(short, Path(manifest["jobs"][0]["artifact"]).name)
         self.assertNotIn(old_commit, manifest["run_id"])
+
+    def test_commit_revision_mode_archives_commit_even_with_dirty_worktree(self):
+        old_commit = self.commit
+        self.scad.write_text("cube(99);\n")
+        snapshot = prepare_source(
+            self.repo, self.scad, old_commit, revision_is_commit=True
+        )
+        self.addCleanup(lambda: snapshot.cleanup_root and __import__("shutil").rmtree(snapshot.cleanup_root))
+        short = subprocess.run(
+            ["git", "-C", str(self.repo), "rev-parse", "--short", old_commit],
+            check=True, text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+        self.assertFalse(snapshot.dirty)
+        self.assertEqual(snapshot.revision_label, short)
+        self.assertEqual(snapshot.scad_path.read_text(), "cube(1);\n")
 
     def test_literal_revision_keeps_label_for_committed_and_dirty_sources(self):
         head = prepare_source(self.repo, self.scad, "HEAD", revision_is_commit=False)
@@ -395,7 +411,10 @@ class CadGenerationTests(unittest.TestCase):
         command = manifest["jobs"][0]["command"]
         archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
         expected = [
-            str(self.fake), "-o", str(result.run_dir / "artifacts" / ".first--aaaaaaaaaaa1.tmp.stl"),
+            str(self.fake), "-o", str(
+                result.run_dir / "artifacts"
+                / f".first--aaaaaaaaaaa1--{self.commit[:7]}.tmp.stl"
+            ),
             "-D", f'revision_string="{self.commit[:7]}"',
             "-D", 'view="first"', "-D", "count=1", "-D", 'label="a b"',
             "-D", "enabled=true", "-D", "quality=$preview ? 2 : 20",

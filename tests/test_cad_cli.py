@@ -481,7 +481,12 @@ class CadCliTests(unittest.TestCase):
 
     def _fake_openscad(self):
         fake = self.root / "fake-openscad-common"
-        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = --version ]; then echo "OpenSCAD test"; exit 0; fi\n'
+            'out="$2"\n'
+            "printf 'solid fake\\nendsolid fake\\n' > \"$out\"\n"
+        )
         fake.chmod(0o755)
         return fake
 
@@ -569,6 +574,39 @@ class CadCliTests(unittest.TestCase):
                 )
                 self.assertEqual(rc, 0)
                 self.assertEqual(modes[-1], expected)
+
+    def test_legacy_positional_commit_archives_and_names_with_short_hash(self):
+        old_commit = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True, text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+        old_source = self.scad.read_text()
+        self.scad.write_text(SOURCE.replace("cube(1)", "cube(2)"), encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "second"], check=True)
+        short = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "--short", old_commit],
+            check=True, text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+        output = self.root / "historical-output"
+        stdout = io.StringIO()
+
+        rc = main(
+            ["cad", "generate", "fixture", str(output), old_commit,
+             "--openscad", str(self._fake_openscad()), "--json"],
+            env=self.env(), stdout=stdout, stderr=io.StringIO(),
+        )
+
+        self.assertEqual(rc, 0)
+        manifest = json.loads(stdout.getvalue())
+        self.assertEqual(manifest["source"]["commit"], old_commit)
+        self.assertEqual(manifest["source"]["revision"], short)
+        artifact_name = Path(manifest["jobs"][0]["artifact"]).name
+        self.assertIn(short, artifact_name)
+        self.assertNotIn(old_commit, artifact_name)
+        self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
+        archived = output / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertEqual(archived.read_text(), old_source)
 
     def test_generate_help_documents_all_direct_generation_behavior(self):
         stdout = io.StringIO()

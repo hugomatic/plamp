@@ -298,14 +298,6 @@ def _with_plan(
 ) -> tuple[Path, Any, Any, Any]:
     source = deps["resolve_part"](args.part, context.root)
     legacy_commit = getattr(args, "legacy_commit", None)
-    if (
-        getattr(args, "action", None) == "generate"
-        and legacy_commit is not None
-        and getattr(args, "revision", None) is None
-    ):
-        probe = deps["prepare_source"](context.root, source, None)
-        if probe.cleanup_root is not None:
-            shutil.rmtree(probe.cleanup_root, ignore_errors=True)
     revision = (
         _generation_revision(args)
         if getattr(args, "action", None) == "generate"
