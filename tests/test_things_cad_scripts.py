@@ -1022,6 +1022,41 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
 
+    def test_plamp8_connector_panel_views_pair_top_and_production_sub_panel_coupons(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        crop = (
+            compact_scad(scad_module_body(source, "production_sub_panel_crop"))
+            if "module production_sub_panel_crop" in source
+            else ""
+        )
+
+        self.assertIn("connector_panel_pair_gap = 10;", source)
+        self.assertIn("sub_panel_8ch();", crop)
+        self.assertIn("intersection()", crop)
+        self.assertIn("sub_panel_h+2*boolean_shim", crop)
+
+        expected = {
+            "ac_duplex_panel": "left_ac_x,ac_row_y",
+            "dc_connector_panel": "dc_channel_x(0),dc_channel_y(0)",
+            "usb_c_panel": "service_group_x,service_group_y",
+            "c13_panel": "c13_region_x,c13_hardware_y",
+        }
+        for view, origin in expected.items():
+            body = compact_scad(scad_module_body(source, view))
+            with self.subTest(view=view):
+                self.assertEqual(body.count("connector_panel_pair("), 1)
+                self.assertEqual(body.count("production_sub_panel_crop("), 1)
+                self.assertIn(origin, body)
+
+        compact = compact_scad(source)
+        for assertion in (
+            'assert(ac_connector_pair_aligned,"ACtopandsub-panelcouponcentersmustalign");',
+            'assert(dc_connector_pair_aligned,"DCtopandsub-panelcouponcentersmustalign");',
+            'assert(usb_connector_pair_aligned,"USBtopandsub-panelcouponcentersmustalign");',
+            'assert(c13_connector_pair_aligned,"C13topandsub-panelcouponcentersmustalign");',
+        ):
+            self.assertIn(assertion, compact)
+
     def test_plamp8_c13_hardware_and_service_centers_are_frozen(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
