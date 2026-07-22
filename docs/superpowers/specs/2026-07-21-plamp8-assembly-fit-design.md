@@ -122,20 +122,23 @@ The existing layout equations continue to derive `dc_grid_x`,
 column and row gaps to equal `panel_region_gap`. The width exchange from the
 C13 region to the DC regions keeps the enclosure width unchanged: every DC
 rounded pocket grows from 70 to 74 mm while the C13 rounded pocket shrinks
-from 66 to 58 mm. With the existing hardware centers, the XT60 face changes
-from protruding 0.75 mm beyond the pocket's left edge to approximately
-1.25 mm inside it.
+from 66 to 58 mm. The width-derived DC X centers become `-78` and `-2`, which
+moves every XT60 face from protruding 0.75 mm beyond its pocket's left edge to
+approximately 1.25 mm inside it. The DC row centers shift 2 mm from legacy
+`75`/`27` to `73`/`25` so the real 32.5 mm switch envelopes clear the
+continuous separator at y = 42..44.
 
-`c13_cutout_w = 28` and `c13_screw_spacing = 40` are invariant and covered by
-assertions. Narrowing applies only to the surrounding rounded rectangle; it
-does not move or resize the C13 cutout or its screw holes.
+`c13_cutout_w = 28`, `c13_screw_spacing = 40`, and the C13 hardware center
+`(67, 58)` are invariant and covered by assertions. Narrowing moves only the
+surrounding rounded rectangle center to x = 71; it does not move or resize the
+C13 cutout or its screw holes.
 
 The service region is one rounded rectangle directly below C13. Derive it
 from shared region bounds, not independent nudges:
 
 ```scad
-service_group_x = c13_panel_x;
-service_group_y = service_row_y - c13_group_h / 2
+service_group_x = c13_hardware_x;
+service_group_y = c13_hardware_y - c13_group_h / 2
     - panel_region_gap - service_group_h / 2;
 service_cell_w = service_group_w / 2;
 service_cell_h = service_group_h / 2;
@@ -157,6 +160,9 @@ a hardware-only `usb_c_connector_negative()` and the single
 hidden inside the service region. Both COM and USB belong to this one pocket.
 The standalone USB fit coupon may compose those two modules to retain its
 usefulness.
+
+The exact service centers are `(52.5, 17)` for plamp, `(81.5, 17)` for the
+revision, `(52.5, 3)` for COM, and `(81.5, 3)` for USB.
 
 Assertions protect the complete layout: every XT60 face is inside its DC
 rounded bounds with at least 1.2 mm X margin; DC row/column gaps and the

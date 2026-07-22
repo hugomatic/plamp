@@ -871,7 +871,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(f'"{label}"', labels)
         self.assertIn("dc_label_x_offset = -3;", labels)
-        self.assertIn("service_row_y + c13_cutout_h / 2 + 4", labels)
+        self.assertIn("c13_hardware_y + c13_cutout_h / 2 + 4", labels)
         self.assertIn(
             "usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 4", labels
         )
@@ -949,13 +949,38 @@ class ThingsCadScriptsTest(unittest.TestCase):
             compact,
         )
 
+    def test_plamp8_c13_hardware_and_service_centers_are_frozen(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        for contract in (
+            "c13_hardware_x = 67;",
+            "c13_hardware_y = 58;",
+            "c13_region_x = outlet_right_x - c13_group_w / 2;",
+            "service_group_x = c13_hardware_x;",
+            "assert(c13_hardware_x == 67 && c13_hardware_y == 58,",
+            "assert(service_left_x == 52.5 && service_right_x == 81.5",
+            " && service_top_y == 17 && service_bottom_y == 3,",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, source)
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        self.assertIn(
+            "translate([c13_region_x,c13_hardware_y,0])c13_group_negative();",
+            top_panel,
+        )
+        self.assertIn(
+            "translate([c13_hardware_x,c13_hardware_y,0])c13_hardware_negative();",
+            top_panel,
+        )
+
     def test_plamp8_service_region_is_one_equal_cell_grid(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
 
         for equation in (
-            "service_group_x = c13_panel_x;",
-            "service_group_y = service_row_y - c13_group_h / 2",
+            "service_group_x = c13_hardware_x;",
+            "service_group_y = c13_hardware_y - c13_group_h / 2",
             "- panel_region_gap - service_group_h / 2;",
             "service_cell_w = service_group_w / 2;",
             "service_cell_h = service_group_h / 2;",
@@ -1109,7 +1134,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "<=dc_region_bottom_y;",
             "socket_rim_relief_below_separators=socket_rim_relief_top_y"
             "<=dc_region_bottom_y;",
-            "c13_service_cutters_clear_separator=service_row_y-c13_cutout_h/2>="
+            "c13_service_cutters_clear_separator=c13_hardware_y-c13_cutout_h/2>="
             "c13_region_bottom_y&&service_bottom_y+max(usb_c_cutout_h/2,"
             "usb_c_screw_head_d/2)<=service_region_top_y;",
         ):
