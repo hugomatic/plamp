@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rename the four Plamp8 connector fit views consistently as panels and make each coupon a flat, support-free plate that retains at least 3 mm around every recessed rounded pocket.
+**Goal:** Rename the four Plamp8 connector fit views consistently and make each view contain a flat top-panel coupon plus an equally sized crop of the full production sub-panel geometry.
 
-**Architecture:** Keep the change inside the existing Plamp8 SCAD document and its source-contract tests. First make the public view rename as an intentional breaking change, then derive standalone coupon bounds from their pocket envelopes, remove underside alignment walls, and protect the confirmed XT60 fit with frozen assertions and tests. Production enclosure geometry continues to reuse its existing negative modules and is not resized.
+**Architecture:** Keep the change inside the existing Plamp8 SCAD document and its source-contract tests. First make the public view rename as an intentional breaking change, then derive standalone coupon bounds from their pocket envelopes, remove underside alignment walls, and protect the confirmed XT60 fit. Finally, reuse those same bounds to crop `sub_panel_8ch()` through `intersection()` and arrange the top coupon and full-height production crop side by side without duplicating sub-panel features.
 
 **Tech Stack:** OpenSCAD, embedded `generate.json` CAD metadata, Python `unittest`, Plamp CAD CLI.
 
@@ -14,6 +14,8 @@
 - Do not retain compatibility aliases for `ac_duplex_channel`, `dc_barrel_channel`, or `c13_inlet`.
 - Every connector coupon is a flat `plate_t`-thick solid beginning at Z=0 with no underside alignment walls.
 - Every complete recessed rounded pocket, including revision pockets, retains at least 3 mm of plate on all four sides.
+- Every view contains one top coupon and one full-height production sub-panel crop with identical XY dimensions and a 10 mm gap.
+- Derive sub-panel coupons only by intersecting `sub_panel_8ch()`; do not recreate production holes, ribs, reliefs, labels, or nut clearances.
 - Preserve the confirmed XT60 19 by 12 mm cutout, 25 mm screw spacing, 3.2 mm screw holes, and current connector-to-toggle spacing and position.
 - Do not change production top-panel, sub-panel, box, wall, or assembly geometry.
 - Generated STL, CSG, manifests, logs, and archives remain untracked instance data.
@@ -241,6 +243,14 @@ outlet_plate_left = outlet_group_w / 2 - outlet_group_x + connector_panel_rim;
 outlet_plate_right = 76;
 plate_h = 120;
 outlet_pocket_y = screw_spacing / 2 - 13;
+ac_connector_panel_left_x = -outlet_plate_left;
+ac_connector_panel_right_x = outlet_plate_right;
+ac_connector_panel_bottom_y = -plate_h / 2;
+ac_connector_panel_top_y = plate_h / 2;
+ac_connector_panel_w = ac_connector_panel_right_x - ac_connector_panel_left_x;
+ac_connector_panel_h = ac_connector_panel_top_y - ac_connector_panel_bottom_y;
+ac_connector_panel_center_x = (ac_connector_panel_left_x + ac_connector_panel_right_x) / 2;
+ac_connector_panel_center_y = 0;
 ```
 
 Replace `usb_c_panel_rim` uses with `connector_panel_rim`:
@@ -248,6 +258,10 @@ Replace `usb_c_panel_rim` uses with `connector_panel_rim`:
 ```scad
 usb_c_panel_w = service_group_w + 2 * connector_panel_rim;
 usb_c_panel_h = service_group_h + 2 * connector_panel_rim;
+usb_connector_panel_left_x = -usb_c_panel_w / 2;
+usb_connector_panel_right_x = usb_c_panel_w / 2;
+usb_connector_panel_bottom_y = -usb_c_panel_h / 2;
+usb_connector_panel_top_y = usb_c_panel_h / 2;
 ```
 
 After `revision_label_w` and `revision_label_h` are defined, derive the offset DC plate from the union of its main and revision rounded-pocket envelopes:
@@ -275,6 +289,10 @@ c13_group_h = 64;
 c13_panel_w = 72;
 c13_panel_h = c13_group_h + 2 * connector_panel_rim;
 c13_revision_y = 26;
+c13_connector_panel_left_x = -c13_panel_w / 2;
+c13_connector_panel_right_x = c13_panel_w / 2;
+c13_connector_panel_bottom_y = -c13_panel_h / 2;
+c13_connector_panel_top_y = c13_panel_h / 2;
 ```
 
 - [ ] **Step 4: Add explicit rim booleans and assertions**
@@ -383,7 +401,198 @@ git diff --cached --check
 git commit -m "Flatten Plamp8 connector fit panels"
 ```
 
-### Task 3: Validate, compile, and publish the connector panels
+### Task 3: Pair each top coupon with its production sub-panel crop
+
+**Files:**
+- Modify: `things/plamp8/plamp8.scad:820-970,2735-2760`
+- Modify: `tests/test_things_cad_scripts.py`
+
+**Interfaces:**
+- Consumes: the canonical local panel bounds from Task 2 and production `sub_panel_8ch()` geometry.
+- Produces: `production_sub_panel_crop(...)`, `connector_panel_pair(...)`, four paired view wrappers, a 10 mm gap, and center-alignment assertions.
+
+- [ ] **Step 1: Add a failing paired-coupon source contract**
+
+Add this test to `ThingsCadScriptsTest`:
+
+```python
+def test_plamp8_connector_panel_views_pair_top_and_production_sub_panel_coupons(self):
+    source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+    crop = compact_scad(scad_module_body(source, "production_sub_panel_crop"))
+
+    self.assertIn("connector_panel_pair_gap = 10;", source)
+    self.assertIn("sub_panel_8ch();", crop)
+    self.assertIn("intersection()", crop)
+    self.assertIn("sub_panel_h+2*boolean_shim", crop)
+
+    expected = {
+        "ac_duplex_panel": "left_ac_x,ac_row_y",
+        "dc_connector_panel": "dc_channel_x(0),dc_channel_y(0)",
+        "usb_c_panel": "service_group_x,service_group_y",
+        "c13_panel": "c13_region_x,c13_hardware_y",
+    }
+    for view, origin in expected.items():
+        body = compact_scad(scad_module_body(source, view))
+        with self.subTest(view=view):
+            self.assertEqual(body.count("connector_panel_pair("), 1)
+            self.assertEqual(body.count("production_sub_panel_crop("), 1)
+            self.assertIn(origin, body)
+
+    for assertion in (
+        'assert(ac_connector_pair_aligned,"ACtopandsub-panelcouponcentersmustalign");',
+        'assert(dc_connector_pair_aligned,"DCtopandsub-panelcouponcentersmustalign");',
+        'assert(usb_connector_pair_aligned,"USBtopandsub-panelcouponcentersmustalign");',
+        'assert(c13_connector_pair_aligned,"C13topandsub-panelcouponcentersmustalign");',
+    ):
+        self.assertIn(assertion, compact_scad(source))
+```
+
+- [ ] **Step 2: Run the paired-view test and observe failure**
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run --locked python -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_connector_panel_views_pair_top_and_production_sub_panel_coupons -v
+```
+
+Expected: FAIL because the pair gap, production crop module, paired wrappers, and assertions do not exist.
+
+- [ ] **Step 3: Add reusable production crop and pair-layout modules**
+
+Add:
+
+```scad
+connector_panel_pair_gap = 10;
+
+module production_sub_panel_crop(origin_x, origin_y, left_x, right_x, bottom_y, top_y) {
+    crop_w = right_x - left_x;
+    crop_h = top_y - bottom_y;
+    physical_left = layout_offset_x + origin_x + left_x;
+    physical_bottom = layout_offset_y + origin_y + bottom_y;
+    physical_center_x = physical_left + crop_w / 2;
+    physical_center_y = physical_bottom + crop_h / 2;
+
+    translate([-physical_center_x, -physical_center_y, 0])
+        intersection() {
+            sub_panel_8ch();
+            translate([physical_left, physical_bottom, -boolean_shim])
+                cube([crop_w, crop_h, sub_panel_h + 2 * boolean_shim]);
+        }
+}
+
+module connector_panel_pair(panel_w, top_center_x = 0, top_center_y = 0) {
+    translate([-top_center_x, -top_center_y, 0])
+        children(0);
+    translate([panel_w + connector_panel_pair_gap, 0, 0])
+        children(1);
+}
+```
+
+The crop is centered at the origin and starts at Z=0 because it intersects the unchanged production sub-panel in its normal print orientation.
+
+- [ ] **Step 4: Compose all four paired wrappers from shared bounds**
+
+Use the bounds from Task 2 in all four wrappers:
+
+```scad
+module dc_connector_panel() {
+    connector_panel_pair(
+        dc_connector_panel_w,
+        dc_connector_panel_center_x,
+        dc_connector_panel_center_y
+    ) {
+        dc_connector_panel_unit(dc_devices[0], dc_details[0], true);
+        production_sub_panel_crop(
+            dc_channel_x(0), dc_channel_y(0),
+            dc_connector_panel_left_x, dc_connector_panel_right_x,
+            dc_connector_panel_bottom_y, dc_connector_panel_top_y
+        );
+    }
+}
+```
+
+Implement the remaining wrappers explicitly:
+
+```scad
+module ac_duplex_panel() {
+    connector_panel_pair(
+        ac_connector_panel_w,
+        ac_connector_panel_center_x,
+        ac_connector_panel_center_y
+    ) {
+        outlet_cover(true, ac_devices[0], ac_details[0], ac_devices[1], ac_details[1]);
+        production_sub_panel_crop(
+            left_ac_x, ac_row_y,
+            ac_connector_panel_left_x, ac_connector_panel_right_x,
+            ac_connector_panel_bottom_y, ac_connector_panel_top_y
+        );
+    }
+}
+
+module usb_c_panel() {
+    connector_panel_pair(usb_c_panel_w) {
+        usb_c_panel_unit(true);
+        production_sub_panel_crop(
+            service_group_x, service_group_y,
+            usb_connector_panel_left_x, usb_connector_panel_right_x,
+            usb_connector_panel_bottom_y, usb_connector_panel_top_y
+        );
+    }
+}
+
+module c13_panel() {
+    connector_panel_pair(c13_panel_w) {
+        c13_inlet_unit(true);
+        production_sub_panel_crop(
+            c13_region_x, c13_hardware_y,
+            c13_connector_panel_left_x, c13_connector_panel_right_x,
+            c13_connector_panel_bottom_y, c13_connector_panel_top_y
+        );
+    }
+}
+```
+
+AC passes its asymmetric top-plate center to `connector_panel_pair`. USB-C and C13 pass zero centers. Every sub-panel crop receives the exact local left/right/bottom/top bounds used by its top coupon.
+
+- [ ] **Step 5: Add connector-center mapping assertions**
+
+Add explicit assertions for the chosen production origins:
+
+```scad
+ac_connector_pair_aligned =
+    left_ac_x + outlet_feature_x - left_ac_x == outlet_feature_x
+    && ac_row_y - ac_row_y == 0;
+dc_connector_pair_aligned =
+    dc_channel_x(0) + dc_connector_x() - dc_channel_x(0) == dc_connector_x()
+    && dc_channel_y(0) - dc_channel_y(0) == 0;
+usb_connector_pair_aligned =
+    usb_c_panel_x - service_group_x == service_bottom_content_x_offset
+    && usb_c_panel_y - service_group_y == -service_row_y_offset;
+c13_connector_pair_aligned =
+    c13_hardware_x - c13_region_x == 0
+    && c13_hardware_y - c13_hardware_y == 0;
+```
+
+Add the four exact assertion messages required by Step 1.
+
+- [ ] **Step 6: Run the paired-view test and all Plamp8 source contracts**
+
+```bash
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run --locked python -m unittest \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_connector_panel_views_pair_top_and_production_sub_panel_coupons -v
+UV_CACHE_DIR=/tmp/uv-cache /home/hugo/.local/bin/uv run --locked python -m unittest tests.test_things_cad_scripts -v
+```
+
+Expected: the paired-view test and the complete `things/` CAD source-contract module pass.
+
+- [ ] **Step 7: Commit the paired coupon views**
+
+```bash
+git add things/plamp8/plamp8.scad tests/test_things_cad_scripts.py
+git diff --cached --check
+git commit -m "Pair Plamp8 connector panel coupons"
+```
+
+### Task 4: Validate, compile, and publish the connector panels
 
 **Files:**
 - Verify: `things/plamp8/plamp8.scad`
@@ -391,7 +600,7 @@ git commit -m "Flatten Plamp8 connector fit panels"
 - Verify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: the four canonical flat panel views from Tasks 1 and 2.
+- Consumes: the four canonical paired panel views from Tasks 1 through 3.
 - Produces: validated metadata, a four-job `top-panel-fit` plan, non-empty CSG output for every panel, passing repository tests, and a pushed review branch.
 
 - [ ] **Step 1: Validate metadata and plan the renamed preset**
@@ -416,7 +625,7 @@ test -s /tmp/plamp8-usb-c-panel.csg
 test -s /tmp/plamp8-c13-panel.csg
 ```
 
-Expected: every command exits 0, every CSG is non-empty, and output contains no warning, error, or failed assertion.
+Expected: every command exits 0, every CSG is non-empty, and output contains no warning, error, or failed assertion. Each CSG contains both the top coupon and its production sub-panel crop.
 
 - [ ] **Step 3: Run the complete repository test suite and diff checks**
 
@@ -440,4 +649,4 @@ plamp cad plan plamp8 --preset top-panel-fit
 plamp cad generate plamp8 --preset top-panel-fit
 ```
 
-The user verifies the generated STLs lie flat, slice without support, retain visible 3 mm pocket rims, and preserve the confirmed XT60 fit.
+The user verifies each generated STL contains two separate pieces with a 10 mm gap: a flat top coupon and a same-size, full-height production sub-panel crop. The top coupon retains visible 3 mm pocket rims and the confirmed XT60 fit.
