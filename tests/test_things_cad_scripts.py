@@ -29,6 +29,22 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_derived_dimensions_follow_their_dependencies(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertLess(
+            source.index("service_group_w = c13_group_w;"),
+            source.index("usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;"),
+        )
+        self.assertLess(
+            source.index("service_group_h = usb_c_group_h;"),
+            source.index("usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;"),
+        )
+        self.assertLess(
+            source.index("layout_offset_y = panel_margin - content_bottom_y;"),
+            source.index("sub_panel_socket_rim_relief_y0 ="),
+        )
+
     def test_plamp8_corner_nut_fit_uses_measured_independent_dimensions(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
