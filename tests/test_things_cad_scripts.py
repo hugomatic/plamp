@@ -55,11 +55,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertLess(
             source.index("service_group_w = c13_group_w;"),
-            source.index("usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;"),
+            source.index("usb_c_panel_w = service_group_w + 2 * connector_panel_rim;"),
         )
         self.assertLess(
             source.index("service_group_h = usb_c_group_h;"),
-            source.index("usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;"),
+            source.index("usb_c_panel_h = service_group_h + 2 * connector_panel_rim;"),
         )
         self.assertLess(
             source.index("layout_offset_y = panel_margin - content_bottom_y;"),
@@ -984,6 +984,42 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "assert(c13_cutout_w==28&&c13_screw_spacing==40,"
             '"C13hardwarelocationsmustremainunchanged");',
             compact,
+        )
+
+    def test_plamp8_connector_panels_are_flat_and_retain_three_mm_rims(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        dc_unit = compact_scad(scad_module_body(source, "dc_connector_panel_unit"))
+        c13_unit = compact_scad(scad_module_body(source, "c13_inlet_unit"))
+
+        self.assertIn("connector_panel_rim = 3;", source)
+        self.assertNotIn("module alignment_walls", source)
+        self.assertNotIn("alignment_walls(", dc_unit)
+        self.assertNotIn("alignment_walls(", c13_unit)
+        self.assertIn(
+            "translate([dc_connector_panel_center_x,dc_connector_panel_center_y,0])"
+            "fit_plate(dc_connector_panel_w,dc_connector_panel_h);",
+            dc_unit,
+        )
+        self.assertIn("fit_plate(c13_panel_w,c13_panel_h);", c13_unit)
+
+        for assertion in (
+            'assert(ac_connector_panel_rim_ok,"ACconnectorpanelmustretain3mmaroundeveryroundedpocket");',
+            'assert(dc_connector_panel_rim_ok,"DCconnectorpanelmustretain3mmaroundeveryroundedpocket");',
+            'assert(usb_coupon_pocket_inside_plate,"USBcouponmustretain3mmaroundeveryroundedpocket");',
+            'assert(c13_connector_panel_rim_ok,"C13connectorpanelmustretain3mmaroundeveryroundedpocket");',
+        ):
+            self.assertIn(assertion, compact)
+
+        for frozen in (
+            "xt60_cutout_w = 19;", "xt60_cutout_h = 12;",
+            "xt60_screw_spacing = 25;", "xt60_screw_d = 3.2;",
+        ):
+            self.assertIn(frozen, source)
+        self.assertIn(
+            "xt60_switch_center_spacing = xt60_outside_w / 2 + "
+            "dc_switch_outside_d / 2 + xt60_switch_clearance;",
+            source,
         )
 
     def test_plamp8_c13_hardware_and_service_centers_are_frozen(self):
