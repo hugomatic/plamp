@@ -12,9 +12,9 @@
 
 - `plamp cad` is the only documented and tracked CAD generation interface.
 - Delete the legacy generator file from each of `things/3d_template/`, `things/iharvest_cover/`, `things/plamp8/`, and `things/plamp_stand/`.
-- No tracked filename is the removed legacy filename, and no tracked text contains that name; the final regex gate is `git grep -n -I -e 'generate[.]bash' --`, whose expected exit status is 1.
+- No tracked filename or text contains either retired shell entry-point name; final `git grep` gates use `generate[.]bash` and `template[.]bash`, each with expected exit status 1.
 - Preserve all current `plamp cad` behavior, metadata, source snapshots, recipes, revision handling, explicit output support, manifests, and archives.
-- Template scaffolding creates the selected SCAD source with embedded generation metadata and no per-part executable.
+- `plamp cad new PART [--template NAME]` is the sole part scaffolder; it discovers templates from repository convention rather than hard-coded project names and creates one metadata-valid `<PART>.scad` without overwriting anything.
 - Convert the Plamp Stand manual render check to direct `plamp cad`; do not run real Plamp8 renders.
 - OpenSCAD integration tests use only a fake executable.
 - Repository `agent/skills/*/SKILL.md` directories are authoritative; installation creates direct links under `${CODEX_HOME:-$HOME/.codex}/skills`.
@@ -29,7 +29,8 @@
 
 ## File map
 
-- `things/template.bash`: create only `<part>/<part>.scad` from the selected metadata-bearing template.
+- `plamp/cad_scaffold.py`: project-neutral template discovery and atomic safe part creation.
+- `plamp/cad_cli.py`: `cad new`, template listing, humane text, and structured JSON command boundary.
 - `tests/test_things_cad_scripts.py`: protect template output, repository-wide absence, metadata preservation, and fake-OpenSCAD direct generation.
 - `things/plamp_stand/check_generates_stl_files_from_scad.bash`: retain the manual STL smoke check while invoking `plamp cad generate` directly.
 - `README.md`: concise human landing page linking to canonical `agent/` references.
@@ -37,54 +38,110 @@
 - `agent/skills/{plamp-workflow,plamp-setup,plamp-operate,plamp-pico,plamp-troubleshoot,openscad-cad}`: focused canonical skills and operating references.
 - `docs/spec-current.md`, `docs/host-tools.md`, `plamp_cli/README.md`, `plamp_web/README.md`, `pico_scheduler/README.md`, `things/README.md`, and `things/plamp_stand/README.md`: compatibility forwarding pages containing only a title and canonical link.
 - `agent/skills/openscad-cad/SKILL.md`, `agent/skills/openscad-cad/references/plamp-things.md`: authoritative agent workflow with no alternate interface.
-- Historical plan/spec files listed in Task 3: accurate archival wording and direct commands, with no stale entry-point references.
+- Historical plan/spec files listed in Task 4: accurate archival wording and direct commands, with no stale entry-point references.
 - `agent/install-skills`: safe, idempotent registry-managed discovery/linking of every immediate repository skill directory containing `SKILL.md`.
 - `tests/test_agent_docs.py`: canonical-document, forwarding-page, root-agent-symlink, skill-schema, and Markdown-link contract.
 - `tests/test_agent_skills.py`: isolated installer tests using temporary repositories/checkouts and Codex-home paths.
 
 ---
 
-### Task 1: Remove part-local generators and make scaffolding SCAD-only
+### Task 1: Add project-neutral `plamp cad new` scaffolding
+
+**Files:**
+- Create: `plamp/cad_scaffold.py`
+- Create: `tests/test_cad_scaffold.py`
+- Modify: `plamp/cad_cli.py`
+- Modify: `tests/test_cad_cli.py`
+
+**Interfaces:**
+- `discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]` discovers `things/3d_template/cad.scad` as `cad` plus sorted `things/3d_template/scad/*.scad`; no part or template name is hard-coded.
+- `create_part(repo_root: Path, part_name: str, template_name: str) -> CreatedPart` creates `things/<part_name>/<part_name>.scad` atomically from a discovered template.
+- CLI: `plamp cad new PART [--template NAME] [--json]`; `plamp cad new --list-templates [--json]` lists choices without requiring `PART`.
+
+- [ ] **Step 1: Write failing pure scaffolding tests**
+
+In a temporary repository fixture, cover sorted discovery of root `cad.scad` and arbitrary named templates; missing template root; unknown template with available choices; part/template names containing separators, traversal, whitespace, or shell syntax; refusal when any destination path already exists; invalid/missing generation metadata with zero destination mutation; and successful byte-for-byte copying to the exact SCAD filename.
+
+Use this result contract:
+
+```python
+@dataclass(frozen=True)
+class CadTemplate:
+    name: str
+    path: Path
+
+@dataclass(frozen=True)
+class CreatedPart:
+    part: str
+    template: str
+    directory: Path
+    scad_path: Path
+```
+
+- [ ] **Step 2: Write failing CLI and JSON tests**
+
+Add parser/command tests for:
+
+```bash
+plamp cad new --list-templates --json
+plamp cad new pump_bracket --json
+plamp cad new access_cover --template flat_plate --json
+```
+
+Require listing JSON shaped as `{"templates":[{"name":"cad","path":"things/3d_template/cad.scad"}]}` and creation JSON with `part`, `template`, repository-relative `directory`, repository-relative `scad_path`, and `metadata_valid: true`. Text mode prints the created SCAD path and the exact follow-up `plamp cad validate <part> --json`. Expected user errors return exit 2, structured diagnostics under `--json`, no traceback, and no partial destination.
+
+- [ ] **Step 3: Run focused tests and verify RED**
+
+```bash
+.venv/bin/python -m unittest tests.test_cad_scaffold tests.test_cad_cli -v
+```
+
+Expected: import/parser failures because the scaffolder and `new` action do not exist.
+
+- [ ] **Step 4: Implement minimal safe discovery and creation**
+
+Validate names with the existing shell contract `^[A-Za-z0-9_-]+$`, require `Path(name).name == name`, and resolve every source/destination beneath its expected root. Parse the selected template with `parse_cad_document()` and require nonempty `metadata_snapshot` before creating a staging directory beneath `things/`. Copy only the SCAD file, validate the staged copy again, then atomically rename the staging directory to the nonexistent destination. Clean staging on every exception; never delete or replace an existing destination.
+
+Wire `new` into `add_cad_parser()` and `run_cad_command()` through dependency injection so CLI tests need no real filesystem or OpenSCAD. `--list-templates` conflicts with `PART` and `--template`; creation requires `PART`.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+.venv/bin/python -m unittest tests.test_cad_scaffold tests.test_cad_cli -v
+python3 -m py_compile plamp/cad_scaffold.py plamp/cad_cli.py tests/test_cad_scaffold.py tests/test_cad_cli.py
+git diff --check
+git add plamp/cad_scaffold.py plamp/cad_cli.py tests/test_cad_scaffold.py tests/test_cad_cli.py
+git commit -m "Add plamp cad part scaffolding"
+git push origin feature/remove-generate-bash
+```
+
+---
+
+### Task 2: Remove both retired shell interfaces
 
 **Files:**
 - Delete: the legacy generator file in each of `things/3d_template/`, `things/iharvest_cover/`, `things/plamp8/`, and `things/plamp_stand/`
-- Modify: `things/template.bash`
+- Delete: the legacy scaffolder in `things/` matched by `template[.]bash`
 - Modify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: existing metadata-bearing sources under `things/3d_template/` and existing `parse_cad_document(path)`.
-- Produces: `things/template.bash PART [--template TEMPLATE]` creating exactly one SCAD file under the new part directory; the generated document retains non-empty `metadata_snapshot`.
-- Does not modify `plamp/cad_cli.py`, `plamp/cad_generation.py`, `plamp/cad_metadata.py`, `plamp/cad_recipes.py`, or any SCAD metadata.
+- Consumes: tested `plamp cad new` from Task 1.
+- Produces: no tracked per-part generator and no tracked shell scaffolder; new parts are created only through Python CLI.
+- Does not modify CAD behavior or SCAD metadata.
 
 - [ ] **Step 1: Replace wrapper-oriented tests with failing sole-interface tests**
 
 Remove `make_wrapper_repo()` and the tests dedicated to wrapper delegation, argument translation, wrapper preview, and wrapper dirty-source behavior. Keep their direct CLI coverage in `tests/test_cad_cli.py`; do not duplicate the CAD engine tests.
 
-Change `test_template_bash_can_select_scad_template` so its temporary `cover.scad` includes a minimal valid metadata block, then assert:
+Delete shell-scaffolder tests now covered by `tests/test_cad_scaffold.py` and `tests/test_cad_cli.py`.
+
+Add one acceptance test that checks tracked filenames without embedding either forbidden literal in its own source:
 
 ```python
-created = things / "new_cover"
-self.assertEqual(
-    [path.name for path in created.iterdir()],
-    ["new_cover.scad"],
-)
-document = parse_cad_document(created / "new_cover.scad")
-self.assertTrue(document.metadata_snapshot)
-```
-
-Add one acceptance test that checks both filenames and text without embedding the forbidden literal in its own source:
-
-```python
-def test_repository_has_only_the_plamp_cad_generation_interface(self):
+def test_retired_cad_shell_files_are_untracked(self):
     tracked = run(["git", "ls-files", "-z"], REPO_ROOT, check=True).stdout.split("\0")
-    removed_name = "generate" + ".bash"
-    self.assertNotIn(removed_name, [Path(path).name for path in tracked if path])
-
-    references = run(
-        ["git", "grep", "-n", "-I", "-e", "generate[.]bash", "--"],
-        REPO_ROOT,
-    )
-    self.assertEqual(references.returncode, 1, references.stdout + references.stderr)
+    removed_names = {"generate" + ".bash", "template" + ".bash"}
+    self.assertTrue(removed_names.isdisjoint(Path(path).name for path in tracked if path))
 ```
 
 - [ ] **Step 2: Run the focused tests and verify RED**
@@ -93,22 +150,15 @@ Run:
 
 ```bash
 .venv/bin/python -m unittest \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_template_bash_can_select_scad_template \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_repository_has_only_the_plamp_cad_generation_interface -v
+  tests.test_cad_cli.CadCliTests.test_new_part_json_reports_metadata_valid_output \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_retired_cad_shell_files_are_untracked -v
 ```
 
-Expected: the template test sees the copied shell file and the repository gate reports the four tracked files and textual references.
+Expected: CLI scaffolding passes; the filename gate reports five retired tracked files.
 
-- [ ] **Step 3: Remove the files and simplify the template**
+- [ ] **Step 3: Delete all five retired shell entry points**
 
-Delete the four shell files with `apply_patch`. In `things/template.bash`, retain validation, template discovery, destination creation, and this sole copy operation:
-
-```bash
-mkdir "$part"
-cp "$template_path" "./$part/$part.scad"
-```
-
-Remove all wrapper copy, name substitution, and platform-specific cleanup lines. Do not alter the source template or its embedded JSON.
+Delete the four part-local generators and the `things/` scaffolder with `apply_patch`. Do not alter template SCAD files or their embedded JSON; Task 1 discovers them directly.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -116,7 +166,6 @@ Run:
 
 ```bash
 .venv/bin/python -m unittest tests.test_things_cad_scripts -v
-bash -n things/template.bash
 git diff --check
 ```
 
@@ -126,13 +175,13 @@ Commit and push:
 
 ```bash
 git add -A things tests/test_things_cad_scripts.py
-git commit -m "Remove part-local CAD generators"
+git commit -m "Remove retired CAD shell interfaces"
 git push origin feature/remove-generate-bash
 ```
 
 ---
 
-### Task 2: Convert live documentation, the CAD skill, and the Stand smoke check
+### Task 3: Convert live documentation, the CAD skill, and the Stand smoke check
 
 **Files:**
 - Modify: `README.md`
@@ -146,7 +195,7 @@ git push origin feature/remove-generate-bash
 - Modify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: `plamp cad views|validate|plan|generate|runs|show|log`; `generate` accepts `--view`, `--preset`, `--revision`, `--preview`, and `--output`.
+- Consumes: `plamp cad new|views|validate|plan|generate|runs|show|log`; `new` accepts `--template`, `--list-templates`, and `--json`; `generate` accepts `--view`, `--preset`, `--revision`, `--preview`, and `--output`.
 - Produces: one consistent human/agent workflow and a Stand check which writes its explicit-output run beneath a temporary directory.
 
 - [ ] **Step 1: Add failing live-documentation and smoke-script source tests**
@@ -159,7 +208,7 @@ self.assertIn('--preset all-views-default', stand_check)
 self.assertIn('--output "$outdir/out"', stand_check)
 ```
 
-The repository-wide absence test from Task 1 remains the final wording guard.
+Also assert current new-part instructions use `plamp cad new PART --template NAME` and template discovery uses `plamp cad new --list-templates --json`. Task 4 adds the final repository-wide wording guard after historical records are migrated.
 
 - [ ] **Step 2: Run the focused tests and verify RED**
 
@@ -168,7 +217,7 @@ Run:
 ```bash
 .venv/bin/python -m unittest \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_cad_documentation_covers_the_stable_local_workflow \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_repository_has_only_the_plamp_cad_generation_interface -v
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_retired_cad_shell_files_are_untracked -v
 ```
 
 Expected: failures identify the stale live instructions and Stand check.
@@ -178,6 +227,8 @@ Expected: failures identify the stale live instructions and Stand check.
 Use this command vocabulary everywhere:
 
 ```bash
+plamp cad new --list-templates --json
+plamp cad new PART --template NAME --json
 plamp cad views PART --json
 plamp cad validate PART --json
 plamp cad plan PART --preset PRESET --json
@@ -216,7 +267,8 @@ Use the existing fake OpenSCAD helper tests; do not invoke the Stand script with
 ```bash
 .venv/bin/python -m unittest tests.test_cad_cli tests.test_things_cad_scripts -v
 bash -n things/plamp_stand/check_generates_stl_files_from_scad.bash
-git grep -n -I -e 'generate[.]bash' --
+git grep -n -I -e 'generate[.]bash' -e 'template[.]bash' -- \
+  README.md CHECKLIST.md things docs/host-tools.md agent/skills
 ```
 
 Expected: tests and syntax pass; `git grep` exits 1 with no output.
@@ -234,7 +286,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 3: Purge stale interface references from historical plans and specs
+### Task 4: Purge stale shell-interface references from historical plans and specs
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-05-13-plamp8-box-builder-design.md`
@@ -253,9 +305,10 @@ git push origin feature/remove-generate-bash
 - Modify: `docs/superpowers/plans/2026-07-20-cad-generation-recipes.md`
 - Modify: `docs/superpowers/plans/2026-07-20-plamp8-fused-box-view.md`
 - Modify: `docs/superpowers/plans/2026-07-20-plamp8-support-free-wall-details.md`
+- Modify: `tests/test_things_cad_scripts.py`
 
 **Interfaces:**
-- Consumes: the current direct CLI flags documented in Task 2.
+- Consumes: the current direct CLI flags documented in Task 3.
 - Produces: historical context that remains accurate without advertising, requiring, testing, or naming a removed interface.
 
 - [ ] **Step 1: Confirm the repository gate fails on historical documents**
@@ -263,12 +316,23 @@ git push origin feature/remove-generate-bash
 Run:
 
 ```bash
-git grep -n -I -e 'generate[.]bash' -- docs/superpowers
+git grep -n -I -e 'generate[.]bash' -e 'template[.]bash' -- docs/superpowers
 ```
 
-Expected: nonzero output names all 16 files listed above.
+Expected: nonzero output names every historical file listed above that mentions either retired shell interface.
 
 - [ ] **Step 2: Apply the exact command migration rules**
+
+First add the final textual acceptance test:
+
+```python
+def test_tracked_text_names_only_plamp_cad_interfaces(self):
+    references = run(
+        ["git", "grep", "-n", "-I", "-e", "generate[.]bash", "-e", "template[.]bash", "--"],
+        REPO_ROOT,
+    )
+    self.assertEqual(references.returncode, 1, references.stdout + references.stderr)
+```
 
 Use `apply_patch` and preserve each document's historical design intent. Apply these transformations to every runnable example:
 
@@ -281,6 +345,9 @@ Use `apply_patch` and preserve each document's historical design intent. Apply t
 | exact committed source | add `--revision COMMIT` |
 | syntax check of removed shell | `plamp cad validate plamp8 --json` followed by `plamp cad plan plamp8 ... --json` |
 | default Plamp8 printable set | `plamp cad generate plamp8 --preset split-box` |
+| create a new part from the default template | `plamp cad new PART` |
+| create from a named template | `plamp cad new PART --template NAME` |
+| discover available templates | `plamp cad new --list-templates --json` |
 
 Where an obsolete command supplied both a friendly label and `HEAD`, retain the honest label and remove `HEAD`; direct `--revision` accepts one source/label value. Replace narrative statements about preserving or using the removed file with statements about preserving metadata, directory-specific revision identity, and using `plamp cad`. In the CAD recipes design/plan, revise the architecture and constraints from delegating wrappers to a single direct interface; remove wrapper file lists and wrapper-specific tests rather than pretending they still exist.
 
@@ -289,9 +356,9 @@ Where an obsolete command supplied both a friendly label and `HEAD`, retain the 
 Run:
 
 ```bash
-git grep -n -I -e 'generate[.]bash' --
+git grep -n -I -e 'generate[.]bash' -e 'template[.]bash' --
 .venv/bin/python -m unittest \
-  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_repository_has_only_the_plamp_cad_generation_interface \
+  tests.test_things_cad_scripts.ThingsCadScriptsTest.test_tracked_text_names_only_plamp_cad_interfaces \
   tests.test_things_cad_scripts.ThingsCadScriptsTest.test_cad_documentation_covers_the_stable_local_workflow -v
 git diff --check
 ```
@@ -308,7 +375,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 4: Move operating documentation into the canonical agent tree
+### Task 5: Move operating documentation into the canonical agent tree
 
 **Files:**
 - Create: `agent/skills/plamp-workflow/references/current-contract.md`
@@ -376,7 +443,7 @@ Expected: all content and link tests pass, and every compatibility page is point
 
 ---
 
-### Task 5: Add the complete Plamp skill set and automatic repo routing
+### Task 6: Add the complete Plamp skill set and automatic repo routing
 
 **Files:**
 - Create: `agent/AGENTS.md`, `agent/README.md`
@@ -412,7 +479,7 @@ Expected: five skill directories, routing docs, metadata, and root agent entrypo
 
 - [ ] **Step 3: Write concise skills and routing**
 
-Keep each `SKILL.md` procedural and short, routing detail to Task 4 references. Establish the exact tool boundary: `plampctl` changes hosts/services and performs upgrades/migrations; `plamp` performs local direct operations including CAD; `python3 -m plamp_cli` is the explicitly named REST compatibility client. Require JSON discovery for agents, evidence before mutation, and narrow skill selection. `agent/AGENTS.md` must point agents first to `agent/README.md` and instruct them to use the matching skill.
+Keep each `SKILL.md` procedural and short, routing detail to Task 5 references. Establish the exact tool boundary: `plampctl` changes hosts/services and performs upgrades/migrations; `plamp` performs local direct operations including CAD; `python3 -m plamp_cli` is the explicitly named REST compatibility client. Require JSON discovery for agents, evidence before mutation, and narrow skill selection. `agent/AGENTS.md` must point agents first to `agent/README.md` and instruct them to use the matching skill.
 
 Create the root symlink with:
 
@@ -436,7 +503,7 @@ Expected: schema, link, taxonomy, and root entrypoint tests pass.
 
 ---
 
-### Task 6: Build the safe registry-managed skill installer
+### Task 7: Build the safe registry-managed skill installer
 
 **Files:**
 - Create: `agent/install-skills`
@@ -487,7 +554,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 7: Add explicit install and opted-in upgrade lifecycle
+### Task 8: Add explicit install and opted-in upgrade lifecycle
 
 **Files:**
 - Modify: `deploy/bootstrap/install-plamp.sh`, `plampctl`
@@ -528,7 +595,7 @@ git push origin feature/remove-generate-bash
 
 ---
 
-### Task 8: End-to-end acceptance, forward tests, and stable-main handoff
+### Task 9: End-to-end acceptance, forward tests, and stable-main handoff
 
 **Files:**
 - Modify only within earlier task file groups if verification finds an omission.
@@ -539,13 +606,13 @@ git push origin feature/remove-generate-bash
 - [ ] **Step 1: Run static and focused acceptance**
 
 ```bash
-test -z "$(git ls-files | rg '(^|/)generate[.]bash$')"
-test "$(git grep -n -I -e 'generate[.]bash' -- | wc -l)" -eq 0
+test -z "$(git ls-files | rg '(^|/)(generate|template)[.]bash$')"
+test "$(git grep -n -I -e 'generate[.]bash' -e 'template[.]bash' -- | wc -l)" -eq 0
 python3 -m py_compile agent/install-skills tests/test_agent_docs.py tests/test_agent_skills.py
-bash -n things/template.bash things/plamp_stand/check_generates_stl_files_from_scad.bash \
+bash -n things/plamp_stand/check_generates_stl_files_from_scad.bash \
   deploy/bootstrap/install-plamp.sh plampctl setup.sh
 .venv/bin/python -m unittest tests.test_agent_docs tests.test_agent_skills \
-  tests.test_cad_metadata tests.test_cad_recipes tests.test_cad_generation \
+  tests.test_cad_metadata tests.test_cad_recipes tests.test_cad_generation tests.test_cad_scaffold \
   tests.test_cad_cli tests.test_things_cad_scripts tests.test_bootstrap_installer \
   tests.test_plampctl tests.test_setup_sh -v
 git diff --check
