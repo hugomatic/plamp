@@ -9,6 +9,14 @@ from plamp.cad_metadata import parse_cad_document
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def scad_module_body(source, module_name):
+    return source.split(f"module {module_name}(", 1)[1].split("module ", 1)[0]
+
+
+def compact_scad(source):
+    return re.sub(r"\s+", "", source)
+
+
 def run(cmd, cwd, **kwargs):
     return subprocess.run(
         cmd,
@@ -109,20 +117,25 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "wall_stiffening_ribs",
         ):
             with self.subTest(module=module_name):
-                module = source.split(f"module {module_name}(", 1)[1].split(
-                    "module ", 1
-                )[0]
+                module = scad_module_body(source, module_name)
                 self.assertIn('vent_side = "right"', module)
                 self.assertIn(
                     'vent_mode != "half" || vent_side == "left" || vent_side == "right"',
                     module,
                 )
 
-        flat_wall = source.split("module flat_wall(", 1)[1].split("module ", 1)[0]
-        self.assertIn("wall_vent_negatives(", flat_wall)
-        self.assertIn("wall_revision_negative(", flat_wall)
-        self.assertIn("wall_stiffening_ribs(", flat_wall)
-        self.assertGreaterEqual(flat_wall.count("vent_side"), 4)
+        flat_wall = compact_scad(scad_module_body(source, "flat_wall"))
+        self.assertIn(
+            "wall_stiffening_ribs(length,h,vent_mode,vent_side,print_orientation);",
+            flat_wall,
+        )
+        self.assertIn(
+            "wall_vent_negatives(length,vent_mode,vent_side,h,coarse_vents);",
+            flat_wall,
+        )
+        self.assertIn(
+            "wall_revision_negative(length,h,vent_mode,vent_side);", flat_wall
+        )
 
         vent_grid = source.split("module wall_vent_negatives(", 1)[1].split(
             "module ", 1
@@ -157,10 +170,18 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'vent_side == "left" ? 3 * length / 4 : length / 4', revision
         )
 
-        north = source.split("module north_wall(", 1)[1].split("module ", 1)[0]
-        south = source.split("module south_wall(", 1)[1].split("module ", 1)[0]
-        self.assertIn('vent_side = "right"', north)
-        self.assertIn('vent_side = "left"', south)
+        north = compact_scad(scad_module_body(source, "north_wall"))
+        south = compact_scad(scad_module_body(source, "south_wall"))
+        self.assertIn(
+            'flat_wall(box_w,wall_name="NORTH",nut_owner=true,'
+            'vent_mode="half",vent_side="right",',
+            north,
+        )
+        self.assertIn(
+            'flat_wall(box_w,wall_name="SOUTH",nut_owner=true,'
+            'vent_mode="half",vent_side="left",',
+            south,
+        )
 
     def test_plamp8_floor_revision_is_readable_from_inside(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
