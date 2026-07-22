@@ -469,6 +469,7 @@ class CadCliTests(unittest.TestCase):
 
         rc = main(
             ["cad", "generate", "fixture", "--view", "assembly", "--view", "box",
+             "--openscad", str(self._fake_openscad()),
              "--define", "quality=$preview ? 2 : 20", "--view-define", "box:fit=0.2", "--json"],
             env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(), cad_generate_func=generate,
         )
@@ -477,6 +478,114 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(selection.views, ("assembly", "box"))
         self.assertEqual(selection.raw_defines, ("quality=$preview ? 2 : 20",))
         self.assertEqual(selection.raw_view_defines["box"], ("fit=0.2",))
+
+    def _fake_openscad(self):
+        fake = self.root / "fake-openscad-common"
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        fake.chmod(0o755)
+        return fake
+
+    def test_menu_and_generate_share_the_same_openscad_resolver(self):
+        parser = build_parser()
+        resolved = self.root / "resolved-openscad"
+        calls = []
+        dependencies = {
+            "resolve_openscad": lambda explicit: calls.append(explicit) or resolved,
+            "generate": lambda plan, **kwargs: {
+                "run_id": "run-1", "status": "complete", "jobs": [],
+                "openscad": str(kwargs["openscad"]),
+            },
+        }
+        for argv, stdin in (
+            (["cad", "generate", "fixture", "--json"], io.StringIO()),
+            (["cad", "menu", "fixture"], io.StringIO("1\n")),
+        ):
+            with self.subTest(argv=argv):
+                rc = run_cad_command(
+                    parser.parse_args(argv), self.context, stdin,
+                    io.StringIO(), io.StringIO(), dependencies,
+                )
+                self.assertEqual(rc, 0)
+        self.assertEqual(calls, [None, None])
+
+    def test_direct_preview_defaults_precede_explicit_overrides(self):
+        argv_path = self.root / "preview-argv.json"
+        fake = self.root / "preview-openscad"
+        fake.write_text(textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import json, pathlib, sys
+            if "--version" in sys.argv:
+                print("OpenSCAD test")
+                raise SystemExit(0)
+            pathlib.Path({str(argv_path)!r}).write_text(json.dumps(sys.argv[1:]))
+            pathlib.Path(sys.argv[sys.argv.index("-o") + 1]).write_text(
+                "solid preview\\nendsolid preview\\n"
+            )
+        """))
+        fake.chmod(0o755)
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "generate", "fixture", "--preview",
+             "--define", "render_fn=48", "--define", "render_text=true",
+             "--openscad", str(fake), "--json"],
+            env=self.env(), stdout=stdout, stderr=io.StringIO(),
+        )
+        self.assertEqual(rc, 0)
+        manifest = json.loads(stdout.getvalue())
+        effective = manifest["jobs"][0]["raw_defines"]
+        self.assertEqual(effective["render_fn"], "48")
+        self.assertEqual(effective["render_text"], "true")
+        self.assertNotIn("ball_quality", effective)
+        argv = json.loads(argv_path.read_text())
+        defines = [argv[index + 1] for index, item in enumerate(argv) if item == "-D"]
+        self.assertEqual(defines.count("render_fn=48"), 1)
+        self.assertEqual(defines.count("render_text=true"), 1)
+        self.assertFalse(any(item.startswith("ball_quality=") for item in defines))
+
+    def test_legacy_commit_uses_commit_mode_but_revision_is_literal(self):
+        parser = build_parser()
+        modes = []
+
+        def prepare(root, source, revision, *, revision_is_commit=False):
+            modes.append((revision, revision_is_commit))
+            return __import__("plamp.cad_generation", fromlist=["SourceSnapshot"]).SourceSnapshot(
+                source, "identity", "commit", "label", False, None
+            )
+
+        dependencies = {
+            "prepare_source": prepare,
+            "resolve_openscad": lambda explicit: self._fake_openscad(),
+            "generate": lambda plan, **kwargs: {"run_id": "run", "status": "complete", "jobs": []},
+        }
+        cases = (
+            (["cad", "generate", "fixture", str(self.root / "out"), "abc123"], ("abc123", True)),
+            (["cad", "generate", "fixture", "--revision", "HEAD"], ("HEAD", False)),
+        )
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                rc = run_cad_command(
+                    parser.parse_args(argv), self.context, io.StringIO(),
+                    io.StringIO(), io.StringIO(), dependencies,
+                )
+                self.assertEqual(rc, 0)
+                self.assertEqual(modes[-1], expected)
+
+    def test_generate_help_documents_all_direct_generation_behavior(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
+            main(["cad", "generate", "--help"], env=self.env())
+        self.assertEqual(caught.exception.code, 0)
+        help_text = stdout.getvalue()
+        for required in (
+            "mutually exclusive", "repeatable", "--preset", "--view",
+            "--define NAME=EXPR", "--view-define VIEW:NAME=EXPR", "later wins",
+            "dirty", "--revision LABEL", "historical", "short hash",
+            "managed archive", "--output DIR", "--preview", "render_fn=24",
+            "render_text=false", "--openscad", "OPENSCAD_BIN", "PATH",
+            "platform fallback",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, help_text)
 
     def test_generate_uses_the_same_snapshot_for_planning_and_rendering(self):
         captured = {}
@@ -528,7 +637,8 @@ class CadCliTests(unittest.TestCase):
             captured = []
             with self.subTest(answer=answer):
                 rc = main(
-                    ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO(answer),
+                    ["cad", "menu", "fixture", "--openscad", str(self._fake_openscad())],
+                    env=self.env(), stdin=io.StringIO(answer),
                     stdout=io.StringIO(), stderr=io.StringIO(),
                     cad_generate_func=lambda plan, **kwargs: captured.append(plan.selection) or {
                         "run_id": "run-1", "status": "complete", "jobs": []
@@ -715,7 +825,8 @@ class CadCliTests(unittest.TestCase):
             raise subprocess.CalledProcessError(7, ["openscad"])
 
         rc = main(
-            ["cad", "generate", "fixture"], env=self.env(), stdout=io.StringIO(),
+            ["cad", "generate", "fixture", "--openscad", str(self._fake_openscad())],
+            env=self.env(), stdout=io.StringIO(),
             stderr=stderr, cad_generate_func=fail,
         )
         self.assertEqual(rc, 4)
@@ -731,7 +842,8 @@ class CadCliTests(unittest.TestCase):
             with self.subTest(failure=failure):
                 stderr = io.StringIO()
                 rc = main(
-                    ["cad", "generate", "fixture"], env=self.env(), stdout=io.StringIO(),
+                    ["cad", "generate", "fixture", "--openscad", str(self._fake_openscad())],
+                    env=self.env(), stdout=io.StringIO(),
                     stderr=stderr, cad_generate_func=failure,
                 )
                 self.assertEqual(rc, 4)
@@ -741,7 +853,8 @@ class CadCliTests(unittest.TestCase):
     def test_generation_interrupt_returns_four_without_traceback(self):
         stderr = io.StringIO()
         rc = main(
-            ["cad", "generate", "fixture"], env=self.env(), stdout=io.StringIO(),
+            ["cad", "generate", "fixture", "--openscad", str(self._fake_openscad())],
+            env=self.env(), stdout=io.StringIO(),
             stderr=stderr,
             cad_generate_func=lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()),
         )

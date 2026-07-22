@@ -15,6 +15,7 @@ from plamp.cad_generation import (
     load_job_log,
     load_run,
     prepare_source,
+    resolve_openscad,
     resolve_part,
 )
 from plamp.cad_recipes import RenderJob, RenderPlan, Selection
@@ -115,6 +116,105 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(resolve_part("fixture", self.repo), self.scad)
         self.assertEqual(resolve_part("things/fixture/fixture.scad", self.repo), self.scad)
 
+    def test_resolve_openscad_honors_strict_override_precedence(self):
+        explicit = self.root / "explicit"
+        env_bin = self.root / "env-bin"
+        path_bin = self.root / "path-bin"
+        for executable in (explicit, env_bin, path_bin):
+            executable.write_text("#!/bin/sh\n")
+            executable.chmod(0o755)
+        which = lambda name: {"named": str(explicit), "openscad": str(path_bin)}.get(name)
+
+        self.assertEqual(
+            resolve_openscad(str(explicit), env={"OPENSCAD_BIN": str(env_bin)},
+                             system="Linux", which=which, home=self.root),
+            explicit,
+        )
+        self.assertEqual(
+            resolve_openscad("named", env={"OPENSCAD_BIN": str(env_bin)},
+                             system="Linux", which=which, home=self.root),
+            explicit,
+        )
+        self.assertEqual(
+            resolve_openscad(None, env={"OPENSCAD_BIN": str(env_bin)},
+                             system="Linux", which=which, home=self.root),
+            env_bin,
+        )
+        self.assertEqual(
+            resolve_openscad(None, env={}, system="Linux", which=which, home=self.root),
+            path_bin,
+        )
+
+    def test_resolve_openscad_invalid_override_fails_without_fallback(self):
+        fallback = self.root / "fallback"
+        fallback.write_text("#!/bin/sh\n")
+        fallback.chmod(0o755)
+        which = lambda _name: str(fallback)
+        for explicit, env, expected in (
+            (str(self.root / "missing"), {}, "--openscad"),
+            ("missing-command", {}, "--openscad"),
+            (None, {"OPENSCAD_BIN": str(self.root / "missing")}, "OPENSCAD_BIN"),
+        ):
+            with self.subTest(explicit=explicit, env=env), self.assertRaisesRegex(
+                FileNotFoundError, expected
+            ):
+                resolve_openscad(explicit, env=env, system="Linux",
+                                 which=(lambda name: None if "missing" in name else which(name)),
+                                 home=self.root)
+
+    def test_resolve_openscad_path_lookup_uses_injected_environment(self):
+        binary_dir = self.root / "bin"
+        binary_dir.mkdir()
+        executable = binary_dir / "openscad"
+        executable.write_text("#!/bin/sh\n")
+        executable.chmod(0o755)
+
+        self.assertEqual(
+            resolve_openscad(
+                None,
+                env={"PATH": str(binary_dir)},
+                system="Plan9",
+                home=self.root,
+            ),
+            executable,
+        )
+
+    def test_resolve_openscad_uses_platform_fallbacks_in_order(self):
+        darwin_system = Path("/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD")
+        darwin_user = self.root / "Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
+        linux_paths = [
+            Path("/usr/bin/openscad"), Path("/usr/local/bin/openscad"),
+            Path("/snap/bin/openscad"),
+            Path("/var/lib/flatpak/exports/bin/org.openscad.OpenSCAD"),
+            self.root / ".local/share/flatpak/exports/bin/org.openscad.OpenSCAD",
+        ]
+        with mock.patch("plamp.cad_generation._is_executable",
+                        side_effect=lambda path: Path(path) == darwin_system):
+            self.assertEqual(resolve_openscad(None, env={}, system="Darwin",
+                                              which=lambda _name: None, home=self.root),
+                             darwin_system)
+        with mock.patch("plamp.cad_generation._is_executable",
+                        side_effect=lambda path: Path(path) == darwin_user):
+            self.assertEqual(resolve_openscad(None, env={}, system="Darwin",
+                                              which=lambda _name: None, home=self.root),
+                             darwin_user)
+        for expected in linux_paths:
+            with self.subTest(expected=expected), mock.patch(
+                "plamp.cad_generation._is_executable",
+                side_effect=lambda path, expected=expected: Path(path) == expected,
+            ):
+                self.assertEqual(resolve_openscad(None, env={}, system="Linux",
+                                                  which=lambda _name: None, home=self.root),
+                                 expected)
+
+    def test_resolve_openscad_missing_or_unsupported_is_humane(self):
+        for system in ("Linux", "Plan9"):
+            with self.subTest(system=system), mock.patch(
+                "plamp.cad_generation._is_executable", return_value=False
+            ), self.assertRaisesRegex(FileNotFoundError, "--openscad.*OPENSCAD_BIN"):
+                resolve_openscad(None, env={}, system=system,
+                                 which=lambda _name: None, home=self.root)
+
     def test_clean_source_is_archived_and_ignores_later_unrelated_dirt(self):
         unrelated = self.repo / "notes.txt"
         unrelated.write_text("dirty")
@@ -196,6 +296,44 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(archived.read_text(), "cube(1);\n")
         self.assertEqual(Path(manifest["jobs"][0]["command"][-1]), archived)
 
+    def test_commit_revision_mode_engraves_resolved_short_hash(self):
+        old_commit = self.commit
+        self.scad.write_text("cube(2);\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "second"], check=True)
+
+        snapshot = prepare_source(
+            self.repo, self.scad, old_commit, revision_is_commit=True
+        )
+        short = subprocess.run(
+            ["git", "-C", str(self.repo), "rev-parse", "--short", old_commit],
+            check=True, text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+        self.assertEqual(snapshot.scad_path.read_text(), "cube(1);\n")
+        self.assertEqual(snapshot.revision_label, short)
+        self.assertNotEqual(snapshot.revision_label, old_commit)
+        result = self.generate(snapshot=snapshot)
+        manifest = load_run(result.run_dir)
+        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertEqual(archived.read_text(), "cube(1);\n")
+        self.assertEqual(manifest["source"]["revision"], short)
+        self.assertIn(f"-{short}-", manifest["run_id"])
+        self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
+        self.assertNotIn(old_commit, manifest["run_id"])
+
+    def test_literal_revision_keeps_label_for_committed_and_dirty_sources(self):
+        head = prepare_source(self.repo, self.scad, "HEAD", revision_is_commit=False)
+        self.addCleanup(lambda: head.cleanup_root and __import__("shutil").rmtree(head.cleanup_root))
+        self.assertEqual(head.full_commit, self.commit)
+        self.assertEqual(head.revision_label, "HEAD")
+
+        self.scad.write_text("cube(3);\n")
+        dirty = prepare_source(self.repo, self.scad, "fit-test-1", revision_is_commit=False)
+        self.addCleanup(lambda: dirty.cleanup_root and __import__("shutil").rmtree(dirty.cleanup_root))
+        self.assertTrue(dirty.dirty)
+        self.assertEqual(dirty.revision_label, "fit-test-1")
+        self.assertEqual(dirty.scad_path.read_text(), "cube(3);\n")
+
     def test_default_and_explicit_output_locations(self):
         result = self.generate()
         self.assertEqual(result.run_dir.parent, self.data / "cad" / "prints" / "fixture")
@@ -239,14 +377,15 @@ class CadGenerationTests(unittest.TestCase):
         result = self.generate()
         manifest = load_run(result.run_dir)
         command = manifest["jobs"][0]["command"]
-        self.assertEqual(command[0], str(self.fake))
-        self.assertEqual(command[1], "-o")
-        self.assertEqual(command[-1], str(result.run_dir / "source" / "things" / "fixture" / "fixture.scad"))
-        defines = [command[index + 1] for index, item in enumerate(command) if item == "-D"]
-        self.assertEqual(defines, [
-            f'revision_string="{self.commit[:7]}"', 'view="first"', "count=1",
-            'label="a b"', "enabled=true", "quality=$preview ? 2 : 20",
-        ])
+        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        expected = [
+            str(self.fake), "-o", str(result.run_dir / "artifacts" / ".first--aaaaaaaaaaa1.tmp.stl"),
+            "-D", f'revision_string="{self.commit[:7]}"',
+            "-D", 'view="first"', "-D", "count=1", "-D", 'label="a b"',
+            "-D", "enabled=true", "-D", "quality=$preview ? 2 : 20",
+            "--export-format", "asciistl", str(archived),
+        ]
+        self.assertEqual(command, expected)
         self.assertEqual(json.loads(self.argv_file.read_text()), command[1:])
 
     def test_output_is_streamed_logged_and_statistics_are_extracted(self):

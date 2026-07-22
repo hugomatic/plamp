@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import secrets
@@ -17,7 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
-from typing import IO
+from typing import IO, Callable
 
 from plamp.cad_recipes import RenderJob, RenderPlan, plan_as_dict, serialize_scad_value
 
@@ -74,6 +75,86 @@ def resolve_part(part: str | os.PathLike[str], repo_root: str | os.PathLike[str]
     raise FileNotFoundError(f"CAD part not found: {part}")
 
 
+def _is_executable(path: str | os.PathLike[str]) -> bool:
+    candidate = Path(path)
+    return candidate.is_file() and os.access(candidate, os.X_OK)
+
+
+def _selected_executable(
+    value: str, *, which: Callable[[str], str | None]
+) -> Path | None:
+    if os.sep in value or (os.altsep is not None and os.altsep in value):
+        candidate = Path(value).expanduser()
+        return candidate if _is_executable(candidate) else None
+    located = which(value)
+    if located is None:
+        return None
+    candidate = Path(located)
+    return candidate if _is_executable(candidate) else None
+
+
+def resolve_openscad(
+    explicit: str | os.PathLike[str] | None,
+    *,
+    env: Mapping[str, str] = os.environ,
+    system: str | None = None,
+    which: Callable[[str], str | None] = shutil.which,
+    home: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Resolve OpenSCAD using explicit, environment, PATH, then platform paths."""
+
+    def locate(command: str) -> str | None:
+        if which is shutil.which:
+            return shutil.which(command, path=env.get("PATH"))
+        return which(command)
+
+    if explicit is not None:
+        value = os.fspath(explicit)
+        candidate = _selected_executable(value, which=locate) if value else None
+        if candidate is None:
+            raise FileNotFoundError(
+                f"OpenSCAD selected by --openscad is not executable: {value!r}"
+            )
+        return candidate
+
+    if "OPENSCAD_BIN" in env:
+        value = env["OPENSCAD_BIN"]
+        candidate = _selected_executable(value, which=locate) if value else None
+        if candidate is None:
+            raise FileNotFoundError(
+                f"OpenSCAD selected by OPENSCAD_BIN is not executable: {value!r}"
+            )
+        return candidate
+
+    located = locate("openscad")
+    if located is not None and _is_executable(located):
+        return Path(located)
+
+    user_home = Path(home) if home is not None else Path.home()
+    platform_name = system if system is not None else platform.system()
+    if platform_name == "Darwin":
+        fallbacks = (
+            Path("/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"),
+            user_home / "Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+        )
+    elif platform_name == "Linux":
+        fallbacks = (
+            Path("/usr/bin/openscad"),
+            Path("/usr/local/bin/openscad"),
+            Path("/snap/bin/openscad"),
+            Path("/var/lib/flatpak/exports/bin/org.openscad.OpenSCAD"),
+            user_home / ".local/share/flatpak/exports/bin/org.openscad.OpenSCAD",
+        )
+    else:
+        fallbacks = ()
+    for candidate in fallbacks:
+        if _is_executable(candidate):
+            return candidate
+    raise FileNotFoundError(
+        "OpenSCAD executable not found; use --openscad or set OPENSCAD_BIN"
+    )
+
+
 def _hash_tree(root: Path) -> str:
     digest = hashlib.sha256()
     for path in sorted(item for item in root.rglob("*") if item.is_file()):
@@ -99,6 +180,8 @@ def prepare_source(
     repo_root: str | os.PathLike[str],
     scad_path: str | os.PathLike[str],
     revision: str | None = None,
+    *,
+    revision_is_commit: bool = False,
 ) -> SourceSnapshot:
     """Return an archived clean part, or an explicitly labelled dirty source."""
 
@@ -135,14 +218,19 @@ def prepare_source(
     selected_commit = commit
     revision_label = commit[:7]
     if revision is not None and revision.strip():
-        revision_label = revision.strip()
+        requested_revision = revision.strip()
+        revision_label = requested_revision
         try:
             selected_commit = _git(
-                root, "rev-parse", "--verify", f"{revision_label}^{{commit}}"
+                root, "rev-parse", "--verify", f"{requested_revision}^{{commit}}"
             )
         except subprocess.CalledProcessError:
+            if revision_is_commit:
+                raise ValueError(f"invalid committed CAD revision: {requested_revision}") from None
             # Non-Git labels remain valid for explicitly labelled clean renders.
             selected_commit = commit
+        if revision_is_commit:
+            revision_label = _git(root, "rev-parse", "--short", selected_commit)
     cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-source-"))
     try:
         archive = subprocess.run(
@@ -355,7 +443,7 @@ def _command(
         command.extend(["-D", f"{name}={serialize_scad_value(value)}"])
     for name, expression in job.raw_defines.items():
         command.extend(["-D", f"{name}={expression}"])
-    command.append(str(source))
+    command.extend(["--export-format", "asciistl", str(source)])
     return command
 
 

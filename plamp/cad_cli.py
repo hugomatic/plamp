@@ -20,6 +20,7 @@ from plamp.cad_generation import (
     load_job_log,
     load_run,
     prepare_source,
+    resolve_openscad,
     resolve_part,
 )
 from plamp.cad_metadata import CadDiagnostic, CadMetadataError, parse_cad_document
@@ -53,7 +54,9 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--view-define", action="append", default=[], metavar="VIEW:NAME=EXPR"
     )
-    parser.add_argument("--revision", help="revision label or committed revision")
+    parser.add_argument(
+        "--revision", metavar="LABEL", help="literal revision engraving label"
+    )
 
 
 def add_cad_parser(
@@ -88,10 +91,27 @@ def add_cad_parser(
     )
     menu.add_argument("--revision")
     menu.add_argument("--output", type=Path)
-    menu.add_argument("--openscad", default="openscad")
+    menu.add_argument("--openscad", default=None)
     menu.add_argument("--json", action="store_true")
 
-    generate = actions.add_parser("generate")
+    generate = actions.add_parser(
+        "generate",
+        description=(
+            "Generate STL artifacts directly. Selections are mutually exclusive. "
+            "Choose --preset or repeatable --view. Repeatable --define NAME=EXPR and "
+            "--view-define VIEW:NAME=EXPR use later wins precedence."
+        ),
+        epilog=(
+            "Source and revision: use --revision LABEL for a literal engraving; "
+            "dirty source is archived from the working tree. The historical "
+            "target_directory commit form archives that commit and engraves its "
+            "short hash. Output: the default is a managed archive; --output DIR "
+            "selects a directory. Preview: --preview inserts render_fn=24 and "
+            "render_text=false before explicit definitions, so explicit values "
+            "override them. OpenSCAD resolution order is --openscad, OPENSCAD_BIN, "
+            "PATH, then platform fallback paths."
+        ),
+    )
     generate.add_argument("part")
     _selection_arguments(generate)
     generate.add_argument(
@@ -99,8 +119,8 @@ def add_cad_parser(
         action="store_true",
         help="disable rendered text and use render_fn=24",
     )
-    generate.add_argument("--output", type=Path)
-    generate.add_argument("--openscad", default="openscad")
+    generate.add_argument("--output", type=Path, metavar="DIR")
+    generate.add_argument("--openscad", default=None)
     generate.add_argument("--json", action="store_true")
     generate.add_argument("legacy_output", nargs="?", metavar="target_directory")
     generate.add_argument("legacy_commit", nargs="?", metavar="commit")
@@ -130,6 +150,7 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "resolve_part": resolve_part,
         "parse_document": parse_cad_document,
         "prepare_source": prepare_source,
+        "resolve_openscad": resolve_openscad,
         "build_plan": build_render_plan,
         "generate": generate_plan,
         "list_runs": list_runs,
@@ -240,7 +261,7 @@ def _selection(
     )
     raw_defines = []
     if getattr(args, "preview", False):
-        raw_defines.extend(("render_text=false", "render_fn=24"))
+        raw_defines.extend(("render_fn=24", "render_text=false"))
     raw_defines.extend(getattr(args, "define", []) or [])
     return Selection(
         preset=base.preset,
@@ -292,7 +313,16 @@ def _with_plan(
     )
     if allow_dirty and revision is None:
         revision = "working-tree-plan"
-    snapshot = deps["prepare_source"](context.root, source, revision)
+    snapshot = deps["prepare_source"](
+        context.root,
+        source,
+        revision,
+        revision_is_commit=(
+            getattr(args, "action", None) == "generate"
+            and legacy_commit is not None
+            and getattr(args, "revision", None) is None
+        ),
+    )
     snapshot_returned = False
     try:
         document = deps["parse_document"](snapshot.scad_path)
@@ -499,7 +529,7 @@ def _generate(
             data_dir=context.data_dir,
             scad_path=source,
             output=_generation_output(args),
-            openscad=getattr(args, "openscad", "openscad"),
+            openscad=deps["resolve_openscad"](getattr(args, "openscad", None)),
             revision=_generation_revision(args),
             metadata=document.metadata_snapshot,
             stdout=stream,
