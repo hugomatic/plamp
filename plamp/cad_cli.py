@@ -24,6 +24,7 @@ from plamp.cad_generation import (
 )
 from plamp.cad_metadata import CadDiagnostic, CadMetadataError, parse_cad_document
 from plamp.cad_recipes import Selection, build_render_plan, plan_as_dict
+from plamp.cad_scaffold import create_part, discover_templates
 from plamp.context import RuntimeContext
 
 
@@ -57,6 +58,12 @@ def add_cad_parser(
 
     cad = subparsers.add_parser("cad", help="inspect and generate local CAD parts")
     actions = cad.add_subparsers(dest="action", required=True)
+
+    new = actions.add_parser("new")
+    new.add_argument("part", nargs="?")
+    new.add_argument("--template")
+    new.add_argument("--list-templates", action="store_true")
+    new.add_argument("--json", action="store_true")
 
     for action in ("views", "validate"):
         command = actions.add_parser(action)
@@ -123,6 +130,8 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "list_runs": list_runs,
         "load_run": load_run,
         "load_job_log": load_job_log,
+        "discover_templates": discover_templates,
+        "create_part": create_part,
     }
     if overrides:
         values.update(overrides)
@@ -519,6 +528,46 @@ def run_cad_command(
 
     deps = _dependencies(dependencies)
     try:
+        if args.action == "new":
+            if args.list_templates:
+                if args.part is not None or args.template is not None:
+                    raise ValueError(
+                        "--list-templates cannot be combined with PART or --template"
+                    )
+                templates = deps["discover_templates"](context.root)
+                value = {
+                    "templates": [
+                        {
+                            "name": item.name,
+                            "path": item.path.relative_to(context.root).as_posix(),
+                        }
+                        for item in templates
+                    ]
+                }
+                if args.json:
+                    _json_line(stdout, value)
+                else:
+                    for item in value["templates"]:
+                        stdout.write(f"{item['name']} {item['path']}\n")
+                return 0
+            if args.part is None:
+                raise ValueError("cad new requires PART unless --list-templates is used")
+            template = args.template or "cad"
+            created = deps["create_part"](context.root, args.part, template)
+            value = {
+                "part": created.part,
+                "template": created.template,
+                "directory": created.directory.relative_to(context.root).as_posix(),
+                "scad_path": created.scad_path.relative_to(context.root).as_posix(),
+                "metadata_valid": True,
+            }
+            if args.json:
+                _json_line(stdout, value)
+            else:
+                stdout.write(f"{value['scad_path']}\n")
+                stdout.write(f"plamp cad validate {created.part} --json\n")
+            return 0
+
         if args.action == "menu" and args.json:
             raise ValueError("cad menu does not support --json")
         if args.action in {"views", "validate"}:
@@ -615,6 +664,15 @@ def run_cad_command(
         _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
         return 4 if archive_action else 2
     except (OSError, KeyError, RuntimeError, subprocess.SubprocessError) as error:
+        if args.action == "new":
+            diagnostic = _diagnostic(
+                error,
+                str(getattr(args, "part", "cad")),
+                code="CAD200",
+                kind="invalid_selection",
+            )
+            _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
+            return 2
         diagnostic = _diagnostic(
             error,
             str(getattr(args, "part", getattr(args, "run", "cad"))),

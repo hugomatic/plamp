@@ -11,6 +11,7 @@ from pathlib import Path
 
 from plamp.cad_cli import add_cad_parser, run_cad_command
 from plamp.cad_generation import generate_plan
+from plamp.cad_scaffold import CadTemplate, CreatedPart
 from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
@@ -64,8 +65,127 @@ class CadCliTests(unittest.TestCase):
         with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
             main(["cad", "--help"], env=self.env())
         self.assertEqual(caught.exception.code, 0)
-        for command in ("views", "validate", "plan", "menu", "generate", "runs", "show", "log"):
+        for command in ("new", "views", "validate", "plan", "menu", "generate", "runs", "show", "log"):
             self.assertIn(command, stdout.getvalue())
+
+    def test_new_lists_templates_as_repository_relative_json(self):
+        parser = build_parser()
+        stdout = io.StringIO()
+        rc = run_cad_command(
+            parser.parse_args(["cad", "new", "--list-templates", "--json"]),
+            self.context,
+            io.StringIO(),
+            stdout,
+            io.StringIO(),
+            {"discover_templates": lambda root: (
+                CadTemplate("cad", root / "things" / "3d_template" / "cad.scad"),
+            )},
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), {
+            "templates": [{"name": "cad", "path": "things/3d_template/cad.scad"}],
+        })
+
+    def test_new_creates_default_and_named_templates_as_json(self):
+        parser = build_parser()
+        calls = []
+
+        def create(root, part, template):
+            calls.append((root, part, template))
+            directory = root / "things" / part
+            return CreatedPart(part, template, directory, directory / f"{part}.scad")
+
+        for argv, expected in (
+            (["cad", "new", "pump_bracket", "--json"], ("pump_bracket", "cad")),
+            (["cad", "new", "access_cover", "--template", "flat_plate", "--json"],
+             ("access_cover", "flat_plate")),
+        ):
+            with self.subTest(argv=argv):
+                stdout = io.StringIO()
+                rc = run_cad_command(
+                    parser.parse_args(argv), self.context, io.StringIO(), stdout,
+                    io.StringIO(), {"create_part": create},
+                )
+                part, template = expected
+                self.assertEqual(rc, 0)
+                self.assertEqual(json.loads(stdout.getvalue()), {
+                    "part": part,
+                    "template": template,
+                    "directory": f"things/{part}",
+                    "scad_path": f"things/{part}/{part}.scad",
+                    "metadata_valid": True,
+                })
+        self.assertEqual(calls, [
+            (self.root, "pump_bracket", "cad"),
+            (self.root, "access_cover", "flat_plate"),
+        ])
+
+    def test_new_text_prints_scad_path_and_exact_validation_command(self):
+        parser = build_parser()
+        created = CreatedPart(
+            "pump_bracket",
+            "cad",
+            self.root / "things" / "pump_bracket",
+            self.root / "things" / "pump_bracket" / "pump_bracket.scad",
+        )
+        stdout = io.StringIO()
+
+        rc = run_cad_command(
+            parser.parse_args(["cad", "new", "pump_bracket"]), self.context,
+            io.StringIO(), stdout, io.StringIO(),
+            {"create_part": lambda *args: created},
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            stdout.getvalue(),
+            "things/pump_bracket/pump_bracket.scad\n"
+            "plamp cad validate pump_bracket --json\n",
+        )
+
+    def test_new_usage_errors_are_structured_json_and_do_not_create(self):
+        parser = build_parser()
+        calls = []
+        cases = (
+            ["cad", "new", "--json"],
+            ["cad", "new", "part", "--list-templates", "--json"],
+            ["cad", "new", "--list-templates", "--template", "flat_plate", "--json"],
+        )
+        for argv in cases:
+            with self.subTest(argv=argv):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                rc = run_cad_command(
+                    parser.parse_args(argv), self.context, io.StringIO(), stdout, stderr,
+                    {
+                        "create_part": lambda *args: calls.append(args),
+                        "discover_templates": lambda root: (),
+                    },
+                )
+                diagnostic = json.loads(stdout.getvalue())[0]
+                self.assertEqual(rc, 2)
+                self.assertEqual(diagnostic["code"], "CAD200")
+                self.assertEqual(diagnostic["kind"], "invalid_selection")
+                self.assertNotIn("Traceback", stderr.getvalue())
+        self.assertEqual(calls, [])
+
+    def test_new_creation_error_is_structured_and_has_no_traceback(self):
+        parser = build_parser()
+        stdout, stderr = io.StringIO(), io.StringIO()
+        rc = run_cad_command(
+            parser.parse_args(["cad", "new", "pump_bracket", "--json"]),
+            self.context,
+            io.StringIO(),
+            stdout,
+            stderr,
+            {"create_part": lambda *args: (_ for _ in ()).throw(
+                ValueError("unknown CAD template 'wrong'; available: cad")
+            )},
+        )
+
+        self.assertEqual(rc, 2)
+        self.assertIn("available: cad", json.loads(stdout.getvalue())[0]["message"])
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_views_resolves_part_name_and_path_and_keeps_assembly_last(self):
         for part in ("fixture", "things/fixture/fixture.scad"):
