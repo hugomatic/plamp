@@ -975,8 +975,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "c13_region_x = outlet_right_x - c13_group_w / 2;",
             "service_group_x = c13_region_x;",
             "assert(c13_hardware_x == 67 && c13_hardware_y == 58,",
-            "assert(service_left_x == 56.5 && service_right_x == 85.5",
-            " && service_top_y == 17 && service_bottom_y == 3,",
+            "assert(service_brand_x == 56 && service_revision_x == 86",
+            " && service_top_y == 17.5 && service_com_x == 56.5",
+            " && usb_c_panel_x == 85.5 && service_bottom_y == 2.5,",
             "assert(service_region_left_x == c13_region_left_x",
             " && service_region_right_x == c13_region_right_x,",
             "assert(service_region_left_x - dc_region_right_x == panel_region_gap,",
@@ -993,94 +994,85 @@ class ThingsCadScriptsTest(unittest.TestCase):
             top_panel,
         )
 
-    def test_plamp8_service_region_is_one_equal_cell_grid(self):
+    def test_plamp8_service_region_has_three_separate_pockets(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
 
         for equation in (
-            "service_group_x = c13_region_x;",
-            "service_group_y = c13_hardware_y - c13_group_h / 2",
-            "- panel_region_gap - service_group_h / 2;",
-            "service_cell_w = service_group_w / 2;",
-            "service_cell_h = service_group_h / 2;",
-            "service_left_x = service_group_x - service_cell_w / 2;",
-            "service_right_x = service_group_x + service_cell_w / 2;",
-            "service_top_y = service_group_y + service_cell_h / 2;",
-            "service_bottom_y = service_group_y - service_cell_h / 2;",
+            "service_pocket_gap = panel_region_gap;",
+            "service_pocket_h = (service_group_h - service_pocket_gap) / 2;",
+            "service_top_pocket_w = (service_group_w - service_pocket_gap) / 2;",
+            "service_top_pocket_x_offset =\n    (service_top_pocket_w + service_pocket_gap) / 2;",
+            "service_row_y_offset = (service_pocket_h + service_pocket_gap) / 2;",
+            "service_bottom_content_x_offset = service_group_w / 4;",
+            "service_brand_x = service_group_x - service_top_pocket_x_offset;",
+            "service_revision_x = service_group_x + service_top_pocket_x_offset;",
+            "service_com_x = service_group_x - service_bottom_content_x_offset;",
+            "usb_c_panel_x = service_group_x + service_bottom_content_x_offset;",
+            "service_top_y = service_group_y + service_row_y_offset;",
+            "service_bottom_y = service_group_y - service_row_y_offset;",
+            "usb_c_panel_y = service_bottom_y;",
         ):
             with self.subTest(equation=equation):
                 self.assertIn(equation, source)
 
-        self.assertIn("module service_group_negative()", source)
-        self.assertIn("module usb_c_connector_negative()", source)
-        service_negative = (
-            compact_scad(scad_module_body(source, "service_group_negative"))
-            if "module service_group_negative()" in source
-            else ""
-        )
-        usb_hardware = (
-            compact_scad(scad_module_body(source, "usb_c_connector_negative"))
-            if "module usb_c_connector_negative()" in source
-            else ""
-        )
-        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
-        usb_coupon = compact_scad(scad_module_body(source, "usb_c_panel_negative"))
-        usb_coupon_unit = compact_scad(scad_module_body(source, "usb_c_panel_unit"))
-
-        self.assertEqual(top_panel.count("service_group_negative();"), 1)
-        self.assertIn("label_pocket(service_group_w,service_group_h);", service_negative)
-        self.assertNotIn("label_pocket", usb_hardware)
-        self.assertIn("rounded_rect_cutout(usb_c_cutout_w,usb_c_cutout_h,usb_c_cutout_r);", usb_hardware)
-        self.assertIn("usb_c_panel_rim = 3;", source)
-        self.assertIn(
-            "usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;", source
-        )
-        self.assertIn(
-            "usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;", source
-        )
-        self.assertIn(
-            "service_group_negative();translate([service_cell_w/2,-service_cell_h/2,0])"
-            "usb_c_connector_negative();",
-            usb_coupon,
-        )
-        self.assertIn("fit_plate(usb_c_panel_w,usb_c_panel_h);", usb_coupon_unit)
-        self.assertIn(
-            "assert(usb_coupon_pocket_inside_plate,"
-            '"USBcouponmustretainarimaroundtheservicepocket");',
-            compact,
-        )
-        self.assertIn(
-            "assert(usb_coupon_connector_matches_service_offset,"
-            '"USBcouponconnectormustmatchtheproductionservice-celloffset");',
-            compact,
-        )
-        self.assertIn(
-            "usb_coupon_pocket_inside_plate=service_group_w+2*usb_c_panel_rim"
-            "<=usb_c_panel_w&&service_group_h+2*usb_c_panel_rim<=usb_c_panel_h;",
-            compact,
-        )
-        self.assertIn(
-            "usb_coupon_connector_matches_service_offset=service_cell_w/2=="
-            "service_right_x-service_group_x&&-service_cell_h/2=="
-            "service_bottom_y-service_group_y;",
-            compact,
-        )
-        self.assertIn(
-            "assert(service_cell_w*2==service_group_w&&"
-            "service_cell_h*2==service_group_h,"
-            '"servicecellsmustexactlytiletheregion");',
-            compact,
-        )
-        for contract in (
-            'translate([service_left_x,service_top_y,0])flush_label(top_panel_brand_text,top_panel_brand_font);',
-            "translate([service_right_x,service_top_y,0])flush_revision_label();",
-            'translate([service_left_x,service_bottom_y,0])flush_label("COM",5);',
-            "translate([service_right_x,service_bottom_y,0])usb_c_connector_negative();",
-            "assert(c13_hardware_inside_region,\"C13hardwaremustremaininsideitsregion\");",
-            "assert(usb_hardware_inside_region,\"USBhardwaremustremaininsideitsservicecell\");",
+        pockets = compact_scad(scad_module_body(source, "service_group_negative"))
+        for call in (
+            "service_brand_pocket_negative();",
+            "service_revision_pocket_negative();",
+            "service_com_usb_pocket_negative();",
         ):
-            with self.subTest(contract=contract):
-                self.assertIn(contract, compact)
+            self.assertIn(call, pockets)
+        self.assertNotIn("label_pocket(service_group_w,service_group_h);", compact)
+        self.assertIn(
+            "translate([-service_top_pocket_x_offset,service_row_y_offset,0])"
+            "label_pocket(service_top_pocket_w,service_pocket_h);",
+            compact_scad(scad_module_body(source, "service_brand_pocket_negative")),
+        )
+        self.assertIn(
+            "translate([service_top_pocket_x_offset,service_row_y_offset,0])"
+            "label_pocket(service_top_pocket_w,service_pocket_h);",
+            compact_scad(scad_module_body(source, "service_revision_pocket_negative")),
+        )
+        self.assertIn(
+            "translate([0,-service_row_y_offset,0])"
+            "label_pocket(service_group_w,service_pocket_h);",
+            compact_scad(scad_module_body(source, "service_com_usb_pocket_negative")),
+        )
+
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        sub_panel = compact_scad(scad_module_body(source, "sub_panel_8ch_negative"))
+        coupon = compact_scad(scad_module_body(source, "usb_c_panel_negative"))
+        self.assertIn("service_group_negative();", coupon)
+        self.assertIn(
+            "translate([service_bottom_content_x_offset,-service_row_y_offset,0])"
+            "usb_c_connector_negative();",
+            coupon,
+        )
+        self.assertIn(
+            "translate([usb_c_panel_x,usb_c_panel_y,0])"
+            "usb_c_connector_negative();",
+            top_panel,
+        )
+        self.assertIn(
+            "translate([usb_c_panel_x,usb_c_panel_y,0])"
+            "sub_panel_usb_c_negative();",
+            sub_panel,
+        )
+        self.assertIn(
+            "assert(usb_top_sub_panel_aligned,"
+            '"USBtopandsub-panelcutoutsmustshareonecenter");',
+            compact,
+        )
+        for label_call in (
+            "translate([service_brand_x,service_top_y,0])"
+            "flush_label(top_panel_brand_text,top_panel_brand_font);",
+            "translate([service_revision_x,service_top_y,0])"
+            "flush_revision_label();",
+            'translate([service_com_x,service_bottom_y,0])flush_label("COM",5);',
+        ):
+            self.assertIn(label_call, top_panel)
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
@@ -1154,7 +1146,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "socket_rim_relief_below_separators=socket_rim_relief_top_y"
             "<=dc_region_bottom_y;",
             "c13_service_cutters_clear_separator=c13_hardware_y-c13_cutout_h/2>="
-            "c13_region_bottom_y&&service_bottom_y+max(usb_c_cutout_h/2,"
+            "c13_region_bottom_y&&usb_c_panel_y+max(usb_c_cutout_h/2,"
             "usb_c_screw_head_d/2)<=service_region_top_y;",
         ):
             with self.subTest(bounds=bounds):

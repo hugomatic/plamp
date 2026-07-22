@@ -431,20 +431,26 @@ c13_hardware_y = 58;
 service_group_x = c13_region_x;
 service_group_y = c13_hardware_y - c13_group_h / 2
     - panel_region_gap - service_group_h / 2;
-service_cell_w = service_group_w / 2;
-service_cell_h = service_group_h / 2;
-service_left_x = service_group_x - service_cell_w / 2;
-service_right_x = service_group_x + service_cell_w / 2;
-service_top_y = service_group_y + service_cell_h / 2;
-service_bottom_y = service_group_y - service_cell_h / 2;
+service_pocket_gap = panel_region_gap;
+service_pocket_h = (service_group_h - service_pocket_gap) / 2;
+service_top_pocket_w = (service_group_w - service_pocket_gap) / 2;
+service_top_pocket_x_offset =
+    (service_top_pocket_w + service_pocket_gap) / 2;
+service_row_y_offset = (service_pocket_h + service_pocket_gap) / 2;
+service_bottom_content_x_offset = service_group_w / 4;
+service_brand_x = service_group_x - service_top_pocket_x_offset;
+service_revision_x = service_group_x + service_top_pocket_x_offset;
+service_com_x = service_group_x - service_bottom_content_x_offset;
+usb_c_panel_x = service_group_x + service_bottom_content_x_offset;
+service_top_y = service_group_y + service_row_y_offset;
+service_bottom_y = service_group_y - service_row_y_offset;
+usb_c_panel_y = service_bottom_y;
 usb_coupon_pocket_inside_plate =
     service_group_w + 2 * usb_c_panel_rim <= usb_c_panel_w
     && service_group_h + 2 * usb_c_panel_rim <= usb_c_panel_h;
-usb_coupon_connector_matches_service_offset =
-    service_cell_w / 2 == service_right_x - service_group_x
-    && -service_cell_h / 2 == service_bottom_y - service_group_y;
-usb_c_panel_x = service_right_x;
-usb_c_panel_y = service_bottom_y;
+usb_top_sub_panel_aligned =
+    usb_c_panel_x == service_group_x + service_group_w / 4
+    && usb_c_panel_y == service_group_y - service_row_y_offset;
 sub_panel_usb_support_rib_y =
     usb_c_panel_y - sub_panel_usb_c_cutout_h / 2
     - sub_panel_usb_support_rib_gap
@@ -535,13 +541,13 @@ c13_hardware_inside_region =
     && c13_hardware_y + c13_cutout_h / 2 <= c13_region_top_y;
 usb_hardware_half_w = max(usb_c_cutout_w / 2, usb_c_screw_spacing / 2 + usb_c_screw_head_d / 2);
 usb_hardware_inside_region =
-    service_right_x - usb_hardware_half_w >= service_group_x
-    && service_right_x + usb_hardware_half_w <= service_region_right_x
-    && service_bottom_y - usb_c_cutout_h / 2 >= service_region_bottom_y
-    && service_bottom_y + usb_c_cutout_h / 2 <= service_group_y;
+    usb_c_panel_x - usb_hardware_half_w >= service_group_x
+    && usb_c_panel_x + usb_hardware_half_w <= service_region_right_x
+    && usb_c_panel_y - usb_c_cutout_h / 2 >= service_region_bottom_y
+    && usb_c_panel_y + usb_c_cutout_h / 2 <= service_group_y;
 c13_service_cutters_clear_separator =
     c13_hardware_y - c13_cutout_h / 2 >= c13_region_bottom_y
-    && service_bottom_y + max(usb_c_cutout_h / 2, usb_c_screw_head_d / 2)
+    && usb_c_panel_y + max(usb_c_cutout_h / 2, usb_c_screw_head_d / 2)
         <= service_region_top_y;
 separator_cutters_respect_rib_bounds =
     xt60_screw_nut_envelope_inside_region
@@ -552,7 +558,7 @@ separator_cutters_respect_rib_bounds =
     && c13_service_cutters_clear_separator;
 nutrients_recess_right_x = dc_grid_x + dc_col_spacing + barrel_group_x + barrel_group_w / 2;
 nutrients_recess_bottom_y = dc_grid_y - dc_row_spacing + barrel_group_y - barrel_group_h / 2;
-revision_x = service_left_x;
+revision_x = service_com_x;
 sub_panel_bottom_z = -(plate_t + sub_panel_h);
 panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
 panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
@@ -600,21 +606,23 @@ assert(c13_cutout_w == 28 && c13_screw_spacing == 40,
     "C13 hardware locations must remain unchanged");
 assert(c13_hardware_x == 67 && c13_hardware_y == 58,
     "C13 hardware center must remain at (67, 58)");
-assert(service_left_x == 56.5 && service_right_x == 85.5
-        && service_top_y == 17 && service_bottom_y == 3,
-    "service cell centers must remain fixed below the C13 region");
+assert(service_brand_x == 56 && service_revision_x == 86
+        && service_top_y == 17.5 && service_com_x == 56.5
+        && usb_c_panel_x == 85.5 && service_bottom_y == 2.5,
+    "service pocket content centers must remain fixed");
 assert(service_region_left_x == c13_region_left_x
         && service_region_right_x == c13_region_right_x,
     "service region must align with the C13 rounded region");
 assert(service_region_left_x - dc_region_right_x == panel_region_gap,
     "service region must retain the 2 mm DC gap");
-assert(service_cell_w * 2 == service_group_w
-        && service_cell_h * 2 == service_group_h,
-    "service cells must exactly tile the region");
+assert(service_top_pocket_w * 2 + service_pocket_gap == service_group_w,
+    "top service pockets and gap must exactly span the region");
+assert(service_pocket_h * 2 + service_pocket_gap == service_group_h,
+    "service pocket rows and gap must exactly span the region");
 assert(usb_coupon_pocket_inside_plate,
     "USB coupon must retain a rim around the service pocket");
-assert(usb_coupon_connector_matches_service_offset,
-    "USB coupon connector must match the production service-cell offset");
+assert(usb_top_sub_panel_aligned,
+    "USB top and sub-panel cutouts must share one center");
 assert(dc_hardware_inside_region,
     "DC hardware must remain inside each region");
 assert(c13_hardware_inside_region,
@@ -1119,19 +1127,31 @@ module usb_c_connector_negative() {
             topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
 }
 
+module service_brand_pocket_negative() {
+    translate([-service_top_pocket_x_offset, service_row_y_offset, 0])
+        label_pocket(service_top_pocket_w, service_pocket_h);
+}
+
+module service_revision_pocket_negative() {
+    translate([service_top_pocket_x_offset, service_row_y_offset, 0])
+        label_pocket(service_top_pocket_w, service_pocket_h);
+}
+
+module service_com_usb_pocket_negative() {
+    translate([0, -service_row_y_offset, 0])
+        label_pocket(service_group_w, service_pocket_h);
+}
+
 module service_group_negative() {
-    label_pocket(service_group_w, service_group_h);
+    service_brand_pocket_negative();
+    service_revision_pocket_negative();
+    service_com_usb_pocket_negative();
 }
 
 module usb_c_panel_negative() {
     service_group_negative();
-    translate([service_cell_w / 2, -service_cell_h / 2, 0])
+    translate([service_bottom_content_x_offset, -service_row_y_offset, 0])
         usb_c_connector_negative();
-}
-
-module usb_c_revision_negative() {
-    translate([service_cell_w / 2, service_cell_h / 2, 0])
-        label_pocket(revision_label_w, revision_label_h);
 }
 
 module usb_c_panel_unit(include_revision = true) {
@@ -1139,15 +1159,15 @@ module usb_c_panel_unit(include_revision = true) {
         // Flat coupon: the connector mounts directly under the 3 mm panel.
         fit_plate(usb_c_panel_w, usb_c_panel_h);
         usb_c_panel_negative();
-        if (include_revision)
-            usb_c_revision_negative();
     }
 
-    translate([-service_cell_w / 2, -service_cell_h / 2, 0])
+    translate([-service_top_pocket_x_offset, service_row_y_offset, 0])
+        flush_label(top_panel_brand_text, top_panel_brand_font);
+    translate([-service_bottom_content_x_offset, -service_row_y_offset, 0])
         flush_label("COM", 5);
 
     if (include_revision)
-        translate([service_cell_w / 2, service_cell_h / 2, 0])
+        translate([service_top_pocket_x_offset, service_row_y_offset, 0])
             flush_revision_label();
 }
 
@@ -1254,7 +1274,7 @@ module top_panel_8ch(include_revision = true) {
                     translate([service_group_x, service_group_y, 0])
                         service_group_negative();
 
-                    translate([service_right_x, service_bottom_y, 0])
+                    translate([usb_c_panel_x, usb_c_panel_y, 0])
                         usb_c_connector_negative();
 
                     translate([c13_region_x, c13_hardware_y, 0])
@@ -1283,13 +1303,13 @@ module top_panel_8ch(include_revision = true) {
             translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
                 toggle_state_labels();
 
-        translate([service_left_x, service_bottom_y, 0])
+        translate([service_com_x, service_bottom_y, 0])
             flush_label("COM", 5);
 
         if (include_revision) {
-            translate([service_left_x, service_top_y, 0])
+            translate([service_brand_x, service_top_y, 0])
                 flush_label(top_panel_brand_text, top_panel_brand_font);
-            translate([service_right_x, service_top_y, 0])
+            translate([service_revision_x, service_top_y, 0])
                 flush_revision_label();
         }
     }
