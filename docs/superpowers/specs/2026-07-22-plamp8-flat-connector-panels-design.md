@@ -5,7 +5,7 @@ Status: Approved for implementation planning
 
 ## Purpose
 
-Make the four Plamp8 top-panel connector fit tests easy to discover, name, and print. The public view names will consistently describe panels, and every connector fit-test STL will be a flat, support-free 3 mm plate.
+Make the four Plamp8 top-panel connector fit tests easy to discover, name, and print. The public view names will consistently describe panels, and every connector fit-test STL will contain a flat top-panel coupon plus a matching crop of the production sub-panel.
 
 This work is independent of the proposed human-readable CAD run IDs and duplicate-render handling.
 
@@ -56,6 +56,28 @@ The AC duplex and USB-C coupons already satisfy the flat-plate requirement and n
 
 The user's physical XT60 fit is confirmed. Freeze the existing XT60 fit dimensions and relative layout: the 19 by 12 mm cutout, 25 mm screw spacing, 3.2 mm screw holes, and current XT60-to-toggle spacing and position must not change. Expanding or repositioning the surrounding coupon plate must not move those features relative to one another.
 
+## Paired top-panel and sub-panel coupons
+
+Every connector-panel view produces two disconnected printable parts in one STL:
+
+1. The flat top-panel coupon.
+2. A matching XY-sized crop of the production `sub_panel_8ch()` geometry directly beneath that connector region.
+
+Place the top-panel coupon on the left and the sub-panel crop on the right with `connector_panel_pair_gap = 10` mm between their outer bounds. Both parts begin at Z=0 and retain their normal print orientations. Their XY outlines and dimensions are identical within each view.
+
+Define one authoritative left, right, bottom, and top bound set for each connector-panel view. Use the same bounds to size the top coupon and to crop the sub-panel. Normalize both parts into the standalone fit-view coordinate system before arranging them side by side. Do not duplicate sub-panel holes, ribs, labels, reliefs, nut clearances, or support geometry in coupon-specific modules.
+
+Create each sub-panel coupon by intersecting the actual `sub_panel_8ch()` result with a vertical prism covering the shared XY bounds and the complete sub-panel Z extent. The crop must preserve full production height and all intersecting production features. It is not a flattened alignment plate.
+
+Use these production regions:
+
+- AC: the left AC section, including its production socket opening, switches, reliefs, and any intersecting structure.
+- DC: channel 1, including the confirmed XT60 opening, switch opening, screw features, and left-channel XT60 nut clearance.
+- USB-C: the USB-C service region, including the production sub-panel opening and USB support rib.
+- C13: the C13 inlet region, including its production opening and any intersecting separator structure.
+
+Add explicit assertions that each top/sub pair has identical XY dimensions and that the relevant connector centers map to identical local XY coordinates. A future production-layout change must fail clearly rather than silently misaligning a coupon pair.
+
 ## Internal naming
 
 Rename coupon-specific modules and dimensions where their current names encode the obsolete public view:
@@ -76,6 +98,8 @@ The OpenSCAD Customizer declaration remains the canonical ordered view list. Emb
 
 `plamp cad validate plamp8` must accept the document. `plamp cad views plamp8` and `plamp cad plan plamp8 --preset top-panel-fit` must expose only the canonical connector-panel names. Planning a single `dc_connector_panel` job must still honor `dc_connector_type`; with the repository default it renders the XT60 cutout and mounting holes.
 
+The standalone view wrappers compose the top coupon and production-derived sub-panel crop. Production top-panel and sub-panel modules remain independently printable and unchanged outside the crop operation.
+
 ## Error handling and compatibility
 
 Because the rename is intentionally breaking, no alias layer or migration mechanism is added. The normal CLI unknown-view diagnostic is sufficient. Current workflow documentation and test fixtures must not advertise commands using the removed names.
@@ -94,6 +118,10 @@ Automated source-contract tests must verify:
 - Every recessed rounded pocket has at least 3 mm of plate to each corresponding coupon edge.
 - Derived rim assertions cover offset and multi-pocket panels rather than only comparing nominal widths and heights.
 - The confirmed XT60 cutout, screw-hole, and toggle-spacing constants remain unchanged.
+- Every connector-panel view contains one top coupon and one crop derived from `sub_panel_8ch()`.
+- Each top/sub pair uses one shared XY bound set, has identical width and height, and retains a 10 mm inter-part gap.
+- AC crops the left production section; DC crops channel 1; USB-C and C13 crop their canonical production centers.
+- Top-panel and sub-panel connector centers normalize to the same local XY coordinates.
 - Production top-panel connector cutouts retain their existing dimension and center contracts.
 
 Run `plamp cad validate` and `plamp cad plan` before OpenSCAD. Compile all four connector-panel views through the fast CSG gate and inspect logs for warnings, errors, failed assertions, or empty geometry. Run the complete repository test suite. Full STL rendering may be performed on the user's workstation when local OpenSCAD rendering is too slow; the user will inspect the four coupons for flat build-plate contact and support-free slicing.
@@ -102,6 +130,6 @@ Run `plamp cad validate` and `plamp cad plan` before OpenSCAD. Compile all four 
 
 - Human-readable CAD run IDs, duplicate-render detection, or artifact verification.
 - Changes to connector cutout sizes, fit clearances, labels, or hardware positions.
-- Changes to production enclosure geometry.
+- Changes to production enclosure geometry; the standalone views only intersect existing production sub-panel output.
 - Compatibility aliases for retired view names.
 - Redesigning component floorplan, corner, wall, or assembly test views.
