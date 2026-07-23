@@ -67,10 +67,11 @@ Each nut loads horizontally along X from its connector's rectangular opening:
 - the right nut loads toward positive X;
 - both loading mouths face inward toward the rectangular opening.
 
-The entry slot joins the near side of the nut pocket and terminates there. It
-must not continue through the screw axis or open through the tower's far wall.
-The vertical screw bore remains distinct from the rectangular connector
-opening, preserving the existing material bridge between them.
+The entry tunnel sweeps the full nut width from the rectangular opening into
+the pocket and stops at the screw axis. It must not continue into the far half
+of the tower or open through the tower's far wall. The roof above the tunnel
+keeps the vertical screw bore distinct from the rectangular connector opening,
+preserving the existing surface bridge between them.
 
 The roof retains each nut when the top panel and screws are removed. With the
 screws installed, the nuts carry clamp load into the sub-panel towers and bond

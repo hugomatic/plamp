@@ -1174,6 +1174,18 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(label_call, top_panel)
 
+    def test_plamp8_has_ready_made_panels_preset(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn('"panels": {', source)
+        self.assertIn(
+            '"description": "Printable top and internal sub-panels",', source
+        )
+        self.assertIn(
+            '"items": ["view:top_panel", "view:sub_panel"]', source
+        )
+        self.assertIn('"default_preset": "split-box"', source)
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
@@ -1253,6 +1265,90 @@ class ThingsCadScriptsTest(unittest.TestCase):
             with self.subTest(bounds=bounds):
                 self.assertIn(bounds, compact)
 
+    def test_plamp8_sub_panel_has_full_y_ac_bonding_rib(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        rib = (
+            compact_scad(
+                scad_module_body(source, "sub_panel_ac_bonding_rib_positive")
+            )
+            if "module sub_panel_ac_bonding_rib_positive" in source
+            else ""
+        )
+        positive = compact_scad(scad_module_body(source, "sub_panel_8ch_positive"))
+
+        for definition in (
+            "sub_panel_ac_bonding_rib_w=4;",
+            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+outlet_feature_x+right_ac_x+outlet_feature_x)/2;",
+            "sub_panel_ac_bonding_rib_y0=sub_panel_wall;",
+            "sub_panel_ac_bonding_rib_y1=layout_offset_y+dc_region_bottom_y;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("sub_panel_base_h", rib)
+        self.assertIn("sub_panel_h-sub_panel_base_h", rib)
+        self.assertIn(
+            "sub_panel_ac_bonding_rib_y1-sub_panel_ac_bonding_rib_y0", rib
+        )
+        self.assertIn("sub_panel_ac_bonding_rib_positive();", positive)
+
+    def test_plamp8_sub_panel_ac_socket_exposes_all_terminal_screws(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        cutter = (
+            compact_scad(scad_module_body(source, "sub_panel_socket_negative"))
+            if "module sub_panel_socket_negative" in source
+            else ""
+        )
+        sub_panel = compact_scad(scad_module_body(source, "sub_panel_8ch_negative"))
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+
+        for definition in (
+            "sub_panel_socket_ground_access_w=5;",
+            "sub_panel_socket_ground_access_h=10;",
+            "sub_panel_socket_side_access_w=5;",
+            "sub_panel_socket_side_access_h=25;",
+            "sub_panel_socket_side_access_top_offset=27;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("rect_cutout(sub_panel_socket_w,sub_panel_socket_h);", cutter)
+        self.assertIn(
+            "sub_panel_socket_w/2+sub_panel_socket_ground_access_w/2-boolean_shim/2",
+            cutter,
+        )
+        self.assertIn(
+            "sub_panel_socket_h/2-sub_panel_socket_ground_access_h/2", cutter
+        )
+        self.assertIn(
+            "rect_cutout(sub_panel_socket_ground_access_w+boolean_shim,"
+            "sub_panel_socket_ground_access_h);",
+            cutter,
+        )
+        self.assertIn("for(side=[-1,1])", cutter)
+        self.assertIn(
+            "side*(sub_panel_socket_w/2+sub_panel_socket_side_access_w/2-"
+            "boolean_shim/2)",
+            cutter,
+        )
+        self.assertIn(
+            "sub_panel_socket_h/2-sub_panel_socket_side_access_top_offset-"
+            "sub_panel_socket_side_access_h/2",
+            cutter,
+        )
+        self.assertIn(
+            "rect_cutout(sub_panel_socket_side_access_w+boolean_shim,"
+            "sub_panel_socket_side_access_h);",
+            cutter,
+        )
+        self.assertIn(
+            "translate([x+outlet_feature_x,ac_row_y,plate_t/2])"
+            "sub_panel_socket_negative();",
+            sub_panel,
+        )
+        self.assertNotIn("sub_panel_socket_negative();", top_panel)
+        self.assertEqual(top_panel.count("outlet_cover_negative(false);"), 2)
+
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -1263,20 +1359,73 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
 
-    def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
+    def test_plamp8_sub_panel_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        self.assertIn("xt60_nut_clearance_d = 7;", source)
         self.assertIn("sub_panel_revision_depth = 0.6;", source)
-        self.assertRegex(
-            source,
-            r"module sub_panel_left_xt60_nut_clearances_negative\(\) \{[\s\S]*?for \(i = \[0, 2\]\)[\s\S]*?dc_channel_x\(i\) \+ dc_connector_x\(\) - xt60_screw_spacing / 2[\s\S]*?sub_panel_base_h[\s\S]*?cylinder\([\s\S]*?h = sub_panel_h - sub_panel_base_h \+ 0\.1,[\s\S]*?d = xt60_nut_clearance_d",
-        )
-        self.assertIn("sub_panel_left_xt60_nut_clearances_negative();", source)
         self.assertRegex(
             source,
             r"write_text\(\s*revision_string,\s*sub_panel_revision_font,\s*"
             r"-sub_panel_revision_depth\s*\);",
+        )
+
+    def test_plamp8_xt60_and_c13_towers_bond_top_to_sub_panel(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        tower = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_tower_positive"))
+            if "module sub_panel_bonding_tower_positive" in source
+            else ""
+        )
+        nut = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_nut_negative"))
+            if "module sub_panel_bonding_nut_negative" in source
+            else ""
+        )
+        screw = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_screw_negative"))
+            if "module sub_panel_bonding_screw_negative" in source
+            else ""
+        )
+        xt60_positive = (
+            compact_scad(scad_module_body(source, "sub_panel_xt60_bonding_positive"))
+            if "module sub_panel_xt60_bonding_positive" in source
+            else ""
+        )
+        c13_positive = (
+            compact_scad(scad_module_body(source, "sub_panel_c13_bonding_positive"))
+            if "module sub_panel_c13_bonding_positive" in source
+            else ""
+        )
+
+        for definition in (
+            "sub_panel_bonding_tower_d=11;",
+            "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
+            "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
+            "sub_panel_bonding_roof_h=sub_panel_h-sub_panel_base_h-sub_panel_bonding_nut_h;",
+            "sub_panel_bonding_blind_floor=1;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("d=sub_panel_bonding_tower_d", tower)
+        self.assertIn("d1=sub_panel_bonding_nut_w", nut)
+        self.assertIn("d2=panel_screw_d", nut)
+        self.assertIn("sub_panel_bonding_blind_floor", screw)
+        self.assertIn("for(i=[0:3],side=[-1,1])", xt60_positive)
+        self.assertEqual(
+            xt60_positive.count("sub_panel_bonding_tower_positive();"), 1
+        )
+        self.assertEqual(
+            c13_positive.count("sub_panel_bonding_tower_positive();"), 1
+        )
+        self.assertIn("mouth_direction=-side", compact)
+        self.assertIn(
+            "sub_panel_xt60_bonding_positive();",
+            compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),
+        )
+        self.assertIn(
+            "sub_panel_c13_bonding_positive();",
+            compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),
         )
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
