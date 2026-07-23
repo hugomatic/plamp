@@ -159,7 +159,8 @@ The default repository layout is:
 
 ```text
 cad/
-├── system.cad.json
+├── plamp.system.cad.json
+├── workshop-jigs.system.cad.json
 └── profiles/
     ├── bambu-x1c.json
     ├── nozzle-0.4mm.json
@@ -184,10 +185,23 @@ The names are defaults, not requirements that source folders be named
 path. A sidecar resolves its root SCAD file and local paths relative to the
 sidecar directory.
 
-By default, `plamp cad` finds `cad/system.cad.json` at the repository root. An
-advanced `--system PATH` option selects another manifest explicitly; commands
-record its resolved path and hash. Plamp never silently combines two system
-manifests.
+By default, `plamp cad` discovers every `*.system.cad.json` file directly inside
+the repository's `cad/` directory. Multiple system manifests may live beside
+one another and may reference the same model sidecars. Discovery is not
+recursive: a manifest outside that directory is selected by explicit path rather
+than being silently folded into the repository catalog.
+
+Every system-aware command accepts `--system SYSTEM`, where `SYSTEM` is either a
+unique declared system name or an explicit manifest path. An explicit path may
+point outside the default `cad/` directory when normal path authorization rules
+allow it. Commands record the resolved manifest path and content hash. Plamp
+never combines system manifests into an implicit larger system.
+
+When `--system` is omitted, one discovered system is selected automatically. If
+several exist, an interactive terminal offers a system menu; a non-interactive
+command fails with the discovered names and an exact `--system` example. A local
+default system may remove the prompt, but the command prints the selected system
+and the run manifest records it.
 
 SCAD files contain no embedded `generate.json`. Model folders remain portable
 because their sidecar travels with the source folder.
@@ -600,12 +614,33 @@ work and is not required by this migration.
 The human-facing discovery commands become:
 
 ```bash
-plamp cad models
-plamp cad sets plamp8
-plamp cad products
-plamp cad profiles
-plamp cad libraries
+plamp cad systems
+plamp cad models --system plamp
+plamp cad sets plamp8 --system plamp
+plamp cad products --system plamp
+plamp cad profiles --system plamp
+plamp cad libraries --system plamp
 ```
+
+`systems` lists every discovered system with its declared name, description,
+manifest path, and default product. `models` lists every model registered by the
+selected system with its model ID, description, sidecar path, and root SCAD
+path. `sets MODEL` lists every authoritative SCAD set for that model, including
+the empty/default set, with its description, printable status, and source model.
+Descriptions appear in the default human output as well as interactive and JSON
+output. No system, model, or set may be reachable for generation while absent
+from the corresponding navigation command.
+
+Stable navigation IDs are the declared system name, the model key inside that
+system, and the SCAD set value. Invalid discovered manifests or broken catalog
+entries remain visible with an invalid status and diagnostic instead of
+silently disappearing; they cannot be selected for generation until repaired.
+A valid entry without an optional description displays `(no description)` and
+produces the existing advisory diagnostic rather than leaving an unlabeled row.
+
+All discovery commands support the same human-readable and `--json` forms. JSON
+rows contain explicit `kind`, stable ID, parent system/model IDs, description,
+and source path so callers can navigate without parsing display text.
 
 The simplest planning and generation commands use the system's declared default
 product:
@@ -613,6 +648,7 @@ product:
 ```bash
 plamp cad plan
 plamp cad generate
+plamp cad generate --system plamp
 ```
 
 They print the selected product before doing work. If the system has no default
@@ -624,7 +660,7 @@ Direct model generation is the advanced path:
 ```bash
 plamp cad plan plamp8 --set top_panel
 plamp cad generate plamp8 --set top_panel
-plamp cad generate plamp8
+plamp cad generate plamp8 --system plamp
 ```
 
 Omitting `--set` selects the model's empty/default set. Product generation is
@@ -643,9 +679,11 @@ that short name is visible. Ambiguity is an error that lists the qualified IDs.
 performs the same planning internally before rendering; humans do not need to
 run `plan` first.
 
-The interactive menu lists model sets and products in separate sections with
-descriptions. JSON output exposes explicit `kind` values. Human output remains
-the default, with `--json` for machines.
+The interactive menu starts with system selection when necessary, then lists
+that system's models and products in separate sections. Selecting a model opens
+its complete set list. Descriptions and stable IDs are shown at every level;
+back-navigation never discards the selected system. Human output remains the
+default, with `--json` for machines.
 
 The migration removes:
 
@@ -735,6 +773,9 @@ Validation is layered and read-only:
 
 ### System validation
 
+- discovered system filenames match `*.system.cad.json`;
+- each manifest's declared name is non-empty and unique within its discovery
+  directory;
 - model, profile, and library paths are repository-relative or explicitly
   authorized external sources;
 - names are unique within their namespaces;
@@ -787,7 +828,7 @@ domain choices, not aliases for one application's internal classes.
 
 Each job manifest adds:
 
-- system identity and manifest hash;
+- system identity, resolved manifest path, and manifest hash;
 - selected top-level product or direct model selection;
 - complete nested product membership paths;
 - model and set identity;
@@ -808,6 +849,13 @@ the manifest, logs, source archive, and checksums.
 
 Unit and integration tests cover:
 
+- discovery and listing of one or several sibling system manifests;
+- system selection by unique name and explicit path;
+- interactive choice and non-interactive ambiguity diagnostics when no system is
+  selected;
+- complete system-to-model-to-set navigation in human and JSON output;
+- descriptions at every navigation level, including explicit missing-description
+  display and diagnostics;
 - parsing ordered named and empty SCAD sets;
 - clean SCAD operation without a sidecar;
 - model-sidecar validation and missing-description advisories;
@@ -874,6 +922,11 @@ The design is implemented when:
 - a clean SCAD model can expose named and empty sets without embedded Plamp JSON;
 - an adjacent model sidecar supplies set descriptions and manufacturing advice;
 - a system manifest composes nested products across multiple models;
+- multiple sibling system manifests are discoverable and individually
+  selectable with `--system` by name or path;
+- every selectable system, model, and set appears in complete CLI and interactive
+  navigation with a visible description or missing-description marker, including
+  the empty/default set;
 - model sets remain directly selectable from OpenSCAD and `plamp cad`;
 - product, model, set, profile, item, and CLI values resolve deterministically;
 - printer/material profiles can override reusable set defaults without modifying
