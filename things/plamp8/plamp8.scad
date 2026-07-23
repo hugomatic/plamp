@@ -218,7 +218,6 @@ xt60_face_w = 35;
 xt60_face_h = 16;
 xt60_screw_spacing = 25;
 xt60_screw_d = 3.2;
-xt60_nut_clearance_d = 7;
 
 revision_label_w = 26;
 revision_label_h = 9;
@@ -435,6 +434,16 @@ sub_panel_usb_support_rib_h = sub_panel_h - sub_panel_base_h;
 sub_panel_usb_support_rib_gap = 1;
 sub_panel_revision_clearance = 1;
 sub_panel_revision_font = 4;
+sub_panel_bonding_tower_d = 11;
+sub_panel_bonding_nut_w = panel_nut_d + panel_nut_clearance;
+sub_panel_bonding_nut_h = panel_nut_h + panel_nut_clearance;
+sub_panel_bonding_roof_h = sub_panel_h - sub_panel_base_h
+    - sub_panel_bonding_nut_h;
+sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
+    - 2 * panel_nut_entry_detent;
+sub_panel_bonding_blind_floor = 1;
+sub_panel_bonding_blind_depth = sub_panel_base_h
+    - sub_panel_bonding_blind_floor;
 top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t;
 bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
@@ -572,7 +581,7 @@ xt60_region_x_margin = min(
     dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
     barrel_group_x + dc_region_w / 2 - (dc_connector_x() + xt60_outside_w / 2)
 );
-xt60_screw_nut_radius = max(xt60_screw_d, xt60_nut_clearance_d) / 2;
+xt60_screw_nut_radius = max(xt60_screw_d, sub_panel_bonding_tower_d) / 2;
 xt60_screw_nut_left_x =
     dc_connector_x() - xt60_screw_spacing / 2 - xt60_screw_nut_radius;
 xt60_screw_nut_right_x =
@@ -710,6 +719,15 @@ assert(service_region_left_x == c13_region_left_x
     "service region must align with the C13 rounded region");
 assert(service_region_left_x - dc_region_right_x == panel_region_gap,
     "service region must retain the 2 mm DC gap");
+assert(sub_panel_bonding_roof_h > 0,
+    "panel bonding nut catcher needs a positive roof height");
+assert(sub_panel_bonding_blind_floor >= 1,
+    "panel bonding screw bores need 1 mm underside material");
+assert(sub_panel_bonding_throat_w > panel_nut_d * cos(30),
+    "panel bonding nut entry must admit the calibrated M3 nut");
+assert(c13_screw_spacing / 2 + sub_panel_bonding_tower_d / 2
+        <= c13_group_w / 2,
+    "C13 bonding towers must remain inside the connector region");
 assert(
     sub_panel_ac_bonding_rib_x - sub_panel_ac_bonding_rib_w / 2
         > sub_panel_ac_left_socket_right_x
@@ -1002,6 +1020,36 @@ module sub_panel_ac_bonding_rib_positive() {
         ]);
 }
 
+module sub_panel_bonding_tower_positive() {
+    translate([0, 0, sub_panel_base_h])
+        cylinder(
+            h = sub_panel_h - sub_panel_base_h,
+            d = sub_panel_bonding_tower_d
+        );
+}
+
+module sub_panel_xt60_bonding_positive() {
+    if (dc_connector_type == "xt60")
+        for (i = [0:3], side = [-1, 1])
+            translate([
+                layout_offset_x + dc_channel_x(i) + dc_connector_x()
+                    + side * xt60_screw_spacing / 2,
+                layout_offset_y + dc_channel_y(i),
+                0
+            ])
+                sub_panel_bonding_tower_positive();
+}
+
+module sub_panel_c13_bonding_positive() {
+    for (side = [-1, 1])
+        translate([
+            layout_offset_x + c13_hardware_x + side * c13_screw_spacing / 2,
+            layout_offset_y + c13_hardware_y,
+            0
+        ])
+            sub_panel_bonding_tower_positive();
+}
+
 module sub_panel_8ch_positive() {
     base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
@@ -1022,6 +1070,8 @@ module sub_panel_8ch_positive() {
         sub_panel_usb_support_rib_positive();
         sub_panel_separator_ribs_positive();
         sub_panel_ac_bonding_rib_positive();
+        sub_panel_xt60_bonding_positive();
+        sub_panel_c13_bonding_positive();
     }
 }
 
@@ -1044,25 +1094,12 @@ module sub_panel_socket_bottom_rim_relief_negative() {
 module sub_panel_barrel_channel_negative() {
     translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
-            xt60_connector_negative();
+            rect_cutout(xt60_cutout_w, xt60_cutout_h);
         else
             screw_hole(barrel_jack_hole_d);
     }
     translate([dc_toggle_x(), 0, 0])
         rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
-}
-
-module sub_panel_left_xt60_nut_clearances_negative() {
-    for (i = [0, 2])
-        translate([
-            dc_channel_x(i) + dc_connector_x() - xt60_screw_spacing / 2,
-            dc_channel_y(i),
-            sub_panel_base_h
-        ])
-            cylinder(
-                h = sub_panel_h - sub_panel_base_h + 0.1,
-                d = xt60_nut_clearance_d
-            );
 }
 
 module sub_panel_usb_screw_negative() {
@@ -1085,10 +1122,91 @@ module sub_panel_usb_c_negative() {
 
 module sub_panel_c13_negative() {
     rect_cutout(c13_cutout_w, c13_cutout_h);
+}
 
-    for (x = [-c13_screw_spacing / 2, c13_screw_spacing / 2])
-        translate([x, 0, 0])
-            screw_hole(c13_screw_d);
+module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
+    detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
+    main_l = opening_edge_distance - detent_l;
+
+    translate([0, 0, sub_panel_base_h]) {
+        cylinder(
+            h = sub_panel_bonding_nut_h,
+            d = sub_panel_bonding_nut_w,
+            $fn = 6
+        );
+
+        if (main_l > 0)
+            translate([
+                mouth_direction > 0 ? 0 : -main_l,
+                -sub_panel_bonding_nut_w / 2,
+                0
+            ])
+                cube([
+                    main_l + boolean_shim,
+                    sub_panel_bonding_nut_w,
+                    sub_panel_bonding_nut_h
+                ]);
+
+        translate([
+            mouth_direction > 0 ? main_l : -opening_edge_distance,
+            -sub_panel_bonding_throat_w / 2,
+            0
+        ])
+            cube([
+                detent_l + boolean_shim,
+                sub_panel_bonding_throat_w,
+                sub_panel_bonding_nut_h
+            ]);
+
+        translate([0, 0, sub_panel_bonding_nut_h - boolean_shim])
+            cylinder(
+                h = sub_panel_bonding_roof_h + 2 * boolean_shim,
+                d1 = sub_panel_bonding_nut_w,
+                d2 = panel_screw_d
+            );
+    }
+}
+
+module sub_panel_bonding_screw_negative(d) {
+    translate([0, 0, sub_panel_bonding_blind_floor])
+        cylinder(
+            h = sub_panel_h - sub_panel_bonding_blind_floor + boolean_shim,
+            d = d
+        );
+}
+
+module sub_panel_xt60_bonding_negative() {
+    if (dc_connector_type == "xt60")
+        for (i = [0:3], side = [-1, 1])
+            translate([
+                dc_channel_x(i) + dc_connector_x()
+                    + side * xt60_screw_spacing / 2,
+                dc_channel_y(i),
+                0
+            ]) {
+                sub_panel_bonding_nut_negative(
+                    mouth_direction = -side,
+                    opening_edge_distance = xt60_screw_spacing / 2
+                        - xt60_cutout_w / 2
+                );
+                sub_panel_bonding_screw_negative(xt60_screw_d);
+            }
+}
+
+module sub_panel_c13_bonding_negative() {
+    for (side = [-1, 1])
+        translate([
+            c13_hardware_x + side * c13_screw_spacing / 2,
+            c13_hardware_y,
+            0
+        ]) {
+            sub_panel_bonding_nut_negative(
+                mouth_direction = -side,
+                opening_edge_distance = c13_screw_spacing / 2
+                    - c13_cutout_w / 2
+            );
+            sub_panel_bonding_screw_negative(c13_screw_d);
+        }
 }
 
 module sub_panel_8ch_negative() {
@@ -1110,13 +1228,15 @@ module sub_panel_8ch_negative() {
         translate([dc_channel_x(i), dc_channel_y(i), 0])
             sub_panel_barrel_channel_negative();
 
-    sub_panel_left_xt60_nut_clearances_negative();
+    sub_panel_xt60_bonding_negative();
 
     translate([usb_c_panel_x, usb_c_panel_y, 0])
         sub_panel_usb_c_negative();
 
     translate([c13_hardware_x, c13_hardware_y, 0])
         sub_panel_c13_negative();
+
+    sub_panel_c13_bonding_negative();
 
     panel_corner_screw_holes();
 

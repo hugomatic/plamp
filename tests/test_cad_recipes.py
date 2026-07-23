@@ -115,6 +115,7 @@ class CadRecipeTests(unittest.TestCase):
             (
                 "split-box",
                 "fuse-box",
+                "panels",
                 "assembly",
                 "component-floorplans",
                 "top-panel-fit",
@@ -135,6 +136,7 @@ class CadRecipeTests(unittest.TestCase):
                 "top_panel", "sub_panel",
             ),
             "fuse-box": ("box", "top_panel", "sub_panel"),
+            "panels": ("top_panel", "sub_panel"),
             "assembly": ("assembly",),
             "component-floorplans": (
                 "relay_footprint", "psu_footprint", "converter_footprint",

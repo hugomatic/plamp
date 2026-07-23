@@ -1302,20 +1302,73 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
 
-    def test_plamp8_sub_panel_xt60_nut_clearance_and_revision_depth(self):
+    def test_plamp8_sub_panel_revision_depth(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        self.assertIn("xt60_nut_clearance_d = 7;", source)
         self.assertIn("sub_panel_revision_depth = 0.6;", source)
-        self.assertRegex(
-            source,
-            r"module sub_panel_left_xt60_nut_clearances_negative\(\) \{[\s\S]*?for \(i = \[0, 2\]\)[\s\S]*?dc_channel_x\(i\) \+ dc_connector_x\(\) - xt60_screw_spacing / 2[\s\S]*?sub_panel_base_h[\s\S]*?cylinder\([\s\S]*?h = sub_panel_h - sub_panel_base_h \+ 0\.1,[\s\S]*?d = xt60_nut_clearance_d",
-        )
-        self.assertIn("sub_panel_left_xt60_nut_clearances_negative();", source)
         self.assertRegex(
             source,
             r"write_text\(\s*revision_string,\s*sub_panel_revision_font,\s*"
             r"-sub_panel_revision_depth\s*\);",
+        )
+
+    def test_plamp8_xt60_and_c13_towers_bond_top_to_sub_panel(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        tower = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_tower_positive"))
+            if "module sub_panel_bonding_tower_positive" in source
+            else ""
+        )
+        nut = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_nut_negative"))
+            if "module sub_panel_bonding_nut_negative" in source
+            else ""
+        )
+        screw = (
+            compact_scad(scad_module_body(source, "sub_panel_bonding_screw_negative"))
+            if "module sub_panel_bonding_screw_negative" in source
+            else ""
+        )
+        xt60_positive = (
+            compact_scad(scad_module_body(source, "sub_panel_xt60_bonding_positive"))
+            if "module sub_panel_xt60_bonding_positive" in source
+            else ""
+        )
+        c13_positive = (
+            compact_scad(scad_module_body(source, "sub_panel_c13_bonding_positive"))
+            if "module sub_panel_c13_bonding_positive" in source
+            else ""
+        )
+
+        for definition in (
+            "sub_panel_bonding_tower_d=11;",
+            "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
+            "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
+            "sub_panel_bonding_roof_h=sub_panel_h-sub_panel_base_h-sub_panel_bonding_nut_h;",
+            "sub_panel_bonding_blind_floor=1;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("d=sub_panel_bonding_tower_d", tower)
+        self.assertIn("d1=sub_panel_bonding_nut_w", nut)
+        self.assertIn("d2=panel_screw_d", nut)
+        self.assertIn("sub_panel_bonding_blind_floor", screw)
+        self.assertIn("for(i=[0:3],side=[-1,1])", xt60_positive)
+        self.assertEqual(
+            xt60_positive.count("sub_panel_bonding_tower_positive();"), 1
+        )
+        self.assertEqual(
+            c13_positive.count("sub_panel_bonding_tower_positive();"), 1
+        )
+        self.assertIn("mouth_direction=-side", compact)
+        self.assertIn(
+            "sub_panel_xt60_bonding_positive();",
+            compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),
+        )
+        self.assertIn(
+            "sub_panel_c13_bonding_positive();",
+            compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),
         )
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
