@@ -418,8 +418,6 @@ sub_panel_socket_screw_spacing = 82;
 sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
-sub_panel_usb_ledge_relief_x = 5;
-sub_panel_usb_ledge_relief_y = 10;
 sub_panel_usb_hole_bridge =
     (usb_c_screw_spacing - sub_panel_usb_c_cutout_w - usb_c_screw_d) / 2;
 sub_panel_socket_rim_relief_w = sub_panel_socket_w;
@@ -714,8 +712,6 @@ assert(usb_c_mount_screw_length - usb_c_supplied_screw_length
     "USB mount screws must preserve the supplied screw engagement");
 assert(abs(sub_panel_usb_hole_bridge - 0.55) < 0.000001,
     "USB sub-panel opening must retain a 0.55 mm screw-hole bridge");
-assert(sub_panel_wall - sub_panel_usb_ledge_relief_x == 5,
-    "USB ledge relief must preserve the outer 5 mm east ledge");
 assert(ac_connector_panel_rim_ok,
     "AC connector panel must retain 3 mm around every rounded pocket");
 assert(dc_connector_panel_rim_ok,
@@ -943,19 +939,6 @@ module sub_panel_usb_risers_positive() {
             sub_panel_base_h
         ])
             cylinder(h = usb_c_riser_h, d = usb_c_capsule_d);
-}
-
-module sub_panel_usb_east_ledge_relief_negative() {
-    translate([
-        top_panel_w - sub_panel_wall - layout_offset_x - boolean_shim,
-        usb_c_panel_y - sub_panel_usb_ledge_relief_y / 2,
-        sub_panel_base_h
-    ])
-        cube([
-            sub_panel_usb_ledge_relief_x + boolean_shim,
-            sub_panel_usb_ledge_relief_y,
-            sub_panel_h - sub_panel_base_h + boolean_shim
-        ]);
 }
 
 module sub_panel_separator_rib_positive(x0, y0, w, h) {
@@ -1446,11 +1429,8 @@ module sub_panel_8ch() {
     translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
             union() {
-                difference() {
-                    translate([-layout_offset_x, -layout_offset_y, 0])
-                        sub_panel_8ch_positive();
-                    sub_panel_usb_east_ledge_relief_negative();
-                }
+                translate([-layout_offset_x, -layout_offset_y, 0])
+                    sub_panel_8ch_positive();
                 sub_panel_usb_risers_positive();
             }
 

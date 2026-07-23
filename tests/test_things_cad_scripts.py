@@ -1327,9 +1327,6 @@ class ThingsCadScriptsTest(unittest.TestCase):
         risers = compact_scad(
             scad_module_body(source, "sub_panel_usb_risers_positive")
         )
-        ledge = compact_scad(
-            scad_module_body(source, "sub_panel_usb_east_ledge_relief_negative")
-        )
         screw = compact_scad(
             scad_module_body(source, "sub_panel_usb_screw_negative")
         )
@@ -1349,8 +1346,6 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "usb_c_countersink_h=(usb_c_countersink_d-usb_c_screw_d)/2;",
             "sub_panel_usb_c_cutout_w=12.5;",
             "sub_panel_usb_c_cutout_h=10.5;",
-            "sub_panel_usb_ledge_relief_x=5;",
-            "sub_panel_usb_ledge_relief_y=10;",
         ):
             self.assertIn(definition, compact)
 
@@ -1364,8 +1359,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("d=usb_c_capsule_d", capsule)
         self.assertIn("h=usb_c_riser_h", risers)
         self.assertIn("d=usb_c_capsule_d", risers)
-        self.assertIn("sub_panel_usb_ledge_relief_x", ledge)
-        self.assertIn("sub_panel_usb_ledge_relief_y", ledge)
+        self.assertNotIn("sub_panel_usb_ledge_relief", source)
         self.assertIn("d1=usb_c_countersink_d", screw)
         self.assertIn("d2=usb_c_screw_d", screw)
         self.assertIn("sub_panel_usb_screw_negative();", sub_negative)
