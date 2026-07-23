@@ -91,6 +91,35 @@ if (set == "floor") floor_set();
             load_model("fixture", sidecar, self.root)
         self.assertIn("set declaration", caught.exception.diagnostics[0].message)
 
+    def test_empty_default_with_no_choices_is_authoritative_empty_set(self):
+        sidecar = self.sidecar(
+            sets={"": {"description": "Normal model output"}}
+        )
+        (sidecar.parent / "fixture.scad").write_text(
+            'set = ""; // []\n', encoding="utf-8"
+        )
+
+        model = load_model("fixture", sidecar, self.root)
+
+        self.assertEqual(tuple(model.sets), ("",))
+        self.assertEqual(model.default_set, "")
+        self.assertEqual(model.sets[""].description, "Normal model output")
+        self.assertEqual(model.advisories, ())
+
+    def test_nonempty_default_with_no_choices_is_rejected(self):
+        sidecar = self.sidecar()
+        (sidecar.parent / "fixture.scad").write_text(
+            'set = "floor"; // []\n', encoding="utf-8"
+        )
+
+        with self.assertRaises(CadMetadataError) as caught:
+            load_model("fixture", sidecar, self.root)
+
+        diagnostic = caught.exception.diagnostics[0]
+        self.assertEqual(diagnostic.code, "CAD111")
+        self.assertEqual(diagnostic.value, "floor")
+        self.assertEqual(diagnostic.choices, ())
+
     def test_direct_scad_model_has_implicit_empty_set_and_advisory(self):
         scad = self.write("things/plain/plain.scad", "cube(1);\n")
         model = load_model("plain", scad, self.root)

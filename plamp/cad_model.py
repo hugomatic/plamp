@@ -241,8 +241,9 @@ def _mapping(
 def _declared_sets(
     source: str, source_path: Path, *, require_declaration: bool
 ) -> tuple[str, tuple[str, ...]]:
+    has_declaration = SET_ASSIGNMENT.search(source) is not None
     default, choices = parse_set_declaration(source, source_path)
-    if not choices:
+    if not has_declaration:
         if require_declaration:
             _fail(
                 source_path,
