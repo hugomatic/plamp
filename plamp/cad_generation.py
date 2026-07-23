@@ -581,6 +581,8 @@ def _find_duplicate_run(
     if not part_root.is_dir():
         return None
     for manifest_path in sorted(part_root.glob("*/manifest.json")):
+        if manifest_path.parent.name.startswith("."):
+            continue
         try:
             manifest = load_run(manifest_path)
         except (OSError, ValueError, json.JSONDecodeError):
@@ -593,6 +595,77 @@ def _find_duplicate_run(
         ):
             return run_id, manifest_path.parent.resolve()
     return None
+
+
+def _hidden_directory(parent: Path, prefix: str) -> Path:
+    parent.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(dir=parent, prefix=f".{prefix}."))
+
+
+def _rewrite_run_paths(run_dir: Path, old: Path, new: Path) -> None:
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return
+    manifest = load_run(manifest_path)
+    jobs = manifest.get("jobs")
+    if not isinstance(jobs, list):
+        return
+    old_text = str(old)
+    new_text = str(new)
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        command = job.get("command")
+        if isinstance(command, list):
+            job["command"] = [
+                item.replace(old_text, new_text)
+                if isinstance(item, str)
+                else item
+                for item in command
+            ]
+    _write_manifest(run_dir, manifest)
+    _best_effort_readme(run_dir, manifest)
+
+
+def _preserve_failed_regeneration(staging: Path, target: Path) -> Path:
+    failed = _hidden_directory(
+        target.parent, f"{target.name}.regeneration-failed"
+    )
+    failed.rmdir()
+    try:
+        _rewrite_run_paths(staging, staging, failed)
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+    os.replace(staging, failed)
+    return failed
+
+
+def _publish_regeneration(staging: Path, target: Path) -> Path:
+    _rewrite_run_paths(staging, staging, target)
+    backup = _hidden_directory(target.parent, f"{target.name}.backup")
+    backup.rmdir()
+    os.replace(target, backup)
+    try:
+        os.replace(staging, target)
+    except BaseException:
+        os.replace(backup, target)
+        raise
+    shutil.rmtree(backup)
+    return target
+
+
+def _finish_regeneration(
+    result: GenerationResult, target: Path | None
+) -> GenerationResult:
+    if target is None:
+        return result
+    if result.status == "complete":
+        published = _publish_regeneration(result.run_dir, target)
+        return GenerationResult(
+            published, published / "manifest.json", result.status
+        )
+    failed = _preserve_failed_regeneration(result.run_dir, target)
+    return GenerationResult(failed, failed / "manifest.json", result.status)
 
 
 def generate_plan(
@@ -609,6 +682,7 @@ def generate_plan(
     stdout: IO[str] | None = None,
     stderr: IO[str] | None = None,
     snapshot: SourceSnapshot | None = None,
+    regenerate: bool = False,
 ) -> GenerationResult:
     """Render a plan sequentially and persist every observable state change."""
 
@@ -618,6 +692,8 @@ def generate_plan(
     snapshot = snapshot or prepare_source(root, source, revision)
     out = stdout or sys.stdout
     err = stderr or sys.stderr
+    regeneration_target: Path | None = None
+    run_dir: Path | None = None
     try:
         local_now = _local_now()
         selector = plan.selection.preset or (
@@ -635,7 +711,9 @@ def generate_plan(
                 local_now,
             )
             if duplicate is not None:
-                raise CadRunExistsError(*duplicate)
+                if not regenerate:
+                    raise CadRunExistsError(*duplicate)
+                run_id, regeneration_target = duplicate
         version_result = subprocess.run(
             [str(openscad), "--version"], text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, env=dict(env) if env is not None else None,
@@ -644,15 +722,21 @@ def generate_plan(
             raise RuntimeError(version_result.stdout.strip() or "OpenSCAD version check failed")
         openscad_version = version_result.stdout.strip()
         now = _utc_now()
-        run_id = _readable_run_id(
-            local_now, part, selector, snapshot.revision_label
-        )
-        run_dir = (
-            Path(output).resolve()
-            if output is not None
-            else archive_part_root / run_id
-        )
-        run_dir.mkdir(parents=True, exist_ok=False)
+        if regeneration_target is None:
+            run_id = _readable_run_id(
+                local_now, part, selector, snapshot.revision_label
+            )
+            run_dir = (
+                Path(output).resolve()
+                if output is not None
+                else archive_part_root / run_id
+            )
+            run_dir.mkdir(parents=True, exist_ok=False)
+        else:
+            run_dir = _hidden_directory(
+                archive_part_root,
+                f"{regeneration_target.name}.regenerating",
+            )
         (run_dir / "artifacts").mkdir()
         (run_dir / "logs").mkdir()
         archived_source = _copy_snapshot(snapshot, root, run_dir)
@@ -709,7 +793,10 @@ def generate_plan(
                 assert isinstance(first_errors, list)
                 first_errors.append(_error_text(error))
             _write_manifest(run_dir, manifest)
-            return GenerationResult(run_dir, run_dir / "manifest.json", "failed")
+            return _finish_regeneration(
+                GenerationResult(run_dir, run_dir / "manifest.json", "failed"),
+                regeneration_target,
+            )
 
         failed = False
         for render_job, job in zip(plan.jobs, jobs):
@@ -798,8 +885,29 @@ def generate_plan(
         manifest["finished_at"] = finished_at
         _write_manifest(run_dir, manifest)
         _best_effort_readme(run_dir, manifest)
-        return GenerationResult(run_dir, run_dir / "manifest.json", str(manifest["status"]))
+        return _finish_regeneration(
+            GenerationResult(
+                run_dir,
+                run_dir / "manifest.json",
+                str(manifest["status"]),
+            ),
+            regeneration_target,
+        )
+    except KeyboardInterrupt:
+        if (
+            regeneration_target is not None
+            and run_dir is not None
+            and run_dir.is_dir()
+        ):
+            _preserve_failed_regeneration(run_dir, regeneration_target)
+        raise
     except OSError as error:
+        if (
+            regeneration_target is not None
+            and run_dir is not None
+            and run_dir.is_dir()
+        ):
+            _preserve_failed_regeneration(run_dir, regeneration_target)
         print(str(error), file=err)
         raise
     finally:
@@ -829,6 +937,11 @@ def list_runs(data_dir: str | os.PathLike[str], part: str | None = None) -> list
             raise ValueError("CAD part must be a single path component")
     search = root / part if part is not None else root
     manifests = [] if not search.exists() else list(search.glob("*/manifest.json") if part else search.glob("*/*/manifest.json"))
+    manifests = [
+        path for path in manifests
+        if not path.parent.name.startswith(".")
+        and not path.parent.parent.name.startswith(".")
+    ]
     runs = [load_run(path) for path in manifests]
     return sorted(runs, key=lambda item: (str(item.get("created_at", "")), str(item.get("run_id", ""))), reverse=True)
 

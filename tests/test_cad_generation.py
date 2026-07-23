@@ -118,11 +118,20 @@ class CadGenerationTests(unittest.TestCase):
         return {**os.environ, "FAKE_ARGV": str(self.argv_file), **values}
 
     def generate(self, source_plan=None, **kwargs):
+        environment = kwargs.pop("env", self.env())
         return generate_plan(
             source_plan or plan("first"), repo_root=self.repo,
             data_dir=self.data, scad_path=self.scad, openscad=self.fake,
-            env=self.env(), stdout=io.StringIO(), **kwargs,
+            env=environment, stdout=io.StringIO(), **kwargs,
         )
+
+    @staticmethod
+    def tree_bytes(root):
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        }
 
     def test_resolve_part_accepts_part_name_and_repository_path(self):
         self.assertEqual(resolve_part("fixture", self.repo), self.scad)
@@ -458,6 +467,90 @@ class CadGenerationTests(unittest.TestCase):
         self.assertNotEqual(first.run_dir, different_job.run_dir)
         self.assertNotEqual(first.run_dir, different_source.run_dir)
         self.assertNotEqual(first.run_dir, next_day.run_dir)
+
+    def test_regeneration_replaces_the_existing_run_after_success(self):
+        zone = timezone(timedelta(hours=-10))
+        times = (
+            datetime(2026, 7, 23, 8, 1, tzinfo=zone),
+            datetime(2026, 7, 23, 22, 19, tzinfo=zone),
+        )
+        with mock.patch("plamp.cad_generation._local_now", side_effect=times):
+            original = self.generate()
+            old_manifest = (original.run_dir / "manifest.json").read_bytes()
+            self.argv_file.unlink()
+            replacement = self.generate(regenerate=True)
+
+        self.assertEqual(replacement.run_dir, original.run_dir)
+        self.assertEqual(replacement.status, "complete")
+        self.assertTrue(self.argv_file.exists())
+        self.assertNotEqual(
+            (replacement.run_dir / "manifest.json").read_bytes(),
+            old_manifest,
+        )
+        self.assertEqual(
+            list(original.run_dir.parent.glob(f".{original.run_dir.name}.*")),
+            [],
+        )
+
+    def test_failed_regeneration_preserves_old_run_and_failed_diagnostics(self):
+        zone = timezone(timedelta(hours=-10))
+        times = (
+            datetime(2026, 7, 23, 8, 1, tzinfo=zone),
+            datetime(2026, 7, 23, 22, 19, tzinfo=zone),
+        )
+        with mock.patch("plamp.cad_generation._local_now", side_effect=times):
+            original = self.generate()
+            original_files = self.tree_bytes(original.run_dir)
+            failed = self.generate(
+                regenerate=True,
+                env=self.env(FAKE_FAIL_VIEW="first"),
+            )
+
+        self.assertEqual(failed.status, "failed")
+        self.assertIn("regeneration-failed", failed.run_dir.name)
+        self.assertEqual(self.tree_bytes(original.run_dir), original_files)
+        self.assertTrue((failed.run_dir / "manifest.json").is_file())
+        self.assertEqual(load_run(failed.run_dir)["status"], "failed")
+        self.assertEqual(
+            [run["run_id"] for run in list_runs(self.data, "fixture")],
+            [original.run_dir.name],
+        )
+
+    def test_regeneration_publication_failure_rolls_back_old_run(self):
+        zone = timezone(timedelta(hours=-10))
+        times = (
+            datetime(2026, 7, 23, 8, 1, tzinfo=zone),
+            datetime(2026, 7, 23, 22, 19, tzinfo=zone),
+        )
+        with mock.patch("plamp.cad_generation._local_now", side_effect=times):
+            original = self.generate()
+            original_files = self.tree_bytes(original.run_dir)
+            real_replace = os.replace
+
+            def fail_staging_publication(source, target):
+                source_path = Path(source)
+                target_path = Path(target)
+                if (
+                    ".regenerating." in source_path.name
+                    and target_path == original.run_dir
+                ):
+                    raise OSError("injected publication failure")
+                return real_replace(source, target)
+
+            with mock.patch(
+                "plamp.cad_generation.os.replace",
+                side_effect=fail_staging_publication,
+            ), self.assertRaisesRegex(OSError, "injected publication failure"):
+                self.generate(regenerate=True)
+
+        self.assertEqual(self.tree_bytes(original.run_dir), original_files)
+        failed = list(
+            original.run_dir.parent.glob(
+                f".{original.run_dir.name}.regeneration-failed.*"
+            )
+        )
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(load_run(failed[0])["status"], "complete")
 
     def test_manifest_schema_and_job_schema_are_frozen(self):
         result = self.generate(metadata={"z": 1})
