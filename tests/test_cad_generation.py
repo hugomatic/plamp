@@ -5,11 +5,13 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
 from plamp.cad_generation import (
+    CadRunExistsError,
     generate_plan,
     list_runs,
     load_job_log,
@@ -44,6 +46,16 @@ def plan(*views):
         for index, view in enumerate(views, 1)
     )
     return RenderPlan(Selection(preset="print"), jobs, ())
+
+
+def distinct_plan(view):
+    source_plan = plan(view)
+    job = replace(
+        source_plan.jobs[0],
+        artifact_id=f"{view}--{'b' * 12}",
+        fingerprint="b" * 64,
+    )
+    return RenderPlan(source_plan.selection, (job,), source_plan.preset_tree)
 
 
 class CadGenerationTests(unittest.TestCase):
@@ -333,7 +345,7 @@ class CadGenerationTests(unittest.TestCase):
         archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(1);\n")
         self.assertEqual(manifest["source"]["revision"], short)
-        self.assertIn(f"-{short}-", manifest["run_id"])
+        self.assertTrue(manifest["run_id"].endswith(f"-{short}"))
         self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
         self.assertIn(short, Path(manifest["jobs"][0]["artifact"]).name)
         self.assertNotIn(old_commit, manifest["run_id"])
@@ -373,19 +385,79 @@ class CadGenerationTests(unittest.TestCase):
         result = self.generate(output=explicit)
         self.assertEqual(result.run_dir, explicit)
 
-    def test_run_ids_are_randomly_unique_and_independent_of_explicit_directory(self):
-        instant = datetime(2026, 7, 21, 8, 1, 44, tzinfo=timezone.utc)
-        with mock.patch("plamp.cad_generation._utc_now", return_value=instant):
-            first = self.generate(output=self.root / "chosen-one")
-            second = self.generate(output=self.root / "chosen-two")
+    def test_run_ids_are_human_readable(self):
+        instant = datetime(
+            2026, 7, 23, 22, 19,
+            tzinfo=timezone(timedelta(hours=-10)),
+        )
+        with mock.patch("plamp.cad_generation._local_now", return_value=instant):
+            managed = self.generate()
+            explicit = self.generate(output=self.root / "chosen-run")
 
-        first_id = load_run(first.run_dir)["run_id"]
-        second_id = load_run(second.run_dir)["run_id"]
-        expected = rf"20260721T080144Z-fixture-print-{self.commit[:7]}-[0-9a-f]{{6}}"
-        self.assertRegex(first_id, rf"^{expected}$")
-        self.assertRegex(second_id, rf"^{expected}$")
-        self.assertNotEqual(first_id, second_id)
-        self.assertNotEqual(first_id, first.run_dir.name)
+        expected = f"2026-jul23-fixture-print-22h:19m-{self.commit[:7]}"
+        self.assertEqual(load_run(managed.run_dir)["run_id"], expected)
+        self.assertEqual(managed.run_dir.name, expected)
+        self.assertEqual(load_run(explicit.run_dir)["run_id"], expected)
+        self.assertEqual(explicit.run_dir, self.root / "chosen-run")
+
+    def test_distinct_same_minute_runs_fail_clearly(self):
+        instant = datetime(
+            2026, 7, 23, 22, 19,
+            tzinfo=timezone(timedelta(hours=-10)),
+        )
+        with mock.patch("plamp.cad_generation._local_now", return_value=instant):
+            first = self.generate(plan("first"))
+            with self.assertRaises(FileExistsError) as caught:
+                self.generate(distinct_plan("second"))
+
+        self.assertEqual(
+            Path(caught.exception.filename),
+            first.run_dir,
+        )
+
+    def test_same_day_duplicate_is_rejected_before_openscad(self):
+        zone = timezone(timedelta(hours=-10))
+        first_time = datetime(2026, 7, 23, 8, 1, tzinfo=zone)
+        second_time = datetime(2026, 7, 23, 22, 19, tzinfo=zone)
+        with mock.patch(
+            "plamp.cad_generation._local_now",
+            side_effect=(first_time, second_time),
+        ):
+            first = self.generate()
+            self.argv_file.unlink()
+            with self.assertRaises(CadRunExistsError) as caught:
+                self.generate()
+
+        self.assertEqual(caught.exception.existing_run_id, first.run_dir.name)
+        self.assertEqual(caught.exception.existing_run_dir, first.run_dir)
+        self.assertIn(str(first.run_dir), str(caught.exception))
+        self.assertFalse(self.argv_file.exists())
+
+    def test_duplicate_identity_allows_different_jobs_or_local_day(self):
+        zone = timezone(timedelta(hours=-10))
+        times = (
+            datetime(2026, 7, 23, 8, 1, tzinfo=zone),
+            datetime(2026, 7, 23, 8, 2, tzinfo=zone),
+            datetime(2026, 7, 23, 8, 3, tzinfo=zone),
+            datetime(2026, 7, 24, 8, 1, tzinfo=zone),
+        )
+        with mock.patch("plamp.cad_generation._local_now", side_effect=times):
+            first = self.generate(plan("first"))
+            different_job = self.generate(distinct_plan("second"))
+            self.scad.write_text("cube(2);\n")
+            subprocess.run(
+                ["git", "-C", str(self.repo), "add", "."], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(self.repo), "commit", "-qm", "change source"],
+                check=True,
+            )
+            different_source = self.generate(plan("first"))
+            next_day = self.generate(plan("first"))
+
+        self.assertNotEqual(first.run_dir, different_job.run_dir)
+        self.assertNotEqual(first.run_dir, different_source.run_dir)
+        self.assertNotEqual(first.run_dir, next_day.run_dir)
 
     def test_manifest_schema_and_job_schema_are_frozen(self):
         result = self.generate(metadata={"z": 1})

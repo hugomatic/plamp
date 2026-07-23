@@ -11,7 +11,6 @@ import os
 import platform
 from pathlib import Path
 import re
-import secrets
 import shutil
 import subprocess
 import sys
@@ -43,6 +42,17 @@ class GenerationResult:
     run_dir: Path
     manifest_path: Path
     status: str
+
+
+class CadRunExistsError(RuntimeError):
+    """A managed archive already contains the same local-day generation."""
+
+    def __init__(self, existing_run_id: str, existing_run_dir: Path) -> None:
+        self.existing_run_id = existing_run_id
+        self.existing_run_dir = existing_run_dir
+        super().__init__(
+            f"matching CAD run already exists: {existing_run_dir}"
+        )
 
 
 def _git(repo_root: Path, *args: str) -> str:
@@ -283,6 +293,10 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _local_now() -> datetime:
+    return datetime.now().astimezone()
+
+
 def _timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -451,6 +465,19 @@ def _safe_component(value: str) -> str:
     return _SAFE_COMPONENT.sub("-", value).strip("-.") or "run"
 
 
+def _readable_run_id(
+    now: datetime, part: str, selector: str, revision: str
+) -> str:
+    return "-".join((
+        f"{now.year:04d}",
+        f"{now.strftime('%b').lower()}{now.day}",
+        _safe_component(part),
+        _safe_component(selector),
+        f"{now.hour:02d}h:{now.minute:02d}m",
+        _safe_component(revision),
+    ))
+
+
 def _error_text(error: BaseException) -> str:
     return str(error) or type(error).__name__
 
@@ -488,6 +515,86 @@ def _copy_snapshot(snapshot: SourceSnapshot, repo_root: Path, run_dir: Path) -> 
     return target
 
 
+def _generation_identity(
+    plan_data: Mapping[str, object], source_content_hash: str
+) -> dict[str, object]:
+    jobs = plan_data.get("jobs", [])
+    selection = plan_data.get("selection")
+    assert isinstance(jobs, list)
+    assert isinstance(selection, Mapping)
+    return {
+        "source_content_hash": source_content_hash,
+        "selection": {
+            key: selection.get(key)
+            for key in ("preset", "views", "defines", "view_defines")
+        },
+        "preset_tree": plan_data.get("preset_tree"),
+        "job_fingerprints": [
+            job.get("fingerprint")
+            for job in jobs
+            if isinstance(job, Mapping)
+        ],
+    }
+
+
+def _manifest_generation_identity(
+    manifest: Mapping[str, object],
+) -> dict[str, object] | None:
+    source = manifest.get("source")
+    jobs = manifest.get("jobs")
+    if not isinstance(source, Mapping) or not isinstance(jobs, list):
+        return None
+    content_hash = source.get("content_hash")
+    if not isinstance(content_hash, str) or not all(
+        isinstance(job, Mapping) and isinstance(job.get("fingerprint"), str)
+        for job in jobs
+    ):
+        return None
+    return {
+        "source_content_hash": content_hash,
+        "selection": manifest.get("selection"),
+        "preset_tree": manifest.get("preset_tree"),
+        "job_fingerprints": [job["fingerprint"] for job in jobs],
+    }
+
+
+def _created_local_date(
+    manifest: Mapping[str, object], local_now: datetime
+) -> object | None:
+    created = manifest.get("created_at")
+    if not isinstance(created, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(local_now.tzinfo).date()
+
+
+def _find_duplicate_run(
+    part_root: Path,
+    identity: Mapping[str, object],
+    local_now: datetime,
+) -> tuple[str, Path] | None:
+    if not part_root.is_dir():
+        return None
+    for manifest_path in sorted(part_root.glob("*/manifest.json")):
+        try:
+            manifest = load_run(manifest_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        run_id = manifest.get("run_id")
+        if (
+            isinstance(run_id, str)
+            and _created_local_date(manifest, local_now) == local_now.date()
+            and _manifest_generation_identity(manifest) == identity
+        ):
+            return run_id, manifest_path.parent.resolve()
+    return None
+
+
 def generate_plan(
     plan: RenderPlan,
     *,
@@ -512,6 +619,23 @@ def generate_plan(
     out = stdout or sys.stdout
     err = stderr or sys.stderr
     try:
+        local_now = _local_now()
+        selector = plan.selection.preset or (
+            plan.jobs[0].variant_name if len(plan.jobs) == 1 else "views"
+        )
+        plan_data = plan_as_dict(plan)
+        source_content_hash = _hash_tree(snapshot.scad_path.parent)
+        archive_part_root = (
+            Path(data_dir).resolve() / "cad" / "prints" / part
+        )
+        if output is None:
+            duplicate = _find_duplicate_run(
+                archive_part_root,
+                _generation_identity(plan_data, source_content_hash),
+                local_now,
+            )
+            if duplicate is not None:
+                raise CadRunExistsError(*duplicate)
         version_result = subprocess.run(
             [str(openscad), "--version"], text=True, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, env=dict(env) if env is not None else None,
@@ -520,19 +644,19 @@ def generate_plan(
             raise RuntimeError(version_result.stdout.strip() or "OpenSCAD version check failed")
         openscad_version = version_result.stdout.strip()
         now = _utc_now()
-        selector = plan.selection.preset or (plan.jobs[0].variant_name if len(plan.jobs) == 1 else "views")
-        token = secrets.token_hex(3)
-        run_id = "-".join((
-            now.strftime("%Y%m%dT%H%M%SZ"), _safe_component(part),
-            _safe_component(selector), _safe_component(snapshot.revision_label), token,
-        ))
-        run_dir = Path(output).resolve() if output is not None else Path(data_dir).resolve() / "cad" / "prints" / part / run_id
+        run_id = _readable_run_id(
+            local_now, part, selector, snapshot.revision_label
+        )
+        run_dir = (
+            Path(output).resolve()
+            if output is not None
+            else archive_part_root / run_id
+        )
         run_dir.mkdir(parents=True, exist_ok=False)
         (run_dir / "artifacts").mkdir()
         (run_dir / "logs").mkdir()
         archived_source = _copy_snapshot(snapshot, root, run_dir)
         content_hash = _hash_tree(archived_source.parent)
-        plan_data = plan_as_dict(plan)
         created = _timestamp(now)
         jobs = [
             _job_entry(job, created, f"logs/{job.artifact_id}.log")
