@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from plamp.cad_cli import add_cad_parser, run_cad_command
-from plamp.cad_generation import generate_plan
+from plamp.cad_generation import CadRunExistsError, generate_plan
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
     CadSelectionError,
@@ -478,6 +478,149 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(selection.views, ("assembly", "box"))
         self.assertEqual(selection.raw_defines, ("quality=$preview ? 2 : 20",))
         self.assertEqual(selection.raw_view_defines["box"], ("fit=0.2",))
+
+    def test_generate_and_menu_accept_regenerate_switch(self):
+        parser = build_parser()
+        for argv in (
+            ["cad", "generate", "fixture", "--regenerate"],
+            ["cad", "menu", "fixture", "--regenerate"],
+        ):
+            with self.subTest(argv=argv):
+                self.assertTrue(parser.parse_args(argv).regenerate)
+
+    def test_noninteractive_duplicate_reports_existing_path_and_switch(self):
+        existing = self.data / "cad" / "prints" / "fixture" / "existing"
+
+        class NonInteractiveInput(io.StringIO):
+            def isatty(self):
+                return False
+
+            def readline(self, *args, **kwargs):
+                raise AssertionError("non-interactive duplicate must not read stdin")
+
+        for json_output in (False, True):
+            with self.subTest(json_output=json_output):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                argv = ["cad", "generate", "fixture"]
+                if json_output:
+                    argv.append("--json")
+                rc = main(
+                    argv,
+                    env=self.env(),
+                    stdin=NonInteractiveInput(),
+                    stdout=stdout,
+                    stderr=stderr,
+                    cad_generate_func=lambda *args, **kwargs: (
+                        _ for _ in ()
+                    ).throw(CadRunExistsError("existing", existing)),
+                )
+                output = stdout.getvalue() + stderr.getvalue()
+                self.assertEqual(rc, 4)
+                self.assertIn(str(existing), output)
+                self.assertIn("--regenerate", output)
+
+    def test_interactive_duplicate_can_regenerate_existing_run(self):
+        existing = self.data / "cad" / "prints" / "fixture" / "existing"
+        calls = []
+
+        class TtyInput(io.StringIO):
+            def isatty(self):
+                return True
+
+        def generate(plan, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise CadRunExistsError("existing", existing)
+            return {"run_id": "existing", "status": "complete", "jobs": []}
+
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "generate", "fixture"],
+            env=self.env(),
+            stdin=TtyInput("yes\n"),
+            stdout=stdout,
+            stderr=io.StringIO(),
+            cad_generate_func=generate,
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual([call["regenerate"] for call in calls], [False, True])
+        self.assertIn(
+            f"WARNING: matching CAD run already exists: {existing}\n",
+            stdout.getvalue(),
+        )
+        self.assertIn("Regenerate existing run? [y/N] ", stdout.getvalue())
+
+    def test_explicit_regenerate_skips_interactive_question(self):
+        calls = []
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "generate", "fixture", "--regenerate"],
+            env=self.env(),
+            stdin=io.StringIO(),
+            stdout=stdout,
+            stderr=io.StringIO(),
+            cad_generate_func=lambda plan, **kwargs: calls.append(kwargs) or {
+                "run_id": "existing", "status": "complete", "jobs": [],
+            },
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(calls[0]["regenerate"])
+        self.assertNotIn("Regenerate existing run?", stdout.getvalue())
+
+    def test_interactive_duplicate_decline_keeps_existing_run(self):
+        existing = self.data / "cad" / "prints" / "fixture" / "existing"
+        calls = []
+
+        class TtyInput(io.StringIO):
+            def isatty(self):
+                return True
+
+        stderr = io.StringIO()
+        rc = main(
+            ["cad", "generate", "fixture"],
+            env=self.env(),
+            stdin=TtyInput("n\n"),
+            stdout=io.StringIO(),
+            stderr=stderr,
+            cad_generate_func=lambda *args, **kwargs: calls.append(kwargs) or (
+                _ for _ in ()
+            ).throw(CadRunExistsError("existing", existing)),
+        )
+
+        self.assertEqual(rc, 4)
+        self.assertEqual(len(calls), 1)
+        self.assertIn(str(existing), stderr.getvalue())
+
+    def test_menu_uses_same_regeneration_confirmation(self):
+        existing = self.data / "cad" / "prints" / "fixture" / "existing"
+        calls = []
+
+        class TtyInput(io.StringIO):
+            def isatty(self):
+                return True
+
+        def generate(plan, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise CadRunExistsError("existing", existing)
+            return {"run_id": "existing", "status": "complete", "jobs": []}
+
+        stdout = io.StringIO()
+        rc = main(
+            ["cad", "menu", "fixture"],
+            env=self.env(),
+            stdin=TtyInput("1\ny\n"),
+            stdout=stdout,
+            stderr=io.StringIO(),
+            cad_generate_func=generate,
+        )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual([call["regenerate"] for call in calls], [False, True])
+        self.assertIn("Select one preset", stdout.getvalue())
+        self.assertIn("Regenerate existing run?", stdout.getvalue())
 
     def _fake_openscad(self):
         fake = self.root / "fake-openscad-common"
