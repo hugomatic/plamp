@@ -67,6 +67,28 @@ class CadSystemTests(unittest.TestCase):
         self.assertEqual(select_system(candidates, "plamp").name, "plamp")
         self.assertEqual(select_system(candidates, str(jigs_path)).name, "jigs")
 
+    def test_selects_valid_explicit_manifest_outside_discovery_directory(self):
+        self.system("cad/plamp.system.cad.json", name="plamp")
+        external_path = self.system("catalogs/private.system.cad.json", name="private")
+        candidates = discover_systems(self.root)
+        selected = select_system(candidates, str(external_path))
+        self.assertEqual(selected.name, "private")
+        self.assertEqual(selected.path, external_path)
+        self.assertEqual(selected.status, "valid")
+        self.assertEqual(load_system(selected.path, self.root).name, "private")
+        self.assertEqual(tuple(row.name for row in candidates), ("plamp",))
+
+    def test_explicit_manifest_must_be_valid_and_inside_repository(self):
+        self.system("cad/plamp.system.cad.json", name="plamp")
+        candidates = discover_systems(self.root)
+        invalid_path = self.write("catalogs/broken.system.cad.json", "{")
+        with self.assertRaises(CadMetadataError):
+            select_system(candidates, str(invalid_path))
+        outside = self.root.parent / "outside.system.cad.json"
+        with self.assertRaises(CadMetadataError) as caught:
+            select_system(candidates, str(outside))
+        self.assertEqual(caught.exception.diagnostics[0].kind, "unsafe_path")
+
     def test_selection_rejects_duplicate_names_and_lists_choices(self):
         self.system("cad/a.system.cad.json", name="same")
         self.system("cad/b.system.cad.json", name="same")
@@ -75,6 +97,20 @@ class CadSystemTests(unittest.TestCase):
             select_system(candidates, "same")
         self.assertIn("a.system.cad.json", str(caught.exception))
         self.assertIn("b.system.cad.json", str(caught.exception))
+
+    def test_discovery_marks_every_duplicate_declared_name_invalid(self):
+        self.system("cad/a.system.cad.json", name="same")
+        self.system("cad/b.system.cad.json", name="same")
+        self.system("cad/unique.system.cad.json", name="unique")
+        candidates = discover_systems(self.root)
+        duplicates = tuple(row for row in candidates if row.name == "same")
+        self.assertEqual(tuple(row.status for row in duplicates), ("invalid", "invalid"))
+        self.assertTrue(all(row.diagnostics for row in duplicates))
+        self.assertEqual(
+            tuple(row.diagnostics[-1].kind for row in duplicates),
+            ("duplicate_system_name", "duplicate_system_name"),
+        )
+        self.assertEqual(candidates[-1].status, "valid")
 
     def test_rejects_unknown_schema_keys(self):
         error = self.assert_invalid(surprise=True)

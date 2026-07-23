@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 import json
 from pathlib import Path
@@ -172,17 +172,50 @@ def discover_systems(repo_root: Path) -> tuple[SystemCandidate, ...]:
                 path, name if isinstance(name, str) else "",
                 description if isinstance(description, str) else "",
                 default if isinstance(default, str) else None, "invalid", error.diagnostics))
+    paths_by_name: dict[str, list[Path]] = {}
+    for row in rows:
+        if row.name:
+            paths_by_name.setdefault(row.name, []).append(row.path)
+    duplicate_names = {name: tuple(paths) for name, paths in paths_by_name.items()
+                       if len(paths) > 1}
+    for index, row in enumerate(rows):
+        if row.name not in duplicate_names:
+            continue
+        duplicate_paths = tuple(str(item) for item in duplicate_names[row.name])
+        diagnostic = _diagnostic(
+            row.path, f"Duplicate system name {row.name!r}: {', '.join(duplicate_paths)}",
+            code="CAD128", kind="duplicate_system_name", json_path="$.name",
+            value=row.name, choices=duplicate_paths,
+        )
+        rows[index] = replace(row, status="invalid",
+                              diagnostics=row.diagnostics + (diagnostic,))
     return tuple(rows)
 
 
 def select_system(candidates: Iterable[SystemCandidate], selector: str) -> SystemCandidate:
     """Select a unique candidate by declared name or explicit manifest path."""
     rows = tuple(candidates)
-    selector_path = Path(selector).resolve()
+    if rows:
+        repo_root = rows[0].path.parent.parent.resolve()
+    else:
+        repo_root = Path.cwd().resolve()
+    raw_selector_path = Path(selector)
+    selector_path = (raw_selector_path if raw_selector_path.is_absolute()
+                     else repo_root / raw_selector_path).resolve()
     path_matches = tuple(row for row in rows if row.path.resolve() == selector_path)
-    matches = path_matches or tuple(row for row in rows if row.name == selector)
+    name_matches = tuple(row for row in rows if row.name == selector)
+    matches = path_matches or name_matches
     if len(matches) == 1:
         return matches[0]
+    explicit_path = (raw_selector_path.is_absolute() or len(raw_selector_path.parts) > 1
+                     or selector.endswith(".system.cad.json"))
+    if not path_matches and explicit_path:
+        if not _inside(selector_path, repo_root):
+            _fail(selector_path, "Explicit system manifest must remain inside the repository",
+                  code="CAD109", kind="unsafe_path", value=selector)
+        system = load_system(selector_path, repo_root)
+        return SystemCandidate(selector_path, system.name, system.description,
+                               system.default_product, "valid")
     choices = tuple(f"{row.name or '<invalid>'} ({row.path})" for row in rows)
     reason = "ambiguous" if len(matches) > 1 else "not found"
     source = rows[0].path if rows else Path(selector)
