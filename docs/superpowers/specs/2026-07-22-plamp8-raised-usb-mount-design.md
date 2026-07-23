@@ -52,9 +52,9 @@ capsule. Apply the production connector opening and screw negatives after the
 risers are unioned with the sub-panel so the openings continue through the
 complete mount.
 
-The connector conflicts with the inner portion of the 10 mm east perimeter
-ledge. Remove a local notch 5 mm deep in X from the ledge's inner face, spanning
-10 mm in Y and centered on the connector. Preserve the outer 5 mm of the ledge.
+Preserve the complete 10 mm east perimeter ledge. The right ear riser occupies
+the connector footprint and ends 0.5 mm above the ledge, so removing material
+from the ledge does not provide additional connector clearance.
 
 ## Fasteners
 
@@ -72,7 +72,8 @@ top surface finishes flush with the sub-panel underside.
 
 The `usb_c_panel` view continues to contain the production top-panel section
 and the same-size crop of the full production sub-panel. The crop must include
-the risers, underside countersinks, revised opening, and east-ledge notch.
+the risers, underside countersinks, revised opening, and uninterrupted east
+ledge.
 
 Do not change the canonical USB center, service-pocket layout, other connector
 panels, or non-USB enclosure geometry. Do not commit generated STL or CSG
@@ -82,7 +83,7 @@ artifacts.
 
 Use source-contract tests for the capsule dimensions and construction, absence
 of top USB screw cutters, 5.5 mm risers, 12.5 × 10.5 mm sub-panel opening,
-5 × 10 mm east-ledge notch, underside countersinks, and M3 × 16 mm hardware
+preserved east ledge, underside countersinks, and M3 × 16 mm hardware
 declaration. Validate Plamp8 metadata, plan and compile `usb_c_panel` to CSG,
 inspect the log for warnings/errors/assertions, and run the full Python suite.
 The user will render, slice, and physically test the STL on their workstation.

@@ -1,5 +1,10 @@
 # Plamp8 Raised USB Mount Implementation Plan
 
+> **Post-print correction:** The east-ledge notch described in the original
+> implementation steps below was removed after assembly review showed that the
+> ear riser itself provides the required clearance. The production design
+> preserves the complete east perimeter ledge.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the recessed top-panel USB mount with a 5.5 mm raised sub-panel mount whose connector ears protrude through a 27.5 × 10.5 mm capsule.
