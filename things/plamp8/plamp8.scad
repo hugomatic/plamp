@@ -243,19 +243,16 @@ usb_c_label_h = 9;
 usb_c_group_y = -4;
 usb_c_group_w = 36;
 usb_c_group_h = 28;
-usb_c_cutout_w = 12;
-usb_c_cutout_h = 10;
-usb_c_cutout_r = 1.5;
-usb_c_cable_recess_w = 24;
-usb_c_cable_recess_h = 14;
-usb_c_cable_recess_r = 2;
-usb_c_mount_thickness = 1.5;
-usb_c_wire_cutout_w = 10;
-usb_c_wire_cutout_h = 16;
-usb_c_screw_d = 3.4;
-usb_c_screw_head_d = 5.61;
+usb_c_capsule_d = 10.5;
+usb_c_screw_d = screw_clearance_d("M3");
 usb_c_screw_spacing = 17;
-usb_c_screw_surface_z = usb_c_mount_thickness;
+usb_c_capsule_w = usb_c_screw_spacing + usb_c_capsule_d;
+usb_c_target_protrusion = 2.5;
+usb_c_riser_h = plate_t + usb_c_target_protrusion;
+usb_c_supplied_screw_length = 10;
+usb_c_mount_screw_length = 16;
+usb_c_countersink_d = screw_chamfer_d("M3");
+usb_c_countersink_h = (usb_c_countersink_d - usb_c_screw_d) / 2;
 
 c13_label_w = 48;
 c13_label_h = 10;
@@ -418,13 +415,18 @@ sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
 sub_panel_socket_screw_spacing = 82;
-sub_panel_usb_c_cutout_w = 13;
+sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
 sub_panel_wall = 10;
+sub_panel_usb_ledge_relief_x = 5;
+sub_panel_usb_ledge_relief_y = 10;
+sub_panel_usb_hole_bridge =
+    (usb_c_screw_spacing - sub_panel_usb_c_cutout_w - usb_c_screw_d) / 2;
 sub_panel_socket_rim_relief_w = sub_panel_socket_w;
 sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
+sub_panel_print_h = max(sub_panel_h, sub_panel_base_h + usb_c_riser_h);
 sub_panel_revision_depth = 0.6;
 sub_panel_usb_support_rib_w = 10;
 sub_panel_usb_support_rib_h = sub_panel_h - sub_panel_base_h;
@@ -622,16 +624,15 @@ c13_hardware_inside_region =
     && c13_hardware_x + c13_hardware_half_w <= c13_region_right_x
     && c13_hardware_y - c13_cutout_h / 2 >= c13_region_bottom_y
     && c13_hardware_y + c13_cutout_h / 2 <= c13_region_top_y;
-usb_hardware_half_w = max(usb_c_cutout_w / 2, usb_c_screw_spacing / 2 + usb_c_screw_head_d / 2);
+usb_hardware_half_w = usb_c_capsule_w / 2;
 usb_hardware_inside_region =
     usb_c_panel_x - usb_hardware_half_w >= service_group_x
     && usb_c_panel_x + usb_hardware_half_w <= service_region_right_x
-    && usb_c_panel_y - usb_c_cutout_h / 2 >= service_region_bottom_y
-    && usb_c_panel_y + usb_c_cutout_h / 2 <= service_group_y;
+    && usb_c_panel_y - usb_c_capsule_d / 2 >= service_region_bottom_y
+    && usb_c_panel_y + usb_c_capsule_d / 2 <= service_group_y;
 c13_service_cutters_clear_separator =
     c13_hardware_y - c13_cutout_h / 2 >= c13_region_bottom_y
-    && usb_c_panel_y + max(usb_c_cutout_h / 2, usb_c_screw_head_d / 2)
-        <= service_region_top_y;
+    && usb_c_panel_y + usb_c_capsule_d / 2 <= service_region_top_y;
 separator_cutters_respect_rib_bounds =
     xt60_screw_nut_envelope_inside_region
     && dc_column_cutters_clear_separator
@@ -702,6 +703,19 @@ assert(service_top_pocket_w * 2 + service_pocket_gap == service_group_w,
     "top service pockets and gap must exactly span the region");
 assert(service_pocket_h * 2 + service_pocket_gap == service_group_h,
     "service pocket rows and gap must exactly span the region");
+assert(usb_c_capsule_w == 27.5 && usb_c_capsule_d == 10.5,
+    "USB top capsule must remain 27.5 x 10.5 mm");
+assert(usb_c_riser_h == 5.5,
+    "USB risers must place the connector 2.5 mm above the top panel");
+assert(usb_c_mount_screw_length - usb_c_supplied_screw_length
+        >= usb_c_riser_h
+        && usb_c_mount_screw_length - usb_c_supplied_screw_length
+        <= usb_c_riser_h + 0.5,
+    "USB mount screws must preserve the supplied screw engagement");
+assert(abs(sub_panel_usb_hole_bridge - 0.55) < 0.000001,
+    "USB sub-panel opening must retain a 0.55 mm screw-hole bridge");
+assert(sub_panel_wall - sub_panel_usb_ledge_relief_x == 5,
+    "USB ledge relief must preserve the outer 5 mm east ledge");
 assert(ac_connector_panel_rim_ok,
     "AC connector panel must retain 3 mm around every rounded pocket");
 assert(dc_connector_panel_rim_ok,
@@ -921,6 +935,29 @@ module sub_panel_usb_support_rib_positive() {
         ]);
 }
 
+module sub_panel_usb_risers_positive() {
+    for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
+        translate([
+            usb_c_panel_x + x,
+            usb_c_panel_y,
+            sub_panel_base_h
+        ])
+            cylinder(h = usb_c_riser_h, d = usb_c_capsule_d);
+}
+
+module sub_panel_usb_east_ledge_relief_negative() {
+    translate([
+        top_panel_w - sub_panel_wall - layout_offset_x - boolean_shim,
+        usb_c_panel_y - sub_panel_usb_ledge_relief_y / 2,
+        sub_panel_base_h
+    ])
+        cube([
+            sub_panel_usb_ledge_relief_x + boolean_shim,
+            sub_panel_usb_ledge_relief_y,
+            sub_panel_h - sub_panel_base_h + boolean_shim
+        ]);
+}
+
 module sub_panel_separator_rib_positive(x0, y0, w, h) {
     translate([x0, y0, sub_panel_base_h])
         cube([w, h, sub_panel_h - sub_panel_base_h]);
@@ -1009,12 +1046,22 @@ module sub_panel_left_xt60_nut_clearances_negative() {
             );
 }
 
+module sub_panel_usb_screw_negative() {
+    screw_hole(usb_c_screw_d);
+    translate([0, 0, -boolean_shim])
+        cylinder(
+            h = usb_c_countersink_h + boolean_shim,
+            d1 = usb_c_countersink_d,
+            d2 = usb_c_screw_d
+        );
+}
+
 module sub_panel_usb_c_negative() {
     rect_cutout(sub_panel_usb_c_cutout_w, sub_panel_usb_c_cutout_h);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([x, 0, 0])
-            screw_hole(usb_c_screw_d);
+            sub_panel_usb_screw_negative();
 }
 
 module sub_panel_c13_negative() {
@@ -1088,13 +1135,6 @@ module outlet_cover(
 module screw_hole(d, depth = 30) {
     translate([0, 0, -depth / 2])
         cylinder(h = depth, d = d);
-}
-
-module topside_countersunk_screw_hole(hole_d, head_d, surface_z = plate_t, depth = 30) {
-    countersink_h = (head_d - hole_d) / 2;
-    screw_hole(hole_d, depth);
-    translate([0, 0, surface_z - countersink_h])
-        cylinder(h = countersink_h + 0.1, d1 = hole_d, d2 = head_d);
 }
 
 module rect_cutout(w, h, depth = 30) {
@@ -1205,25 +1245,15 @@ module dc_connector_panel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", inc
             flush_revision_label();
 }
 
-module usb_c_cable_recess_negative() {
-    recess_h = plate_t - usb_c_mount_thickness + boolean_shim;
-
-    translate([0, 0, usb_c_mount_thickness + recess_h / 2])
-        round_hull(
-            usb_c_cable_recess_w,
-            usb_c_cable_recess_h,
-            usb_c_cable_recess_r,
-            recess_h
-        );
+module usb_c_capsule_negative() {
+    hull()
+        for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
+            translate([x, 0, plate_t / 2])
+                cylinder(h = 30, d = usb_c_capsule_d, center = true);
 }
 
 module usb_c_connector_negative() {
-    usb_c_cable_recess_negative();
-    rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
-
-    for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
-        translate([x, 0, 0])
-            topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z);
+    usb_c_capsule_negative();
 }
 
 module service_brand_pocket_negative() {
@@ -1416,8 +1446,12 @@ module sub_panel_8ch() {
     translate([layout_offset_x, layout_offset_y, 0]) {
         difference() {
             union() {
-                translate([-layout_offset_x, -layout_offset_y, 0])
-                    sub_panel_8ch_positive();
+                difference() {
+                    translate([-layout_offset_x, -layout_offset_y, 0])
+                        sub_panel_8ch_positive();
+                    sub_panel_usb_east_ledge_relief_negative();
+                }
+                sub_panel_usb_risers_positive();
             }
 
             sub_panel_8ch_negative();
@@ -2858,7 +2892,7 @@ module production_sub_panel_crop(
                 cube([
                     crop_w,
                     crop_h,
-                    sub_panel_h + 2 * boolean_shim
+                    sub_panel_print_h + 2 * boolean_shim
                 ]);
         }
 }

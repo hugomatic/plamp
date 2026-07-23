@@ -1033,7 +1033,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("connector_panel_pair_gap = 10;", source)
         self.assertIn("sub_panel_8ch();", crop)
         self.assertIn("intersection()", crop)
-        self.assertIn("sub_panel_h+2*boolean_shim", crop)
+        self.assertIn("sub_panel_print_h+2*boolean_shim", crop)
         self.assertIn(
             "c13_panel_hardware_x = c13_hardware_x - c13_region_x;",
             source,
@@ -1247,8 +1247,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "socket_rim_relief_below_separators=socket_rim_relief_top_y"
             "<=dc_region_bottom_y;",
             "c13_service_cutters_clear_separator=c13_hardware_y-c13_cutout_h/2>="
-            "c13_region_bottom_y&&usb_c_panel_y+max(usb_c_cutout_h/2,"
-            "usb_c_screw_head_d/2)<=service_region_top_y;",
+            "c13_region_bottom_y&&usb_c_panel_y+usb_c_capsule_d/2"
+            "<=service_region_top_y;",
         ):
             with self.subTest(bounds=bounds):
                 self.assertIn(bounds, compact)
@@ -1283,15 +1283,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         usb_unit = source.split("module usb_c_panel_unit", 1)[1].split("module c13_inlet_negative", 1)[0]
 
-        self.assertIn("usb_c_cutout_w = 12;", source)
-        self.assertIn("usb_c_cutout_h = 10;", source)
-        self.assertIn("usb_c_cutout_r = 1.5;", source)
+        self.assertIn("usb_c_capsule_d = 10.5;", source)
         self.assertIn("usb_c_screw_spacing = 17;", source)
-        self.assertIn("sub_panel_usb_c_cutout_w = 13;", source)
+        self.assertIn("usb_c_capsule_w = usb_c_screw_spacing + usb_c_capsule_d;", source)
+        self.assertIn("sub_panel_usb_c_cutout_w = 12.5;", source)
         self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
         self.assertRegex(
             source,
-            r"module usb_c_connector_negative\(\) \{[\s\S]*?rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+            r"module usb_c_connector_negative\(\) \{\s*usb_c_capsule_negative\(\);",
         )
         self.assertRegex(
             source,
@@ -1301,15 +1300,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("panel_screw_length = 20;", source)
         self.assertIn("panel_screw_tip_protrusion = 1;", source)
         self.assertIn("panel_screw_land_d = 9.5;", source)
-        self.assertIn("usb_c_screw_d = 3.4;", source)
-        self.assertIn("usb_c_screw_head_d = 5.61;", source)
-        self.assertIn("usb_c_screw_surface_z = usb_c_mount_thickness;", source)
-        self.assertIn(
-            "topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z)",
-            source,
-        )
-        self.assertIn("module topside_countersunk_screw_hole", source)
-        self.assertNotIn("module underside_countersunk_screw_hole", source)
+        self.assertIn('usb_c_screw_d = screw_clearance_d("M3");', source)
+        self.assertIn("usb_c_mount_screw_length = 16;", source)
+        self.assertIn("usb_c_countersink_d = screw_chamfer_d(\"M3\");", source)
+        self.assertIn("module sub_panel_usb_screw_negative", source)
+        self.assertNotIn("module topside_countersunk_screw_hole", source)
         self.assertIn("fit_plate(usb_c_panel_w, usb_c_panel_h);", usb_unit)
         self.assertNotIn("alignment_walls", usb_unit)
         self.assertIn("module panel_corner_screw_lands", source)
@@ -1324,47 +1319,59 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module panel_corner_fastener_test", source)
         self.assertIn('view == "panel_corner_fastener_test"', source)
 
-    def test_plamp8_usb_cable_relief_thins_only_the_connector_mount(self):
+    def test_plamp8_usb_connector_uses_raised_sub_panel_mount(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
-        connector = compact_scad(
-            scad_module_body(source, "usb_c_connector_negative")
+        top = compact_scad(scad_module_body(source, "usb_c_connector_negative"))
+        capsule = compact_scad(scad_module_body(source, "usb_c_capsule_negative"))
+        risers = compact_scad(
+            scad_module_body(source, "sub_panel_usb_risers_positive")
         )
-        relief = compact_scad(
-            scad_module_body(source, "usb_c_cable_recess_negative")
+        ledge = compact_scad(
+            scad_module_body(source, "sub_panel_usb_east_ledge_relief_negative")
         )
-        sub_panel = compact_scad(
+        screw = compact_scad(
+            scad_module_body(source, "sub_panel_usb_screw_negative")
+        )
+        sub_negative = compact_scad(
             scad_module_body(source, "sub_panel_usb_c_negative")
         )
+        crop = compact_scad(scad_module_body(source, "production_sub_panel_crop"))
 
         for definition in (
-            "usb_c_cable_recess_w=24;",
-            "usb_c_cable_recess_h=14;",
-            "usb_c_cable_recess_r=2;",
-            "usb_c_mount_thickness=1.5;",
-            "usb_c_screw_surface_z=usb_c_mount_thickness;",
+            "usb_c_capsule_d=10.5;",
+            "usb_c_capsule_w=usb_c_screw_spacing+usb_c_capsule_d;",
+            "usb_c_target_protrusion=2.5;",
+            "usb_c_riser_h=plate_t+usb_c_target_protrusion;",
+            "sub_panel_print_h=max(sub_panel_h,sub_panel_base_h+usb_c_riser_h);",
+            "usb_c_mount_screw_length=16;",
+            'usb_c_countersink_d=screw_chamfer_d("M3");',
+            "usb_c_countersink_h=(usb_c_countersink_d-usb_c_screw_d)/2;",
+            "sub_panel_usb_c_cutout_w=12.5;",
+            "sub_panel_usb_c_cutout_h=10.5;",
+            "sub_panel_usb_ledge_relief_x=5;",
+            "sub_panel_usb_ledge_relief_y=10;",
         ):
             self.assertIn(definition, compact)
 
-        self.assertIn("usb_c_cable_recess_negative();", connector)
+        self.assertIn("usb_c_capsule_negative();", top)
+        self.assertNotIn("screw_hole", top)
+        self.assertNotIn("countersink", top)
+        self.assertIn("hull()", capsule)
         self.assertIn(
-            "recess_h=plate_t-usb_c_mount_thickness+boolean_shim;", relief
+            "x=[-usb_c_screw_spacing/2,usb_c_screw_spacing/2]", capsule
         )
-        self.assertIn(
-            "translate([0,0,usb_c_mount_thickness+recess_h/2])"
-            "round_hull(usb_c_cable_recess_w,usb_c_cable_recess_h,"
-            "usb_c_cable_recess_r,recess_h);",
-            relief,
-        )
-        self.assertIn(
-            "topside_countersunk_screw_hole(usb_c_screw_d,"
-            "usb_c_screw_head_d,usb_c_screw_surface_z);",
-            connector,
-        )
-        self.assertIn(
-            "rect_cutout(sub_panel_usb_c_cutout_w,sub_panel_usb_c_cutout_h);",
-            sub_panel,
-        )
+        self.assertIn("d=usb_c_capsule_d", capsule)
+        self.assertIn("h=usb_c_riser_h", risers)
+        self.assertIn("d=usb_c_capsule_d", risers)
+        self.assertIn("sub_panel_usb_ledge_relief_x", ledge)
+        self.assertIn("sub_panel_usb_ledge_relief_y", ledge)
+        self.assertIn("d1=usb_c_countersink_d", screw)
+        self.assertIn("d2=usb_c_screw_d", screw)
+        self.assertIn("sub_panel_usb_screw_negative();", sub_negative)
+        self.assertIn("sub_panel_print_h+2*boolean_shim", crop)
+        self.assertNotIn("usb_c_cable_recess", source)
+        self.assertNotIn("topside_countersunk_screw_hole", source)
 
     def test_retired_cad_shell_files_are_untracked(self):
         tracked = run(["git", "ls-files", "-z"], REPO_ROOT, check=True).stdout.split("\0")
