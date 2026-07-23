@@ -154,12 +154,31 @@ By default each generation is stored at
 `$PLAMP_DATA_DIR/cad/prints/<part>/<RUN_ID>/`. This instance-data directory
 contains `manifest.json`, a generated `readme.md`, the archived `source/`, STL
 files under `artifacts/`, and complete OpenSCAD output under `logs/`. The
-versioned manifest records source identity, the metadata snapshot, selection,
-preset expansion, effective typed and raw variables, exact OpenSCAD commands,
-job state, timings, artifact sizes, captured echoes, typed `PLAMP` messages,
-warnings, errors, and geometry statistics. Unknown OpenSCAD output remains in
-the per-artifact log. Use `plamp cad show RUN_ID` for the manifest and
-`plamp cad log RUN_ID ARTIFACT_ID` for one archived log.
+run ID is local-time and human-readable; for example:
+
+```text
+2026-jul23-plamp8-top_panel-22h:19m-47e7d26
+```
+
+Before starting OpenSCAD, managed generation checks whether the same source
+and effective selection have already been rendered that local day. An
+interactive command shows the existing path and asks whether to regenerate.
+For automation, request the same safe replacement explicitly:
+
+```bash
+plamp cad generate plamp8 --view top_panel --regenerate
+```
+
+The replacement is rendered separately and published only after it succeeds;
+a failed regeneration leaves the existing run intact. Explicit `--output`
+bypasses managed duplicate detection and keeps its exact-directory behavior.
+
+Each versioned manifest records source identity, the metadata snapshot,
+selection, preset expansion, effective typed and raw variables, exact OpenSCAD
+commands, job state, timings, artifact sizes, captured echoes, typed `PLAMP`
+messages, warnings, errors, and geometry statistics. Unknown OpenSCAD output
+remains in the per-artifact log. Use `plamp cad show RUN_ID` for the manifest
+and `plamp cad log RUN_ID ARTIFACT_ID` for one archived log.
 
 OpenSCAD CGAL rendering is CPU- and memory-heavy on a Raspberry Pi, and a
 multi-job generation can take minutes. Headless STL generation works, but

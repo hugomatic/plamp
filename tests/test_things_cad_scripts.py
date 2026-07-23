@@ -331,6 +331,18 @@ class ThingsCadScriptsTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, documentation)
         self.assertIn("$PLAMP_DATA_DIR/cad/prints", documentation)
+        self.assertIn(
+            "2026-jul23-plamp8-top_panel-22h:19m-47e7d26",
+            documentation,
+        )
+        self.assertIn(
+            "plamp cad generate plamp8 --view top_panel --regenerate",
+            documentation,
+        )
+        self.assertIn(
+            "explicit --output bypasses managed duplicate detection",
+            " ".join(documentation.lower().replace("`", "").split()),
+        )
         self.assertIn("plan before generate", documentation.lower().replace("`", ""))
         self.assertIn(
             "SCAD defaults → global → view → outer-to-inner preset variables → "
