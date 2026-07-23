@@ -39,6 +39,10 @@ view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel
       "description": "Enclosure printed as a fused box with separate panels",
       "items": ["view:box", "view:top_panel", "view:sub_panel"]
     },
+    "panels": {
+      "description": "Printable top and internal sub-panels",
+      "items": ["view:top_panel", "view:sub_panel"]
+    },
     "assembly": {
       "description": "Complete illustrated enclosure assembly",
       "items": ["view:assembly"]

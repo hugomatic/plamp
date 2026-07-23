@@ -1174,6 +1174,18 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(label_call, top_panel)
 
+    def test_plamp8_has_ready_made_panels_preset(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn('"panels": {', source)
+        self.assertIn(
+            '"description": "Printable top and internal sub-panels",', source
+        )
+        self.assertIn(
+            '"items": ["view:top_panel", "view:sub_panel"]', source
+        )
+        self.assertIn('"default_preset": "split-box"', source)
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
