@@ -620,6 +620,7 @@ plamp cad sets plamp8 --system plamp
 plamp cad products --system plamp
 plamp cad profiles --system plamp
 plamp cad libraries --system plamp
+plamp cad templates
 ```
 
 `systems` lists every discovered system with its declared name, description,
@@ -690,11 +691,45 @@ The migration removes:
 - `plamp cad views` in favor of `plamp cad sets`;
 - `--view` and `--view-define` in favor of `--set` and `--set-define`;
 - `--preset` and all synthetic presets;
+- `plamp cad new --list-templates` in favor of `plamp cad templates`;
 - the embedded `generate.json` block; and
 - the public word `part` for root models.
 
 There are no compatibility aliases before 1.0. Diagnostics show the replacement
 command when detecting an obsolete invocation.
+
+## CAD Scaffolding and Template Selection
+
+`plamp cad new` always supports explicit template selection:
+
+```bash
+plamp cad templates
+plamp cad new pump-bracket --template flat_plate --system plamp
+```
+
+`templates` lists every available scaffold template with its stable name,
+description, source SCAD path, and the files it will create. The initial names
+remain `cad`, `flat_plate`, and `positive_negative`. Template descriptions live
+in adjacent template sidecars, not embedded SCAD JSON.
+
+When `--template` is omitted in an interactive terminal, `new` presents the
+described template list with `cad` marked as the recommended default; pressing
+Enter selects it. A non-interactive invocation uses `cad` and prints that choice.
+An unknown template fails before mutation and lists the available names plus the
+exact `plamp cad templates` command.
+
+Each template is a SCAD-and-sidecar pair. Scaffolding substitutes the new model
+identifier in both files—for example, `flat_plate.scad` plus
+`flat_plate.cad.json` produces `<model>/<model>.scad` plus
+`<model>/<model>.cad.json`. The selected template name and created paths are
+reported in human and JSON creation output.
+
+New models are registered in the selected system so they immediately appear in
+`plamp cad models` and their sets appear in `plamp cad sets MODEL`. `--system`
+uses the same name/path resolution as generation; one system is automatic and
+multiple systems trigger the normal interactive choice or non-interactive
+diagnostic. Creating the model folder, sidecar, and system entry is atomic: a
+validation or write failure leaves none of them partially published.
 
 ## Plamp8 Migration
 
@@ -856,6 +891,9 @@ Unit and integration tests cover:
 - complete system-to-model-to-set navigation in human and JSON output;
 - descriptions at every navigation level, including explicit missing-description
   display and diagnostics;
+- template discovery with descriptions and explicit/default template selection;
+- atomic creation of a clean SCAD-and-sidecar pair and registration in the
+  selected system;
 - parsing ordered named and empty SCAD sets;
 - clean SCAD operation without a sidecar;
 - model-sidecar validation and missing-description advisories;
@@ -927,6 +965,8 @@ The design is implemented when:
 - every selectable system, model, and set appears in complete CLI and interactive
   navigation with a visible description or missing-description marker, including
   the empty/default set;
+- `plamp cad new` lists described templates and accepts `--template`, then
+  creates and registers a valid model/sidecar pair in the selected system;
 - model sets remain directly selectable from OpenSCAD and `plamp cad`;
 - product, model, set, profile, item, and CLI values resolve deterministically;
 - printer/material profiles can override reusable set defaults without modifying
