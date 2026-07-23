@@ -1265,6 +1265,33 @@ class ThingsCadScriptsTest(unittest.TestCase):
             with self.subTest(bounds=bounds):
                 self.assertIn(bounds, compact)
 
+    def test_plamp8_sub_panel_has_full_y_ac_bonding_rib(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        rib = (
+            compact_scad(
+                scad_module_body(source, "sub_panel_ac_bonding_rib_positive")
+            )
+            if "module sub_panel_ac_bonding_rib_positive" in source
+            else ""
+        )
+        positive = compact_scad(scad_module_body(source, "sub_panel_8ch_positive"))
+
+        for definition in (
+            "sub_panel_ac_bonding_rib_w=4;",
+            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+outlet_feature_x+right_ac_x+outlet_feature_x)/2;",
+            "sub_panel_ac_bonding_rib_y0=sub_panel_wall;",
+            "sub_panel_ac_bonding_rib_y1=layout_offset_y+dc_region_bottom_y;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("sub_panel_base_h", rib)
+        self.assertIn("sub_panel_h-sub_panel_base_h", rib)
+        self.assertIn(
+            "sub_panel_ac_bonding_rib_y1-sub_panel_ac_bonding_rib_y0", rib
+        )
+        self.assertIn("sub_panel_ac_bonding_rib_positive();", positive)
+
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 

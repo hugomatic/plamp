@@ -665,6 +665,15 @@ assert(east_center_rib_x == 105,
 assert(vent_rib_edge_clearance >= 1,
     "east center rib needs at least 1 mm clearance from adjacent vent holes");
 layout_offset_x = panel_margin - content_left_x;
+sub_panel_ac_bonding_rib_w = 4;
+sub_panel_ac_bonding_rib_x = layout_offset_x
+    + (left_ac_x + outlet_feature_x + right_ac_x + outlet_feature_x) / 2;
+sub_panel_ac_bonding_rib_y0 = sub_panel_wall;
+sub_panel_ac_bonding_rib_y1 = layout_offset_y + dc_region_bottom_y;
+sub_panel_ac_left_socket_right_x = layout_offset_x + left_ac_x
+    + outlet_feature_x + sub_panel_socket_w / 2;
+sub_panel_ac_right_socket_left_x = layout_offset_x + right_ac_x
+    + outlet_feature_x - sub_panel_socket_w / 2;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
 internal_psu_x = 70;
@@ -701,6 +710,15 @@ assert(service_region_left_x == c13_region_left_x
     "service region must align with the C13 rounded region");
 assert(service_region_left_x - dc_region_right_x == panel_region_gap,
     "service region must retain the 2 mm DC gap");
+assert(
+    sub_panel_ac_bonding_rib_x - sub_panel_ac_bonding_rib_w / 2
+        > sub_panel_ac_left_socket_right_x
+    && sub_panel_ac_bonding_rib_x + sub_panel_ac_bonding_rib_w / 2
+        < sub_panel_ac_right_socket_left_x,
+    "AC bonding rib must remain between the socket openings"
+);
+assert(sub_panel_ac_bonding_rib_y1 > sub_panel_ac_bonding_rib_y0,
+    "AC bonding rib must span from the south ledge to the DC section");
 assert(service_top_pocket_w * 2 + service_pocket_gap == service_group_w,
     "top service pockets and gap must exactly span the region");
 assert(service_pocket_h * 2 + service_pocket_gap == service_group_h,
@@ -971,6 +989,19 @@ module sub_panel_separator_ribs_positive() {
     );
 }
 
+module sub_panel_ac_bonding_rib_positive() {
+    translate([
+        sub_panel_ac_bonding_rib_x - sub_panel_ac_bonding_rib_w / 2,
+        sub_panel_ac_bonding_rib_y0,
+        sub_panel_base_h
+    ])
+        cube([
+            sub_panel_ac_bonding_rib_w,
+            sub_panel_ac_bonding_rib_y1 - sub_panel_ac_bonding_rib_y0,
+            sub_panel_h - sub_panel_base_h
+        ]);
+}
+
 module sub_panel_8ch_positive() {
     base_h = sub_panel_base_h;
     lip_h = sub_panel_h - base_h;
@@ -990,6 +1021,7 @@ module sub_panel_8ch_positive() {
 
         sub_panel_usb_support_rib_positive();
         sub_panel_separator_ribs_positive();
+        sub_panel_ac_bonding_rib_positive();
     }
 }
 
