@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, TextIO
 
 from plamp.cad_generation import (
+    CadRunExistsError,
     GENERATOR_VERSION,
     GenerationResult,
     generate_plan,
@@ -92,6 +93,11 @@ def add_cad_parser(
     menu.add_argument("--revision")
     menu.add_argument("--output", type=Path)
     menu.add_argument("--openscad", default=None)
+    menu.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="replace a matching managed run after rendering succeeds",
+    )
     menu.add_argument("--json", action="store_true")
 
     generate = actions.add_parser(
@@ -121,6 +127,11 @@ def add_cad_parser(
     )
     generate.add_argument("--output", type=Path, metavar="DIR")
     generate.add_argument("--openscad", default=None)
+    generate.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="replace a matching managed run after rendering succeeds",
+    )
     generate.add_argument("--json", action="store_true")
     generate.add_argument("legacy_output", nargs="?", metavar="target_directory")
     generate.add_argument("legacy_commit", nargs="?", metavar="commit")
@@ -506,6 +517,7 @@ def _generate(
     args: argparse.Namespace,
     context: RuntimeContext,
     deps: Mapping[str, CadFunction],
+    stdin: TextIO,
     stdout: TextIO,
     stderr: TextIO,
     selection: Selection | None = None,
@@ -515,19 +527,45 @@ def _generate(
     )
     stream = stderr if args.json else stdout
     try:
-        result = deps["generate"](
-            plan,
-            repo_root=context.root,
-            data_dir=context.data_dir,
-            scad_path=source,
-            output=_generation_output(args),
-            openscad=deps["resolve_openscad"](getattr(args, "openscad", None)),
-            revision=_generation_revision(args),
-            metadata=document.metadata_snapshot,
-            stdout=stream,
-            stderr=stderr,
-            snapshot=snapshot,
+        regenerate = bool(getattr(args, "regenerate", False))
+        resolved_openscad = deps["resolve_openscad"](
+            getattr(args, "openscad", None)
         )
+        while True:
+            try:
+                result = deps["generate"](
+                    plan,
+                    repo_root=context.root,
+                    data_dir=context.data_dir,
+                    scad_path=source,
+                    output=_generation_output(args),
+                    openscad=resolved_openscad,
+                    revision=_generation_revision(args),
+                    metadata=document.metadata_snapshot,
+                    stdout=stream,
+                    stderr=stderr,
+                    snapshot=snapshot,
+                    regenerate=regenerate,
+                )
+                break
+            except CadRunExistsError as error:
+                guidance = f"{error}; rerun with --regenerate"
+                interactive = (
+                    not args.json
+                    and bool(getattr(stdin, "isatty", lambda: False)())
+                )
+                if regenerate or not interactive:
+                    raise CadOperationError(guidance) from None
+                stdout.write(
+                    "WARNING: matching CAD run already exists: "
+                    f"{error.existing_run_dir}\n"
+                )
+                stdout.write("Regenerate existing run? [y/N] ")
+                stdout.flush()
+                answer = stdin.readline().strip().lower()
+                if answer not in {"y", "yes"}:
+                    raise CadOperationError(guidance) from None
+                regenerate = True
         manifest, status = _generation_manifest(result, deps)
     except KeyboardInterrupt:
         raise
@@ -629,10 +667,12 @@ def run_cad_command(
             source = deps["resolve_part"](args.part, context.root)
             document = deps["parse_document"](source)
             selected = _menu_selection(document, stdin, stderr if args.json else stdout)
-            return _generate(args, context, deps, stdout, stderr, selected)
+            return _generate(
+                args, context, deps, stdin, stdout, stderr, selected
+            )
 
         if args.action == "generate":
-            return _generate(args, context, deps, stdout, stderr)
+            return _generate(args, context, deps, stdin, stdout, stderr)
 
         if args.action == "runs":
             value = deps["list_runs"](context.data_dir, args.part)
