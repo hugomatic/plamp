@@ -140,7 +140,7 @@ class CadRecipeTests(unittest.TestCase):
                 "relay_footprint", "psu_footprint", "converter_footprint",
             ),
             "top-panel-fit": (
-                "ac_duplex_channel", "dc_barrel_channel", "usb_c_panel", "c13_inlet",
+                "ac_duplex_panel", "dc_connector_panel", "usb_c_panel", "c13_panel",
             ),
             "corner-coupons": (
                 "panel_corner_fastener_test", "corner_coupon",
@@ -148,7 +148,7 @@ class CadRecipeTests(unittest.TestCase):
             ),
             "test-fit": (
                 "relay_footprint", "psu_footprint", "converter_footprint",
-                "ac_duplex_channel", "dc_barrel_channel", "usb_c_panel", "c13_inlet",
+                "ac_duplex_panel", "dc_connector_panel", "usb_c_panel", "c13_panel",
                 "panel_corner_fastener_test", "corner_coupon",
                 "wall_corner_fastener_assembly",
             ),

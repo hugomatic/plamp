@@ -29,16 +29,37 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_plamp8_connector_fit_views_use_panel_names(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        for name in (
+            "ac_duplex_panel", "dc_connector_panel", "usb_c_panel", "c13_panel",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(f'view == "{name}"', source)
+                self.assertIn(f'module {name}()', source)
+
+        for retired in ("ac_duplex_channel", "dc_barrel_channel", "c13_inlet"):
+            with self.subTest(retired=retired):
+                self.assertNotIn(f'view == "{retired}"', source)
+                self.assertNotIn(f'module {retired}()', source)
+
+        self.assertIn(
+            '"items": ["view:ac_duplex_panel", "view:dc_connector_panel", '
+            '"view:usb_c_panel", "view:c13_panel"]',
+            source,
+        )
+
     def test_plamp8_derived_dimensions_follow_their_dependencies(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
         self.assertLess(
             source.index("service_group_w = c13_group_w;"),
-            source.index("usb_c_panel_w = service_group_w + 2 * usb_c_panel_rim;"),
+            source.index("usb_c_panel_w = service_group_w + 2 * connector_panel_rim;"),
         )
         self.assertLess(
             source.index("service_group_h = usb_c_group_h;"),
-            source.index("usb_c_panel_h = service_group_h + 2 * usb_c_panel_rim;"),
+            source.index("usb_c_panel_h = service_group_h + 2 * connector_panel_rim;"),
         )
         self.assertLess(
             source.index("layout_offset_y = panel_margin - content_bottom_y;"),
@@ -964,6 +985,86 @@ class ThingsCadScriptsTest(unittest.TestCase):
             '"C13hardwarelocationsmustremainunchanged");',
             compact,
         )
+
+    def test_plamp8_connector_panels_are_flat_and_retain_three_mm_rims(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        dc_unit = compact_scad(scad_module_body(source, "dc_connector_panel_unit"))
+        c13_unit = compact_scad(scad_module_body(source, "c13_inlet_unit"))
+
+        self.assertIn("connector_panel_rim = 3;", source)
+        self.assertNotIn("module alignment_walls", source)
+        self.assertNotIn("alignment_walls(", dc_unit)
+        self.assertNotIn("alignment_walls(", c13_unit)
+        self.assertIn(
+            "translate([dc_connector_panel_center_x,dc_connector_panel_center_y,0])"
+            "fit_plate(dc_connector_panel_w,dc_connector_panel_h);",
+            dc_unit,
+        )
+        self.assertIn("fit_plate(c13_panel_w,c13_panel_h);", c13_unit)
+
+        for assertion in (
+            'assert(ac_connector_panel_rim_ok,"ACconnectorpanelmustretain3mmaroundeveryroundedpocket");',
+            'assert(dc_connector_panel_rim_ok,"DCconnectorpanelmustretain3mmaroundeveryroundedpocket");',
+            'assert(usb_coupon_pocket_inside_plate,"USBcouponmustretain3mmaroundeveryroundedpocket");',
+            'assert(c13_connector_panel_rim_ok,"C13connectorpanelmustretain3mmaroundeveryroundedpocket");',
+        ):
+            self.assertIn(assertion, compact)
+
+        for frozen in (
+            "xt60_cutout_w = 19;", "xt60_cutout_h = 12;",
+            "xt60_screw_spacing = 25;", "xt60_screw_d = 3.2;",
+        ):
+            self.assertIn(frozen, source)
+        self.assertIn(
+            "xt60_switch_center_spacing = xt60_outside_w / 2 + "
+            "dc_switch_outside_d / 2 + xt60_switch_clearance;",
+            source,
+        )
+
+    def test_plamp8_connector_panel_views_pair_top_and_production_sub_panel_coupons(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        crop = (
+            compact_scad(scad_module_body(source, "production_sub_panel_crop"))
+            if "module production_sub_panel_crop" in source
+            else ""
+        )
+
+        self.assertIn("connector_panel_pair_gap = 10;", source)
+        self.assertIn("sub_panel_8ch();", crop)
+        self.assertIn("intersection()", crop)
+        self.assertIn("sub_panel_h+2*boolean_shim", crop)
+        self.assertIn(
+            "c13_panel_hardware_x = c13_hardware_x - c13_region_x;",
+            source,
+        )
+        c13_negative = compact_scad(scad_module_body(source, "c13_inlet_negative"))
+        self.assertIn(
+            "translate([c13_panel_hardware_x,0,0])c13_hardware_negative();",
+            c13_negative,
+        )
+
+        expected = {
+            "ac_duplex_panel": "left_ac_x,ac_row_y",
+            "dc_connector_panel": "dc_channel_x(0),dc_channel_y(0)",
+            "usb_c_panel": "service_group_x,service_group_y",
+            "c13_panel": "c13_region_x,c13_hardware_y",
+        }
+        for view, origin in expected.items():
+            body = compact_scad(scad_module_body(source, view))
+            with self.subTest(view=view):
+                self.assertEqual(body.count("connector_panel_pair("), 1)
+                self.assertEqual(body.count("production_sub_panel_crop("), 1)
+                self.assertIn(origin, body)
+
+        compact = compact_scad(source)
+        for assertion in (
+            'assert(ac_connector_pair_aligned,"ACtopandsub-panelcouponcentersmustalign");',
+            'assert(dc_connector_pair_aligned,"DCtopandsub-panelcouponcentersmustalign");',
+            'assert(usb_connector_pair_aligned,"USBtopandsub-panelcouponcentersmustalign");',
+            'assert(c13_connector_pair_aligned,"C13topandsub-panelcouponcentersmustalign");',
+        ):
+            self.assertIn(assertion, compact)
 
     def test_plamp8_c13_hardware_and_service_centers_are_frozen(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
