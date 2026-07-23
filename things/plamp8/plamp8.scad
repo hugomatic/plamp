@@ -417,6 +417,11 @@ sub_panel_switch_w = 20;
 sub_panel_switch_h = 32.5;
 sub_panel_socket_w = 35;
 sub_panel_socket_h = 70;
+sub_panel_socket_ground_access_w = 5;
+sub_panel_socket_ground_access_h = 10;
+sub_panel_socket_side_access_w = 5;
+sub_panel_socket_side_access_h = 25;
+sub_panel_socket_side_access_top_offset = 27;
 sub_panel_socket_screw_spacing = 82;
 sub_panel_usb_c_cutout_w = 12.5;
 sub_panel_usb_c_cutout_h = 10.5;
@@ -1075,6 +1080,40 @@ module sub_panel_8ch_positive() {
     }
 }
 
+module sub_panel_socket_negative() {
+    rect_cutout(sub_panel_socket_w, sub_panel_socket_h);
+
+    translate([
+        sub_panel_socket_w / 2
+            + sub_panel_socket_ground_access_w / 2
+            - boolean_shim / 2,
+        sub_panel_socket_h / 2
+            - sub_panel_socket_ground_access_h / 2,
+        0
+    ])
+        rect_cutout(
+            sub_panel_socket_ground_access_w + boolean_shim,
+            sub_panel_socket_ground_access_h
+        );
+
+    for (side = [-1, 1])
+        translate([
+            side * (
+                sub_panel_socket_w / 2
+                    + sub_panel_socket_side_access_w / 2
+                    - boolean_shim / 2
+            ),
+            sub_panel_socket_h / 2
+                - sub_panel_socket_side_access_top_offset
+                - sub_panel_socket_side_access_h / 2,
+            0
+        ])
+            rect_cutout(
+                sub_panel_socket_side_access_w + boolean_shim,
+                sub_panel_socket_side_access_h
+            );
+}
+
 module sub_panel_socket_bottom_rim_relief_negative() {
     lip_h = sub_panel_h - sub_panel_base_h;
 
@@ -1214,7 +1253,7 @@ module sub_panel_8ch_negative() {
 
     for (x = [left_ac_x, right_ac_x]) {
         translate([x + outlet_feature_x, ac_row_y, plate_t / 2])
-            rect_cutout(sub_panel_socket_w, sub_panel_socket_h);
+            sub_panel_socket_negative();
         for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
             translate([x + outlet_feature_x, ac_row_y + y, 0])
                 screw_hole(screw_d);

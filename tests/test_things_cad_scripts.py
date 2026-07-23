@@ -1292,6 +1292,63 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn("sub_panel_ac_bonding_rib_positive();", positive)
 
+    def test_plamp8_sub_panel_ac_socket_exposes_all_terminal_screws(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        cutter = (
+            compact_scad(scad_module_body(source, "sub_panel_socket_negative"))
+            if "module sub_panel_socket_negative" in source
+            else ""
+        )
+        sub_panel = compact_scad(scad_module_body(source, "sub_panel_8ch_negative"))
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+
+        for definition in (
+            "sub_panel_socket_ground_access_w=5;",
+            "sub_panel_socket_ground_access_h=10;",
+            "sub_panel_socket_side_access_w=5;",
+            "sub_panel_socket_side_access_h=25;",
+            "sub_panel_socket_side_access_top_offset=27;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("rect_cutout(sub_panel_socket_w,sub_panel_socket_h);", cutter)
+        self.assertIn(
+            "sub_panel_socket_w/2+sub_panel_socket_ground_access_w/2-boolean_shim/2",
+            cutter,
+        )
+        self.assertIn(
+            "sub_panel_socket_h/2-sub_panel_socket_ground_access_h/2", cutter
+        )
+        self.assertIn(
+            "rect_cutout(sub_panel_socket_ground_access_w+boolean_shim,"
+            "sub_panel_socket_ground_access_h);",
+            cutter,
+        )
+        self.assertIn("for(side=[-1,1])", cutter)
+        self.assertIn(
+            "side*(sub_panel_socket_w/2+sub_panel_socket_side_access_w/2-"
+            "boolean_shim/2)",
+            cutter,
+        )
+        self.assertIn(
+            "sub_panel_socket_h/2-sub_panel_socket_side_access_top_offset-"
+            "sub_panel_socket_side_access_h/2",
+            cutter,
+        )
+        self.assertIn(
+            "rect_cutout(sub_panel_socket_side_access_w+boolean_shim,"
+            "sub_panel_socket_side_access_h);",
+            cutter,
+        )
+        self.assertIn(
+            "translate([x+outlet_feature_x,ac_row_y,plate_t/2])"
+            "sub_panel_socket_negative();",
+            sub_panel,
+        )
+        self.assertNotIn("sub_panel_socket_negative();", top_panel)
+        self.assertEqual(top_panel.count("outlet_cover_negative(false);"), 2)
+
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
