@@ -1279,7 +1279,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for definition in (
             "sub_panel_ac_bonding_rib_w=4;",
-            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+outlet_feature_x+right_ac_x+outlet_feature_x)/2;",
+            "sub_panel_ac_bonding_rib_x_adjust=15;",
+            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+outlet_feature_x+right_ac_x+outlet_feature_x)/2+sub_panel_ac_bonding_rib_x_adjust;",
             "sub_panel_ac_bonding_rib_y0=sub_panel_wall;",
             "sub_panel_ac_bonding_rib_y1=layout_offset_y+dc_region_bottom_y;",
         ):

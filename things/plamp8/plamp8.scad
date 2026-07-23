@@ -680,8 +680,10 @@ assert(vent_rib_edge_clearance >= 1,
     "east center rib needs at least 1 mm clearance from adjacent vent holes");
 layout_offset_x = panel_margin - content_left_x;
 sub_panel_ac_bonding_rib_w = 4;
+sub_panel_ac_bonding_rib_x_adjust = 15;
 sub_panel_ac_bonding_rib_x = layout_offset_x
-    + (left_ac_x + outlet_feature_x + right_ac_x + outlet_feature_x) / 2;
+    + (left_ac_x + outlet_feature_x + right_ac_x + outlet_feature_x) / 2
+    + sub_panel_ac_bonding_rib_x_adjust;
 sub_panel_ac_bonding_rib_y0 = sub_panel_wall;
 sub_panel_ac_bonding_rib_y1 = layout_offset_y + dc_region_bottom_y;
 sub_panel_ac_left_socket_right_x = layout_offset_x + left_ac_x
