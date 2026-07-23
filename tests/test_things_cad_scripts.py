@@ -1291,7 +1291,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_usb_c_cutout_h = 10.5;", source)
         self.assertRegex(
             source,
-            r"module usb_c_connector_negative\(\) \{\s*rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
+            r"module usb_c_connector_negative\(\) \{[\s\S]*?rounded_rect_cutout\(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r\);",
         )
         self.assertRegex(
             source,
@@ -1303,7 +1303,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("panel_screw_land_d = 9.5;", source)
         self.assertIn("usb_c_screw_d = 3.4;", source)
         self.assertIn("usb_c_screw_head_d = 5.61;", source)
-        self.assertIn("usb_c_screw_surface_z = plate_t - 0.5;", source)
+        self.assertIn("usb_c_screw_surface_z = usb_c_mount_thickness;", source)
         self.assertIn(
             "topside_countersunk_screw_hole(usb_c_screw_d, usb_c_screw_head_d, usb_c_screw_surface_z)",
             source,
@@ -1323,6 +1323,48 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn("module panel_corner_fastener_test", source)
         self.assertIn('view == "panel_corner_fastener_test"', source)
+
+    def test_plamp8_usb_cable_relief_thins_only_the_connector_mount(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        connector = compact_scad(
+            scad_module_body(source, "usb_c_connector_negative")
+        )
+        relief = compact_scad(
+            scad_module_body(source, "usb_c_cable_recess_negative")
+        )
+        sub_panel = compact_scad(
+            scad_module_body(source, "sub_panel_usb_c_negative")
+        )
+
+        for definition in (
+            "usb_c_cable_recess_w=24;",
+            "usb_c_cable_recess_h=14;",
+            "usb_c_cable_recess_r=2;",
+            "usb_c_mount_thickness=1.5;",
+            "usb_c_screw_surface_z=usb_c_mount_thickness;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("usb_c_cable_recess_negative();", connector)
+        self.assertIn(
+            "recess_h=plate_t-usb_c_mount_thickness+boolean_shim;", relief
+        )
+        self.assertIn(
+            "translate([0,0,usb_c_mount_thickness+recess_h/2])"
+            "round_hull(usb_c_cable_recess_w,usb_c_cable_recess_h,"
+            "usb_c_cable_recess_r,recess_h);",
+            relief,
+        )
+        self.assertIn(
+            "topside_countersunk_screw_hole(usb_c_screw_d,"
+            "usb_c_screw_head_d,usb_c_screw_surface_z);",
+            connector,
+        )
+        self.assertIn(
+            "rect_cutout(sub_panel_usb_c_cutout_w,sub_panel_usb_c_cutout_h);",
+            sub_panel,
+        )
 
     def test_retired_cad_shell_files_are_untracked(self):
         tracked = run(["git", "ls-files", "-z"], REPO_ROOT, check=True).stdout.split("\0")

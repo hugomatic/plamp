@@ -246,12 +246,16 @@ usb_c_group_h = 28;
 usb_c_cutout_w = 12;
 usb_c_cutout_h = 10;
 usb_c_cutout_r = 1.5;
+usb_c_cable_recess_w = 24;
+usb_c_cable_recess_h = 14;
+usb_c_cable_recess_r = 2;
+usb_c_mount_thickness = 1.5;
 usb_c_wire_cutout_w = 10;
 usb_c_wire_cutout_h = 16;
 usb_c_screw_d = 3.4;
 usb_c_screw_head_d = 5.61;
 usb_c_screw_spacing = 17;
-usb_c_screw_surface_z = plate_t - 0.5;
+usb_c_screw_surface_z = usb_c_mount_thickness;
 
 c13_label_w = 48;
 c13_label_h = 10;
@@ -1201,7 +1205,20 @@ module dc_connector_panel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", inc
             flush_revision_label();
 }
 
+module usb_c_cable_recess_negative() {
+    recess_h = plate_t - usb_c_mount_thickness + boolean_shim;
+
+    translate([0, 0, usb_c_mount_thickness + recess_h / 2])
+        round_hull(
+            usb_c_cable_recess_w,
+            usb_c_cable_recess_h,
+            usb_c_cable_recess_r,
+            recess_h
+        );
+}
+
 module usb_c_connector_negative() {
+    usb_c_cable_recess_negative();
     rounded_rect_cutout(usb_c_cutout_w, usb_c_cutout_h, usb_c_cutout_r);
 
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
