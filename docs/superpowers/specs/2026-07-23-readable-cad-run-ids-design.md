@@ -27,6 +27,11 @@ committed source and the explicit revision label for dirty source. Existing
 component sanitization still applies to part, selector, and revision strings.
 Manifest timestamps remain UTC ISO-8601 values.
 
+Because OpenSCAD renders normally take longer than one minute, two genuinely
+different runs are not expected to request the same readable path sequentially.
+If that rare path collision occurs, generation fails clearly instead of adding
+a random or numeric suffix.
+
 An explicit `--output` directory remains authoritative: its directory name is
 not rewritten, while the manifest still receives a readable run ID.
 
@@ -94,6 +99,7 @@ compatibility with archived runs.
 Automated tests will cover:
 
 - the exact readable local-time format and absence of random suffixes;
+- a clear failure for the rare distinct same-minute path collision;
 - preset, single-view, and multi-view selectors;
 - duplicate matching across different minutes on the same local day;
 - non-matches for source, defines, jobs, or local date changes;
