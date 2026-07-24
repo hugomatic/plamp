@@ -129,9 +129,39 @@ def render_run_readme(manifest: Mapping[str, object]) -> str:
         else:
             lines.append("- No externally resolved variables.")
 
+        dependencies_value = job.get("dependencies", [])
+        dependencies = (
+            [item for item in dependencies_value if isinstance(item, Mapping)]
+            if isinstance(dependencies_value, list) else []
+        )
+        lines.extend(("", "### Dependency inventory", ""))
+        if dependencies:
+            lines.extend((
+                "| Dependency | Classification | Archived path | SHA-256 | License | Revision |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ))
+            for dependency in sorted(
+                dependencies, key=lambda item: str(item.get("archive_path", ""))
+            ):
+                lines.append(
+                    f"| {dependency.get('logical_name')} | {dependency.get('classification')} | "
+                    f"`{dependency.get('archive_path')}` | `{dependency.get('content_hash')}` | "
+                    f"{dependency.get('license') or '—'} | {dependency.get('git_revision') or '—'} |"
+                )
+        else:
+            lines.append("- No dependency inventory is available for this artifact.")
+        external = any(
+            dependency.get("classification") in {"declared-shared", "built-in", "library"}
+            for dependency in dependencies
+        )
+        if external:
+            lines.append("\nExternal/shared libraries were used; see `manifest.json` for provenance.")
+        else:
+            lines.append("\nNo external or shared libraries were used.")
+
     lines.extend((
         "", "## Inspection", "",
-        "- Open `manifest.json` for complete profiles, hashes, manufacturing policy, and variable provenance.",
+        "- Open `manifest.json` for complete profiles, hashes, dependency inventory, manufacturing policy, and variable provenance.",
         "- Open `logs/` for per-artifact OpenSCAD output.",
         "- Open `source/` for the archived model sources.",
         f"- Run `plamp cad show {run_id}` to inspect this run with the CLI.",

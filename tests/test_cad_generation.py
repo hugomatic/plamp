@@ -35,6 +35,7 @@ JOB_FIELDS = {
     "finished_at", "elapsed_seconds", "command", "artifact",
     "artifact_bytes", "log", "exit_code", "echoes", "messages", "warnings",
     "errors", "geometry", "artifact_sha256", "reused_from",
+    "dependencies", "dependency_environment",
 }
 
 
@@ -179,6 +180,27 @@ class CadGenerationTests(unittest.TestCase):
         rendered_env = json.loads(environment_log.read_text())
         self.assertNotEqual(rendered_env["HOME"], str(Path.home()))
         self.assertTrue(rendered_env["OPENSCADPATH"].endswith("/libraries"))
+
+    def test_manifest_serializes_verified_dependency_provenance_without_env_leaks(self):
+        result = self.generate(env=self.env(UNRELATED_SECRET="do-not-archive"))
+        manifest = load_run(result.run_dir)
+        job = manifest["jobs"][0]
+        self.assertEqual(manifest["openscad"]["version"], "2099.01")
+        self.assertEqual(len(manifest["openscad"]["info_sha256"]), 64)
+        dependency = job["dependencies"][0]
+        self.assertEqual(set(dependency), {
+            "logical_name", "classification", "archive_path", "content_hash",
+            "git_revision", "license", "asset",
+        })
+        self.assertEqual(dependency["classification"], "model-local")
+        self.assertEqual(len(dependency["content_hash"]), 64)
+        provenance = json.dumps(job["dependency_environment"], sort_keys=True)
+        self.assertNotIn("UNRELATED_SECRET", provenance)
+        self.assertNotIn("do-not-archive", provenance)
+        self.assertEqual(
+            set(job["dependency_environment"]), {"discovery", "render"}
+        )
+        self.assertTrue(job["dependency_environment"]["render"]["OPENSCADPATH"])
 
     def test_successful_openscad_with_host_fallback_discards_artifact(self):
         host_dependency = self.root / "host-only.scad"
@@ -714,7 +736,7 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(set(manifest), {
             "schema_version", "generator_version", "run_id", "system_name", "status",
             "created_at", "updated_at", "started_at", "finished_at",
-            "selection", "system", "models", "openscad_version", "jobs",
+            "selection", "system", "models", "openscad_version", "openscad", "jobs",
         })
         self.assertEqual(manifest["schema_version"], 1)
         self.assertEqual(manifest["generator_version"], 1)

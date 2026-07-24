@@ -35,6 +35,12 @@ class CadReadmeTests(unittest.TestCase):
                 "geometry_fingerprint": "3" * 64,
                 "manufacturing_fingerprint": "4" * 64,
                 "reused_from": None,
+                "dependencies": [{
+                    "logical_name": "box/fixture.scad", "classification": "model",
+                    "archive_path": "repository/things/box/fixture.scad",
+                    "content_hash": "5" * 64, "git_revision": "abc123",
+                    "license": None, "asset": False,
+                }],
             }],
         }
 
@@ -83,6 +89,22 @@ class CadReadmeTests(unittest.TestCase):
     def test_rendering_is_deterministic(self):
         manifest = self.manifest({"supports": self.directive("recommended")})
         self.assertEqual(render_run_readme(manifest), render_run_readme(manifest))
+
+    def test_dependency_inventory_explains_checksums_and_external_libraries(self):
+        manifest = self.manifest()
+        text = render_run_readme(manifest)
+        self.assertIn("Dependency inventory", text)
+        self.assertIn("repository/things/box/fixture.scad", text)
+        self.assertIn("5555555555555555", text)
+        self.assertIn("No external or shared libraries were used", text)
+        manifest["jobs"][0]["dependencies"].append({
+            "logical_name": "BOSL2/std.scad", "classification": "library",
+            "archive_path": "libraries/BOSL2/std.scad", "content_hash": "6" * 64,
+            "git_revision": "v2.0", "license": "BSD-2-Clause", "asset": False,
+        })
+        text = render_run_readme(manifest)
+        self.assertIn("External/shared libraries were used", text)
+        self.assertIn("BOSL2/std.scad", text)
 
 
 if __name__ == "__main__":

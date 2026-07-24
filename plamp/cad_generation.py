@@ -483,6 +483,8 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
         "finished_at": None,
         "elapsed_seconds": None,
         "command": [],
+        "dependencies": [],
+        "dependency_environment": None,
         "artifact": None,
         "artifact_bytes": None,
         "artifact_sha256": None,
@@ -602,6 +604,35 @@ def _staged_render_environment(
         "OPENSCADPATH": os.pathsep.join(str(path) for path in openscad_paths),
     })
     return environment
+
+
+def _dependency_inventory(records: object) -> list[dict[str, object]]:
+    """Serialize the verified immutable records, never the mutable stage tree."""
+
+    return [{
+        "logical_name": record.logical_name,
+        "classification": record.classification,
+        "archive_path": record.archive_path.as_posix(),
+        "content_hash": record.content_hash,
+        "git_revision": record.git_revision,
+        "license": record.license,
+        "asset": record.asset,
+    } for record in sorted(records, key=lambda item: item.archive_path.as_posix())]
+
+
+def _search_environment(environment: Mapping[str, str]) -> dict[str, object]:
+    """Return only OpenSCAD resolution inputs; never archive arbitrary env vars."""
+
+    result: dict[str, object] = {}
+    for key in ("OPENSCADPATH", "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        value = environment.get(key)
+        if value is None:
+            result[key] = None
+        elif key == "OPENSCADPATH":
+            result[key] = [item for item in value.split(os.pathsep) if item]
+        else:
+            result[key] = value
+    return result
 
 
 def _safe_component(value: str) -> str:
@@ -1424,6 +1455,10 @@ def generate_plan(
                 } for name in selected_model_ids
             },
             "openscad_version": openscad_version,
+            "openscad": {
+                "version": openscad_version.removeprefix("OpenSCAD version ").removeprefix("OpenSCAD Version: "),
+                "info_sha256": None,
+            },
             "jobs": jobs,
         }
         def write_manifest_state() -> None:
@@ -1579,6 +1614,12 @@ def generate_plan(
                 openscad_info = query_openscad_info(
                     openscad, env=info_environment
                 )
+                manifest["openscad"] = {
+                    "version": openscad_info.version,
+                    "info_sha256": hashlib.sha256(
+                        openscad_info.raw_output.encode("utf-8")
+                    ).hexdigest(),
+                }
                 snapshot = snapshots[render_job.model_id]
                 model = models[render_job.model_id]
                 discovery_env = prepare_discovery_environment(
@@ -1646,6 +1687,11 @@ def generate_plan(
                     base_environment, staged.openscad_paths,
                     transaction_root / "isolated",
                 )
+                job["dependencies"] = _dependency_inventory(staged.records)
+                job["dependency_environment"] = {
+                    "discovery": _search_environment(source_environment),
+                    "render": _search_environment(process_env),
+                }
                 process_env["PLAMP_CAD_MANIFEST"] = str(
                     _proc_fd_path(run_fd, "manifest.json")
                 )

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from plamp.cad_cli import add_cad_parser, run_cad_command
+from plamp.cad_cli import _catalog_rows, add_cad_parser, run_cad_command
 from plamp.cad_generation import CadRunExistsError, generate_plan
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
@@ -18,6 +18,7 @@ from plamp.cad_scaffold import (
     CadTemplate,
     CreatedModel,
 )
+from plamp.cad_system import load_system
 from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
@@ -509,6 +510,50 @@ class CadCliTests(unittest.TestCase):
                 )
                 self.assertEqual((rc, error), (0, ""))
                 self.assertEqual(json.loads(output)[0]["path"], "cad/lib")
+
+    def test_libraries_json_reports_declaration_and_validation_metadata(self):
+        manifest_path = self._clean_catalog()
+        manifest = json.loads(manifest_path.read_text())
+        manifest["libraries"]["fasteners"].update({
+            "license": "BSD-2-Clause", "revision": "v2.1",
+        })
+        manifest["libraries"]["unlicensed"] = {
+            "path": "cad/lib", "description": "",
+        }
+        manifest_path.write_text(json.dumps(manifest))
+        output, error, rc = self._run_main(
+            ["cad", "libraries", "--system", "alpha", "--json"]
+        )
+        self.assertEqual((rc, error), (0, ""))
+        rows = json.loads(output)
+        self.assertEqual([row["id"] for row in rows], ["fasteners", "unlicensed"])
+        self.assertEqual(rows[0]["license"], "BSD-2-Clause")
+        self.assertEqual(rows[0]["revision"], "v2.1")
+        self.assertEqual(rows[0]["validation"], "valid")
+        self.assertEqual(rows[1]["description"], "(no description)")
+        self.assertIsNone(rows[1]["license"])
+        self.assertIsNone(rows[1]["revision"])
+
+        human, error, rc = self._run_main(
+            ["cad", "libraries", "--system", "alpha"]
+        )
+        self.assertEqual((rc, error), (0, ""))
+        self.assertIn("license BSD-2-Clause", human)
+        self.assertIn("revision v2.1", human)
+        self.assertIn("license missing", human)
+
+    def test_library_rows_recheck_a_missing_source_without_omitting_the_row(self):
+        manifest_path = self._clean_catalog()
+        system = load_system(manifest_path, self.root)
+        shutil.rmtree(self.root / "cad" / "lib")
+        rows = _catalog_rows("libraries", system, self.context)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["validation"], "missing")
+        self.assertEqual(rows[0]["status"], "invalid")
+        self.assertEqual(rows[0]["license"], None)
+        self.assertEqual(rows[0]["revision"], None)
+        self.assertEqual(rows[0]["diagnostics"][0]["json_path"],
+                         "$.libraries.fasteners.path")
 
     def test_zero_system_error_does_not_claim_multiple_systems(self):
         output, _error, rc = self._run_main(["cad", "models", "--json"])

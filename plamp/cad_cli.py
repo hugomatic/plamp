@@ -426,9 +426,18 @@ def _emit_rows(rows: list[dict[str, object]], json_output: bool, stdout: TextIO)
         return
     for row in rows:
         status = "" if row.get("status") == "valid" else f" [{row.get('status')}]"
+        suffix = ""
+        if row.get("kind") == "library":
+            license_name = row.get("license")
+            revision = row.get("revision")
+            suffix = (
+                f" - license {license_name or 'missing'}"
+                f" - revision {revision or 'unspecified'}"
+                f" - {row.get('validation', 'unknown')}"
+            )
         stdout.write(
             f"{row['kind']} {row['id'] or '(default)'}{status} - "
-            f"{row['description']} - {row['path']}\n"
+            f"{row['description']} - {row['path']}{suffix}\n"
         )
 
 
@@ -476,13 +485,30 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
                          "description": "(no description)",
                          "path": _relative(profile.path, context.root)})
     elif action == "libraries":
-        for name, declaration in system.libraries.items():
+        for name in sorted(system.libraries):
+            declaration = system.libraries[name]
             raw = system.metadata_snapshot.get("libraries", {}).get(name, {})
             description = str(raw.get("description", "")) if isinstance(raw, dict) else ""
             resolved = declaration.path
-            rows.append({"kind": "library", "id": name, **base,
+            validation = "valid" if resolved.is_dir() else "missing"
+            row_base = {
+                **base,
+                "status": "valid" if validation == "valid" else "invalid",
+                "diagnostics": ([] if validation == "valid" else [{
+                    "code": "CAD121", "kind": "missing_path",
+                    "message": f"Library path does not exist: {resolved}",
+                    "source": str(system.path), "line": None, "column": None,
+                    "json_path": f"$.libraries.{name}.path", "value": str(resolved),
+                    "choices": [], "suggestion": None, "fix": None,
+                }]),
+            }
+            rows.append({"kind": "library", "id": name, **row_base,
                          "description": _described(description),
-                         "path": _relative(resolved, context.root)})
+                         "path": _relative(resolved, context.root),
+                         "source": _relative(resolved, context.root),
+                         "license": declaration.license,
+                         "revision": declaration.revision,
+                         "validation": validation})
     return rows
 
 
