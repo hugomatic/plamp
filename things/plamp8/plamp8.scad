@@ -2,70 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-view = "assembly"; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
-
-/* generate.json
-{
-  "default_preset": "split-box",
-  "views": {
-    "floor": {"description": "Printable enclosure floor"},
-    "north_south_walls": {"description": "Printable north and south wall plate"},
-    "east_west_walls": {"description": "Printable east and west wall plate"},
-    "box": {"description": "Fused walls-and-floor printable box"},
-    "top_panel": {"description": "Printable top panel"},
-    "sub_panel": {"description": "Printable internal sub-panel"},
-    "north_wall": {"description": "Individual printable north wall"},
-    "south_wall": {"description": "Individual printable south wall"},
-    "west_wall": {"description": "Individual printable west wall"},
-    "east_wall": {"description": "Individual printable east wall"},
-    "relay_footprint": {"description": "Relay mounting footprint test"},
-    "psu_footprint": {"description": "Power-supply mounting footprint test"},
-    "converter_footprint": {"description": "DC converter mounting footprint test"},
-    "ac_duplex_panel": {"description": "AC duplex top-panel fit test"},
-    "dc_connector_panel": {"description": "DC connector top-panel fit test"},
-    "usb_c_panel": {"description": "USB-C top-panel fit test"},
-    "c13_panel": {"description": "C13 inlet top-panel fit test"},
-    "panel_corner_fastener_test": {"description": "Panel corner fastener fit test"},
-    "corner_coupon": {"description": "Printable enclosure corner coupon"},
-    "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly"},
-    "assembly": {"description": "Complete illustrated enclosure assembly"}
-  },
-  "presets": {
-    "split-box": {
-      "description": "Enclosure printed as separate floor, walls, and panels",
-      "items": ["view:floor", "view:north_south_walls", "view:east_west_walls", "view:top_panel", "view:sub_panel"]
-    },
-    "fuse-box": {
-      "description": "Enclosure printed as a fused box with separate panels",
-      "items": ["view:box", "view:top_panel", "view:sub_panel"]
-    },
-    "panels": {
-      "description": "Printable top and internal sub-panels",
-      "items": ["view:top_panel", "view:sub_panel"]
-    },
-    "assembly": {
-      "description": "Complete illustrated enclosure assembly",
-      "items": ["view:assembly"]
-    },
-    "component-floorplans": {
-      "description": "Component mounting footprint tests",
-      "items": ["view:relay_footprint", "view:psu_footprint", "view:converter_footprint"]
-    },
-    "top-panel-fit": {
-      "description": "Top-panel connector fit tests",
-      "items": ["view:ac_duplex_panel", "view:dc_connector_panel", "view:usb_c_panel", "view:c13_panel"]
-    },
-    "corner-coupons": {
-      "description": "Panel and wall corner fastener tests",
-      "items": ["view:panel_corner_fastener_test", "view:corner_coupon", "view:wall_corner_fastener_assembly"]
-    },
-    "test-fit": {
-      "description": "Complete component, connector, and corner fit test suite",
-      "items": ["preset:component-floorplans", "preset:top-panel-fit", "preset:corner-coupons"]
-    }
-  }
-}
-*/
+set = ""; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -3318,49 +3255,47 @@ module assembly() {
     internal_components(show_psu, show_dc_dc, show_relay);
 }
 
-if (view == "relay_footprint") {
+if (set == "relay_footprint") {
     relay_footprint();
-} else if (view == "psu_footprint") {
+} else if (set == "psu_footprint") {
     psu_footprint();
-} else if (view == "converter_footprint") {
+} else if (set == "converter_footprint") {
     converter_footprint();
-} else if (view == "floor") {
+} else if (set == "floor") {
     floor_part();
-} else if (view == "north_wall") {
+} else if (set == "north_wall") {
     north_wall();
-} else if (view == "south_wall") {
+} else if (set == "south_wall") {
     south_wall();
-} else if (view == "west_wall") {
+} else if (set == "west_wall") {
     west_wall();
-} else if (view == "east_wall") {
+} else if (set == "east_wall") {
     east_wall();
-} else if (view == "box") {
+} else if (set == "box") {
     box();
-} else if (view == "north_south_walls") {
+} else if (set == "north_south_walls") {
     north_south_walls();
-} else if (view == "east_west_walls") {
+} else if (set == "east_west_walls") {
     east_west_walls();
-} else if (view == "ac_duplex_panel") {
+} else if (set == "ac_duplex_panel") {
     ac_duplex_panel();
-} else if (view == "dc_connector_panel") {
+} else if (set == "dc_connector_panel") {
     dc_connector_panel();
-} else if (view == "usb_c_panel") {
+} else if (set == "usb_c_panel") {
     usb_c_panel();
-} else if (view == "c13_panel") {
+} else if (set == "c13_panel") {
     c13_panel();
-} else if (view == "panel_corner_fastener_test") {
+} else if (set == "panel_corner_fastener_test") {
     panel_corner_fastener_test();
-} else if (view == "corner_coupon") {
+} else if (set == "corner_coupon") {
     corner_coupon();
-} else if (view == "wall_corner_fastener_test") {
-    corner_coupon();
-} else if (view == "wall_corner_fastener_assembly") {
+} else if (set == "wall_corner_fastener_assembly") {
     wall_corner_fastener_assembly();
-} else if (view == "top_panel") {
+} else if (set == "top_panel") {
     top_panel();
-} else if (view == "sub_panel") {
+} else if (set == "sub_panel") {
     sub_panel();
-} else if (view == "assembly") {
+} else if (set == "assembly") {
     assembly();
 } else {
     assembly();

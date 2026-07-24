@@ -1,0 +1,11 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "iharvest_cover",
+  "source": "iharvest_cover.scad",
+  "description": "iHarvest access cover",
+  "sets": {
+    "": {"description": "Normal OpenSCAD assembly output", "printable": false},
+    "assembly": {"description": "Complete illustrated iHarvest cover assembly", "printable": false},
+    "plate": {"description": "Printable iHarvest access-cover plate", "slicing": {"orientation": "as-exported"}}
+  }
+}

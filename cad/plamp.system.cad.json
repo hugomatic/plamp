@@ -1,0 +1,79 @@
+{
+  "schema": "plamp-cad-system/1",
+  "name": "plamp",
+  "description": "Plamp hydroponics automation hardware",
+  "models": {
+    "plamp8": "things/plamp8/plamp8.cad.json",
+    "iharvest_cover": "things/iharvest_cover/iharvest_cover.cad.json",
+    "plamp_stand": "things/plamp_stand/plamp_stand.cad.json"
+  },
+  "libraries": {},
+  "profiles": {
+    "draft": "cad/profiles/draft.json"
+  },
+  "default_product": "split-box",
+  "products": {
+    "split-box": {
+      "description": "Enclosure printed as separate floor, walls, and panels",
+      "items": [
+        {"model": "plamp8", "set": "floor"},
+        {"model": "plamp8", "set": "north_south_walls"},
+        {"model": "plamp8", "set": "east_west_walls"},
+        {"model": "plamp8", "set": "top_panel"},
+        {"model": "plamp8", "set": "sub_panel"}
+      ]
+    },
+    "fuse-box": {
+      "description": "Enclosure printed as a fused box with separate panels",
+      "items": [
+        {"model": "plamp8", "set": "box"},
+        {"model": "plamp8", "set": "top_panel"},
+        {"model": "plamp8", "set": "sub_panel"}
+      ]
+    },
+    "panels": {
+      "description": "Printable top and internal sub-panels",
+      "items": [
+        {"model": "plamp8", "set": "top_panel"},
+        {"model": "plamp8", "set": "sub_panel"}
+      ]
+    },
+    "assembly": {
+      "description": "Complete illustrated enclosure assembly",
+      "items": [{"model": "plamp8", "set": "assembly"}]
+    },
+    "component-floorplans": {
+      "description": "Component mounting footprint tests",
+      "items": [
+        {"model": "plamp8", "set": "relay_footprint"},
+        {"model": "plamp8", "set": "psu_footprint"},
+        {"model": "plamp8", "set": "converter_footprint"}
+      ]
+    },
+    "top-panel-fit": {
+      "description": "Top-panel connector fit tests",
+      "items": [
+        {"model": "plamp8", "set": "ac_duplex_panel"},
+        {"model": "plamp8", "set": "dc_connector_panel"},
+        {"model": "plamp8", "set": "usb_c_panel"},
+        {"model": "plamp8", "set": "c13_panel"}
+      ]
+    },
+    "corner-coupons": {
+      "description": "Panel and wall corner fastener tests",
+      "items": [
+        {"model": "plamp8", "set": "panel_corner_fastener_test"},
+        {"model": "plamp8", "set": "corner_coupon"},
+        {"model": "plamp8", "set": "wall_corner_fastener_assembly"}
+      ]
+    },
+    "fit-and-function": {
+      "description": "Complete component, connector, and corner fit test suite",
+      "items": [
+        {"product": "component-floorplans"},
+        {"product": "top-panel-fit"},
+        {"product": "corner-coupons"}
+      ]
+    }
+  }
+}

@@ -145,7 +145,7 @@ class SetupShTests(unittest.TestCase):
             self.assertNotIn("traceback", completed.stderr.lower())
 
             completed = subprocess.run(
-                [python, "-m", "plamp", "cad", "views", "plamp_stand", "--json"],
+                [python, "-m", "plamp", "cad", "templates", "--json"],
                 cwd=REPO_ROOT,
                 env={"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin"},
                 text=True,
@@ -155,7 +155,8 @@ class SetupShTests(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn('"part": "plamp_stand"', completed.stdout)
+            self.assertIn('"kind": "template"', completed.stdout)
+            self.assertIn('"description":', completed.stdout)
             self.assertNotIn("traceback", completed.stderr.lower())
 
     def test_second_activation_removes_first_checkout_from_path(self):

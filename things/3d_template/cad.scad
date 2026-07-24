@@ -1,22 +1,6 @@
 render_fn = 64;
 $fn = render_fn;
-view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
-
-/* generate.json
-{
-  "default_preset": "all-views-default",
-  "views": {
-    "__PLAMP_PART__": {"description": "Printable part"},
-    "assembly": {"description": "Initial complete assembly"}
-  },
-  "presets": {
-    "all-views-default": {
-      "description": "Generate the part and initial assembly",
-      "items": ["view:__PLAMP_PART__", "view:assembly"]
-    }
-  }
-}
-*/
+set = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
 
 part_w = 40;
 part_d = 30;
@@ -39,8 +23,8 @@ module __PLAMP_PART__() {
     }
 }
 
-if (view == "__PLAMP_PART__") {
+if (set == "__PLAMP_PART__") {
     __PLAMP_PART__();
-} else if (view == "assembly") {
+} else if (set == "assembly") {
     __PLAMP_PART__();
 }

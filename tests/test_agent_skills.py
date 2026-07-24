@@ -72,14 +72,14 @@ class AgentSkillsTests(unittest.TestCase):
         )
 
         self.assertIn("plamp cad new PART", documentation)
-        self.assertIn("plamp cad generate plamp_stand", documentation)
+        self.assertIn("plamp cad generate --system plamp plamp_stand", documentation)
 
     def test_stand_smoke_uses_checkout_cad_command(self):
         smoke = self.read("things/plamp_stand/check_generates_stl_files_from_scad.bash")
 
         self.assertIn(
-            '"$REPO_ROOT/bin/plamp" cad generate plamp_stand '
-            '--preset all-views-default --revision "$commit" --output "$outdir/out"',
+            '"$REPO_ROOT/bin/plamp" cad generate --system plamp plamp_stand '
+            '--all-sets --revision "$commit" --output "$outdir/out" --json',
             smoke,
         )
         for retired_name in RETIRED_SHELL_NAMES:
@@ -128,19 +128,19 @@ revision = sys.argv[sys.argv.index("--revision") + 1]
 output.mkdir(parents=True)
 (output / "artifacts").mkdir()
 jobs = []
-views = (
+sets = (
     ("assembly", "0123456789ab"),
     ("tripod", "abcdef012345"),
     ("plate", "fedcba987654"),
     ("camera_clip", "567890abcdef"),
 )
-for view, fingerprint in views:
-    if view == os.environ.get("FAKE_DROP_VIEW"):
+for set_name, fingerprint in sets:
+    if set_name == os.environ.get("FAKE_DROP_SET"):
         continue
-    artifact_id = f"plamp_stand_{view}--{fingerprint}"
+    artifact_id = f"plamp_stand_{set_name}--{fingerprint}"
     artifact = f"artifacts/{artifact_id}--{revision}.stl"
     (output / artifact).write_text("solid fixture\\n")
-    jobs.append({"artifact_id": artifact_id, "view": view, "status": "complete", "artifact": artifact})
+    jobs.append({"artifact_id": artifact_id, "set": set_name, "status": "complete", "artifact": artifact})
 (output / "readme.md").write_text("# fake run\\n")
 manifest = {"status": "complete", "jobs": jobs}
 (output / "manifest.json").write_text(json.dumps(manifest))
@@ -165,7 +165,7 @@ print(json.dumps(manifest))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS:", result.stdout)
 
-            env["FAKE_DROP_VIEW"] = "plate"
+            env["FAKE_DROP_SET"] = "plate"
             incomplete = subprocess.run(
                 ["bash", str(smoke)],
                 cwd=root,

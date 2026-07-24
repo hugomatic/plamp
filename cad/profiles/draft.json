@@ -1,0 +1,15 @@
+{
+  "schema": "plamp-cad-profile/1",
+  "name": "draft",
+  "kind": "quality",
+  "cad": {
+    "render_fn": 24,
+    "render_text": false
+  },
+  "slicing": {
+    "notes": [
+      "Draft geometry reduces curve facets and omits rendered text; verify fit before production use."
+    ]
+  },
+  "machine": {}
+}

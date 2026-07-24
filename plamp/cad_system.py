@@ -1,0 +1,569 @@
+"""Discover and validate repository CAD system manifests."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
+from difflib import get_close_matches
+import json
+from pathlib import Path
+import re
+from types import MappingProxyType
+
+from plamp.cad_model import CadDiagnostic, CadMetadataError, CadModel, load_model
+from plamp.cad_manufacturing import DirectiveSource, validated_slicing
+from plamp.cad_profiles import CadProfile, load_system_profiles
+from plamp.cad_dependencies import CadLibrary
+
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_SYSTEM_KEYS = frozenset({
+    "schema", "name", "description", "models", "libraries", "profiles",
+    "default_product", "products",
+})
+_PRODUCT_KEYS = frozenset({"description", "items", "variables", "profiles", "slicing"})
+_ITEM_KEYS = frozenset({
+    "product", "model", "set", "variant", "description", "note", "variables",
+    "profiles", "slicing",
+})
+_LIBRARY_KEYS = frozenset({"path", "license", "description", "revision"})
+
+
+@dataclass(frozen=True)
+class SystemCandidate:
+    path: Path
+    name: str
+    description: str
+    default_product: str | None
+    status: str
+    diagnostics: tuple[CadDiagnostic, ...] = ()
+
+
+@dataclass(frozen=True)
+class CadProductItem:
+    product: str | None = None
+    model: str | None = None
+    set_name: str | None = None
+    variant: str | None = None
+    description: str = ""
+    variables: Mapping[str, object] = field(default_factory=dict)
+    profiles: tuple[str, ...] = ()
+    slicing: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CadProduct:
+    name: str
+    description: str
+    items: tuple[CadProductItem, ...]
+    variables: Mapping[str, object] = field(default_factory=dict)
+    profiles: tuple[str, ...] = ()
+    slicing: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CadSystem:
+    name: str
+    description: str
+    path: Path
+    models: Mapping[str, CadModel]
+    products: Mapping[str, CadProduct]
+    default_product: str | None
+    libraries: Mapping[str, CadLibrary]
+    profiles: Mapping[str, CadProfile]
+    metadata_snapshot: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class CadLibraryInspection:
+    """One library declaration inspected without enabling operational use."""
+
+    name: str
+    description: str
+    path: Path | None
+    license: str | None
+    revision: str | None
+    validation: str
+    diagnostics: tuple[CadDiagnostic, ...] = ()
+
+
+def inspect_system_libraries(path: Path, repo_root: Path) -> tuple[CadLibraryInspection, ...]:
+    """Inspect library declarations independently of strict system loading.
+
+    This is intentionally a navigation-only API. ``load_system`` remains the
+    authority for plans and generation and rejects every unusable declaration.
+    """
+
+    path = Path(path).resolve()
+    repo_root = Path(repo_root).resolve()
+    metadata = _read_json(path)
+    raw_libraries = _mapping(metadata, "libraries", path, "$.libraries")
+    rows: list[CadLibraryInspection] = []
+    for name in sorted(raw_libraries):
+        declaration = raw_libraries[name]
+        json_path = f"$.libraries.{name}"
+        description = ""
+        license_name: str | None = None
+        revision: str | None = None
+        reference: str | None = None
+        diagnostics: list[CadDiagnostic] = []
+        if isinstance(declaration, str):
+            reference = declaration
+        elif isinstance(declaration, dict):
+            unknown = next((key for key in declaration if key not in _LIBRARY_KEYS), None)
+            if unknown is not None:
+                diagnostics.append(_diagnostic(
+                    path, f"Unknown metadata key {unknown!r}",
+                    json_path=f"{json_path}.{unknown}", value=unknown,
+                ))
+            raw_reference = declaration.get("path")
+            if isinstance(raw_reference, str):
+                reference = raw_reference
+            else:
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.path must be a string",
+                    json_path=f"{json_path}.path", value=raw_reference,
+                ))
+            raw_description = declaration.get("description", "")
+            if isinstance(raw_description, str):
+                description = raw_description
+            else:
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.description must be a string",
+                    json_path=f"{json_path}.description", value=raw_description,
+                ))
+            raw_license = declaration.get("license")
+            if raw_license is None or isinstance(raw_license, str):
+                license_name = raw_license
+            else:
+                diagnostics.append(_diagnostic(
+                    path, "Library license must be a string",
+                    json_path=f"{json_path}.license", value=raw_license,
+                ))
+            raw_revision = declaration.get("revision")
+            if raw_revision is None or isinstance(raw_revision, str):
+                revision = raw_revision
+            else:
+                diagnostics.append(_diagnostic(
+                    path, "Library revision must be a string",
+                    json_path=f"{json_path}.revision", value=raw_revision,
+                ))
+        else:
+            diagnostics.append(_diagnostic(
+                path, "Library declaration must be a string or JSON object",
+                json_path=json_path, value=declaration,
+            ))
+
+        resolved: Path | None = None
+        validation = "invalid_declaration"
+        if reference is not None:
+            raw_path = Path(reference)
+            resolved = (raw_path if raw_path.is_absolute() else repo_root / raw_path).resolve()
+            if not raw_path.is_absolute() and not _inside(resolved, repo_root):
+                validation = "unsafe_path"
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.path must remain inside the repository",
+                    code="CAD109", kind="unsafe_path",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif not resolved.exists():
+                validation = "missing"
+                diagnostics.append(_diagnostic(
+                    path, f"Referenced path does not exist: {reference}",
+                    code="CAD121", kind="missing_path",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif not resolved.is_dir():
+                validation = "not_directory"
+                diagnostics.append(_diagnostic(
+                    path, "Library path must be a directory",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif diagnostics:
+                validation = "invalid_declaration"
+            else:
+                validation = "valid"
+        rows.append(CadLibraryInspection(
+            name, description, resolved, license_name, revision,
+            validation, tuple(diagnostics),
+        ))
+    return tuple(rows)
+
+
+def _diagnostic(path: Path, message: str, *, json_path: str | None = None,
+                code: str = "CAD120", kind: str = "invalid_system_metadata",
+                value: object | None = None, choices: tuple[str, ...] = (),
+                suggestion: str | None = None) -> CadDiagnostic:
+    return CadDiagnostic(code, kind, message, str(path), json_path=json_path,
+                         value=value, choices=choices, suggestion=suggestion)
+
+
+def _fail(path: Path, message: str, **fields: object) -> None:
+    raise CadMetadataError((_diagnostic(path, message, **fields),))
+
+
+def _validated_slicing(value: Mapping[str, object], path: Path,
+                       json_path: str, source_id: str) -> Mapping[str, object]:
+    try:
+        return validated_slicing(value, DirectiveSource(source_id))
+    except ValueError as error:
+        _fail(path, str(error), json_path=json_path, value=dict(value))
+
+
+def _read_json(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"),
+                           parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        _fail(path, f"Invalid system manifest: {error}", code="CAD100", kind="invalid_json")
+    if not isinstance(value, dict):
+        _fail(path, "System manifest must be a JSON object", json_path="$", value=value)
+    return value
+
+
+def _unknown_keys(value: Mapping[str, object], allowed: frozenset[str], path: Path,
+                  json_path: str) -> None:
+    for key in value:
+        if key not in allowed:
+            _fail(path, f"Unknown metadata key {key!r}", json_path=f"{json_path}.{key}", value=key)
+
+
+def _string(value: Mapping[str, object], key: str, path: Path, json_path: str,
+            default: str | None = None) -> str:
+    result = value.get(key, default)
+    if not isinstance(result, str):
+        _fail(path, f"{json_path} must be a string", json_path=json_path, value=result)
+    return result
+
+
+def _mapping(value: Mapping[str, object], key: str, path: Path,
+             json_path: str) -> dict[str, object]:
+    result = value.get(key, {})
+    if not isinstance(result, dict):
+        _fail(path, f"{json_path} must be a JSON object", json_path=json_path, value=result)
+    return result
+
+
+def _profiles(value: Mapping[str, object], path: Path, json_path: str) -> tuple[str, ...]:
+    raw = value.get("profiles", [])
+    if not isinstance(raw, list) or any(not isinstance(item, str) for item in raw):
+        _fail(path, f"{json_path} must be an array of strings", json_path=json_path, value=raw)
+    return tuple(raw)
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_existing(reference: str, repo_root: Path, manifest: Path,
+                      json_path: str, *, allow_absolute: bool = False) -> Path:
+    raw = Path(reference)
+    resolved = (raw if raw.is_absolute() else repo_root / raw).resolve()
+    if (raw.is_absolute() and not allow_absolute) or (
+        not raw.is_absolute() and not _inside(resolved, repo_root)
+    ):
+        _fail(manifest, f"{json_path} must remain inside the repository",
+              code="CAD109", kind="unsafe_path", json_path=json_path, value=reference)
+    if not resolved.exists():
+        _fail(manifest, f"Referenced path does not exist: {reference}",
+              code="CAD121", kind="missing_path", json_path=json_path, value=reference)
+    return resolved
+
+
+def _safe_name(name: str, path: Path, json_path: str) -> None:
+    if not _SAFE_NAME.fullmatch(name):
+        _fail(path, f"Unsafe name {name!r}", json_path=json_path, value=name)
+
+
+def discover_systems(repo_root: Path) -> tuple[SystemCandidate, ...]:
+    """Return every direct CAD system manifest, retaining invalid candidates."""
+    repo_root = Path(repo_root).resolve()
+    rows = []
+    for path in sorted((repo_root / "cad").glob("*.system.cad.json"), key=lambda item: item.name):
+        try:
+            system = load_system(path, repo_root)
+            rows.append(SystemCandidate(path, system.name, system.description,
+                                        system.default_product, "valid"))
+        except CadMetadataError as error:
+            metadata = {}
+            try:
+                metadata = _read_json(path)
+            except CadMetadataError:
+                pass
+            name = metadata.get("name", "")
+            description = metadata.get("description", "")
+            default = metadata.get("default_product")
+            rows.append(SystemCandidate(
+                path, name if isinstance(name, str) else "",
+                description if isinstance(description, str) else "",
+                default if isinstance(default, str) else None, "invalid", error.diagnostics))
+    paths_by_name: dict[str, list[Path]] = {}
+    for row in rows:
+        if row.name:
+            paths_by_name.setdefault(row.name, []).append(row.path)
+    duplicate_names = {name: tuple(paths) for name, paths in paths_by_name.items()
+                       if len(paths) > 1}
+    for index, row in enumerate(rows):
+        if row.name not in duplicate_names:
+            continue
+        duplicate_paths = tuple(str(item) for item in duplicate_names[row.name])
+        diagnostic = _diagnostic(
+            row.path, f"Duplicate system name {row.name!r}: {', '.join(duplicate_paths)}",
+            code="CAD128", kind="duplicate_system_name", json_path="$.name",
+            value=row.name, choices=duplicate_paths,
+        )
+        rows[index] = replace(row, status="invalid",
+                              diagnostics=row.diagnostics + (diagnostic,))
+    return tuple(rows)
+
+
+def select_system(candidates: Iterable[SystemCandidate], selector: str) -> SystemCandidate:
+    """Select a unique candidate by declared name or explicit manifest path."""
+    rows = tuple(candidates)
+    if rows:
+        repo_root = rows[0].path.parent.parent.resolve()
+    else:
+        repo_root = Path.cwd().resolve()
+    raw_selector_path = Path(selector)
+    selector_path = (raw_selector_path if raw_selector_path.is_absolute()
+                     else repo_root / raw_selector_path).resolve()
+    path_matches = tuple(row for row in rows if row.path.resolve() == selector_path)
+    name_matches = tuple(row for row in rows if row.name == selector)
+    matches = path_matches or name_matches
+    if len(matches) == 1:
+        return matches[0]
+    explicit_path = (raw_selector_path.is_absolute() or len(raw_selector_path.parts) > 1
+                     or selector.endswith(".system.cad.json"))
+    if not path_matches and explicit_path:
+        if not _inside(selector_path, repo_root):
+            _fail(selector_path, "Explicit system manifest must remain inside the repository",
+                  code="CAD109", kind="unsafe_path", value=selector)
+        system = load_system(selector_path, repo_root)
+        return SystemCandidate(selector_path, system.name, system.description,
+                               system.default_product, "valid")
+    choices = tuple(f"{row.name or '<invalid>'} ({row.path})" for row in rows)
+    reason = "ambiguous" if len(matches) > 1 else "not found"
+    source = rows[0].path if rows else Path(selector)
+    _fail(source, f"System {selector!r} was {reason}; discovered choices: {', '.join(choices) or '(none)'}",
+          code="CAD122", kind="system_selection", value=selector, choices=choices)
+
+
+def load_system(reference: Path, repo_root: Path) -> CadSystem:
+    """Load and fully validate one repository CAD system manifest."""
+    repo_root = Path(repo_root).resolve()
+    path = Path(reference)
+    path = (path if path.is_absolute() else repo_root / path).resolve()
+    if not _inside(path, repo_root):
+        _fail(path, "System manifest must remain inside the repository", code="CAD109", kind="unsafe_path")
+    metadata = _read_json(path)
+    _unknown_keys(metadata, _SYSTEM_KEYS, path, "$" )
+    schema = _string(metadata, "schema", path, "$.schema")
+    if schema != "plamp-cad-system/1":
+        _fail(path, "$.schema must equal 'plamp-cad-system/1'", json_path="$.schema", value=schema)
+    name = _string(metadata, "name", path, "$.name")
+    _safe_name(name, path, "$.name")
+    description = _string(metadata, "description", path, "$.description", "")
+
+    raw_models = _mapping(metadata, "models", path, "$.models")
+    models = {}
+    for model_id, raw_reference in raw_models.items():
+        _safe_name(model_id, path, f"$.models.{model_id}")
+        if not isinstance(raw_reference, str):
+            _fail(path, "Model reference must be a string", json_path=f"$.models.{model_id}", value=raw_reference)
+        _resolve_existing(raw_reference, repo_root, path, f"$.models.{model_id}")
+        models[model_id] = load_model(model_id, Path(raw_reference), repo_root)
+
+    raw_profiles = _mapping(metadata, "profiles", path, "$.profiles")
+    profile_paths = {}
+    for profile_name, raw_reference in raw_profiles.items():
+        _safe_name(profile_name, path, f"$.profiles.{profile_name}")
+        if not isinstance(raw_reference, str):
+            _fail(path, "Profile reference must be a string", json_path=f"$.profiles.{profile_name}", value=raw_reference)
+        profile_paths[profile_name] = _resolve_existing(raw_reference, repo_root, path, f"$.profiles.{profile_name}")
+    profiles = load_system_profiles(profile_paths)
+
+    for model_id, model in models.items():
+        for profile_name in model.profiles:
+            if profile_name not in profiles:
+                _fail(path, f"Unknown profile {profile_name!r} on model {model_id!r}",
+                      code="CAD127", kind="unknown_profile", value=profile_name,
+                      choices=tuple(profiles))
+        for set_name, cad_set in model.sets.items():
+            for profile_name in cad_set.profiles:
+                if profile_name not in profiles:
+                    _fail(
+                        path,
+                        f"Unknown profile {profile_name!r} on set "
+                        f"{model_id!r}/{set_name!r}",
+                        code="CAD127", kind="unknown_profile", value=profile_name,
+                        choices=tuple(profiles),
+                    )
+
+    raw_libraries = _mapping(metadata, "libraries", path, "$.libraries")
+    libraries = {}
+    for library_name, declaration in raw_libraries.items():
+        _safe_name(library_name, path, f"$.libraries.{library_name}")
+        if isinstance(declaration, str):
+            library_path = declaration
+            license_name = None
+            revision = None
+        elif isinstance(declaration, dict):
+            _unknown_keys(declaration, _LIBRARY_KEYS, path, f"$.libraries.{library_name}")
+            library_path = _string(declaration, "path", path, f"$.libraries.{library_name}.path")
+            license_name = declaration.get("license")
+            revision = declaration.get("revision")
+            if license_name is not None and not isinstance(license_name, str):
+                _fail(path, "Library license must be a string", json_path=f"$.libraries.{library_name}.license", value=license_name)
+            if revision is not None and not isinstance(revision, str):
+                _fail(path, "Library revision must be a string", json_path=f"$.libraries.{library_name}.revision", value=revision)
+        else:
+            _fail(path, "Library declaration must be a string or JSON object",
+                  json_path=f"$.libraries.{library_name}", value=declaration)
+        resolved_library = _resolve_existing(
+            library_path, repo_root, path, f"$.libraries.{library_name}.path",
+            allow_absolute=True,
+        )
+        if not resolved_library.is_dir():
+            _fail(path, "Library path must be a directory",
+                  json_path=f"$.libraries.{library_name}.path", value=library_path)
+        libraries[library_name] = CadLibrary(
+            library_name, resolved_library, license_name, revision
+        )
+
+    raw_products = _mapping(metadata, "products", path, "$.products")
+    products = {}
+    for product_name, raw_product in raw_products.items():
+        _safe_name(product_name, path, f"$.products.{product_name}")
+        if not isinstance(raw_product, dict):
+            _fail(path, "Product must be a JSON object", json_path=f"$.products.{product_name}", value=raw_product)
+        product_path = f"$.products.{product_name}"
+        _unknown_keys(raw_product, _PRODUCT_KEYS, path, product_path)
+        raw_items = raw_product.get("items", [])
+        if not isinstance(raw_items, list):
+            _fail(path, f"{product_path}.items must be an array", json_path=f"{product_path}.items", value=raw_items)
+        items = []
+        for index, raw_item in enumerate(raw_items):
+            item_path = f"{product_path}.items[{index}]"
+            if not isinstance(raw_item, dict):
+                _fail(path, f"{item_path} must be a JSON object", json_path=item_path, value=raw_item)
+            _unknown_keys(raw_item, _ITEM_KEYS, path, item_path)
+            product_ref = raw_item.get("product")
+            model_ref = raw_item.get("model")
+            if (isinstance(product_ref, str)) + (isinstance(model_ref, str)) != 1:
+                _fail(path, "Product item must contain exactly one of 'product' or 'model'",
+                      json_path=item_path, value=raw_item)
+            if product_ref is not None and "set" in raw_item:
+                _fail(path, "A product reference cannot contain 'set'", json_path=item_path, value=raw_item)
+            set_name = raw_item.get("set")
+            if model_ref is not None and not isinstance(set_name, str):
+                _fail(path, "A model reference requires a string 'set'", json_path=f"{item_path}.set", value=set_name)
+            variant = raw_item.get("variant")
+            if variant is not None and (not isinstance(variant, str) or not _SAFE_NAME.fullmatch(variant)):
+                _fail(path, "Variant must be a safe name", json_path=f"{item_path}.variant", value=variant)
+            item_description = raw_item.get("description", raw_item.get("note", ""))
+            if not isinstance(item_description, str):
+                _fail(path, "Item description must be a string", json_path=f"{item_path}.description", value=item_description)
+            item_slicing = _mapping(raw_item, "slicing", path, f"{item_path}.slicing")
+            items.append(CadProductItem(
+                product=product_ref, model=model_ref, set_name=set_name, variant=variant,
+                description=item_description,
+                variables=MappingProxyType(_mapping(raw_item, "variables", path, f"{item_path}.variables").copy()),
+                profiles=_profiles(raw_item, path, f"{item_path}.profiles"),
+                slicing=_validated_slicing(
+                    item_slicing, path, f"{item_path}.slicing",
+                    f"product:{product_name}:item:{index}",
+                ),
+            ))
+        product_description = _string(raw_product, "description", path, f"{product_path}.description", "")
+        product_slicing = _mapping(raw_product, "slicing", path, f"{product_path}.slicing")
+        products[product_name] = CadProduct(
+            product_name, product_description, tuple(items),
+            MappingProxyType(_mapping(raw_product, "variables", path, f"{product_path}.variables").copy()),
+            _profiles(raw_product, path, f"{product_path}.profiles"),
+            _validated_slicing(
+                product_slicing, path, f"{product_path}.slicing",
+                f"product:{product_name}",
+            ),
+        )
+
+    choices = tuple(products)
+    for product_name, product in products.items():
+        for profile_name in product.profiles:
+            if profile_name not in profiles:
+                _fail(path, f"Unknown profile {profile_name!r}", code="CAD127",
+                      kind="unknown_profile", value=profile_name,
+                      choices=tuple(profiles))
+        siblings: dict[tuple[str, str], list[CadProductItem]] = {}
+        for item in product.items:
+            for profile_name in item.profiles:
+                if profile_name not in profiles:
+                    _fail(path, f"Unknown profile {profile_name!r}", code="CAD127",
+                          kind="unknown_profile", value=profile_name,
+                          choices=tuple(profiles))
+            if item.product is not None and item.product not in products:
+                suggestion = (get_close_matches(item.product, choices, n=1, cutoff=0.6) or [None])[0]
+                _fail(path, f"Unknown product {item.product!r}", code="CAD123", kind="unknown_product",
+                      value=item.product, choices=choices, suggestion=suggestion)
+            if item.model is not None:
+                if item.model not in models:
+                    _fail(path, f"Unknown model {item.model!r}", code="CAD124", kind="unknown_model", value=item.model)
+                if item.set_name not in models[item.model].sets:
+                    _fail(path, f"Unknown set {item.set_name!r} for model {item.model!r}",
+                          code="CAD111", kind="unknown_set", value=item.set_name,
+                          choices=tuple(models[item.model].sets))
+                siblings.setdefault((item.model, item.set_name or ""), []).append(item)
+        for model_set, repeated in siblings.items():
+            if len(repeated) > 1:
+                variants = tuple(item.variant for item in repeated)
+                assignments = tuple(
+                    (dict(item.variables), item.profiles, dict(item.slicing))
+                    for item in repeated
+                )
+                assignments_differ = any(
+                    assignment != assignments[0] for assignment in assignments[1:]
+                )
+                variants_invalid = (
+                    any(variant is None for variant in variants)
+                    or len(set(variants)) != len(variants)
+                )
+                if assignments_differ and variants_invalid:
+                    _fail(path, f"Sibling references to {model_set[0]}/{model_set[1]} require distinct variants",
+                          code="CAD125", kind="invalid_variant", value=variants)
+                if not assignments_differ and any(variants) and variants_invalid:
+                    _fail(path, f"Sibling references to {model_set[0]}/{model_set[1]} use duplicate variants",
+                          code="CAD125", kind="invalid_variant", value=variants)
+
+    default = metadata.get("default_product")
+    if default is not None and not isinstance(default, str):
+        _fail(path, "$.default_product must be a string or null", json_path="$.default_product", value=default)
+    if default is not None and default not in products:
+        _fail(path, f"Unknown default product {default!r}", code="CAD123", kind="unknown_product",
+              json_path="$.default_product", value=default, choices=choices)
+
+    visited = set()
+    active = []
+    def visit(product_name: str) -> None:
+        if product_name in active:
+            start = active.index(product_name)
+            cycle = active[start:] + [product_name]
+            _fail(path, f"Product cycle: {' -> '.join(cycle)}", code="CAD126", kind="product_cycle", value=tuple(cycle))
+        if product_name in visited:
+            return
+        active.append(product_name)
+        for item in products[product_name].items:
+            if item.product is not None:
+                visit(item.product)
+        active.pop()
+        visited.add(product_name)
+    for product_name in products:
+        visit(product_name)
+
+    return CadSystem(
+        name, description, path, MappingProxyType(models), MappingProxyType(products),
+        default, MappingProxyType(libraries.copy()), MappingProxyType(profiles),
+        MappingProxyType(metadata.copy()),
+    )

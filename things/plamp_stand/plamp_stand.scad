@@ -1,16 +1,4 @@
-view = "assembly"; // [assembly, tripod, camera_clip, plate]
-
-/* generate.json
-{
-  "default_preset": "all-views-default",
-  "presets": {
-    "all-views-default": {
-      "description": "Generate every declared Plamp Stand view",
-      "items": ["view:assembly", "view:tripod", "view:camera_clip", "view:plate"]
-    }
-  }
-}
-*/
+set = ""; // [assembly, tripod, camera_clip, plate]
 
 letter_size = 7;
 revision_string = "1234567";
@@ -270,24 +258,23 @@ module rpi_holder () {
     
 }
 
-echo(["view", view]); 
+echo(["set", set]);
 
 
-if (view == "tripod") {
+if (set == "tripod") {
   tripod();
 }
 
-if (view == "camera_clip") {
+if (set == "camera_clip") {
   // flat("part");
   camera_clip();  
 }
 
 
-if (view == "assembly" || view == "plate") {
+if (set == "" || set == "assembly" || set == "plate") {
    echo("assmenbly view"); 
    
    rpi_holder();
    camera_clip();
    translate([-5, -25, 0]) instrument_hook();
 }
-

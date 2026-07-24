@@ -1,0 +1,10 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "__PLAMP_PART__",
+  "source": "__PLAMP_PART__.scad",
+  "description": "General positive-and-negative CAD model",
+  "sets": {
+    "__PLAMP_PART__": {"description": "Printable model"},
+    "assembly": {"description": "Initial complete assembly", "printable": false}
+  }
+}

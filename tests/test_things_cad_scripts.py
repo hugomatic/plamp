@@ -3,7 +3,9 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from plamp.cad_metadata import parse_cad_document
+from plamp.cad_model import load_model
+from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
+from plamp.cad_system import load_system
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,110 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_repository_assemblies_are_not_printable(self):
+        assembly_sets = {
+            "plamp8": ("", "assembly", "wall_corner_fastener_assembly"),
+            "iharvest_cover": ("", "assembly"),
+            "plamp_stand": ("", "assembly"),
+        }
+        for model_id, set_names in assembly_sets.items():
+            with self.subTest(model=model_id):
+                model = load_model(
+                    model_id,
+                    REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
+                    REPO_ROOT,
+                )
+                for set_name in set_names:
+                    with self.subTest(set=set_name):
+                        self.assertFalse(model.sets[set_name].printable)
+                        self.assertEqual(dict(model.sets[set_name].slicing), {})
+
+    def test_plamp8_top_panel_recommends_ironing_without_supports(self):
+        model = load_model(
+            "plamp8", REPO_ROOT / "things" / "plamp8" / "plamp8.cad.json",
+            REPO_ROOT,
+        )
+        policy, _notes = normalize_slicing(
+            model.sets["top_panel"].slicing,
+            DirectiveSource("set:plamp8/top_panel"),
+        )
+        self.assertEqual(policy["ironing"].value, "recommended")
+        self.assertEqual(policy["supports"].value, "forbidden")
+
+    def test_repository_printable_sets_preserve_exported_orientation(self):
+        for model_id in ("plamp8", "iharvest_cover", "plamp_stand"):
+            model = load_model(
+                model_id,
+                REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
+                REPO_ROOT,
+            )
+            for set_name, cad_set in model.sets.items():
+                if not cad_set.printable:
+                    continue
+                with self.subTest(model=model_id, set=set_name):
+                    policy, _notes = normalize_slicing(
+                        cad_set.slicing,
+                        DirectiveSource(f"set:{model_id}/{set_name}"),
+                    )
+                    self.assertEqual(
+                        policy["orientation"].value, "as-exported"
+                    )
+
+    def test_host_tools_documents_profiles_defaults_and_readme_advice(self):
+        source = (REPO_ROOT / "docs" / "host-tools.md").read_text(encoding="utf-8")
+        for text in (
+            "plamp cad profiles",
+            "--profile system:draft",
+            "$PLAMP_DATA_DIR/cad/profiles",
+            "$PLAMP_DATA_DIR/cad/preferences.json",
+            "--no-default-profiles",
+            "readme.md",
+        ):
+            with self.subTest(text=text):
+                self.assertIn(text, source)
+
+    def test_every_repository_scad_is_clean_or_a_library(self):
+        roots = tuple(REPO_ROOT.glob("things/**/*.scad"))
+        self.assertTrue(roots)
+        for path in roots:
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertNotIn("generate.json", source)
+                self.assertNotRegex(source, r"(?m)^\s*view\s*=")
+
+    def test_plamp_system_catalog_has_migrated_products(self):
+        system = load_system(REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT)
+        self.assertEqual(
+            tuple(system.models), ("plamp8", "iharvest_cover", "plamp_stand")
+        )
+        self.assertEqual(system.default_product, "split-box")
+        self.assertIn("fit-and-function", system.products)
+        self.assertNotIn("test-fit", system.products)
+
+    def test_repository_models_have_exact_described_set_catalogs(self):
+        expected = {
+            "plamp8": (
+                "", "floor", "north_south_walls", "east_west_walls", "box",
+                "top_panel", "sub_panel", "north_wall", "south_wall",
+                "west_wall", "east_wall", "relay_footprint", "psu_footprint",
+                "converter_footprint", "ac_duplex_panel", "dc_connector_panel",
+                "usb_c_panel", "c13_panel", "panel_corner_fastener_test",
+                "corner_coupon", "wall_corner_fastener_assembly", "assembly",
+            ),
+            "iharvest_cover": ("", "assembly", "plate"),
+            "plamp_stand": ("", "assembly", "tripod", "camera_clip", "plate"),
+        }
+        for model_id, set_names in expected.items():
+            with self.subTest(model=model_id):
+                model = load_model(
+                    model_id,
+                    REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
+                    REPO_ROOT,
+                )
+                self.assertEqual(tuple(model.sets), set_names)
+                self.assertTrue(model.description.strip())
+                self.assertTrue(all(item.description.strip() for item in model.sets.values()))
+
     def test_plamp8_connector_fit_views_use_panel_names(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -36,19 +142,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "ac_duplex_panel", "dc_connector_panel", "usb_c_panel", "c13_panel",
         ):
             with self.subTest(name=name):
-                self.assertIn(f'view == "{name}"', source)
+                self.assertIn(f'set == "{name}"', source)
                 self.assertIn(f'module {name}()', source)
 
         for retired in ("ac_duplex_channel", "dc_barrel_channel", "c13_inlet"):
             with self.subTest(retired=retired):
-                self.assertNotIn(f'view == "{retired}"', source)
+                self.assertNotIn(f'set == "{retired}"', source)
                 self.assertNotIn(f'module {retired}()', source)
 
-        self.assertIn(
-            '"items": ["view:ac_duplex_panel", "view:dc_connector_panel", '
-            '"view:usb_c_panel", "view:c13_panel"]',
-            source,
-        )
 
     def test_plamp8_derived_dimensions_follow_their_dependencies(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -309,7 +410,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )[0]
         self.assertEqual(floor_context.count("floor_revision_negative();"), 1)
 
-    def test_cad_documentation_covers_the_stable_local_workflow(self):
+    def test_cad_documentation_uses_system_model_set_product_vocabulary(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         host_tools = (REPO_ROOT / "docs" / "host-tools.md").read_text(
             encoding="utf-8"
@@ -321,10 +422,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         documentation = f"{readme_cad}\n{host_tools_cad}"
 
         for command in (
-            "plamp cad views plamp8",
-            "plamp cad validate plamp8",
-            "plamp cad plan plamp8 --preset fuse-box",
-            "plamp cad generate plamp8 --preset fuse-box",
+            "plamp cad generate",
+            "plamp cad systems",
+            "plamp cad models",
+            "plamp cad sets",
+            "plamp cad products",
+            "plamp cad templates",
+            "plamp cad generate --system plamp --product fuse-box",
+            "plamp cad generate --system plamp plamp8 --set top_panel",
+            "plamp cad generate --system plamp plamp8 --all-sets",
+            "plamp cad new pump_bracket --system plamp --template flat_plate",
             "plamp cad runs plamp8",
             "plamp cad show RUN_ID",
         ):
@@ -336,36 +443,54 @@ class ThingsCadScriptsTest(unittest.TestCase):
             documentation,
         )
         self.assertIn(
-            "plamp cad generate plamp8 --view top_panel --regenerate",
+            "plamp cad generate --system plamp plamp8 --set top_panel --regenerate",
             documentation,
         )
         self.assertIn(
             "explicit --output bypasses managed duplicate detection",
             " ".join(documentation.lower().replace("`", "").split()),
         )
-        self.assertIn("plan before generate", documentation.lower().replace("`", ""))
+        self.assertIn("generate directly", documentation.lower().replace("`", ""))
         self.assertIn(
-            "SCAD defaults → global → view → outer-to-inner preset variables → "
-            "outer-to-inner matching preset-view variables → CLI global → CLI per-view",
+            "SCAD defaults → model → set → deepest product outward → "
+            "product item → parent product → CLI global → CLI per-set",
             " ".join(documentation.split()),
         )
+        self.assertIn("noninteractive", documentation.lower())
+        self.assertNotIn("plamp cad views", documentation)
+        self.assertNotIn("--preset", documentation)
+        self.assertNotIn("--view", documentation)
         self.assertNotIn("web", documentation.lower())
         self.assertNotIn("three.js", documentation.lower())
 
-    def test_versioned_scad_sources_embed_generation_metadata(self):
+    def test_versioned_scad_sources_use_adjacent_model_sidecars(self):
         paths = (
             "things/plamp8/plamp8.scad",
             "things/plamp_stand/plamp_stand.scad",
             "things/iharvest_cover/iharvest_cover.scad",
-            "things/3d_template/cad.scad",
-            "things/3d_template/scad/flat_plate.scad",
-            "things/3d_template/scad/positive_negative.scad",
         )
 
         for relative_path in paths:
             with self.subTest(path=relative_path):
-                document = parse_cad_document(REPO_ROOT / relative_path)
-                self.assertTrue(document.metadata_snapshot)
+                path = REPO_ROOT / relative_path
+                source = path.read_text(encoding="utf-8")
+                self.assertIn("set =", source)
+                self.assertNotIn("generate.json", source)
+                self.assertTrue(path.with_suffix(".cad.json").is_file())
+
+    def test_scaffold_templates_keep_metadata_in_adjacent_sidecars(self):
+        paths = (
+            "things/3d_template/cad.scad",
+            "things/3d_template/scad/flat_plate.scad",
+            "things/3d_template/scad/positive_negative.scad",
+        )
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                path = REPO_ROOT / relative_path
+                source = path.read_text(encoding="utf-8")
+                self.assertIn('set = "__PLAMP_PART__";', source)
+                self.assertNotIn("generate.json", source)
+                self.assertTrue(path.with_suffix(".cad.json").is_file())
 
     def test_plamp8_flat_wall_corner_stack_contract(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -468,14 +593,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn("coupon_plate_column_x = 100;", source)
-        self.assertIn('view == "corner_coupon"', source)
-        self.assertIn('view == "wall_corner_fastener_test"', source)
-        view_line = next(
-            line for line in source.splitlines() if line.startswith("view =")
+        self.assertIn('set == "corner_coupon"', source)
+        self.assertNotIn('set == "wall_corner_fastener_test"', source)
+        set_line = next(
+            line for line in source.splitlines() if line.startswith("set =")
         )
-        self.assertIn("corner_coupon", view_line)
-        self.assertNotIn("wall_corner_fastener_test", view_line)
-        self.assertIn('view == "wall_corner_fastener_assembly"', source)
+        self.assertIn("corner_coupon", set_line)
+        self.assertNotIn("wall_corner_fastener_test", set_line)
+        self.assertIn('set == "wall_corner_fastener_assembly"', source)
         self.assertIn("sub_panel_base_h = 5;", source)
         self.assertIn("sub_panel_h = 10;", source)
 
@@ -519,12 +644,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
     def test_plamp8_has_four_flat_printed_mitred_wall_views(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
-        view_line = next(
-            line for line in source.splitlines() if line.startswith("view =")
+        set_line = next(
+            line for line in source.splitlines() if line.startswith("set =")
         )
 
         for name in ("north_wall", "south_wall", "west_wall", "east_wall"):
-            self.assertIn(name, view_line)
+            self.assertIn(name, set_line)
             self.assertIn(
                 f"module {name}_context(",
                 source,
@@ -533,9 +658,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 f"module {name}(",
                 source,
             )
-            self.assertIn(f'view == "{name}"', source)
-        self.assertNotIn(" walls,", view_line)
-        self.assertNotIn('view == "walls"', source)
+            self.assertIn(f'set == "{name}"', source)
+        self.assertNotIn(" walls,", set_line)
+        self.assertNotIn('set == "walls"', source)
         self.assertNotIn("module walls_context", source)
         self.assertNotIn("module walls()", source)
         self.assertNotIn("feature_ledge", source)
@@ -629,12 +754,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
     def test_plamp8_box_view_reuses_complete_wall_and_floor_geometry(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
-        view_line = next(
-            line for line in source.splitlines() if line.startswith("view =")
+        set_line = next(
+            line for line in source.splitlines() if line.startswith("set =")
         )
 
-        self.assertIn("box", view_line)
-        self.assertIn('view == "box"', source)
+        self.assertIn("box", set_line)
+        self.assertIn('set == "box"', source)
         box_module = source.split("module box()", 1)[1].split(
             "module assembly()", 1
         )[0]
@@ -1186,17 +1311,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(label_call, top_panel)
 
-    def test_plamp8_has_ready_made_panels_preset(self):
-        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
-
-        self.assertIn('"panels": {', source)
-        self.assertIn(
-            '"description": "Printable top and internal sub-panels",', source
+    def test_plamp8_has_ready_made_panels_product(self):
+        system = load_system(REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT)
+        panels = system.products["panels"]
+        self.assertEqual(panels.description, "Printable top and internal sub-panels")
+        self.assertEqual(
+            tuple((item.model, item.set_name) for item in panels.items),
+            (("plamp8", "top_panel"), ("plamp8", "sub_panel")),
         )
-        self.assertIn(
-            '"items": ["view:top_panel", "view:sub_panel"]', source
-        )
-        self.assertIn('"default_preset": "split-box"', source)
+        self.assertEqual(system.default_product, "split-box")
 
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1479,7 +1602,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             r"module side_loaded_panel_nut_trap\(direction = 1\)[\s\S]*?self_supporting_nut_trap_roof",
         )
         self.assertIn("module panel_corner_fastener_test", source)
-        self.assertIn('view == "panel_corner_fastener_test"', source)
+        self.assertIn('set == "panel_corner_fastener_test"', source)
 
     def test_plamp8_usb_connector_uses_raised_sub_panel_mount(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

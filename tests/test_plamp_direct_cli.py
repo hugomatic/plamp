@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from plamp.cli import _normalize_cad_generate_legacy_args, main
+from plamp.cli import build_parser, main
 from plamp.config import ConfigError, controller_pico_serial
 from plamp.pico_transport import PicoFlashError
 
@@ -48,35 +48,11 @@ class DirectCliTests(unittest.TestCase):
         self.assertIn("usage: plamp", stdout.getvalue())
         self.assertNotIn("python -m plamp", stdout.getvalue())
 
-    def test_legacy_cad_args_find_command_after_global_value_named_cad(self):
-        argv = [
-            "--lock-dir",
-            "cad",
-            "cad",
-            "generate",
-            "fixture",
-            "--view",
-            "plate",
-            "out",
-            "HEAD",
-        ]
-
-        self.assertEqual(
-            _normalize_cad_generate_legacy_args(argv),
-            [
-                "--lock-dir",
-                "cad",
-                "cad",
-                "generate",
-                "fixture",
-                "--view",
-                "plate",
-                "--legacy-output",
-                "out",
-                "--legacy-commit",
-                "HEAD",
-            ],
-        )
+    def test_legacy_cad_output_and_commit_positionals_are_rejected(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args([
+                "cad", "generate", "fixture", "out", "HEAD",
+            ])
 
     def test_controller_serial_reads_existing_config_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -359,47 +335,25 @@ class DirectCliTests(unittest.TestCase):
 
     def test_project_neutral_cad_template_supports_no_render_workflow(self):
         repo_root = Path(__file__).resolve().parents[1]
-        part = "things/3d_template/cad.scad"
-        real_run = subprocess.run
-        real_popen = subprocess.Popen
-
-        def git_only_run(command, *args, **kwargs):
-            executable = Path(command[0]).name
-            self.assertEqual(executable, "git", f"unexpected subprocess: {command!r}")
-            return real_run(command, *args, **kwargs)
-
-        def git_only_popen(command, *args, **kwargs):
-            executable = Path(command[0]).name
-            self.assertEqual(executable, "git", f"unexpected process start: {command!r}")
-            return real_popen(command, *args, **kwargs)
-
         with tempfile.TemporaryDirectory() as tmp:
             env = {
                 "PLAMP_ROOT": str(repo_root),
                 "PLAMP_DATA_DIR": str(Path(tmp) / "data"),
             }
 
-            with patch("subprocess.run", side_effect=git_only_run), patch(
-                "subprocess.Popen", side_effect=git_only_popen
-            ):
-                for args in (
-                    ["cad", "views", part, "--json"],
-                    ["cad", "validate", part, "--json"],
-                    ["cad", "plan", part, "--preset", "all-views-default", "--json"],
-                ):
-                    with self.subTest(command=args[1]):
-                        stdout = io.StringIO()
-                        rc = main(
-                            args,
-                            env=env,
-                            stdout=stdout,
-                            stderr=io.StringIO(),
-                            cad_generate_func=lambda *a, **k: self.fail(
-                                "no-render workflow must not invoke OpenSCAD"
-                            ),
-                        )
-                        self.assertEqual(rc, 0)
-                        self.assertTrue(json.loads(stdout.getvalue()))
+            stdout = io.StringIO()
+            rc = main(
+                ["cad", "templates", "--json"], env=env, stdout=stdout,
+                stderr=io.StringIO(), cad_generate_func=lambda *a, **k: self.fail(
+                    "template navigation must not invoke OpenSCAD"
+                ),
+            )
+            self.assertEqual(rc, 0)
+            rows = json.loads(stdout.getvalue())
+            self.assertEqual(tuple(row["id"] for row in rows),
+                             ("cad", "flat_plate", "positive_negative"))
+            self.assertTrue(all(row["description"] for row in rows))
+            self.assertTrue(all(len(row["files"]) == 2 for row in rows))
 
     def test_camera_capture_calls_shared_library_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
