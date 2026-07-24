@@ -952,6 +952,7 @@ def _copy_verified(record: DependencyRecord, stage: Path, stage_fd: int) -> None
                 for chunk in iter(lambda: source.read(1024 * 1024), b""):
                     digest.update(chunk)
                     output.write(chunk)
+                os.fchmod(output.fileno(), stat.S_IMODE(details.st_mode) & 0o777)
                 output.flush()
                 output.seek(0)
                 copied = hashlib.sha256()
@@ -972,6 +973,23 @@ def stage_dependency_closure(
 ) -> StagedDependencies:
     """Copy a classified closure to deterministic repository/library roots."""
 
+    archive_paths: set[Path] = set()
+    for record in closure.records:
+        archive = record.archive_path
+        parts = archive.parts
+        if (
+            archive.is_absolute() or not parts
+            or any(
+                component in ("", ".", "..")
+                or "\\" in component or ":" in component or "\x00" in component
+                for component in parts
+            )
+        ):
+            raise CadDependencyError(f"unsafe dependency archive path: {archive}")
+        if archive in archive_paths:
+            raise CadDependencyError(f"duplicate dependency archive path: {archive}")
+        archive_paths.add(archive)
+
     stage = Path(destination).absolute()
     if stage.exists() and (stage.is_symlink() or not stage.is_dir()):
         raise CadDependencyError(f"unsafe CAD dependency staging root: {stage}")
@@ -985,12 +1003,8 @@ def stage_dependency_closure(
     except OSError as error:
         raise CadDependencyError(f"cannot safely open CAD dependency staging root: {error}") from error
     stage_identity = os.fstat(stage_fd)
-    archive_paths: set[Path] = set()
     try:
         for record in closure.records:
-            if record.archive_path in archive_paths:
-                raise CadDependencyError(f"duplicate dependency archive path: {record.archive_path}")
-            archive_paths.add(record.archive_path)
             _copy_verified(record, stage, stage_fd)
     finally:
         os.close(stage_fd)

@@ -16,6 +16,7 @@ from plamp.cad_dependencies import (
     CadLibrary,
     CadDependencyError,
     DependencyRecord,
+    DependencyClosure,
     classify_dependencies,
     DiscoveryEnvironment,
     cleanup_discovery_environment,
@@ -320,6 +321,57 @@ OPENSCAD_FONT_PATH:
         source.write_text("cube(99);")
         with self.assertRaisesRegex(CadDependencyError, "changed|hash"):
             stage_dependency_closure(closure, self.root / "changed-stage")
+
+    def test_stage_prevalidates_forged_paths_and_collisions_before_writing(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        source = self.write_at(model / "box.scad", "cube(1);")
+        valid = DependencyRecord(
+            source, "model-local", "box.scad", Path("repository/box.scad"),
+            content_hash(source),
+        )
+        outside = self.root / "escaped.scad"
+        unsafe_paths = (
+            Path(), Path("../escaped.scad"), Path("/absolute.scad"),
+            Path(r"C:\escaped.scad"), Path(r"repository\escaped.scad"),
+        )
+        for index, unsafe in enumerate(unsafe_paths):
+            stage = self.root / f"unsafe-stage-{index}"
+            forged = DependencyRecord(
+                source, "model-local", "forged", unsafe, content_hash(source),
+            )
+            closure = DependencyClosure((valid, forged), model, repo, source)
+            with self.subTest(path=unsafe), self.assertRaisesRegex(
+                CadDependencyError, "archive path"
+            ):
+                stage_dependency_closure(closure, stage)
+            self.assertFalse(outside.exists())
+            self.assertFalse((stage / "repository/box.scad").exists())
+
+        collision_stage = self.root / "collision-stage"
+        collision = replace(valid, logical_name="duplicate")
+        with self.assertRaisesRegex(CadDependencyError, "duplicate"):
+            stage_dependency_closure(
+                DependencyClosure((valid, collision), model, repo, source),
+                collision_stage,
+            )
+        self.assertFalse((collision_stage / "repository/box.scad").exists())
+
+    def test_stage_preserves_regular_file_permissions_despite_umask(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        source = self.write_at(model / "box.scad", "cube(1);")
+        source.chmod(0o764)
+        closure = classify_dependencies(
+            dependencies=(source,), model_root=model, repository_root=repo,
+            declared_libraries={}, openscad_library_roots=(), selected_revision="rev",
+        )
+        previous = os.umask(0o077)
+        try:
+            staged = stage_dependency_closure(closure, self.root / "mode-stage")
+        finally:
+            os.umask(previous)
+        self.assertEqual(stat.S_IMODE(staged.model_source.stat().st_mode), 0o764)
 
     @staticmethod
     def write_at(path: Path, content: str) -> Path:
