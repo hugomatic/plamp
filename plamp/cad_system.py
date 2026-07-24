@@ -133,10 +133,10 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def _resolve_existing(reference: str, repo_root: Path, manifest: Path,
-                      json_path: str) -> Path:
+                      json_path: str, *, allow_absolute: bool = False) -> Path:
     raw = Path(reference)
     resolved = (raw if raw.is_absolute() else repo_root / raw).resolve()
-    if raw.is_absolute() or not _inside(resolved, repo_root):
+    if (raw.is_absolute() and not allow_absolute) or not _inside(resolved, repo_root):
         _fail(manifest, f"{json_path} must remain inside the repository",
               code="CAD109", kind="unsafe_path", json_path=json_path, value=reference)
     if not resolved.exists():
@@ -268,7 +268,10 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
         else:
             _fail(path, "Library declaration must be a string or JSON object",
                   json_path=f"$.libraries.{library_name}", value=declaration)
-        _resolve_existing(library_path, repo_root, path, f"$.libraries.{library_name}.path")
+        _resolve_existing(
+            library_path, repo_root, path, f"$.libraries.{library_name}.path",
+            allow_absolute=True,
+        )
         libraries[library_name] = declaration
 
     raw_products = _mapping(metadata, "products", path, "$.products")

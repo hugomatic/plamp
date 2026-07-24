@@ -263,6 +263,11 @@ def _selected_system(
         candidate = deps["select_system"](candidates, selector)
     elif len(candidates) == 1:
         candidate = candidates[0]
+    elif not candidates:
+        raise ValueError(
+            "no CAD systems are available; add a *.system.cad.json manifest "
+            "under cad/ or select an explicit manifest with --system NAME_OR_PATH"
+        )
     elif not _interactive(stdin, args):
         choices = ", ".join(item.name or str(item.path) for item in candidates)
         raise ValueError(
@@ -276,6 +281,92 @@ def _selected_system(
             raise CadMetadataError(candidate.diagnostics)
         raise ValueError(f"CAD system is invalid: {candidate.path}")
     return deps["load_system"](candidate.path, context.root)
+
+
+def _read_catalog_choice(stdin: TextIO, prompt: str, stdout: TextIO) -> str:
+    stdout.write(prompt)
+    stdout.flush()
+    try:
+        value = stdin.readline()
+    except KeyboardInterrupt:
+        raise CadSelectionCancelled("CAD catalog browsing cancelled") from None
+    return "q" if value == "" else value.strip().lower()
+
+
+def _catalog_browser(
+    context: RuntimeContext,
+    stdin: TextIO,
+    stdout: TextIO,
+    deps: Mapping[str, CadFunction],
+) -> int:
+    """Browse system -> model -> set while retaining parent selection on back."""
+
+    candidates = tuple(
+        candidate for candidate in deps["discover_systems"](context.root)
+        if candidate.status == "valid"
+    )
+    if not candidates:
+        raise ValueError("no valid CAD systems are available")
+    selected: SystemCandidate | None = candidates[0] if len(candidates) == 1 else None
+    while True:
+        if selected is None:
+            stdout.write("Systems:\n")
+            for index, candidate in enumerate(candidates, 1):
+                stdout.write(
+                    f"{index}. {candidate.name} - {_described(candidate.description)}\n"
+                )
+            choice = _read_catalog_choice(
+                stdin, "Select System (q to quit): ", stdout
+            )
+            if choice in {"q", "quit"}:
+                return 0
+            if not choice.isdigit() or not 1 <= int(choice) <= len(candidates):
+                stdout.write("Invalid selection.\n")
+                continue
+            selected = candidates[int(choice) - 1]
+
+        system = deps["load_system"](selected.path, context.root)
+        while selected is not None:
+            models = tuple(system.models.items())
+            stdout.write(
+                f"System {system.name}: {_described(system.description)}\nModels:\n"
+            )
+            for index, (model_id, model) in enumerate(models, 1):
+                stdout.write(
+                    f"{index}. model {model_id} - {_described(model.description)}\n"
+                )
+            stdout.write("Products:\n")
+            for product_id, product in system.products.items():
+                stdout.write(
+                    f"- product {product_id} - {_described(product.description)}\n"
+                )
+            choice = _read_catalog_choice(
+                stdin, "Select model (b for systems, q to quit): ", stdout
+            )
+            if choice in {"q", "quit"}:
+                return 0
+            if choice in {"b", "back"}:
+                selected = None
+                break
+            if not choice.isdigit() or not 1 <= int(choice) <= len(models):
+                stdout.write("Invalid selection.\n")
+                continue
+            model_id, model = models[int(choice) - 1]
+            while True:
+                stdout.write(f"Sets for {model_id}:\n")
+                for cad_set in model.sets.values():
+                    stdout.write(
+                        f"set {cad_set.name or '(default)'} - "
+                        f"{_described(cad_set.description)}\n"
+                    )
+                choice = _read_catalog_choice(
+                    stdin, "b for models, q to quit: ", stdout
+                )
+                if choice in {"q", "quit"}:
+                    return 0
+                if choice in {"b", "back"}:
+                    break
+                stdout.write("Choose b or q.\n")
 
 
 def _emit_rows(rows: list[dict[str, object]], json_output: bool, stdout: TextIO) -> None:
@@ -343,8 +434,12 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
             else:
                 path = str(declaration.get("path", ""))
                 description = str(declaration.get("description", ""))
+            resolved = Path(path)
+            if not resolved.is_absolute():
+                resolved = context.root / resolved
             rows.append({"kind": "library", "id": name, **base,
-                         "description": _described(description), "path": path})
+                         "description": _described(description),
+                         "path": _relative(resolved, context.root)})
     return rows
 
 
@@ -767,6 +862,12 @@ def run_cad_command(
             return 0
 
         if args.action in {"models", "sets", "products", "profiles", "libraries"}:
+            if (
+                args.action == "models"
+                and getattr(args, "system", None) is None
+                and _interactive(stdin, args)
+            ):
+                return _catalog_browser(context, stdin, stdout, deps)
             system = _selected_system(args, context, stdin, stdout, deps)
             rows = _catalog_rows(
                 args.action, system, context, getattr(args, "model", None)

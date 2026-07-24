@@ -221,18 +221,40 @@ class CadCliTests(unittest.TestCase):
         alpha = self._clean_catalog(second_system=True)
         stdout, _stderr, rc = self._run_main(
             ["cad", "models"], stdin=mock.Mock(
-                readline=mock.Mock(return_value="2\n"),
+                readline=mock.Mock(side_effect=("2\n", "1\n", "b\n", "b\n", "q\n")),
                 isatty=mock.Mock(return_value=True),
             )
         )
         self.assertEqual(rc, 0)
-        self.assertIn("System", stdout)
-        self.assertIn("fixture", stdout)
+        self.assertGreaterEqual(stdout.count("Systems:"), 2)
+        self.assertGreaterEqual(stdout.count("System beta:"), 2)
+        self.assertIn("Sets for fixture:", stdout)
+        self.assertIn("set floor - Printable floor", stdout)
         output, _error, rc = self._run_main(
             ["cad", "models", "--system", str(alpha), "--json"]
         )
         self.assertEqual(rc, 0)
         self.assertEqual(json.loads(output)[0]["system"], "alpha")
+
+    def test_library_paths_are_normalized_repository_relative(self):
+        manifest_path = self._clean_catalog()
+        manifest = json.loads(manifest_path.read_text())
+        for declaration in ("./cad/lib", str((self.root / "cad" / "lib").resolve())):
+            with self.subTest(declaration=declaration):
+                manifest["libraries"]["fasteners"]["path"] = declaration
+                manifest_path.write_text(json.dumps(manifest))
+                output, error, rc = self._run_main(
+                    ["cad", "libraries", "--system", "alpha", "--json"]
+                )
+                self.assertEqual((rc, error), (0, ""))
+                self.assertEqual(json.loads(output)[0]["path"], "cad/lib")
+
+    def test_zero_system_error_does_not_claim_multiple_systems(self):
+        output, _error, rc = self._run_main(["cad", "models", "--json"])
+        self.assertEqual(rc, 2)
+        message = json.loads(output)[0]["message"]
+        self.assertIn("no CAD systems", message)
+        self.assertNotIn("multiple CAD systems", message)
 
     def test_human_navigation_always_shows_descriptions(self):
         self._clean_catalog(missing_descriptions=True)
