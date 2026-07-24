@@ -1539,14 +1539,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
             "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
             "sub_panel_bonding_roof_h=sub_panel_h-sub_panel_base_h-sub_panel_bonding_nut_h;",
-            "sub_panel_bonding_blind_floor=1;",
         ):
             self.assertIn(definition, compact)
 
         self.assertIn("d=sub_panel_bonding_tower_d", tower)
         self.assertIn("d1=sub_panel_bonding_nut_w", nut)
         self.assertIn("d2=panel_screw_d", nut)
-        self.assertIn("sub_panel_bonding_blind_floor", screw)
+        self.assertIn("translate([0,0,-boolean_shim])", screw)
+        self.assertIn("h=sub_panel_h+2*boolean_shim", screw)
+        self.assertNotIn("sub_panel_bonding_blind_floor", compact)
         self.assertIn("for(i=[0:3],side=[-1,1])", xt60_positive)
         self.assertEqual(
             xt60_positive.count("sub_panel_bonding_tower_positive();"), 1
@@ -1563,6 +1564,39 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "sub_panel_c13_bonding_positive();",
             compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),
         )
+
+    def test_plamp8_side_loaded_nuts_share_floor_nib_retention(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module side_loaded_panel_nut_pocket_negative", source)
+        self.assertIn("module side_loaded_panel_nut_floor_nibs_positive", source)
+        shared_pocket = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_pocket_negative")
+        )
+        bonding_nut = compact_scad(
+            scad_module_body(source, "sub_panel_bonding_nut_negative")
+        )
+        floor_nibs = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_floor_nibs_positive")
+        )
+        corner_nut = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_trap")
+        )
+
+        for definition in (
+            "panel_nut_floor_nib_h=0.2;",
+            "panel_nut_floor_nib_l=1.2;",
+            "panel_nut_floor_nib_w=1;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("difference(){", shared_pocket)
+        self.assertIn("side_loaded_panel_nut_floor_nibs_positive(", shared_pocket)
+        self.assertIn("for(side=[-1,1])", floor_nibs)
+        self.assertIn("linear_extrude(", floor_nibs)
+        self.assertIn("polygon(", floor_nibs)
+        self.assertIn("side_loaded_panel_nut_pocket_negative(", bonding_nut)
+        self.assertIn("side_loaded_panel_nut_pocket_negative(", corner_nut)
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
