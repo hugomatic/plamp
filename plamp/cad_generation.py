@@ -19,7 +19,8 @@ import tempfile
 import time
 from typing import IO, Callable
 
-from plamp.cad_recipes import RenderJob, RenderPlan, plan_as_dict
+from plamp.cad_model import CadModel
+from plamp.cad_planning import RenderJob, RenderPlan, plan_as_dict
 from plamp.cad_values import serialize_scad_value
 
 
@@ -339,14 +340,14 @@ def _write_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
         "",
         f"Status: {manifest['status']}",
         "",
-        "| Artifact | View | Status |",
+        "| Artifact | Set | Status |",
         "| --- | --- | --- |",
     ]
     jobs = manifest.get("jobs", [])
     assert isinstance(jobs, list)
     for job in jobs:
         assert isinstance(job, Mapping)
-        lines.append(f"| {job['artifact_id']} | {job['view'] or 'default'} | {job['status']} |")
+        lines.append(f"| {job['artifact_id']} | {job['set'] or 'default'} | {job['status']} |")
     _atomic_text(run_dir / "readme.md", "\n".join(lines) + "\n")
 
 
@@ -371,9 +372,10 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
     return {
         "artifact_id": job.artifact_id,
         "fingerprint": job.fingerprint,
-        "view": job.view,
+        "model": job.model_id,
+        "set": job.set_name,
         "variant_name": job.variant_name,
-        "preset_paths": [list(path) for path in job.preset_paths],
+        "product_paths": [list(path) for path in job.product_paths],
         "variables": _plain(job.variables),
         "raw_defines": dict(job.raw_defines),
         "status": "queued",
@@ -452,8 +454,7 @@ def _command(
     job: RenderJob,
 ) -> list[str]:
     command = [str(openscad), "-o", str(output), "-D", f"revision_string={serialize_scad_value(revision)}"]
-    if job.view is not None:
-        command.extend(["-D", f"view={serialize_scad_value(job.view)}"])
+    command.extend(["-D", f"set={serialize_scad_value(job.set_name)}"])
     for name, value in job.variables.items():
         command.extend(["-D", f"{name}={serialize_scad_value(value)}"])
     for name, expression in job.raw_defines.items():
@@ -508,28 +509,24 @@ def _finalize_job_failure(
     _remove_temporary_artifact(temporary_artifact)
 
 
-def _copy_snapshot(snapshot: SourceSnapshot, repo_root: Path, run_dir: Path) -> Path:
-    relative = snapshot.scad_path.relative_to(snapshot.cleanup_root or repo_root)
-    target = run_dir / "source" / relative
+def _copy_snapshot(snapshot: SourceSnapshot, model_id: str, run_dir: Path) -> Path:
+    target = run_dir / "source" / _safe_component(model_id) / snapshot.scad_path.name
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(snapshot.scad_path.parent, target.parent, dirs_exist_ok=True)
     return target
 
 
 def _generation_identity(
-    plan_data: Mapping[str, object], source_content_hash: str
+    plan_data: Mapping[str, object], source_hashes: Mapping[str, str]
 ) -> dict[str, object]:
     jobs = plan_data.get("jobs", [])
     selection = plan_data.get("selection")
     assert isinstance(jobs, list)
     assert isinstance(selection, Mapping)
     return {
-        "source_content_hash": source_content_hash,
-        "selection": {
-            key: selection.get(key)
-            for key in ("preset", "views", "defines", "view_defines")
-        },
-        "preset_tree": plan_data.get("preset_tree"),
+        "source_hashes": dict(source_hashes),
+        "system_manifest_hash": plan_data.get("system_manifest_hash"),
+        "selection": dict(selection),
         "job_fingerprints": [
             job.get("fingerprint")
             for job in jobs
@@ -541,20 +538,21 @@ def _generation_identity(
 def _manifest_generation_identity(
     manifest: Mapping[str, object],
 ) -> dict[str, object] | None:
-    source = manifest.get("source")
+    models = manifest.get("models")
     jobs = manifest.get("jobs")
-    if not isinstance(source, Mapping) or not isinstance(jobs, list):
+    if not isinstance(models, Mapping) or not isinstance(jobs, list):
         return None
-    content_hash = source.get("content_hash")
-    if not isinstance(content_hash, str) or not all(
+    source_hashes = {str(name): value.get("content_hash") for name, value in models.items()
+                     if isinstance(value, Mapping)}
+    if len(source_hashes) != len(models) or not all(isinstance(value, str) for value in source_hashes.values()) or not all(
         isinstance(job, Mapping) and isinstance(job.get("fingerprint"), str)
         for job in jobs
     ):
         return None
     return {
-        "source_content_hash": content_hash,
+        "source_hashes": source_hashes,
+        "system_manifest_hash": manifest.get("system", {}).get("manifest_hash") if isinstance(manifest.get("system"), Mapping) else None,
         "selection": manifest.get("selection"),
-        "preset_tree": manifest.get("preset_tree"),
         "job_fingerprints": [job["fingerprint"] for job in jobs],
     }
 
@@ -674,41 +672,48 @@ def generate_plan(
     *,
     repo_root: str | os.PathLike[str],
     data_dir: str | os.PathLike[str],
-    scad_path: str | os.PathLike[str],
+    models: Mapping[str, CadModel],
+    snapshots: Mapping[str, SourceSnapshot],
     output: str | os.PathLike[str] | None = None,
     openscad: str | os.PathLike[str] = "openscad",
     revision: str | None = None,
-    metadata: Mapping[str, object] | None = None,
     env: Mapping[str, str] | None = None,
     stdout: IO[str] | None = None,
     stderr: IO[str] | None = None,
-    snapshot: SourceSnapshot | None = None,
     regenerate: bool = False,
 ) -> GenerationResult:
     """Render a plan sequentially and persist every observable state change."""
 
     root = Path(repo_root).resolve()
-    source = resolve_part(scad_path, root)
-    part = source.parent.name
-    snapshot = snapshot or prepare_source(root, source, revision)
+    if not plan.jobs:
+        raise ValueError("CAD render plan contains no jobs")
+    selected_model_ids = tuple(dict.fromkeys(job.model_id for job in plan.jobs))
+    missing_models = [name for name in selected_model_ids if name not in models]
+    missing_snapshots = [name for name in selected_model_ids if name not in snapshots]
+    if missing_models:
+        raise ValueError(f"Missing CAD model: {missing_models[0]}")
+    if missing_snapshots:
+        raise ValueError(f"Missing source snapshot: {missing_snapshots[0]}")
+    archive_name = plan.system_name
     out = stdout or sys.stdout
     err = stderr or sys.stderr
     regeneration_target: Path | None = None
     run_dir: Path | None = None
     try:
         local_now = _local_now()
-        selector = plan.selection.preset or (
-            plan.jobs[0].variant_name if len(plan.jobs) == 1 else "views"
-        )
+        selector = (f"product-{plan.selection.product}" if plan.selection.product else
+                    f"{plan.selection.model or plan.jobs[0].model_id}-" +
+                    (plan.jobs[0].variant_name if len(plan.jobs) == 1 else "sets"))
         plan_data = plan_as_dict(plan)
-        source_content_hash = _hash_tree(snapshot.scad_path.parent)
+        source_hashes = {name: _hash_tree(snapshots[name].scad_path.parent)
+                         for name in selected_model_ids}
         archive_part_root = (
-            Path(data_dir).resolve() / "cad" / "prints" / part
+            Path(data_dir).resolve() / "cad" / "prints" / archive_name
         )
         if output is None:
             duplicate = _find_duplicate_run(
                 archive_part_root,
-                _generation_identity(plan_data, source_content_hash),
+                _generation_identity(plan_data, source_hashes),
                 local_now,
             )
             if duplicate is not None:
@@ -725,7 +730,8 @@ def generate_plan(
         now = _utc_now()
         if regeneration_target is None:
             run_id = _readable_run_id(
-                local_now, part, selector, snapshot.revision_label
+                local_now, archive_name, selector,
+                "-".join(dict.fromkeys(snapshots[name].revision_label for name in selected_model_ids))
             )
             run_dir = (
                 Path(output).resolve()
@@ -740,8 +746,8 @@ def generate_plan(
             )
         (run_dir / "artifacts").mkdir()
         (run_dir / "logs").mkdir()
-        archived_source = _copy_snapshot(snapshot, root, run_dir)
-        content_hash = _hash_tree(archived_source.parent)
+        archived_sources = {name: _copy_snapshot(snapshots[name], name, run_dir)
+                            for name in selected_model_ids}
         created = _timestamp(now)
         jobs = [
             _job_entry(job, created, f"logs/{job.artifact_id}.log")
@@ -751,29 +757,26 @@ def generate_plan(
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "generator_version": GENERATOR_VERSION,
             "run_id": run_id,
-            "part": part,
+            "system_name": plan.system_name,
             "status": "running",
             "created_at": created,
             "updated_at": created,
             "started_at": created,
             "finished_at": None,
-            "source": {
-                "repository_root": str(root),
-                "scad_path": str(source.relative_to(root)),
-                "part_directory": str(source.parent.relative_to(root)),
-                "commit": snapshot.full_commit,
-                "revision": snapshot.revision_label,
-                "content_hash": content_hash,
-                "dirty": snapshot.dirty,
+            "system": {"name": plan.system_name, "path": str(plan.system_path),
+                       "manifest_hash": plan.system_manifest_hash},
+            "selection": plan_data["selection"],
+            "models": {
+                name: {
+                    "scad_path": str(models[name].source_path.relative_to(root)),
+                    "metadata_path": (str(models[name].sidecar_path.relative_to(root))
+                                      if models[name].sidecar_path is not None else None),
+                    "commit": snapshots[name].full_commit,
+                    "revision": snapshots[name].revision_label,
+                    "content_hash": _hash_tree(archived_sources[name].parent),
+                    "dirty": snapshots[name].dirty,
+                } for name in selected_model_ids
             },
-            "selection": {
-                "preset": plan_data["selection"]["preset"],
-                "views": plan_data["selection"]["views"],
-                "defines": plan_data["selection"]["defines"],
-                "view_defines": plan_data["selection"]["view_defines"],
-            },
-            "metadata": _plain(metadata or {}),
-            "preset_tree": plan_data["preset_tree"],
             "openscad_version": openscad_version,
             "jobs": jobs,
         }
@@ -806,11 +809,13 @@ def generate_plan(
             job["status"] = "running"
             job["started_at"] = _timestamp(started)
             artifact_stem = (
-                f"{render_job.artifact_id}--{_safe_component(snapshot.revision_label)}"
+                f"{render_job.artifact_id}--{_safe_component(snapshots[render_job.model_id].revision_label)}"
             )
             temporary_artifact = run_dir / "artifacts" / f".{artifact_stem}.tmp.stl"
             final_artifact = run_dir / "artifacts" / f"{artifact_stem}.stl"
-            command = _command(Path(openscad), temporary_artifact, archived_source, snapshot.revision_label, render_job)
+            command = _command(Path(openscad), temporary_artifact,
+                               archived_sources[render_job.model_id],
+                               snapshots[render_job.model_id].revision_label, render_job)
             job["command"] = command
             _write_manifest(run_dir, manifest)
             log_path = run_dir / str(job["log"])
@@ -912,8 +917,7 @@ def generate_plan(
         print(str(error), file=err)
         raise
     finally:
-        if snapshot.cleanup_root is not None:
-            shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
+        pass
 
 
 def load_run(path: str | os.PathLike[str]) -> dict[str, object]:

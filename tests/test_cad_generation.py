@@ -20,11 +20,12 @@ from plamp.cad_generation import (
     resolve_openscad,
     resolve_part,
 )
-from plamp.cad_recipes import RenderJob, RenderPlan, Selection
+from plamp.cad_model import CadModel, CadSet
+from plamp.cad_planning import CadSelection, RenderJob, RenderPlan
 
 
 JOB_FIELDS = {
-    "artifact_id", "fingerprint", "view", "variant_name", "preset_paths",
+    "artifact_id", "fingerprint", "model", "set", "variant_name", "product_paths",
     "variables", "raw_defines", "status", "queued_at", "started_at",
     "finished_at", "elapsed_seconds", "command", "artifact",
     "artifact_bytes", "log", "exit_code", "echoes", "messages", "warnings",
@@ -37,15 +38,17 @@ def plan(*views):
         RenderJob(
             artifact_id=f"{view}--{'a' * 11}{index}",
             fingerprint=f"{'a' * 63}{index}",
-            view=view,
+            model_id="fixture", set_name=view,
             variant_name=view,
             variables={"count": index, "label": "a b", "enabled": True},
             raw_defines={"quality": "$preview ? 2 : 20"},
-            preset_paths=(("print",),),
+            variable_sources={}, profiles=(), slicing={},
+            product_paths=(("print",),),
         )
         for index, view in enumerate(views, 1)
     )
-    return RenderPlan(Selection(preset="print"), jobs, ())
+    return RenderPlan("fixture-system", Path("cad/fixture.system.cad.json"),
+                      CadSelection(product="print"), jobs, "c" * 64)
 
 
 def distinct_plan(view):
@@ -55,7 +58,8 @@ def distinct_plan(view):
         artifact_id=f"{view}--{'b' * 12}",
         fingerprint="b" * 64,
     )
-    return RenderPlan(source_plan.selection, (job,), source_plan.preset_tree)
+    return RenderPlan(source_plan.system_name, source_plan.system_path,
+                      source_plan.selection, (job,), source_plan.system_manifest_hash)
 
 
 class CadGenerationTests(unittest.TestCase):
@@ -68,6 +72,11 @@ class CadGenerationTests(unittest.TestCase):
         part_dir.mkdir(parents=True)
         self.scad = part_dir / "fixture.scad"
         self.scad.write_text("cube(1);\n")
+        self.model = CadModel(
+            "fixture", "fixture", "Fixture", self.scad, None, "",
+            {"": CadSet(""), "first": CadSet("first"), "second": CadSet("second")},
+            {}, {}, (),
+        )
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
         subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "test@example.invalid"], check=True)
@@ -92,7 +101,7 @@ class CadGenerationTests(unittest.TestCase):
                 with pathlib.Path(state_log).open("a") as stream:
                     stream.write(json.dumps([manifest["status"], [job["status"] for job in manifest["jobs"]]]) + "\\n")
             defines = [sys.argv[i + 1] for i, arg in enumerate(sys.argv) if arg == "-D"]
-            view = next((item.split("=", 1)[1].strip('"') for item in defines if item.startswith("view=")), "default")
+            view = next((item.split("=", 1)[1].strip('"') for item in defines if item.startswith("set=")), "default")
             print('ECHO: "ordinary"')
             print(os.environ.get("FAKE_ECHO", 'ECHO: ["PLAMP", "measure", ["width", 12, "mm"]]'))
             print("WARNING: harmless warning")
@@ -119,10 +128,16 @@ class CadGenerationTests(unittest.TestCase):
 
     def generate(self, source_plan=None, **kwargs):
         environment = kwargs.pop("env", self.env())
+        stdout = kwargs.pop("stdout", io.StringIO())
+        openscad = kwargs.pop("openscad", self.fake)
+        snapshot = kwargs.pop("snapshot", None) or prepare_source(
+            self.repo, self.scad, kwargs.get("revision")
+        )
         return generate_plan(
             source_plan or plan("first"), repo_root=self.repo,
-            data_dir=self.data, scad_path=self.scad, openscad=self.fake,
-            env=environment, stdout=io.StringIO(), **kwargs,
+            data_dir=self.data, models={"fixture": self.model},
+            snapshots={"fixture": snapshot}, openscad=openscad,
+            env=environment, stdout=stdout, **kwargs,
         )
 
     @staticmethod
@@ -279,10 +294,10 @@ class CadGenerationTests(unittest.TestCase):
         self.scad.write_text("cube(2);\n")
         result = self.generate(revision="fit-test")
         manifest = load_run(result.run_dir)
-        self.assertTrue(manifest["source"]["dirty"])
-        self.assertIsNone(manifest["source"]["commit"])
-        self.assertEqual(manifest["source"]["revision"], "fit-test")
-        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        self.assertTrue(manifest["models"]["fixture"]["dirty"])
+        self.assertIsNone(manifest["models"]["fixture"]["commit"])
+        self.assertEqual(manifest["models"]["fixture"]["revision"], "fit-test")
+        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(2);\n")
 
     def test_dirty_explicit_output_beneath_part_does_not_copy_itself(self):
@@ -291,9 +306,9 @@ class CadGenerationTests(unittest.TestCase):
 
         result = self.generate(revision="fit-test", output=output)
 
-        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(2);\n")
-        self.assertFalse((result.run_dir / "source" / "things" / "fixture" / "prints").exists())
+        self.assertFalse((result.run_dir / "source" / "fixture" / "prints").exists())
 
     def test_committed_source_rejects_symlink_that_escapes_archive(self):
         outside = self.repo / "outside.scad"
@@ -328,8 +343,8 @@ class CadGenerationTests(unittest.TestCase):
         result = self.generate(revision=old_commit)
 
         manifest = load_run(result.run_dir)
-        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
-        self.assertEqual(manifest["source"]["commit"], old_commit)
+        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
+        self.assertEqual(manifest["models"]["fixture"]["commit"], old_commit)
         self.assertEqual(archived.read_text(), "cube(1);\n")
         self.assertEqual(Path(manifest["jobs"][0]["command"][-1]), archived)
 
@@ -351,9 +366,9 @@ class CadGenerationTests(unittest.TestCase):
         self.assertNotEqual(snapshot.revision_label, old_commit)
         result = self.generate(snapshot=snapshot)
         manifest = load_run(result.run_dir)
-        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), "cube(1);\n")
-        self.assertEqual(manifest["source"]["revision"], short)
+        self.assertEqual(manifest["models"]["fixture"]["revision"], short)
         self.assertTrue(manifest["run_id"].endswith(f"-{short}"))
         self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
         self.assertIn(short, Path(manifest["jobs"][0]["artifact"]).name)
@@ -389,7 +404,7 @@ class CadGenerationTests(unittest.TestCase):
 
     def test_default_and_explicit_output_locations(self):
         result = self.generate()
-        self.assertEqual(result.run_dir.parent, self.data / "cad" / "prints" / "fixture")
+        self.assertEqual(result.run_dir.parent, self.data / "cad" / "prints" / "fixture-system")
         explicit = self.root / "chosen-run"
         result = self.generate(output=explicit)
         self.assertEqual(result.run_dir, explicit)
@@ -403,7 +418,7 @@ class CadGenerationTests(unittest.TestCase):
             managed = self.generate()
             explicit = self.generate(output=self.root / "chosen-run")
 
-        expected = f"2026-jul23-fixture-print-22h:19m-{self.commit[:7]}"
+        expected = f"2026-jul23-fixture-system-product-print-22h:19m-{self.commit[:7]}"
         self.assertEqual(load_run(managed.run_dir)["run_id"], expected)
         self.assertEqual(managed.run_dir.name, expected)
         self.assertEqual(load_run(explicit.run_dir)["run_id"], expected)
@@ -441,6 +456,40 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(caught.exception.existing_run_dir, first.run_dir)
         self.assertIn(str(first.run_dir), str(caught.exception))
         self.assertFalse(self.argv_file.exists())
+
+    def test_product_jobs_render_their_own_archived_model_sources(self):
+        holder_dir = self.repo / "things" / "holder"
+        holder_dir.mkdir()
+        holder_scad = holder_dir / "holder.scad"
+        holder_scad.write_text("sphere(1);\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "holder"], check=True)
+        holder = CadModel(
+            "holder", "holder", "Holder", holder_scad, None, "mount",
+            {"mount": CadSet("mount")}, {}, {}, (),
+        )
+        box_snapshot = prepare_source(self.repo, self.scad)
+        holder_snapshot = prepare_source(self.repo, holder_scad)
+        self.addCleanup(lambda: __import__("shutil").rmtree(box_snapshot.cleanup_root, ignore_errors=True))
+        self.addCleanup(lambda: __import__("shutil").rmtree(holder_snapshot.cleanup_root, ignore_errors=True))
+        source_plan = plan("floor")
+        second = replace(
+            source_plan.jobs[0], artifact_id=f"mount--{'d' * 12}",
+            fingerprint="d" * 64, model_id="holder", set_name="mount",
+            variant_name="mount",
+        )
+        two_model = replace(source_plan, jobs=(source_plan.jobs[0], second))
+        result = generate_plan(
+            two_model, repo_root=self.repo, data_dir=self.data,
+            models={"fixture": self.model, "holder": holder},
+            snapshots={"fixture": box_snapshot, "holder": holder_snapshot},
+            openscad=self.fake, env=self.env(), stdout=io.StringIO(),
+        )
+        jobs = load_run(result.run_dir)["jobs"]
+        self.assertIn('set="floor"', jobs[0]["command"])
+        self.assertTrue(jobs[0]["command"][-1].endswith("source/fixture/fixture.scad"))
+        self.assertTrue(jobs[1]["command"][-1].endswith("source/holder/holder.scad"))
+        self.assertEqual(set(load_run(result.run_dir)["models"]), {"fixture", "holder"})
 
     def test_duplicate_identity_allows_different_jobs_or_local_day(self):
         zone = timezone(timedelta(hours=-10))
@@ -512,7 +561,7 @@ class CadGenerationTests(unittest.TestCase):
         self.assertTrue((failed.run_dir / "manifest.json").is_file())
         self.assertEqual(load_run(failed.run_dir)["status"], "failed")
         self.assertEqual(
-            [run["run_id"] for run in list_runs(self.data, "fixture")],
+            [run["run_id"] for run in list_runs(self.data, "fixture-system")],
             [original.run_dir.name],
         )
 
@@ -553,12 +602,12 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(load_run(failed[0])["status"], "complete")
 
     def test_manifest_schema_and_job_schema_are_frozen(self):
-        result = self.generate(metadata={"z": 1})
+        result = self.generate()
         manifest = load_run(result.run_dir)
         self.assertEqual(set(manifest), {
-            "schema_version", "generator_version", "run_id", "part", "status",
-            "created_at", "updated_at", "started_at", "finished_at", "source",
-            "selection", "metadata", "preset_tree", "openscad_version", "jobs",
+            "schema_version", "generator_version", "run_id", "system_name", "status",
+            "created_at", "updated_at", "started_at", "finished_at",
+            "selection", "system", "models", "openscad_version", "jobs",
         })
         self.assertEqual(manifest["schema_version"], 1)
         self.assertEqual(manifest["generator_version"], 1)
@@ -566,22 +615,21 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(set(manifest["jobs"][0]["geometry"]), {
             "render_seconds", "simple", "vertices", "facets", "volumes",
         })
-        self.assertEqual(manifest["metadata"], {"z": 1})
-        self.assertEqual(manifest["source"]["commit"], self.commit)
+        self.assertEqual(manifest["models"]["fixture"]["commit"], self.commit)
         self.assertRegex(manifest["created_at"], r"Z$")
 
     def test_exact_argv_uses_argument_list_and_effective_plan_values(self):
         result = self.generate()
         manifest = load_run(result.run_dir)
         command = manifest["jobs"][0]["command"]
-        archived = result.run_dir / "source" / "things" / "fixture" / "fixture.scad"
+        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
         expected = [
             str(self.fake), "-o", str(
                 result.run_dir / "artifacts"
                 / f".first--aaaaaaaaaaa1--{self.commit[:7]}.tmp.stl"
             ),
             "-D", f'revision_string="{self.commit[:7]}"',
-            "-D", 'view="first"', "-D", "count=1", "-D", 'label="a b"',
+            "-D", 'set="first"', "-D", "count=1", "-D", 'label="a b"',
             "-D", "enabled=true", "-D", "quality=$preview ? 2 : 20",
             "--export-format", "asciistl", str(archived),
         ]
@@ -590,10 +638,7 @@ class CadGenerationTests(unittest.TestCase):
 
     def test_output_is_streamed_logged_and_statistics_are_extracted(self):
         stream = io.StringIO()
-        result = generate_plan(
-            plan("first"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=self.fake, env=self.env(), stdout=stream,
-        )
+        result = self.generate(plan("first"), stdout=stream)
         job = load_run(result.run_dir)["jobs"][0]
         self.assertIn('ECHO: "ordinary"', stream.getvalue())
         self.assertEqual(job["echoes"], ['"ordinary"', '["PLAMP", "measure", ["width", 12, "mm"]]'])
@@ -607,9 +652,8 @@ class CadGenerationTests(unittest.TestCase):
 
     def test_cad_messages_are_data_and_never_executed(self):
         marker = self.root / "must-not-exist"
-        result = generate_plan(
-            plan("first"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=self.fake,
+        result = self.generate(
+            plan("first"),
             env=self.env(FAKE_ECHO=f'ECHO: ["PLAMP", "robot", ["touch", "{marker}"]]'),
             stdout=io.StringIO(),
         )
@@ -618,9 +662,8 @@ class CadGenerationTests(unittest.TestCase):
         self.assertFalse(marker.exists())
 
     def test_later_failure_keeps_completed_artifact_and_all_logs(self):
-        result = generate_plan(
-            plan("first", "second"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=self.fake,
+        result = self.generate(
+            plan("first", "second"),
             env=self.env(FAKE_FAIL_VIEW="second"), stdout=io.StringIO(),
         )
         manifest = load_run(result.run_dir)
@@ -633,9 +676,8 @@ class CadGenerationTests(unittest.TestCase):
 
     def test_manifest_is_valid_and_running_before_each_openscad_process(self):
         state_log = self.root / "states.jsonl"
-        result = generate_plan(
-            plan("first", "second"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=self.fake,
+        result = self.generate(
+            plan("first", "second"),
             env=self.env(FAKE_STATE_LOG=str(state_log)), stdout=io.StringIO(),
         )
         states = [json.loads(line) for line in state_log.read_text().splitlines()]
@@ -646,9 +688,8 @@ class CadGenerationTests(unittest.TestCase):
         self.assertFalse(list(result.run_dir.glob(".manifest.json.*")))
 
     def test_empty_output_is_failure_and_never_publishes_artifact(self):
-        result = generate_plan(
-            plan("first"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=self.fake,
+        result = self.generate(
+            plan("first"),
             env=self.env(FAKE_EMPTY="1"), stdout=io.StringIO(),
         )
         job = load_run(result.run_dir)["jobs"][0]
@@ -668,9 +709,8 @@ class CadGenerationTests(unittest.TestCase):
         disappearing.chmod(0o755)
         output = self.root / "launch-failure"
 
-        result = generate_plan(
-            plan("first"), repo_root=self.repo, data_dir=self.data,
-            scad_path=self.scad, openscad=disappearing, output=output,
+        result = self.generate(
+            plan("first"), openscad=disappearing, output=output,
             env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(),
         )
 
@@ -691,9 +731,8 @@ class CadGenerationTests(unittest.TestCase):
             "plamp.cad_generation._capture_line", side_effect=KeyboardInterrupt
         ):
             with self.assertRaises(KeyboardInterrupt):
-                generate_plan(
-                    plan("first"), repo_root=self.repo, data_dir=self.data,
-                    scad_path=self.scad, openscad=self.fake, output=output,
+                self.generate(
+                    plan("first"), output=output,
                     env=self.env(), stdout=io.StringIO(),
                 )
 
@@ -707,14 +746,14 @@ class CadGenerationTests(unittest.TestCase):
         new_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
         with mock.patch("plamp.cad_generation._utc_now", return_value=old_time):
             older = self.generate(
-                output=self.data / "cad" / "prints" / "fixture" / "older"
+                output=self.data / "cad" / "prints" / "fixture-system" / "older"
             )
         with mock.patch("plamp.cad_generation._utc_now", return_value=new_time):
             newer = self.generate(
-                output=self.data / "cad" / "prints" / "fixture" / "newer"
+                output=self.data / "cad" / "prints" / "fixture-system" / "newer"
             )
         self.assertEqual(
-            [item["run_id"] for item in list_runs(self.data, "fixture")],
+            [item["run_id"] for item in list_runs(self.data, "fixture-system")],
             [load_run(newer.run_dir)["run_id"], load_run(older.run_dir)["run_id"]],
         )
         with self.assertRaisesRegex(KeyError, "missing"):

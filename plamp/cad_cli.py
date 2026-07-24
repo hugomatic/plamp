@@ -24,7 +24,7 @@ from plamp.cad_generation import (
     resolve_openscad,
     resolve_part,
 )
-from plamp.cad_metadata import CadDiagnostic, CadMetadataError, parse_cad_document
+from plamp.cad_metadata import CadDiagnostic, CadMetadataError
 from plamp.cad_model import CadMetadataError as CadCatalogMetadataError
 from plamp.cad_system import (
     CadSystem,
@@ -33,7 +33,7 @@ from plamp.cad_system import (
     load_system,
     select_system,
 )
-from plamp.cad_recipes import Selection, build_render_plan, plan_as_dict
+from plamp.cad_planning import CadSelection, build_render_plan, plan_as_dict
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
     CadSelectionError,
@@ -46,6 +46,22 @@ from plamp.context import RuntimeContext
 CadFunction = Callable[..., Any]
 
 
+class _RemovedOption(argparse.Action):
+    def __init__(self, option_strings: list[str], dest: str, **kwargs: object) -> None:
+        kwargs.setdefault("nargs", 1)
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
+                 values: object, option_string: str | None = None) -> None:
+        replacements = {
+            "--view": "--set", "--view-define": "--set-define",
+            "--preset": "--product (or MODEL --set SET)",
+        }
+        parser.error(
+            f"{option_string} was removed; use {replacements[option_string or '']}"
+        )
+
+
 class CadOperationError(RuntimeError):
     """An expected failure after CAD generation or archive access began."""
 
@@ -55,17 +71,21 @@ class CadSelectionCancelled(ValueError):
 
 
 def _selection_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--preset", action="append", metavar="NAME")
-    parser.add_argument("--view", action="append", default=[], metavar="NAME")
+    choices = parser.add_mutually_exclusive_group()
+    choices.add_argument("--product", metavar="NAME")
+    choices.add_argument("--all-sets", action="store_true")
+    parser.add_argument("--set", action="append", default=[], metavar="NAME")
     parser.add_argument(
         "--define", "-D", action="append", default=[], metavar="NAME=EXPR"
     )
     parser.add_argument(
-        "--view-define", action="append", default=[], metavar="VIEW:NAME=EXPR"
+        "--set-define", action="append", default=[], metavar="SET:NAME=VALUE"
     )
     parser.add_argument(
         "--revision", metavar="LABEL", help="literal revision engraving label"
     )
+    for obsolete in ("--view", "--view-define", "--preset"):
+        parser.add_argument(obsolete, action=_RemovedOption, help=argparse.SUPPRESS)
 
 
 def add_cad_parser(
@@ -98,23 +118,27 @@ def add_cad_parser(
     templates = actions.add_parser("templates", help="list CAD model templates")
     templates.add_argument("--json", action="store_true")
 
-    for action in ("views", "validate"):
-        command = actions.add_parser(action)
-        command.add_argument("part")
-        command.add_argument("--json", action="store_true")
+    obsolete = actions.add_parser("views", help=argparse.SUPPRESS)
+    obsolete.add_argument("model", nargs="?")
+    obsolete.add_argument("--json", action="store_true")
+    # Keep a parser solely to emit the migration diagnostic without advertising
+    # the removed command in normal navigation/help.
+    actions._choices_actions.pop()  # type: ignore[attr-defined]
+    validate = actions.add_parser("validate")
+    validate.add_argument("model", nargs="?")
+    validate.add_argument("--system", metavar="NAME_OR_PATH")
+    validate.add_argument("--json", action="store_true")
 
     plan = actions.add_parser("plan")
-    plan.add_argument("part")
+    plan.add_argument("model", nargs="?")
+    plan.add_argument("--system", metavar="NAME_OR_PATH")
     _selection_arguments(plan)
     plan.add_argument("--json", action="store_true")
 
     menu = actions.add_parser("menu")
-    menu.add_argument("part")
-    menu.add_argument("--define", action="append", default=[], metavar="NAME=EXPR")
-    menu.add_argument(
-        "--view-define", action="append", default=[], metavar="VIEW:NAME=EXPR"
-    )
-    menu.add_argument("--revision")
+    menu.add_argument("model", nargs="?")
+    menu.add_argument("--system", metavar="NAME_OR_PATH")
+    _selection_arguments(menu)
     menu.add_argument("--output", type=Path)
     menu.add_argument("--openscad", default=None)
     menu.add_argument(
@@ -127,9 +151,8 @@ def add_cad_parser(
     generate = actions.add_parser(
         "generate",
         description=(
-            "Generate STL artifacts directly. Selections are mutually exclusive. "
-            "Choose --preset or repeatable --view. Repeatable --define NAME=EXPR and "
-            "--view-define VIEW:NAME=EXPR use later wins precedence."
+            "Generate STL artifacts directly. Choose --product, or a model with "
+            "repeatable --set/--all-sets."
         ),
         epilog=(
             "Source and revision: use --revision LABEL for a literal engraving; "
@@ -142,7 +165,8 @@ def add_cad_parser(
             "PATH, then platform fallback paths."
         ),
     )
-    generate.add_argument("part")
+    generate.add_argument("model", nargs="?")
+    generate.add_argument("--system", metavar="NAME_OR_PATH")
     _selection_arguments(generate)
     generate.add_argument(
         "--preview",
@@ -179,11 +203,15 @@ def add_cad_parser(
     log.add_argument("artifact")
     log.add_argument("--json", action="store_true")
 
+    actions.metavar = (
+        "{new,systems,models,products,profiles,libraries,sets,templates,"
+        "validate,plan,menu,generate,runs,show,log}"
+    )
+
 
 def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadFunction]:
     values: dict[str, CadFunction] = {
         "resolve_part": resolve_part,
-        "parse_document": parse_cad_document,
         "prepare_source": prepare_source,
         "resolve_openscad": resolve_openscad,
         "build_plan": build_render_plan,
@@ -508,41 +536,39 @@ def _catalog(document: Any, source: Path) -> dict[str, object]:
     }
 
 
-def _raw_view_defines(values: list[str]) -> dict[str, tuple[str, ...]]:
-    grouped: dict[str, list[str]] = {}
+def _set_defines(values: list[str]) -> dict[str, dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
     for value in values:
         if ":" not in value:
-            raise ValueError("--view-define requires VIEW:NAME=EXPR")
-        view, expression = value.split(":", 1)
-        if not view or "=" not in expression or not expression.split("=", 1)[0]:
-            raise ValueError("--view-define requires VIEW:NAME=EXPR")
-        grouped.setdefault(view, []).append(expression)
-    return {view: tuple(expressions) for view, expressions in grouped.items()}
+            raise ValueError("--set-define requires SET:NAME=VALUE")
+        set_name, expression = value.split(":", 1)
+        if "=" not in expression or not expression.split("=", 1)[0]:
+            raise ValueError("--set-define requires SET:NAME=VALUE")
+        name, raw = expression.split("=", 1)
+        try:
+            parsed: object = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = raw
+        grouped.setdefault(set_name, {})[name] = parsed
+    return grouped
 
 
-def _selection(
-    args: argparse.Namespace, document: Any, *, menu: Selection | None = None
-) -> Selection:
-    preset_values = list(getattr(args, "preset", None) or [])
-    if len(preset_values) > 1:
-        raise ValueError("exactly one --preset may be selected")
-    raw_view_defines = _raw_view_defines(list(getattr(args, "view_define", []) or []))
-    unknown = [view for view in raw_view_defines if view not in document.views]
-    if unknown:
-        raise ValueError(f"Unknown --view-define view: {unknown[0]}")
-    base = menu or Selection(
-        preset=preset_values[0] if preset_values else None,
-        views=tuple(getattr(args, "view", []) or []),
+def _selection(args: argparse.Namespace, *, menu: CadSelection | None = None) -> CadSelection:
+    base = menu or CadSelection(
+        product=getattr(args, "product", None), model=getattr(args, "model", None),
+        sets=tuple(getattr(args, "set", []) or []),
+        all_sets=bool(getattr(args, "all_sets", False)),
     )
+    if base.product and (base.model is not None or base.sets or base.all_sets):
+        raise ValueError("--product cannot be combined with MODEL, --set, or --all-sets")
     raw_defines = []
     if getattr(args, "preview", False):
         raw_defines.extend(("render_fn=24", "render_text=false"))
     raw_defines.extend(getattr(args, "define", []) or [])
-    return Selection(
-        preset=base.preset,
-        views=base.views,
-        raw_defines=tuple(raw_defines),
-        raw_view_defines=raw_view_defines,
+    return CadSelection(
+        product=base.product, model=base.model, sets=base.sets,
+        all_sets=base.all_sets, raw_defines=tuple(raw_defines),
+        set_defines=_set_defines(list(getattr(args, "set_define", []) or [])),
     )
 
 
@@ -777,6 +803,106 @@ def _generation_manifest(
     raise TypeError("CAD generator returned an unsupported result")
 
 
+def _prepare_system_plan(
+    args: argparse.Namespace, context: RuntimeContext, deps: Mapping[str, CadFunction],
+    stdin: TextIO, stdout: TextIO, selection: CadSelection | None = None,
+    *, allow_dirty: bool = False, selected_system: CadSystem | None = None,
+) -> tuple[CadSystem, Any, dict[str, Any]]:
+    system = selected_system or _selected_system(args, context, stdin, stdout, deps)
+    selected = selection or _selection(args)
+    if (selected.product is None and selected.model is None and not selected.sets
+            and not selected.all_sets):
+        if system.default_product is not None:
+            selected = CadSelection(
+                product=system.default_product, defines=selected.defines,
+                set_defines=selected.set_defines, raw_defines=selected.raw_defines,
+            )
+        elif _interactive(stdin, args):
+            chosen = _product_or_set_menu(system, stdin, stdout)
+            selected = CadSelection(
+                product=chosen.product, model=chosen.model, sets=chosen.sets,
+                all_sets=chosen.all_sets, defines=selected.defines,
+                set_defines=selected.set_defines, raw_defines=selected.raw_defines,
+            )
+        else:
+            raise ValueError(
+                "CAD system has no default product; select one with --product NAME "
+                "or choose MODEL --set SET"
+            )
+    preliminary = deps["build_plan"](
+        system, selected, {name: "pending" for name in system.models}
+    )
+    model_ids = tuple(dict.fromkeys(job.model_id for job in preliminary.jobs))
+    snapshots: dict[str, Any] = {}
+    try:
+        revision = _generation_revision(args) if getattr(args, "action", None) == "generate" else getattr(args, "revision", None)
+        if allow_dirty and revision is None:
+            revision = "working-tree-plan"
+        for model_id in model_ids:
+            snapshots[model_id] = deps["prepare_source"](
+                context.root, system.models[model_id].source_path, revision,
+                revision_is_commit=bool(getattr(args, "legacy_commit", None)),
+            )
+        plan = deps["build_plan"](
+            system, selected,
+            {name: snapshot.source_identity for name, snapshot in snapshots.items()},
+        )
+        return system, plan, snapshots
+    except BaseException:
+        for snapshot in snapshots.values():
+            if snapshot.cleanup_root is not None:
+                shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
+        raise
+
+
+def _model_set_menu(system: CadSystem, model_name: str, stdin: TextIO,
+                    stdout: TextIO) -> CadSelection | None:
+    if model_name not in system.models:
+        raise ValueError(f"Unknown model {model_name!r}")
+    model = system.models[model_name]
+    while True:
+        sets = tuple(model.sets)
+        stdout.write(f"Sets for {model_name}:\n")
+        for index, set_name in enumerate(sets, 1):
+            stdout.write(f"{index}. set {set_name or '(default)'} - {_described(model.sets[set_name].description)}\n")
+        selected = _read_catalog_choice(stdin, "Select set (b for products/models): ", stdout)
+        if selected in {"b", "back"}:
+            return None
+        if selected.isdigit() and 1 <= int(selected) <= len(sets):
+            return CadSelection(model=model_name, sets=(sets[int(selected) - 1],))
+        stdout.write("Invalid selection.\n")
+
+
+def _product_or_set_menu(system: CadSystem, stdin: TextIO, stdout: TextIO,
+                         model_name: str | None = None) -> CadSelection:
+    if model_name is not None:
+        selected = _model_set_menu(system, model_name, stdin, stdout)
+        if selected is not None:
+            return selected
+    while True:
+        entries: list[tuple[str, str]] = []
+        stdout.write(f"System {system.name}: {_described(system.description)}\nProducts:\n")
+        for name, product in system.products.items():
+            entries.append(("product", name))
+            stdout.write(f"{len(entries)}. product {name} - {_described(product.description)}\n")
+        stdout.write("Models:\n")
+        for name, model in system.models.items():
+            entries.append(("model", name))
+            stdout.write(f"{len(entries)}. model {name} - {_described(model.description)}\n")
+        choice = _read_catalog_choice(stdin, "Select product or model (q to quit): ", stdout)
+        if choice in {"q", "quit"}:
+            raise CadSelectionCancelled("CAD menu selection cancelled")
+        if not choice.isdigit() or not 1 <= int(choice) <= len(entries):
+            stdout.write("Invalid selection.\n")
+            continue
+        kind, name = entries[int(choice) - 1]
+        if kind == "product":
+            return CadSelection(product=name)
+        selected = _model_set_menu(system, name, stdin, stdout)
+        if selected is not None:
+            return selected
+
+
 def _generate(
     args: argparse.Namespace,
     context: RuntimeContext,
@@ -784,10 +910,11 @@ def _generate(
     stdin: TextIO,
     stdout: TextIO,
     stderr: TextIO,
-    selection: Selection | None = None,
+    selection: CadSelection | None = None,
+    selected_system: CadSystem | None = None,
 ) -> int:
-    source, document, plan, snapshot = _with_plan(
-        args, context, deps, selection, retain_snapshot=True
+    system, plan, snapshots = _prepare_system_plan(
+        args, context, deps, stdin, stdout, selection, selected_system=selected_system
     )
     stream = stderr if args.json else stdout
     try:
@@ -801,14 +928,13 @@ def _generate(
                     plan,
                     repo_root=context.root,
                     data_dir=context.data_dir,
-                    scad_path=source,
+                    models=system.models,
+                    snapshots=snapshots,
                     output=_generation_output(args),
                     openscad=resolved_openscad,
                     revision=_generation_revision(args),
-                    metadata=document.metadata_snapshot,
                     stdout=stream,
                     stderr=stderr,
-                    snapshot=snapshot,
                     regenerate=regenerate,
                 )
                 break
@@ -836,8 +962,9 @@ def _generate(
     except Exception as error:
         raise CadOperationError(str(error) or type(error).__name__) from None
     finally:
-        if snapshot.cleanup_root is not None:
-            shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
+        for snapshot in snapshots.values():
+            if snapshot.cleanup_root is not None:
+                shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
     if args.json:
         _json_line(stdout, manifest)
     else:
@@ -929,40 +1056,49 @@ def run_cad_command(
 
         if args.action == "menu" and args.json:
             raise ValueError("cad menu does not support --json")
-        if args.action in {"views", "validate"}:
-            source = deps["resolve_part"](args.part, context.root)
-            document = deps["parse_document"](source)
-            if args.action == "views":
-                value = _catalog(document, source)
-                if args.json:
-                    _json_line(stdout, value)
-                else:
-                    for preset in value["presets"]:  # type: ignore[assignment]
-                        stdout.write(f"preset {preset['name']}: {preset['description']}\n")
-                    for view in value["views"]:  # type: ignore[assignment]
-                        stdout.write(f"view {view['name']}: {view['description']}\n")
-            else:
-                value = {"valid": True, **_catalog(document, source)}
-                if args.json:
-                    _json_line(stdout, value)
-                else:
-                    stdout.write(f"valid: {source}\n")
+        if args.action == "views":
+            raise ValueError("cad views was removed; use `plamp cad sets MODEL`")
+        if args.action == "validate":
+            system = _selected_system(args, context, stdin, stdout, deps)
+            if args.model is not None and args.model not in system.models:
+                raise ValueError(f"Unknown model {args.model!r}")
+            value = {
+                "valid": True, "system": system.name,
+                "system_path": _relative(system.path, context.root),
+                "models": [args.model] if args.model is not None else list(system.models),
+            }
+            _json_line(stdout, value) if args.json else stdout.write(
+                f"valid: system {system.name} ({len(value['models'])} model(s))\n"
+            )
             return 0
 
         if args.action == "plan":
-            source, document, plan, _snapshot = _with_plan(args, context, deps, allow_dirty=True)
-            archived_runs = deps["list_runs"](context.data_dir, source.parent.name)
-            source_path = source.relative_to(context.root).as_posix()
-            value = _plan_object(plan, document, archived_runs, source_path)
-            _json_line(stdout, value) if args.json else _print_plan(value, stdout)
+            system, plan, snapshots = _prepare_system_plan(
+                args, context, deps, stdin, stdout, allow_dirty=True
+            )
+            try:
+                value = plan_as_dict(plan)
+                value["job_count"] = len(plan.jobs)
+                if args.json:
+                    _json_line(stdout, value)
+                else:
+                    selected = (f"product {plan.selection.product}" if plan.selection.product
+                                else f"model {plan.selection.model or plan.jobs[0].model_id}")
+                    stdout.write(f"Selected {selected}\n{len(plan.jobs)} render job(s)\nJobs:\n")
+                    for job in value["jobs"]:
+                        stdout.write(f"- {job['model_id']} / {job['set_name'] or '(default)'}\n")
+                        stdout.write(f"  artifact: {job['artifact_id']}\n  fingerprint (SHA-256): {job['fingerprint']}\n")
+            finally:
+                for snapshot in snapshots.values():
+                    if snapshot.cleanup_root is not None:
+                        shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
             return 0
 
         if args.action == "menu":
-            source = deps["resolve_part"](args.part, context.root)
-            document = deps["parse_document"](source)
-            selected = _menu_selection(document, stdin, stderr if args.json else stdout)
+            system = _selected_system(args, context, stdin, stdout, deps)
+            selected = _product_or_set_menu(system, stdin, stdout, args.model)
             return _generate(
-                args, context, deps, stdin, stdout, stderr, selected
+                args, context, deps, stdin, stdout, stderr, selected, system
             )
 
         if args.action == "generate":
