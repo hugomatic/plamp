@@ -22,10 +22,9 @@ import secrets
 from typing import IO, Callable
 
 from plamp.cad_model import CadModel
-from plamp.cad_dependencies import job_define_argv
+from plamp.cad_dependencies import geometry_define_argv
 from plamp.cad_readme import render_run_readme
 from plamp.cad_planning import RenderJob, RenderPlan, plan_as_dict
-from plamp.cad_values import serialize_scad_value
 
 
 MANIFEST_SCHEMA_VERSION = 1
@@ -545,8 +544,8 @@ def _command(
     revision: str,
     job: RenderJob,
 ) -> list[str]:
-    command = [str(openscad), "-o", str(output), "-D", f"revision_string={serialize_scad_value(revision)}"]
-    command.extend(job_define_argv(job))
+    command = [str(openscad), "-o", str(output)]
+    command.extend(geometry_define_argv(job, revision))
     command.extend(["--export-format", "asciistl", str(source)])
     return command
 
@@ -1273,7 +1272,10 @@ def generate_plan(
         if version_result.returncode != 0:
             raise RuntimeError(version_result.stdout.strip() or "OpenSCAD version check failed")
         openscad_version = version_result.stdout.strip()
-        now = _utc_now()
+        # Derive the archive creation instant and its local-day identity from
+        # one clock sample; crossing midnight between separate samples must
+        # not make a just-created run invisible to duplicate detection.
+        now = local_now.astimezone(timezone.utc)
         if regeneration_target is None:
             base_run_id = _readable_run_id(
                 local_now, archive_name, selector,

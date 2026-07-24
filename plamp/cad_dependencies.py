@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import errno
 import hashlib
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
+import threading
 from typing import Mapping
+import weakref
 
 from plamp.cad_values import serialize_scad_value
 
@@ -40,6 +44,24 @@ class DependencyRecord:
     asset: bool = False
 
 
+class _CleanupKey:
+    pass
+
+
+@dataclass
+class _CleanupRecord:
+    root: Path
+    device: int
+    inode: int
+    cleaned: bool = False
+
+
+_CLEANUP_RECORDS: weakref.WeakKeyDictionary[_CleanupKey, _CleanupRecord] = (
+    weakref.WeakKeyDictionary()
+)
+_CLEANUP_LOCK = threading.RLock()
+
+
 @dataclass(frozen=True)
 class DiscoveryEnvironment:
     """Repository tree used only to discover one job's dependency closure."""
@@ -49,6 +71,7 @@ class DiscoveryEnvironment:
     revision: str | None
     dirty: bool
     cleanup_root: Path | None
+    _cleanup_key: _CleanupKey | None = field(default=None, repr=False, compare=False)
 
     def cleanup(self) -> None:
         cleanup_discovery_environment(self)
@@ -67,10 +90,11 @@ class DiscoveryResult:
     output: str
 
 
-def job_define_argv(job: object) -> tuple[str, ...]:
-    """Build the common, ordered OpenSCAD defines for discovery and rendering."""
+def geometry_define_argv(job: object, revision: str) -> tuple[str, ...]:
+    """Build every geometry-affecting define shared by discovery and rendering."""
 
     arguments: list[str] = [
+        "-D", f"revision_string={serialize_scad_value(revision)}",
         "-D", f"set={serialize_scad_value(getattr(job, 'set_name'))}"
     ]
     for name, value in getattr(job, "variables").items():
@@ -131,10 +155,71 @@ def _extract_git_archive(archive_bytes: bytes, destination: Path) -> None:
                 with source, target.open("wb") as output:
                     shutil.copyfileobj(source, output)
                 os.chmod(target, member.mode & 0o777)
+            directories = sorted(
+                (member for member in members if member.isdir()),
+                key=lambda member: len(Path(member.name).parts),
+                reverse=True,
+            )
+            for member in directories:
+                os.chmod(destination / member.name, member.mode & 0o777)
     except (tarfile.TarError, OSError) as error:
         if isinstance(error, CadDependencyError):
             raise
         raise CadDependencyError(f"cannot extract Git discovery archive: {error}") from error
+
+
+def _lexical_repository_path(root: Path, source_path: str | os.PathLike[str]) -> Path:
+    supplied = Path(source_path)
+    if supplied.is_absolute():
+        source = Path(os.path.abspath(os.fspath(supplied)))
+    else:
+        if ".." in supplied.parts:
+            raise CadDependencyError("CAD discovery source must be inside the repository")
+        source = Path(os.path.abspath(os.fspath(root / supplied)))
+    try:
+        relative = source.relative_to(root)
+    except ValueError as error:
+        raise CadDependencyError("CAD discovery source must be inside the repository") from error
+    if not relative.parts or ".." in relative.parts:
+        raise CadDependencyError("CAD discovery source must be inside the repository")
+    return relative
+
+
+def _archived_regular_file(root: Path, relative: Path, revision: str) -> Path:
+    """Validate a source through directory descriptors without following links."""
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory_flags = flags | getattr(os, "O_DIRECTORY", 0) | nofollow
+    descriptors: list[int] = []
+    try:
+        current = os.open(root, directory_flags)
+        descriptors.append(current)
+        for component in relative.parts[:-1]:
+            current = os.open(component, directory_flags, dir_fd=current)
+            descriptors.append(current)
+        source_fd = os.open(relative.name, flags | nofollow, dir_fd=current)
+        descriptors.append(source_fd)
+        if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+            raise CadDependencyError(
+                f"CAD discovery source {relative} is not a regular file in revision {revision}"
+            )
+    except FileNotFoundError as error:
+        raise CadDependencyError(
+            f"CAD discovery source {relative} is absent from revision {revision}"
+        ) from error
+    except OSError as error:
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise CadDependencyError(
+                f"unsafe CAD discovery source {relative} in revision {revision}"
+            ) from error
+        raise CadDependencyError(
+            f"cannot validate CAD discovery source {relative} in revision {revision}: {error}"
+        ) from error
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+    return root / relative
 
 
 def prepare_discovery_environment(
@@ -148,15 +233,14 @@ def prepare_discovery_environment(
     """Prepare current dirty or revision-pinned repository dependency discovery."""
 
     root = Path(repo_root).resolve()
-    supplied_source = Path(source_path) if source_path is not None else Path(".")
-    source = supplied_source.resolve() if supplied_source.is_absolute() else (root / supplied_source).resolve()
-    try:
-        relative_source = source.relative_to(root)
-    except ValueError as error:
-        raise CadDependencyError("CAD discovery source must be inside the repository") from error
+    relative_source = (
+        _lexical_repository_path(root, source_path)
+        if source_path is not None else None
+    )
     if dirty:
         if revision_label is None or not revision_label.strip():
             raise ValueError("dirty CAD dependency discovery requires an explicit revision label")
+        source = root if relative_source is None else (root / relative_source).resolve()
         if not source.exists():
             raise CadDependencyError(f"CAD discovery source does not exist: {source}")
         return DiscoveryEnvironment(root, source, None, True, None)
@@ -177,12 +261,19 @@ def prepare_discovery_environment(
                 f"cannot archive CAD discovery revision {commit}: {detail or error}"
             ) from error
         _extract_git_archive(completed.stdout, cleanup)
-        archived_source = cleanup / relative_source
-        if not archived_source.exists():
-            raise CadDependencyError(
-                f"CAD discovery source {relative_source} is absent from revision {commit}"
+        archived_source = (
+            cleanup if relative_source is None
+            else _archived_regular_file(cleanup, relative_source, commit)
+        )
+        root_stat = cleanup.stat()
+        cleanup_key = _CleanupKey()
+        with _CLEANUP_LOCK:
+            _CLEANUP_RECORDS[cleanup_key] = _CleanupRecord(
+                cleanup, root_stat.st_dev, root_stat.st_ino
             )
-        return DiscoveryEnvironment(cleanup, archived_source, commit, False, cleanup)
+        return DiscoveryEnvironment(
+            cleanup, archived_source, commit, False, cleanup, cleanup_key
+        )
     except BaseException:
         shutil.rmtree(cleanup, ignore_errors=True)
         raise
@@ -191,8 +282,41 @@ def prepare_discovery_environment(
 def cleanup_discovery_environment(environment: DiscoveryEnvironment) -> None:
     """Remove an archived discovery tree; dirty working trees are never removed."""
 
-    if environment.cleanup_root is not None:
-        shutil.rmtree(environment.cleanup_root, ignore_errors=True)
+    if environment.cleanup_root is None and environment._cleanup_key is None:
+        return
+    key = environment._cleanup_key
+    if key is None:
+        raise CadDependencyError("CAD discovery cleanup root is not owned by this process")
+    with _CLEANUP_LOCK:
+        record = _CLEANUP_RECORDS.get(key)
+        if record is None:
+            raise CadDependencyError("CAD discovery cleanup root is not owned by this process")
+        if record.cleaned:
+            return
+        if environment.cleanup_root != record.root or environment.root != record.root:
+            raise CadDependencyError("CAD discovery cleanup root does not match its owner")
+        try:
+            root_stat = record.root.stat(follow_symlinks=False)
+        except FileNotFoundError as error:
+            raise CadDependencyError("CAD discovery cleanup root was replaced or removed") from error
+        if not stat.S_ISDIR(root_stat.st_mode) or (
+            root_stat.st_dev, root_stat.st_ino
+        ) != (record.device, record.inode):
+            raise CadDependencyError("CAD discovery cleanup root was replaced")
+        shutil.rmtree(record.root)
+        record.cleaned = True
+
+
+# Failure diagnostics deliberately expose only this allowlist, never the full
+# process environment (which commonly contains credentials).
+_DISCOVERY_ENV_DIAGNOSTIC_KEYS = ("OPENSCADPATH",)
+
+
+def _discovery_context(
+    argv: tuple[str, ...], cwd: Path, env: Mapping[str, str]
+) -> str:
+    visible = {key: env[key] for key in _DISCOVERY_ENV_DIAGNOSTIC_KEYS if key in env}
+    return f"argv={argv!r}; cwd={cwd}; env={visible!r}"
 
 
 def run_dependency_discovery(
@@ -202,6 +326,7 @@ def run_dependency_discovery(
     output_dir: str | os.PathLike[str],
     *,
     env: Mapping[str, str],
+    revision: str,
 ) -> DiscoveryResult:
     """Run OpenSCAD's cheap CSG dependency pass without producing an STL."""
 
@@ -218,25 +343,29 @@ def run_dependency_discovery(
         ) from error
     argv = (
         str(openscad), "-o", str(csg), "-d", str(dependencies),
-        *job_define_argv(job), str(environment.source_path),
+        *geometry_define_argv(job, revision), str(environment.source_path),
     )
+    cwd = environment.source_path.parent
+    context = _discovery_context(argv, cwd, env)
     try:
         completed = subprocess.run(
-            list(argv), cwd=environment.source_path.parent, env=dict(env), text=True,
+            list(argv), cwd=cwd, env=dict(env), text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
         )
     except OSError as error:
         raise CadDependencyError(
-            f"cannot run OpenSCAD dependency discovery using {openscad}: {error}"
+            f"cannot run OpenSCAD dependency discovery: {error}; {context}"
         ) from error
     output = completed.stdout or ""
     if completed.returncode != 0:
         raise CadDependencyError(
-            f"OpenSCAD dependency discovery failed with status {completed.returncode}: {output}"
+            f"OpenSCAD dependency discovery failed with status {completed.returncode}: "
+            f"{output}; {context}"
         )
     if not dependencies.is_file():
         raise CadDependencyError(
-            f"OpenSCAD dependency discovery did not produce {dependencies}: {output}"
+            f"OpenSCAD dependency discovery did not produce {dependencies}: "
+            f"{output}; {context}"
         )
     return DiscoveryResult(
         argv, parse_make_dependencies(dependencies, environment.source_path.parent), output

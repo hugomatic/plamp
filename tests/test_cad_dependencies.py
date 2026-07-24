@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
+import io
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -20,7 +22,9 @@ from plamp.cad_dependencies import (
     prepare_discovery_environment,
     query_openscad_info,
     run_dependency_discovery,
+    _extract_git_archive,
 )
+from plamp.cad_generation import _command
 
 
 class CadDependencyTests(unittest.TestCase):
@@ -260,6 +264,31 @@ OPENSCAD_FONT_PATH:
         self.assertTrue(environment.dirty)
         self.assertIsNone(environment.cleanup_root)
 
+    def test_historical_source_is_lexical_and_independent_of_current_symlinks(self):
+        repo, source = self.init_repository()
+        old = self.revision(repo)
+        source.unlink()
+        outside = self.root / "outside.scad"
+        outside.write_text("wrong current content")
+        source.symlink_to(outside)
+
+        environment = prepare_discovery_environment(repo, source, revision=old)
+        self.addCleanup(environment.cleanup)
+        self.assertEqual(environment.source_path.read_text(), "include <../../shared/lib.scad>\ncube(1);\n")
+
+    def test_historical_source_rejects_escape_and_reports_missing_at_revision(self):
+        repo, source = self.init_repository()
+        old = self.revision(repo)
+        with self.assertRaisesRegex(CadDependencyError, "inside the repository"):
+            prepare_discovery_environment(repo, repo / "../outside.scad", revision=old)
+        later = repo / "things/later/later.scad"
+        later.parent.mkdir()
+        later.write_text("cube(2);\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "later"], check=True)
+        with self.assertRaisesRegex(CadDependencyError, "absent from revision"):
+            prepare_discovery_environment(repo, later, revision=old)
+
     def test_archive_rejects_traversal_and_links_and_cleans_temporary_root(self):
         repo, source = self.init_repository()
         import io
@@ -304,12 +333,14 @@ OPENSCAD_FONT_PATH:
         fake.chmod(0o755)
         job = self.job()
         result = run_dependency_discovery(
-            fake, environment, job, output, env={"OPENSCADPATH": "/chosen", "PATH": "/usr/bin"}
+            fake, environment, job, output, revision="fit-7",
+            env={"OPENSCADPATH": "/chosen", "PATH": "/usr/bin"}
         )
         self.assertEqual(result.argv[1:5], (
             "-o", str(output / "discovery.csg"), "-d", str(output / "discovery.d")
         ))
         self.assertIn('set="top_panel"', result.argv)
+        self.assertIn('revision_string="fit-7"', result.argv)
         self.assertIn("count=1", result.argv)
         self.assertIn("quality=$preview ? 2 : 20", result.argv)
         self.assertNotIn("--export-format", result.argv)
@@ -317,6 +348,35 @@ OPENSCAD_FONT_PATH:
         self.assertEqual(Path(cwd_log.read_text()), source.parent)
         self.assertEqual(env_log.read_text(), "/chosen")
         self.assertEqual(result.dependencies, (source.resolve(),))
+        final = _command(Path(fake), self.root / "final.stl", source, "fit-7", job)
+        discovery_defines = [
+            result.argv[index + 1] for index, value in enumerate(result.argv) if value == "-D"
+        ]
+        final_defines = [
+            final[index + 1] for index, value in enumerate(final) if value == "-D"
+        ]
+        self.assertEqual(discovery_defines, final_defines)
+
+    def test_revision_define_controls_conditional_discovery_dependency(self):
+        repo, source = self.init_repository()
+        conditional = repo / "shared/historical.scad"
+        conditional.write_text("historical")
+        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        fake = self.root / "conditional-openscad"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            "defines=[sys.argv[i+1] for i,v in enumerate(sys.argv) if v=='-D']\n"
+            "assert 'revision_string=\"historical\"' in defines\n"
+            "dep=pathlib.Path(sys.argv[-1]).parents[2]/'shared/historical.scad'\n"
+            "pathlib.Path(sys.argv[sys.argv.index('-d')+1]).write_text('out: '+str(dep)+'\\n')\n"
+        )
+        fake.chmod(0o755)
+        result = run_dependency_discovery(
+            fake, environment, self.job(), self.root / "conditional",
+            revision="historical", env={"PATH": "/usr/bin"},
+        )
+        self.assertEqual(result.dependencies, (conditional.resolve(),))
 
     def test_dependency_pass_reports_launch_failure_exit_and_missing_makefile(self):
         repo, source = self.init_repository()
@@ -324,19 +384,36 @@ OPENSCAD_FONT_PATH:
         output = self.root / "failure"
         with self.assertRaisesRegex(CadDependencyError, "cannot run.*vanished"):
             run_dependency_discovery(
-                self.root / "vanished", environment, self.job("one"), output, env={}
+                self.root / "vanished", environment, self.job("one"), output,
+                revision="fit-7", env={},
             )
         fake = self.root / "failing-openscad"
         fake.write_text("#!/bin/sh\necho diagnostic output\nexit 9\n")
         fake.chmod(0o755)
-        with self.assertRaisesRegex(CadDependencyError, "status 9.*diagnostic output"):
-            run_dependency_discovery(fake, environment, self.job("one"), output, env={})
+        with self.assertRaises(CadDependencyError) as raised:
+            run_dependency_discovery(
+                fake, environment, self.job("one"), output,
+                revision="fit-7",
+                env={"OPENSCADPATH": "/approved/lib", "SECRET_TOKEN": "never-show"},
+            )
+        message = str(raised.exception)
+        self.assertIn("status 9", message)
+        self.assertIn("diagnostic output", message)
+        self.assertIn(repr(str(fake)), message)
+        self.assertIn(f"cwd={source.parent!s}", message)
+        self.assertIn("OPENSCADPATH", message)
+        self.assertIn("/approved/lib", message)
+        self.assertNotIn("SECRET_TOKEN", message)
+        self.assertNotIn("never-show", message)
         fake.write_text("#!/bin/sh\nexit 0\n")
         output.mkdir(parents=True, exist_ok=True)
         (output / "discovery.d").write_text(f"old: {source}\n")
         (output / "discovery.csg").write_text("stale")
         with self.assertRaisesRegex(CadDependencyError, "did not produce.*discovery.d"):
-            run_dependency_discovery(fake, environment, self.job("one"), output, env={})
+            run_dependency_discovery(
+                fake, environment, self.job("one"), output,
+                revision="fit-7", env={},
+            )
 
     def test_discovery_archive_cleanup_is_explicit_idempotent_and_never_removes_worktree(self):
         repo, source = self.init_repository()
@@ -352,6 +429,52 @@ OPENSCAD_FONT_PATH:
         )
         cleanup_discovery_environment(dirty)
         self.assertTrue(repo.is_dir())
+
+    def test_cleanup_rejects_forged_mutated_and_replaced_roots_without_deleting(self):
+        repo, source = self.init_repository()
+        arbitrary = self.root / "valuable"
+        arbitrary.mkdir()
+        forged = DiscoveryEnvironment(arbitrary, arbitrary / "x.scad", None, False, arbitrary)
+        with self.assertRaisesRegex(CadDependencyError, "not owned"):
+            cleanup_discovery_environment(forged)
+        self.assertTrue(arbitrary.is_dir())
+
+        archived = prepare_discovery_environment(repo, source)
+        mutated = replace(archived, cleanup_root=arbitrary)
+        with self.assertRaisesRegex(CadDependencyError, "does not match"):
+            cleanup_discovery_environment(mutated)
+        self.assertTrue(arbitrary.is_dir())
+        self.assertTrue(archived.root.is_dir())
+
+        original = archived.root.with_name(archived.root.name + "-moved")
+        archived.root.rename(original)
+        archived.root.mkdir()
+        (archived.root / "replacement").write_text("keep")
+        with self.assertRaisesRegex(CadDependencyError, "replaced"):
+            cleanup_discovery_environment(archived)
+        self.assertTrue((archived.root / "replacement").is_file())
+        shutil.rmtree(archived.root)
+        shutil.rmtree(original)
+
+    def test_archive_applies_directory_modes_after_writing_children(self):
+        import tarfile
+
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w") as archive:
+            directory = tarfile.TarInfo("locked")
+            directory.type = tarfile.DIRTYPE
+            directory.mode = 0o500
+            archive.addfile(directory)
+            payload = b"content"
+            child = tarfile.TarInfo("locked/child.scad")
+            child.size = len(payload)
+            child.mode = 0o400
+            archive.addfile(child, io.BytesIO(payload))
+        destination = self.root / "modes"
+        destination.mkdir()
+        _extract_git_archive(stream.getvalue(), destination)
+        self.assertEqual((destination / "locked/child.scad").read_text(), "content")
+        self.assertEqual(stat.S_IMODE((destination / "locked").stat().st_mode), 0o500)
 
 
 if __name__ == "__main__":
