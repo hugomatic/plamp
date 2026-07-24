@@ -130,6 +130,72 @@ class CadProfileTests(unittest.TestCase):
                 with self.assertRaisesRegex(CadProfileError, message):
                     load_preferences(self.root / "data")
 
+    def test_rejects_unsafe_or_malformed_default_profile_ids_at_load_time(self):
+        invalid_ids = (
+            "../../outside", "system:", "local:", "remote:draft",
+            "system:draft:extra", ":draft", "not safe",
+        )
+        for profile_id in invalid_ids:
+            with self.subTest(profile_id=profile_id):
+                self.write_json("data/cad/preferences.json", {
+                    "schema": "plamp-cad-preferences/1",
+                    "default_profiles": {"plamp": [profile_id]},
+                })
+                with self.assertRaises(CadProfileError) as caught:
+                    load_preferences(self.root / "data")
+                diagnostic = caught.exception.diagnostics[0]
+                self.assertEqual(
+                    diagnostic.json_path, "$.default_profiles.plamp[0]"
+                )
+                self.assertEqual(diagnostic.kind, "invalid_profile_id")
+
+    def test_accepts_short_and_exact_qualified_default_profile_ids(self):
+        self.write_json("data/cad/preferences.json", {
+            "schema": "plamp-cad-preferences/1",
+            "default_profiles": {
+                "plamp": ["draft", "system:petg", "local:x1c"],
+            },
+        })
+        preferences = load_preferences(self.root / "data")
+        self.assertEqual(
+            preferences.default_profiles["plamp"],
+            ("draft", "system:petg", "local:x1c"),
+        )
+
+    def test_present_non_directory_local_profile_path_is_an_error(self):
+        path = self.root / "data/cad/profiles"
+        path.parent.mkdir(parents=True)
+        path.write_text("not a directory", encoding="utf-8")
+        with self.assertRaises(CadProfileError) as caught:
+            discover_local_profiles(self.root / "data")
+        self.assertEqual(caught.exception.diagnostics[0].kind,
+                         "invalid_profile_directory")
+        self.assertEqual(caught.exception.diagnostics[0].source, str(path))
+
+    def test_local_profile_directory_symlink_is_an_error(self):
+        target = self.root / "actual-profiles"
+        target.mkdir()
+        path = self.root / "data/cad/profiles"
+        path.parent.mkdir(parents=True)
+        path.symlink_to(target, target_is_directory=True)
+        with self.assertRaises(CadProfileError) as caught:
+            discover_local_profiles(self.root / "data")
+        self.assertEqual(caught.exception.diagnostics[0].kind,
+                         "unsafe_profile_path")
+
+    def test_local_profile_file_cannot_escape_data_directory_by_symlink(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        target = outside / "draft.json"
+        target.write_text(json.dumps(self.profile_value()), encoding="utf-8")
+        directory = self.root / "data/cad/profiles"
+        directory.mkdir(parents=True)
+        (directory / "draft.json").symlink_to(target)
+        with self.assertRaises(CadProfileError) as caught:
+            discover_local_profiles(self.root / "data")
+        self.assertEqual(caught.exception.diagnostics[0].kind,
+                         "unsafe_profile_path")
+
     def test_resolves_namespaces_defaults_and_explicit_profiles_in_order(self):
         system_profiles = {"draft": self.load_profile("draft", "quality")}
         local_profiles = {"x1c": self.load_profile("x1c", "printer", local=True)}

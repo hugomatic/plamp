@@ -118,6 +118,25 @@ def _plain(value: object) -> object:
     return value
 
 
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _valid_profile_id(profile_id: str) -> bool:
+    if _SAFE_NAME.fullmatch(profile_id):
+        return True
+    namespace, separator, name = profile_id.partition(":")
+    return (
+        separator == ":"
+        and namespace in {"system", "local"}
+        and _SAFE_NAME.fullmatch(name) is not None
+    )
+
+
 def profile_content_hash(content: Mapping[str, object]) -> str:
     """Return the SHA-256 of canonical profile JSON content."""
     canonical = json.dumps(
@@ -161,14 +180,27 @@ def load_system_profiles(references: Mapping[str, Path]) -> Mapping[str, CadProf
 
 def discover_local_profiles(data_dir: Path) -> Mapping[str, CadProfile]:
     """Load every instance-local profile in deterministic filename order."""
+    data_root = Path(data_dir).resolve()
     directory = Path(data_dir) / "cad" / "profiles"
-    if not directory.is_dir():
+    if directory.is_symlink():
+        _fail(directory, "Local profile directory cannot be a symbolic link",
+              code="CAD109", kind="unsafe_profile_path")
+    if not directory.exists():
         return MappingProxyType({})
+    if not directory.is_dir():
+        _fail(directory, "Local profile path must be a directory",
+              kind="invalid_profile_directory")
+    if not _inside(directory.resolve(), data_root):
+        _fail(directory, "Local profile directory must remain inside the data directory",
+              code="CAD109", kind="unsafe_profile_path")
     loaded: dict[str, CadProfile] = {}
     diagnostics: list[CadDiagnostic] = []
     for path in sorted(directory.glob("*.json"), key=lambda item: item.name):
         name = path.stem
         try:
+            if not _inside(path.resolve(), data_root):
+                _fail(path, "Local profile must remain inside the data directory",
+                      code="CAD109", kind="unsafe_profile_path")
             if not _SAFE_NAME.fullmatch(name):
                 _fail(path, f"Local profile filename {name!r} is not a safe name",
                       json_path="$.name", value=name)
@@ -208,6 +240,17 @@ def load_preferences(data_dir: Path) -> CadPreferences:
         if not isinstance(raw_ids, list) or any(not isinstance(item, str) for item in raw_ids):
             _fail(path, f"{item_path} must be an array of strings",
                   json_path=item_path, value=raw_ids)
+        for index, profile_id in enumerate(raw_ids):
+            if not _valid_profile_id(profile_id):
+                profile_path = f"{item_path}[{index}]"
+                _fail(
+                    path,
+                    f"{profile_path} must be a safe short profile ID or exactly "
+                    "system:NAME/local:NAME",
+                    json_path=profile_path,
+                    kind="invalid_profile_id",
+                    value=profile_id,
+                )
         defaults[system] = tuple(raw_ids)
     return CadPreferences(default_system, MappingProxyType(defaults))
 
