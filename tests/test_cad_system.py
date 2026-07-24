@@ -125,6 +125,20 @@ class CadSystemTests(unittest.TestCase):
         self.assertEqual(rows[0].status, "invalid")
         self.assertTrue(rows[0].diagnostics)
 
+    def test_invalid_product_and_item_slicing_is_rejected(self):
+        for products in (
+            {"complete": {"slicing": {"mystery": True}, "items": [
+                {"model": "widget", "set": "one"}
+            ]}},
+            {"complete": {"items": [{
+                "model": "widget", "set": "one",
+                "slicing": {"layer_height": -0.2},
+            }]}},
+        ):
+            with self.subTest(products=products):
+                error = self.assert_invalid(products=products)
+                self.assertIn("slicing", error.diagnostics[0].json_path)
+
     def test_selects_by_unique_name_or_explicit_path(self):
         self.system("cad/plamp.system.cad.json", name="plamp")
         jigs_path = self.system("cad/jigs.system.cad.json", name="jigs")

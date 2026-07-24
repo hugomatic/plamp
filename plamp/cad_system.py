@@ -11,6 +11,7 @@ import re
 from types import MappingProxyType
 
 from plamp.cad_model import CadDiagnostic, CadMetadataError, CadModel, load_model
+from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
 from plamp.cad_profiles import CadProfile, load_system_profiles
 
 
@@ -82,6 +83,15 @@ def _diagnostic(path: Path, message: str, *, json_path: str | None = None,
 
 def _fail(path: Path, message: str, **fields: object) -> None:
     raise CadMetadataError((_diagnostic(path, message, **fields),))
+
+
+def _validated_slicing(value: Mapping[str, object], path: Path,
+                       json_path: str, source_id: str) -> Mapping[str, object]:
+    try:
+        normalize_slicing(value, DirectiveSource(source_id))
+    except ValueError as error:
+        _fail(path, str(error), json_path=json_path, value=dict(value))
+    return MappingProxyType(dict(value))
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -309,19 +319,27 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
             item_description = raw_item.get("description", raw_item.get("note", ""))
             if not isinstance(item_description, str):
                 _fail(path, "Item description must be a string", json_path=f"{item_path}.description", value=item_description)
+            item_slicing = _mapping(raw_item, "slicing", path, f"{item_path}.slicing")
             items.append(CadProductItem(
                 product=product_ref, model=model_ref, set_name=set_name, variant=variant,
                 description=item_description,
                 variables=MappingProxyType(_mapping(raw_item, "variables", path, f"{item_path}.variables").copy()),
                 profiles=_profiles(raw_item, path, f"{item_path}.profiles"),
-                slicing=MappingProxyType(_mapping(raw_item, "slicing", path, f"{item_path}.slicing").copy()),
+                slicing=_validated_slicing(
+                    item_slicing, path, f"{item_path}.slicing",
+                    f"product:{product_name}:item:{index}",
+                ),
             ))
         product_description = _string(raw_product, "description", path, f"{product_path}.description", "")
+        product_slicing = _mapping(raw_product, "slicing", path, f"{product_path}.slicing")
         products[product_name] = CadProduct(
             product_name, product_description, tuple(items),
             MappingProxyType(_mapping(raw_product, "variables", path, f"{product_path}.variables").copy()),
             _profiles(raw_product, path, f"{product_path}.profiles"),
-            MappingProxyType(_mapping(raw_product, "slicing", path, f"{product_path}.slicing").copy()),
+            _validated_slicing(
+                product_slicing, path, f"{product_path}.slicing",
+                f"product:{product_name}",
+            ),
         )
 
     choices = tuple(products)

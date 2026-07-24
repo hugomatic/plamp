@@ -76,6 +76,13 @@ if (set == "floor") floor_set();
         self.assertEqual(model.sets["top_panel"].description, "")
         self.assertEqual(model.advisories[0].code, "CAD112")
 
+    def test_invalid_set_slicing_is_rejected_while_loading_model(self):
+        sidecar = self.sidecar(sets={"floor": {"slicing": {"supports": "maybe"}}})
+        with self.assertRaises(CadMetadataError) as caught:
+            load_model("fixture", sidecar, self.root)
+        self.assertEqual(caught.exception.diagnostics[0].json_path,
+                         "$.sets.floor.slicing")
+
     def test_set_declaration_decodes_default_and_preserves_choice_order(self):
         default, choices = parse_set_declaration(
             'set = "top\\u005fpanel"; // [floor, top_panel, assembly]\n',

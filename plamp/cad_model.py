@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 from types import MappingProxyType
 
+from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
+
 
 SET_ASSIGNMENT = re.compile(
     r'^\s*set\s*=\s*"(?P<value>(?:[^"\\]|\\.)*)"\s*;'
@@ -120,6 +122,16 @@ def _fail(
     **fields: object,
 ) -> None:
     raise CadMetadataError((_diagnostic(path, code, kind, message, **fields),))
+
+
+def _validated_slicing(
+    value: Mapping[str, object], path: Path, json_path: str, source_id: str
+) -> Mapping[str, object]:
+    try:
+        normalize_slicing(value, DirectiveSource(source_id))
+    except ValueError as error:
+        _fail(path, str(error), json_path=json_path, value=dict(value))
+    return MappingProxyType(dict(value))
 
 
 def _suggest(value: str, choices: tuple[str, ...]) -> str | None:
@@ -589,12 +601,16 @@ def load_model(model_id: str, reference: Path, repo_root: Path) -> CadModel:
         printable = raw.get("printable", True)
         if not isinstance(printable, bool):
             _fail(reference_path, f"{json_path}.printable must be a boolean", json_path=f"{json_path}.printable", value=printable)
+        slicing = _mapping(raw, "slicing", reference_path, f"{json_path}.slicing")
         sets[set_name] = CadSet(
             name=set_name,
             description=set_description,
             variables=_mapping(raw, "variables", reference_path, f"{json_path}.variables"),
             printable=printable,
-            slicing=_mapping(raw, "slicing", reference_path, f"{json_path}.slicing"),
+            slicing=_validated_slicing(
+                slicing, reference_path, f"{json_path}.slicing",
+                f"set:{model_id}/{set_name}",
+            ),
         )
         if not set_description:
             advisories.append(_advisory(reference_path, set_name, json_path))
