@@ -334,6 +334,24 @@ class CadSystemTests(unittest.TestCase):
         self.assertEqual(system.profiles["draft"].qualified_id, "system:draft")
         self.assertEqual(system.profiles["draft"].cad["render_fn"], 24)
 
+    def test_model_and_set_profile_references_must_exist_in_system(self):
+        for location, missing in (("model", "missing-model-profile"),
+                                  ("set", "missing-set-profile")):
+            with self.subTest(location=location):
+                manifest = self.system()
+                sidecar = self.root / "things/widget/widget.cad.json"
+                metadata = json.loads(sidecar.read_text())
+                if location == "model":
+                    metadata["profiles"] = [missing]
+                else:
+                    metadata["sets"]["one"]["profiles"] = [missing]
+                sidecar.write_text(json.dumps(metadata))
+
+                with self.assertRaises(CadMetadataError) as caught:
+                    load_system(manifest, self.root)
+                self.assertEqual(caught.exception.diagnostics[0].code, "CAD127")
+                self.assertIn(missing, str(caught.exception))
+
     def test_rejects_duplicate_or_unsafe_variants(self):
         for variants in (("same", "same"), ("good", "not safe")):
             items = [

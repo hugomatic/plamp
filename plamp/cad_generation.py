@@ -383,7 +383,18 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
             name: {"kind": source.kind, "source_id": source.source_id}
             for name, source in job.variable_sources.items()
         },
-        "profiles": list(job.profiles),
+        "profiles": [
+            {
+                "name": profile.name,
+                "qualified_id": profile.qualified_id,
+                "namespace": profile.namespace,
+                "source": profile.source,
+                "kind": profile.kind,
+                "content_hash": profile.content_hash,
+                "path": profile.path,
+            }
+            for profile in job.profiles
+        ],
         "manufacturing": {
             "directives": {
                 key: {

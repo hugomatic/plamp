@@ -52,12 +52,14 @@ if (set == "floor") floor_set();
             "schema": "plamp-cad-model/1", "name": "fixture",
             "source": "fixture.scad", "description": "Fixture",
             "variables": {"quality": 2},
+            "profiles": ["model-quality"],
             "sets": {
                 "": {"description": "Normal output"},
                 "floor": {
                     "description": "Printable floor",
                     "variables": {"vents": True},
                     "slicing": {"supports": "forbidden"},
+                    "profiles": ["floor-quality"],
                 },
                 "assembly": {"description": "Assembly", "printable": False},
             },
@@ -70,12 +72,24 @@ if (set == "floor") floor_set();
         self.assertEqual(model.name, "fixture")
         self.assertEqual(model.description, "Fixture")
         self.assertEqual(model.variables, {"quality": 2})
+        self.assertEqual(model.profiles, ("model-quality",))
+        self.assertEqual(model.sets["floor"].profiles, ("floor-quality",))
         self.assertEqual(model.sets["floor"].description, "Printable floor")
         self.assertEqual(model.sets["floor"].variables, {"vents": True})
         self.assertEqual(model.sets["floor"].slicing, {"supports": "forbidden"})
         self.assertFalse(model.sets["assembly"].printable)
         self.assertEqual(model.sets["top_panel"].description, "")
         self.assertEqual(model.advisories[0].code, "CAD112")
+
+    def test_model_and_set_profiles_are_strict_safe_string_arrays(self):
+        for overrides in (
+            {"profiles": "draft"},
+            {"profiles": ["not safe"]},
+            {"sets": {"floor": {"profiles": [1]}}},
+        ):
+            with self.subTest(overrides=overrides):
+                with self.assertRaises(CadMetadataError):
+                    load_model("fixture", self.sidecar(**overrides), self.root)
 
     def test_invalid_set_slicing_is_rejected_while_loading_model(self):
         sidecar = self.sidecar(sets={"floor": {"slicing": {"supports": "maybe"}}})

@@ -91,7 +91,10 @@ class CadCliTests(unittest.TestCase):
         (self.root / "cad" / "profiles" / "petg.json").write_text(json.dumps({
             "schema": "plamp-cad-profile/1", "name": "petg",
             "kind": "material", "cad": {"profile_gap": 0.2},
-            "slicing": {"supports": "forbidden"}, "machine": {},
+            "slicing": {
+                "supports": "forbidden", "ironing": "recommended",
+                "layer_height": 0.2, "notes": ["Keep the face upward"],
+            }, "machine": {},
         }) + "\n")
         (self.root / "cad" / "lib").mkdir(exist_ok=True)
         manifest = {
@@ -207,6 +210,11 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual((rc, error), (0, ""))
         self.assertIn("Profiles: system:petg, system:petg", output)
         self.assertIn("Supports: forbidden", output)
+        self.assertIn("Ironing: recommended", output)
+        self.assertIn("Layer height: 0.2", output)
+        self.assertIn("Keep the face upward", output)
+        self.assertIn("preference", output)
+        self.assertIn("system:petg", output)
         self.assertIn("Geometry fingerprint (SHA-256):", output)
         self.assertIn("Manufacturing fingerprint (SHA-256):", output)
 

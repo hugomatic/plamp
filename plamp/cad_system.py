@@ -267,6 +267,23 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
         profile_paths[profile_name] = _resolve_existing(raw_reference, repo_root, path, f"$.profiles.{profile_name}")
     profiles = load_system_profiles(profile_paths)
 
+    for model_id, model in models.items():
+        for profile_name in model.profiles:
+            if profile_name not in profiles:
+                _fail(path, f"Unknown profile {profile_name!r} on model {model_id!r}",
+                      code="CAD127", kind="unknown_profile", value=profile_name,
+                      choices=tuple(profiles))
+        for set_name, cad_set in model.sets.items():
+            for profile_name in cad_set.profiles:
+                if profile_name not in profiles:
+                    _fail(
+                        path,
+                        f"Unknown profile {profile_name!r} on set "
+                        f"{model_id!r}/{set_name!r}",
+                        code="CAD127", kind="unknown_profile", value=profile_name,
+                        choices=tuple(profiles),
+                    )
+
     raw_libraries = _mapping(metadata, "libraries", path, "$.libraries")
     libraries = {}
     for library_name, declaration in raw_libraries.items():

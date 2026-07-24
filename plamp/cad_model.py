@@ -21,10 +21,10 @@ SET_ASSIGNMENT = re.compile(
 )
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _SIDECAR_KEYS = frozenset(
-    {"schema", "name", "source", "description", "sets", "variables"}
+    {"schema", "name", "source", "description", "sets", "variables", "profiles"}
 )
 _SET_KEYS = frozenset(
-    {"description", "variables", "printable", "slicing"}
+    {"description", "variables", "printable", "slicing", "profiles"}
 )
 
 
@@ -78,6 +78,7 @@ class CadSet:
     variables: Mapping[str, object] = field(default_factory=dict)
     printable: bool = True
     slicing: Mapping[str, object] = field(default_factory=dict)
+    profiles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ class CadModel:
     metadata_snapshot: Mapping[str, object]
     source_defaults: Mapping[str, object] = field(default_factory=dict)
     advisories: tuple[CadDiagnostic, ...] = ()
+    profiles: tuple[str, ...] = ()
 
 
 def diagnostics_json(diagnostics: Iterable[CadDiagnostic]) -> str:
@@ -131,6 +133,17 @@ def _validated_slicing(
         return validated_slicing(value, DirectiveSource(source_id))
     except ValueError as error:
         _fail(path, str(error), json_path=json_path, value=dict(value))
+
+
+def _profiles(value: Mapping[str, object], path: Path, json_path: str) -> tuple[str, ...]:
+    raw = value.get("profiles", [])
+    if not isinstance(raw, list):
+        _fail(path, f"{json_path} must be an array", json_path=json_path, value=raw)
+    for index, profile_id in enumerate(raw):
+        if not isinstance(profile_id, str) or not _SAFE_NAME.fullmatch(profile_id):
+            _fail(path, f"{json_path}[{index}] must be a safe profile name",
+                  json_path=f"{json_path}[{index}]", value=profile_id)
+    return tuple(raw)
 
 
 def _suggest(value: str, choices: tuple[str, ...]) -> str | None:
@@ -610,6 +623,7 @@ def load_model(model_id: str, reference: Path, repo_root: Path) -> CadModel:
                 slicing, reference_path, f"{json_path}.slicing",
                 f"set:{model_id}/{set_name}",
             ),
+            profiles=_profiles(raw, reference_path, f"{json_path}.profiles"),
         )
         if not set_description:
             advisories.append(_advisory(reference_path, set_name, json_path))
@@ -626,4 +640,5 @@ def load_model(model_id: str, reference: Path, repo_root: Path) -> CadModel:
         metadata_snapshot=MappingProxyType(metadata.copy()),
         source_defaults=parse_source_defaults(source),
         advisories=tuple(advisories),
+        profiles=_profiles(metadata, reference_path, "$.profiles"),
     )

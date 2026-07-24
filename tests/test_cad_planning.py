@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 import unittest
@@ -312,10 +313,10 @@ class CadPlanningTests(unittest.TestCase):
             {"box": "source"},
         )
         self.assertEqual(len(plan.jobs), 2)
-        self.assertEqual(plan.jobs[0].profiles, (
+        self.assertEqual(plan.jobs[0].profile_ids, (
             "system:outer-base", "system:edge", "system:inner-base", "system:draft",
         ))
-        self.assertEqual(plan.jobs[1].profiles[-1], "system:quality")
+        self.assertEqual(plan.jobs[1].profile_ids[-1], "system:quality")
         self.assertNotEqual(plan.jobs[0].geometry_fingerprint,
                             plan.jobs[1].geometry_fingerprint)
 
@@ -344,8 +345,11 @@ class CadPlanningTests(unittest.TestCase):
                          "large brim")
         self.assertEqual(plan.jobs[1].manufacturing.directives["layer_height"].value,
                          0.28)
+        self.assertEqual(plan.jobs[0].geometry_fingerprint,
+                         plan.jobs[1].geometry_fingerprint)
         self.assertNotEqual(plan.jobs[0].manufacturing_fingerprint,
                             plan.jobs[1].manufacturing_fingerprint)
+        self.assertEqual(len({job.artifact_id for job in plan.jobs}), 2)
 
     def test_geometry_fingerprint_is_stable_sha256_and_changes_with_source(self):
         system = self.nested_system()
@@ -410,9 +414,75 @@ class CadPlanningTests(unittest.TestCase):
         self.assertEqual(plain.geometry_fingerprint, profiled.geometry_fingerprint)
         self.assertNotEqual(plain.manufacturing_fingerprint,
                             profiled.manufacturing_fingerprint)
-        self.assertEqual(profiled.profiles, ("system:ironing",))
+        self.assertEqual(profiled.profile_ids, ("system:ironing",))
         self.assertEqual(profiled.manufacturing.directives["ironing"].source.id,
                          "system:ironing")
+
+    def test_geometry_hash_uses_effective_cad_values_not_profile_content(self):
+        def configured(content_hash, cad, slicing=None, machine=None):
+            profile = CadProfile(
+                "mixed", "system:mixed", "quality", Path("cad/mixed.json"),
+                cad, slicing or {}, machine or {}, content_hash,
+            )
+            base = self.system()
+            return CadSystem(
+                base.name, base.description, base.path, base.models, base.products,
+                base.default_product, base.libraries,
+                MappingProxyType({"mixed": profile}), base.metadata_snapshot,
+            )
+
+        selection = CadSelection(
+            model="box", sets=("top",), profiles=("mixed",),
+            defines={"clearance": 9},
+        )
+        first = build_render_plan(
+            configured("1" * 64, {"clearance": 1, "render_fn": 24},
+                       {"ironing": "optional"}, {"bed": "a"}),
+            selection, {"box": "source"},
+        ).jobs[0]
+        non_geometry_change = build_render_plan(
+            configured("2" * 64, {"clearance": 2, "render_fn": 24},
+                       {"ironing": "recommended"}, {"bed": "b"}),
+            selection, {"box": "source"},
+        ).jobs[0]
+        effective_change = build_render_plan(
+            configured("3" * 64, {"clearance": 2, "render_fn": 48}),
+            selection, {"box": "source"},
+        ).jobs[0]
+
+        self.assertEqual(first.geometry_fingerprint,
+                         non_geometry_change.geometry_fingerprint)
+        self.assertNotEqual(first.manufacturing_fingerprint,
+                            non_geometry_change.manufacturing_fingerprint)
+        self.assertNotEqual(first.geometry_fingerprint,
+                            effective_change.geometry_fingerprint)
+
+    def test_profile_provenance_is_qualified_immutable_and_serializable(self):
+        profile = CadProfile(
+            "draft", "system:draft", "quality", Path("cad/profiles/draft.json"),
+            {"render_fn": 24}, {}, {}, "a" * 64,
+        )
+        base = self.system()
+        system = CadSystem(
+            base.name, base.description, base.path, base.models, base.products,
+            base.default_product, base.libraries,
+            MappingProxyType({"draft": profile}), base.metadata_snapshot,
+        )
+        job = build_render_plan(
+            system, CadSelection(model="box", profiles=("draft",)),
+            {"box": "source"}, repo_root=Path("."),
+        ).jobs[0]
+        provenance = job.profiles[0]
+        self.assertEqual(provenance.qualified_id, "system:draft")
+        self.assertEqual(provenance.namespace, "system")
+        self.assertEqual(provenance.kind, "quality")
+        self.assertEqual(provenance.content_hash, "a" * 64)
+        self.assertEqual(provenance.path, "cad/profiles/draft.json")
+        self.assertEqual(job.profile_ids, ("system:draft",))
+        json.dumps(plan_as_dict(build_render_plan(
+            system, CadSelection(model="box", profiles=("draft",)),
+            {"box": "source"}, repo_root=Path("."),
+        )))
 
     def test_defaults_profile_order_and_cad_precedence(self):
         def profile_value(name, value, hash_character):
@@ -422,6 +492,8 @@ class CadPlanningTests(unittest.TestCase):
             "default": profile_value("default", 1, "1"),
             "product": profile_value("product", 2, "2"),
             "item": profile_value("item", 3, "3"),
+            "model": profile_value("model", 3.2, "5"),
+            "set": profile_value("set", 3.4, "6"),
             "cli": profile_value("cli", 4, "4"),
         })
         products = {"complete": product(
@@ -430,8 +502,16 @@ class CadPlanningTests(unittest.TestCase):
             profiles=("product",),
         )}
         base = self.system(products=products)
+        box = replace(
+            base.models["box"], profiles=("model",),
+            sets=MappingProxyType({
+                name: replace(cad_set, profiles=("set",) if name == "floor" else ())
+                for name, cad_set in base.models["box"].sets.items()
+            }),
+        )
+        models = MappingProxyType({**base.models, "box": box})
         system = CadSystem(
-            base.name, base.description, base.path, base.models, base.products,
+            base.name, base.description, base.path, models, base.products,
             base.default_product, base.libraries, profiles, base.metadata_snapshot,
         )
         job = build_render_plan(
@@ -439,20 +519,21 @@ class CadPlanningTests(unittest.TestCase):
             CadSelection(product="complete", profiles=("cli",)),
             {"box": "source"}, default_profile_ids=("default",),
         ).jobs[0]
-        self.assertEqual(job.profiles, (
-            "system:default", "system:product", "system:item", "system:cli",
+        self.assertEqual(job.profile_ids, (
+            "system:default", "system:product", "system:item", "system:model",
+            "system:set", "system:cli",
         ))
         self.assertEqual(job.variables["clearance"], 5)
         self.assertEqual(tuple(layer.kind for layer in job.variable_sources["clearance"].layers),
                          ("model", "profile", "profile", "profile", "profile",
-                          "item"))
+                          "profile", "profile", "item"))
         without_defaults = build_render_plan(
             system,
             CadSelection(product="complete", profiles=("cli",),
                          use_default_profiles=False),
             {"box": "source"}, default_profile_ids=("default",),
         ).jobs[0]
-        self.assertNotIn("system:default", without_defaults.profiles)
+        self.assertNotIn("system:default", without_defaults.profile_ids)
 
     def test_ambiguous_short_profile_and_hard_manufacturing_conflict_fail(self):
         system_profile = CadProfile(

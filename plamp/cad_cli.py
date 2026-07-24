@@ -644,6 +644,7 @@ def _prepare_system_plan(
     preliminary = deps["build_plan"](
         system, selected, {name: "pending" for name in system.models},
         local_profiles=local_profiles, default_profile_ids=default_profile_ids,
+        repo_root=context.root, data_dir=context.data_dir,
     )
     model_ids = tuple(dict.fromkeys(job.model_id for job in preliminary.jobs))
     snapshots: dict[str, Any] = {}
@@ -660,6 +661,7 @@ def _prepare_system_plan(
             system, selected,
             {name: snapshot.source_identity for name, snapshot in snapshots.items()},
             local_profiles=local_profiles, default_profile_ids=default_profile_ids,
+            repo_root=context.root, data_dir=context.data_dir,
         )
         return system, plan, snapshots
     except BaseException:
@@ -903,11 +905,19 @@ def run_cad_command(
                     stdout.write(f"Selected {selected}\n{len(plan.jobs)} render job(s)\nJobs:\n")
                     for job in value["jobs"]:
                         stdout.write(f"- {job['model_id']} / {job['set_name'] or '(default)'}\n")
-                        profiles = ", ".join(job["profiles"]) or "(none)"
+                        profiles = ", ".join(
+                            profile["qualified_id"] for profile in job["profiles"]
+                        ) or "(none)"
                         stdout.write(f"  Profiles: {profiles}\n")
                         directives = job["manufacturing"]["directives"]
-                        if "supports" in directives:
-                            stdout.write(f"  Supports: {directives['supports']['value']}\n")
+                        for name, directive in directives.items():
+                            label = name.replace("_", " ").capitalize()
+                            stdout.write(
+                                f"  {label}: {directive['value']} "
+                                f"({directive['strength']}, {directive['source']})\n"
+                            )
+                        for source, note in job["manufacturing"]["notes"]:
+                            stdout.write(f"  Note ({source}): {note}\n")
                         stdout.write(
                             f"  artifact: {job['artifact_id']}\n"
                             f"  Geometry fingerprint (SHA-256): {job['geometry_fingerprint']}\n"

@@ -21,7 +21,7 @@ from plamp.cad_generation import (
     resolve_part,
 )
 from plamp.cad_model import CadModel, CadSet
-from plamp.cad_planning import CadSelection, RenderJob, RenderPlan
+from plamp.cad_planning import CadSelection, RenderJob, RenderPlan, ResolvedProfile
 from plamp.cad_manufacturing import merge_manufacturing
 
 
@@ -625,6 +625,23 @@ class CadGenerationTests(unittest.TestCase):
         })
         self.assertEqual(manifest["models"]["fixture"]["commit"], self.commit)
         self.assertRegex(manifest["created_at"], r"Z$")
+
+    def test_manifest_preserves_resolved_profile_provenance(self):
+        source_plan = plan("first")
+        profiled = replace(
+            source_plan.jobs[0],
+            profiles=(ResolvedProfile(
+                "draft", "local:draft", "local", "local", "quality",
+                "f" * 64, "cad/profiles/draft.json",
+            ),),
+        )
+        result = self.generate(replace(source_plan, jobs=(profiled,)))
+        profile = load_run(result.run_dir)["jobs"][0]["profiles"][0]
+        self.assertEqual(profile, {
+            "name": "draft", "qualified_id": "local:draft",
+            "namespace": "local", "source": "local", "kind": "quality",
+            "content_hash": "f" * 64, "path": "cad/profiles/draft.json",
+        })
 
     def test_exact_argv_uses_argument_list_and_effective_plan_values(self):
         result = self.generate()

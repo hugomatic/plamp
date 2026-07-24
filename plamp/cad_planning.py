@@ -50,6 +50,46 @@ def _canonical_hash(value: object) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _relative_profile_path(profile: CadProfile, *, repo_root: Path | None,
+                           data_dir: Path | None) -> str:
+    path = Path(profile.path)
+    if not path.is_absolute():
+        return path.as_posix()
+    root = data_dir if profile.qualified_id.startswith("local:") else repo_root
+    if root is not None:
+        try:
+            return path.relative_to(Path(root).resolve()).as_posix()
+        except ValueError:
+            pass
+    return path.name
+
+
+def _resolved_profile(profile: CadProfile, *, repo_root: Path | None,
+                      data_dir: Path | None) -> ResolvedProfile:
+    namespace = profile.qualified_id.split(":", 1)[0]
+    return ResolvedProfile(
+        name=profile.name,
+        qualified_id=profile.qualified_id,
+        namespace=namespace,
+        source=namespace,
+        kind=profile.kind,
+        content_hash=profile.content_hash,
+        path=_relative_profile_path(profile, repo_root=repo_root, data_dir=data_dir),
+    )
+
+
+def _profile_as_dict(profile: ResolvedProfile) -> dict[str, str]:
+    return {
+        "name": profile.name,
+        "qualified_id": profile.qualified_id,
+        "namespace": profile.namespace,
+        "source": profile.source,
+        "kind": profile.kind,
+        "content_hash": profile.content_hash,
+        "path": profile.path,
+    }
+
+
 @dataclass(frozen=True)
 class CadSelection:
     product: str | None = None
@@ -80,6 +120,17 @@ class CadSelection:
 
 
 @dataclass(frozen=True)
+class ResolvedProfile:
+    name: str
+    qualified_id: str
+    namespace: str
+    source: str
+    kind: str
+    content_hash: str
+    path: str
+
+
+@dataclass(frozen=True)
 class RenderJob:
     artifact_id: str
     model_id: str
@@ -88,7 +139,7 @@ class RenderJob:
     variables: Mapping[str, object]
     raw_defines: Mapping[str, str]
     variable_sources: Mapping[str, ResolvedVariable]
-    profiles: tuple[str, ...]
+    profiles: tuple[ResolvedProfile, ...]
     manufacturing: ManufacturingPolicy
     product_paths: tuple[tuple[str, ...], ...]
     geometry_fingerprint: str
@@ -102,6 +153,10 @@ class RenderJob:
         object.__setattr__(self, "profiles", tuple(self.profiles))
         object.__setattr__(self, "product_paths",
                            tuple(tuple(path) for path in self.product_paths))
+
+    @property
+    def profile_ids(self) -> tuple[str, ...]:
+        return tuple(profile.qualified_id for profile in self.profiles)
 
 
 @dataclass(frozen=True)
@@ -189,7 +244,9 @@ def _selection_candidates(system: CadSystem, selection: CadSelection) -> list[_C
 def build_render_plan(system: CadSystem, selection: CadSelection,
                       source_identities: Mapping[str, str], *,
                       local_profiles: Mapping[str, CadProfile] = MappingProxyType({}),
-                      default_profile_ids: tuple[str, ...] = ()) -> RenderPlan:
+                      default_profile_ids: tuple[str, ...] = (),
+                      repo_root: Path | None = None,
+                      data_dir: Path | None = None) -> RenderPlan:
     """Expand products or direct sets depth-first and deduplicate render jobs."""
 
     candidates = _selection_candidates(system, selection)
@@ -235,6 +292,8 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
                 if layer_index:
                     requested_profiles.extend(system.products[product_name].profiles)
                 requested_profiles.extend(product_item.profiles)
+        requested_profiles.extend(model.profiles)
+        requested_profiles.extend(model.sets[candidate.set_name].profiles)
         requested_profiles.extend(selection.profiles)
         resolved_profiles = resolve_profile_ids(
             system.profiles, local_profiles,
@@ -263,15 +322,6 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         variables, raw, sources = resolve_variables(variable_layers)
         manufacturing = merge_manufacturing(manufacturing_layers)
 
-        effective_profile_ids = {
-            source.winner.source_id for source in sources.values()
-            if source.winner.kind == "profile"
-        }
-        geometry_profile_hashes = [
-            profile.content_hash for profile in resolved_profiles
-            if profile.qualified_id in effective_profile_ids
-        ]
-
         geometry_payload = {
             "planning_schema_version": PLANNING_SCHEMA_VERSION,
             "system_manifest_hash": manifest_hash,
@@ -280,7 +330,6 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
             "set_name": candidate.set_name,
             "variables": _plain(variables),
             "raw_defines": raw,
-            "profile_hashes": geometry_profile_hashes,
         }
         geometry_fingerprint = _canonical_hash(geometry_payload)
         manufacturing_fingerprint = _canonical_hash({
@@ -295,7 +344,10 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
             unique[identity] = {
                 "candidate": candidate, "variables": variables, "raw": raw,
                 "sources": sources,
-                "profiles": [profile.qualified_id for profile in resolved_profiles],
+                "profiles": [
+                    _resolved_profile(profile, repo_root=repo_root, data_dir=data_dir)
+                    for profile in resolved_profiles
+                ],
                 "manufacturing": manufacturing,
                 "geometry_fingerprint": geometry_fingerprint,
                 "manufacturing_fingerprint": manufacturing_fingerprint,
@@ -371,7 +423,7 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
                 }
                 for name, source in job.variable_sources.items()
             },
-            "profiles": list(job.profiles),
+            "profiles": [_profile_as_dict(profile) for profile in job.profiles],
             "manufacturing": {
                 "directives": {
                     key: {
