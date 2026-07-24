@@ -989,6 +989,14 @@ def stage_dependency_closure(
         if archive in archive_paths:
             raise CadDependencyError(f"duplicate dependency archive path: {archive}")
         archive_paths.add(archive)
+    for archive in archive_paths:
+        for length in range(1, len(archive.parts)):
+            ancestor = Path(*archive.parts[:length])
+            if ancestor in archive_paths:
+                raise CadDependencyError(
+                    f"dependency archive path collision: file {ancestor} "
+                    f"is also a directory required by {archive}"
+                )
 
     stage = Path(destination).absolute()
     if stage.exists() and (stage.is_symlink() or not stage.is_dir()):

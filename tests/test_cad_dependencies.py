@@ -357,6 +357,28 @@ OPENSCAD_FONT_PATH:
             )
         self.assertFalse((collision_stage / "repository/box.scad").exists())
 
+    def test_stage_prevalidates_file_directory_archive_collisions_in_both_orders(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        source = self.write_at(model / "box.scad", "cube(1);")
+        parent = DependencyRecord(
+            source, "model-local", "parent", Path("repository/model"),
+            content_hash(source),
+        )
+        child = replace(
+            parent, logical_name="child",
+            archive_path=Path("repository/model/box.scad"),
+        )
+        for index, records in enumerate(((parent, child), (child, parent))):
+            stage = self.root / f"ancestor-collision-{index}"
+            with self.subTest(order=index), self.assertRaisesRegex(
+                CadDependencyError, "collision"
+            ):
+                stage_dependency_closure(
+                    DependencyClosure(records, model, repo, source), stage
+                )
+            self.assertFalse(stage.exists())
+
     def test_stage_preserves_regular_file_permissions_despite_umask(self):
         repo = self.root / "repo"
         model = repo / "things/box"
