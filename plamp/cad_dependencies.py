@@ -65,9 +65,10 @@ def _dependency_text(source: str) -> str:
         if character != ":":
             target.append(character)
             continue
+        target_text = "".join(target).lstrip()
         drive_colon = (
-            len(target) == 1
-            and target[0].isalpha()
+            len(target_text) == 1
+            and target_text.isalpha()
             and index + 1 < len(source)
             and source[index + 1] in ("/", "\\")
         )
@@ -120,11 +121,15 @@ def parse_make_dependencies(path: Path, working_directory: Path) -> tuple[Path, 
     dependencies: list[Path] = []
     seen: set[Path] = set()
     for token in tokens:
-        candidate = Path(token)
-        if not candidate.is_absolute():
-            candidate = working_directory / candidate
         try:
+            candidate = Path(token)
+            if not candidate.is_absolute():
+                candidate = working_directory / candidate
             resolved = candidate.resolve(strict=True)
+        except ValueError as error:
+            raise CadDependencyError(
+                f"invalid dependency path token {token!r}: {error}"
+            ) from error
         except (OSError, RuntimeError) as error:
             raise CadDependencyError(
                 f"dependency {candidate} does not exist: {error}"

@@ -54,6 +54,11 @@ class CadDependencyTests(unittest.TestCase):
         )
         self.assertEqual(parse_make_dependencies(path, self.root), (dependency,))
 
+    def test_make_dependencies_allow_whitespace_before_drive_target(self):
+        dependency = self.write("part.scad")
+        path = self.write("deps.d", "  C:\\build\\out.csg: part.scad\n")
+        self.assertEqual(parse_make_dependencies(path, self.root), (dependency,))
+
     def test_make_dependencies_preserve_escaped_backslash(self):
         dependency = self.write(r"dir\part.scad")
         path = self.write("deps.d", r"out.csg: dir\\part.scad" + "\n")
@@ -77,6 +82,13 @@ class CadDependencyTests(unittest.TestCase):
             path = self.write("deps.d", text)
             with self.subTest(text=text), self.assertRaises(CadDependencyError):
                 parse_make_dependencies(path, self.root)
+
+    def test_make_dependencies_wrap_invalid_path_tokens(self):
+        path = self.write("deps.d", "out.csg: invalid\x00name.scad\n")
+        with self.assertRaisesRegex(
+            CadDependencyError, r"invalid.*invalid.*name\.scad"
+        ):
+            parse_make_dependencies(path, self.root)
 
     def test_parses_active_library_roots_from_openscad_info(self):
         info = parse_openscad_info(
@@ -173,6 +185,12 @@ OPENSCAD_FONT_PATH:
         )
         with self.assertRaises(FrozenInstanceError):
             record.logical_name = "changed"  # type: ignore[misc]
+
+        info = parse_openscad_info(
+            "OpenSCAD Version: 2021.01\nOpenSCAD library path:\n/opt/lib\n"
+        )
+        with self.assertRaises(FrozenInstanceError):
+            info.version = "changed"  # type: ignore[misc]
 
 
 if __name__ == "__main__":
