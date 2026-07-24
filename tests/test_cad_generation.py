@@ -6,6 +6,7 @@ import tempfile
 import textwrap
 import unittest
 import shutil
+import errno
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -842,6 +843,97 @@ class CadGenerationTests(unittest.TestCase):
         second_manifest = load_run(second.run_dir)
         copied = second.run_dir / second_manifest["jobs"][0]["artifact"]
         self.assertEqual(copied.read_bytes(), original)
+
+    def test_reuse_publication_never_overwrites_concurrent_target(self):
+        import plamp.cad_generation as generation
+        first = self.generate(plan("first"))
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        real_link = os.link
+
+        def inject_target(source, target, **kwargs):
+            target_fd = kwargs["dst_dir_fd"]
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                         0o644, dir_fd=target_fd)
+            os.write(fd, b"concurrent-owner")
+            os.close(fd)
+            return real_link(source, target, **kwargs)
+
+        with mock.patch("plamp.cad_generation.os.link", side_effect=inject_target):
+            result = self.generate(changed, output=self.root / "publish-race")
+
+        expected = result.run_dir / "artifacts" / (
+            f"{changed.jobs[0].artifact_id}--{self.commit[:7]}.stl"
+        )
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(expected.read_bytes(), b"concurrent-owner")
+        self.assertEqual(list(expected.parent.glob("*.reuse.tmp")), [])
+        self.assertEqual(list(expected.parent.glob(".*.reuse.tmp")), [])
+
+    def test_reuse_publication_failure_cleans_temporary_and_falls_back(self):
+        self.generate(plan("first"))
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        with mock.patch("plamp.cad_generation.os.link",
+                        side_effect=OSError(errno.EIO, "injected publish failure")):
+            result = self.generate(changed, output=self.root / "publish-failure")
+        self.assertEqual(result.status, "complete")
+        self.assertFalse(list((result.run_dir / "artifacts").glob(".*.reuse.tmp")))
+
+    def test_archive_intermediate_symlinks_are_rejected(self):
+        for component in ("cad", "prints", "fixture-system"):
+            with self.subTest(component=component):
+                data = self.root / f"data-{component}"
+                outside = self.root / f"outside-{component}"
+                outside.mkdir()
+                if component == "cad":
+                    data.mkdir()
+                    (data / "cad").symlink_to(outside, target_is_directory=True)
+                elif component == "prints":
+                    (data / "cad").mkdir(parents=True)
+                    (data / "cad" / "prints").symlink_to(outside, target_is_directory=True)
+                else:
+                    (data / "cad" / "prints").mkdir(parents=True)
+                    (data / "cad" / "prints" / component).symlink_to(
+                        outside, target_is_directory=True
+                    )
+                with self.assertRaises(OSError):
+                    snapshot = prepare_source(self.repo, self.scad)
+                    self.addCleanup(lambda snapshot=snapshot: shutil.rmtree(
+                        snapshot.cleanup_root, ignore_errors=True
+                    ))
+                    generate_plan(
+                        plan("first"), repo_root=self.repo, data_dir=data,
+                        models={"fixture": self.model},
+                        snapshots={"fixture": snapshot},
+                        openscad=self.fake, env=self.env(), stdout=io.StringIO(),
+                    )
+
+    def test_archive_system_swap_is_detected_during_run_allocation(self):
+        import plamp.cad_generation as generation
+        archive, archive_fd = generation._open_archive_directory(
+            self.data, "fixture-system"
+        )
+        moved = archive.with_name("fixture-system-moved")
+        outside = self.root / "replacement-system"
+        outside.mkdir()
+        archive.rename(moved)
+        archive.symlink_to(outside, target_is_directory=True)
+        try:
+            with self.assertRaisesRegex(OSError, "archive path changed"):
+                generation._create_managed_run_directory(
+                    archive, "run", plan("first"),
+                    generation._generation_identity(
+                        generation.plan_as_dict(plan("first")),
+                        {"fixture": "source"},
+                    ),
+                    archive_fd,
+                )
+        finally:
+            os.close(archive_fd)
+        self.assertFalse((outside / "run").exists())
 
     def test_geometry_reuse_rejects_failed_artifact(self):
         source_plan = plan("first")

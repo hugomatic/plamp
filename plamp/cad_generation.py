@@ -60,6 +60,10 @@ class CadRunExistsError(RuntimeError):
         )
 
 
+class _ReuseTargetExists(RuntimeError):
+    """A destination artifact appeared while verified reuse was publishing."""
+
+
 def _git(repo_root: Path, *args: str) -> str:
     completed = subprocess.run(
         ["git", "-C", str(repo_root), *args],
@@ -646,14 +650,46 @@ def _open_run_manifest(root_fd: int, run_name: str) -> tuple[int, dict[str, obje
         raise
 
 
+def _open_archive_directory(
+    data_dir: str | os.PathLike[str], system_name: str,
+) -> tuple[Path, int]:
+    """Open/create cad/prints/system without following intermediate symlinks."""
+
+    if _safe_component(system_name) != system_name or system_name in {".", ".."}:
+        raise ValueError("CAD system name is not a safe archive component")
+    trusted_root = Path(data_dir).resolve()
+    trusted_root.mkdir(parents=True, exist_ok=True)
+    current_fd = os.open(
+        trusted_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+    )
+    current_path = trusted_root
+    try:
+        for component in ("cad", "prints", system_name):
+            try:
+                os.mkdir(component, dir_fd=current_fd)
+            except FileExistsError:
+                pass
+            next_fd = os.open(
+                component, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+                dir_fd=current_fd,
+            )
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path /= component
+        return current_path, current_fd
+    except BaseException:
+        os.close(current_fd)
+        raise
+
+
 def _find_geometry_artifact(
     archive_root: Path, *, model_id: str, model_geometry_hash: str,
-    geometry_fingerprint: str, excluded: Path,
+    geometry_fingerprint: str, excluded: Path, archive_fd: int | None = None,
 ) -> _VerifiedArtifact | None:
     """Find a verified successful artifact with identical render inputs."""
 
     try:
-        root_fd = os.open(
+        root_fd = os.dup(archive_fd) if archive_fd is not None else os.open(
             archive_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
         )
     except OSError:
@@ -730,13 +766,18 @@ def _find_geometry_artifact(
 def _copy_verified_artifact(source: _VerifiedArtifact, target: Path) -> None:
     """Atomically copy a verified open regular file into a fresh run."""
 
-    temporary = target.with_name(f".{target.name}.reuse.tmp")
-    fd = os.open(
-        temporary,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _CLOEXEC,
-        0o644,
+    directory_fd = os.open(
+        target.parent, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
     )
+    temporary_name = f".{target.name}.reuse.tmp"
+    fd = -1
     try:
+        fd = os.open(
+            temporary_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _CLOEXEC,
+            0o644,
+            dir_fd=directory_fd,
+        )
         offset = 0
         digest = hashlib.sha256()
         while offset < source.size:
@@ -752,12 +793,27 @@ def _copy_verified_artifact(source: _VerifiedArtifact, target: Path) -> None:
         if digest.hexdigest() != source.checksum:
             raise OSError("verified artifact changed while being copied")
         os.fsync(fd)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
-    finally:
         os.close(fd)
-    os.replace(temporary, target)
+        fd = -1
+        try:
+            os.link(
+                temporary_name, target.name,
+                src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError as error:
+            raise _ReuseTargetExists(
+                f"artifact target appeared during reuse: {target.name}"
+            ) from error
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        finally:
+            os.close(directory_fd)
 
 
 def _generation_identity(
@@ -806,10 +862,10 @@ def _only_manufacturing_identity_differs(
 
 
 def _secure_existing_identity(
-    archive_root: Path, run_name: str,
+    archive_root: Path, run_name: str, archive_fd: int | None = None,
 ) -> dict[str, object] | None:
     try:
-        root_fd = os.open(
+        root_fd = os.dup(archive_fd) if archive_fd is not None else os.open(
             archive_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
         )
         try:
@@ -824,7 +880,7 @@ def _secure_existing_identity(
 
 def _create_managed_run_directory(
     archive_root: Path, base_run_id: str, plan: RenderPlan,
-    identity: Mapping[str, object],
+    identity: Mapping[str, object], archive_fd: int,
 ) -> tuple[str, Path]:
     """Atomically allocate a deterministic unique managed run directory."""
 
@@ -833,16 +889,32 @@ def _create_managed_run_directory(
     def claim(name: str) -> Path | None:
         candidate = archive_root / name
         try:
-            candidate.mkdir()
+            os.mkdir(name, dir_fd=archive_fd)
         except FileExistsError:
             return None
+        run_fd = os.open(
+            name, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+            dir_fd=archive_fd,
+        )
+        try:
+            opened = os.fstat(run_fd)
+            try:
+                visible = os.stat(candidate, follow_symlinks=False)
+            except OSError as error:
+                raise OSError(
+                    "CAD archive path changed during run allocation"
+                ) from error
+            if (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino):
+                raise OSError("CAD archive path changed during run allocation")
+        finally:
+            os.close(run_fd)
         return candidate
 
     claimed = claim(base_run_id)
     if claimed is not None:
         return base_run_id, claimed
 
-    existing = _secure_existing_identity(archive_root, base_run_id)
+    existing = _secure_existing_identity(archive_root, base_run_id, archive_fd)
     if existing is not None and _only_manufacturing_identity_differs(existing, identity):
         token = _manufacturing_run_token(plan.jobs)
         for length in range(7, len(token) + 1):
@@ -909,9 +981,10 @@ def _find_duplicate_run(
     part_root: Path,
     identity: Mapping[str, object],
     local_now: datetime,
+    archive_fd: int | None = None,
 ) -> tuple[str, Path] | None:
     try:
-        root_fd = os.open(
+        root_fd = os.dup(archive_fd) if archive_fd is not None else os.open(
             part_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
         )
     except OSError:
@@ -1040,6 +1113,7 @@ def generate_plan(
     err = stderr or sys.stderr
     regeneration_target: Path | None = None
     run_dir: Path | None = None
+    archive_fd = -1
     try:
         local_now = _local_now()
         selector = (f"product-{plan.selection.product}" if plan.selection.product else
@@ -1048,8 +1122,8 @@ def generate_plan(
         plan_data = plan_as_dict(plan)
         source_hashes = {name: _hash_tree(snapshots[name].scad_path.parent)
                          for name in selected_model_ids}
-        archive_part_root = (
-            Path(data_dir).resolve() / "cad" / "prints" / archive_name
+        archive_part_root, archive_fd = _open_archive_directory(
+            data_dir, archive_name
         )
         generation_identity = _generation_identity(plan_data, source_hashes)
         if output is None:
@@ -1057,6 +1131,7 @@ def generate_plan(
                 archive_part_root,
                 generation_identity,
                 local_now,
+                archive_fd,
             )
             if duplicate is not None:
                 if not regenerate:
@@ -1077,7 +1152,8 @@ def generate_plan(
             )
             if output is None:
                 run_id, run_dir = _create_managed_run_directory(
-                    archive_part_root, base_run_id, plan, generation_identity
+                    archive_part_root, base_run_id, plan, generation_identity,
+                    archive_fd,
                 )
             else:
                 run_id = base_run_id
@@ -1174,6 +1250,7 @@ def generate_plan(
                 model_geometry_hash=geometry_hash,
                 geometry_fingerprint=render_job.geometry_fingerprint,
                 excluded=run_dir,
+                archive_fd=archive_fd,
             )
             if reusable is not None:
                 try:
@@ -1197,6 +1274,15 @@ def generate_plan(
                     _write_manifest(run_dir, manifest)
                     _best_effort_readme(run_dir, manifest)
                     continue
+                except _ReuseTargetExists as error:
+                    _finalize_job_failure(
+                        job,
+                        started_clock=started_clock,
+                        error=error,
+                        process=None,
+                        temporary_artifact=temporary_artifact,
+                    )
+                    failed = True
                 except Exception as error:
                     _remove_temporary_artifact(final_artifact)
                     errors = job["warnings"]
@@ -1207,6 +1293,10 @@ def generate_plan(
                     )
                 finally:
                     reusable.close()
+            if failed:
+                _write_manifest(run_dir, manifest)
+                _best_effort_readme(run_dir, manifest)
+                break
             command = _command(Path(openscad), temporary_artifact,
                                archived_sources[render_job.model_id],
                                snapshots[render_job.model_id].revision_label, render_job)
@@ -1312,7 +1402,8 @@ def generate_plan(
         print(str(error), file=err)
         raise
     finally:
-        pass
+        if archive_fd >= 0:
+            os.close(archive_fd)
 
 
 def load_run(path: str | os.PathLike[str]) -> dict[str, object]:
