@@ -10,7 +10,7 @@ from plamp.cad_planning import (
     build_render_plan,
     plan_as_dict,
 )
-from plamp.cad_system import CadProduct, CadProductItem, CadSystem
+from plamp.cad_system import CadProduct, CadProductItem, CadSystem, load_system
 
 
 def model(model_id, sets, *, variables=None):
@@ -45,6 +45,35 @@ def product(name, items, *, variables=None, profiles=(), slicing=None):
 
 
 class CadPlanningTests(unittest.TestCase):
+    def test_repository_fit_and_function_expands_exact_order_and_paths(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        system = load_system(repo_root / "cad" / "plamp.system.cad.json", repo_root)
+        plan = build_render_plan(
+            system,
+            CadSelection(product="fit-and-function"),
+            {model_id: f"test-{model_id}" for model_id in system.models},
+        )
+        expected = (
+            ("relay_footprint", "component-floorplans"),
+            ("psu_footprint", "component-floorplans"),
+            ("converter_footprint", "component-floorplans"),
+            ("ac_duplex_panel", "top-panel-fit"),
+            ("dc_connector_panel", "top-panel-fit"),
+            ("usb_c_panel", "top-panel-fit"),
+            ("c13_panel", "top-panel-fit"),
+            ("panel_corner_fastener_test", "corner-coupons"),
+            ("corner_coupon", "corner-coupons"),
+            ("wall_corner_fastener_assembly", "corner-coupons"),
+        )
+        self.assertEqual(
+            tuple((job.model_id, job.set_name) for job in plan.jobs),
+            tuple(("plamp8", set_name) for set_name, _ in expected),
+        )
+        self.assertEqual(
+            tuple(job.product_paths for job in plan.jobs),
+            tuple((("fit-and-function", product_name),) for _, product_name in expected),
+        )
+
     def system(self, *, products=None, default_product=None):
         models = {
             "box": model("box", {

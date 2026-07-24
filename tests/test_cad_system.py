@@ -22,6 +22,56 @@ class CadSystemTests(unittest.TestCase):
         )
         self.assertEqual(system.default_product, "split-box")
         self.assertTrue(all(product.description.strip() for product in system.products.values()))
+        expected_items = {
+            "split-box": (
+                ("plamp8", "floor", None),
+                ("plamp8", "north_south_walls", None),
+                ("plamp8", "east_west_walls", None),
+                ("plamp8", "top_panel", None),
+                ("plamp8", "sub_panel", None),
+            ),
+            "fuse-box": (
+                ("plamp8", "box", None),
+                ("plamp8", "top_panel", None),
+                ("plamp8", "sub_panel", None),
+            ),
+            "panels": (
+                ("plamp8", "top_panel", None),
+                ("plamp8", "sub_panel", None),
+            ),
+            "assembly": (("plamp8", "assembly", None),),
+            "component-floorplans": (
+                ("plamp8", "relay_footprint", None),
+                ("plamp8", "psu_footprint", None),
+                ("plamp8", "converter_footprint", None),
+            ),
+            "top-panel-fit": (
+                ("plamp8", "ac_duplex_panel", None),
+                ("plamp8", "dc_connector_panel", None),
+                ("plamp8", "usb_c_panel", None),
+                ("plamp8", "c13_panel", None),
+            ),
+            "corner-coupons": (
+                ("plamp8", "panel_corner_fastener_test", None),
+                ("plamp8", "corner_coupon", None),
+                ("plamp8", "wall_corner_fastener_assembly", None),
+            ),
+            "fit-and-function": (
+                (None, None, "component-floorplans"),
+                (None, None, "top-panel-fit"),
+                (None, None, "corner-coupons"),
+            ),
+        }
+        self.assertEqual(tuple(expected_items), tuple(system.products))
+        for product_name, items in expected_items.items():
+            with self.subTest(product=product_name):
+                self.assertEqual(
+                    tuple(
+                        (item.model, item.set_name, item.product)
+                        for item in system.products[product_name].items
+                    ),
+                    items,
+                )
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
