@@ -55,6 +55,13 @@ class CadSelection:
     raw_defines: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if "set" in self.defines or any(
+            "set" in values for values in self.set_defines.values()
+        ) or "set" in parse_raw_defines(self.raw_defines):
+            raise ValueError(
+                "The selector-owned variable 'set' cannot be overridden; "
+                "select a set with the CAD set options"
+            )
         object.__setattr__(self, "sets", tuple(self.sets))
         object.__setattr__(self, "defines", _mapping(self.defines))
         object.__setattr__(self, "set_defines", MappingProxyType({
@@ -106,7 +113,7 @@ class _Candidate:
     set_name: str
     variant: str | None
     path: tuple[str, ...] | None
-    layers: tuple[tuple[str, CadProductItem], ...]
+    layers: tuple[tuple[str, int, CadProductItem], ...]
 
 
 def _selection_candidates(system: CadSystem, selection: CadSelection) -> list[_Candidate]:
@@ -124,7 +131,7 @@ def _selection_candidates(system: CadSystem, selection: CadSelection) -> list[_C
     candidates: list[_Candidate] = []
 
     def expand(name: str, path: tuple[str, ...],
-               layers: tuple[tuple[str, CadProductItem], ...],
+               layers: tuple[tuple[str, int, CadProductItem], ...],
                stack: tuple[str, ...]) -> None:
         if name in stack:
             start = stack.index(name)
@@ -135,7 +142,7 @@ def _selection_candidates(system: CadSystem, selection: CadSelection) -> list[_C
         current_path = path + (name,)
         product = system.products[name]
         for index, product_item in enumerate(product.items):
-            current_layers = layers + ((name, product_item),)
+            current_layers = layers + ((name, index, product_item),)
             if product_item.product is not None:
                 expand(product_item.product, current_path, current_layers, stack + (name,))
             else:
@@ -204,17 +211,16 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         layer(model.variables, "model", candidate.model_id)
         layer(model.sets[candidate.set_name].variables, "set",
               f"{candidate.model_id}/{candidate.set_name}")
-        for product_name, product_item in candidate.layers:
+        for product_name, _item_index, product_item in candidate.layers:
             profiles.extend(system.products[product_name].profiles)
             profiles.extend(product_item.profiles)
         for profile_id in profiles:
             profile = system.profiles.get(profile_id)
             if profile is not None:
                 layer(profile.cad, "profile", profile.qualified_id)
-        for product_name, product_item in reversed(candidate.layers):
+        for product_name, item_index, product_item in reversed(candidate.layers):
             layer(system.products[product_name].variables, "product", product_name)
-            index = system.products[product_name].items.index(product_item)
-            layer(product_item.variables, "item", f"{product_name}[{index}]")
+            layer(product_item.variables, "item", f"{product_name}[{item_index}]")
             slicing.update(system.products[product_name].slicing)
             slicing.update(product_item.slicing)
         layer(selection.defines, "cli", "defines")

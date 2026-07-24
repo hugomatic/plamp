@@ -265,6 +265,18 @@ module real() { cube(1); }
 
         self.assertEqual(model.source_defaults["clearance"], 0.2)
 
+    def test_first_same_line_function_or_module_cuts_off_default_parsing(self):
+        for declaration in ("function f() = 1;", "module m() { cube(1); }"):
+            with self.subTest(declaration=declaration):
+                scad = self.write(
+                    "things/plain/plain.scad",
+                    f'before = 1; {declaration} after = 2;\nset = ""; // [floor]\n',
+                )
+
+                model = load_model("plain", scad, self.root)
+
+                self.assertEqual(model.source_defaults, {"before": 1})
+
     def test_public_mappings_are_immutable(self):
         model = load_model("fixture", self.sidecar(sets={"floor": {}}), self.root)
         with self.assertRaises(TypeError):

@@ -291,8 +291,34 @@ def _top_level_statements(source: str) -> tuple[str, ...]:
         cleaned,
         flags=re.MULTILINE,
     )
-    declaration = re.search(r"^\s*(?:module|function)\b", cleaned, re.MULTILINE)
-    prefix = cleaned if declaration is None else cleaned[:declaration.start()]
+    declaration_offset: int | None = None
+    position = 0
+    in_string = False
+    while position < len(cleaned):
+        character = cleaned[position]
+        if character == '"':
+            backslashes = 0
+            index = position - 1
+            while index >= 0 and cleaned[index] == "\\":
+                backslashes += 1
+                index -= 1
+            if backslashes % 2 == 0:
+                in_string = not in_string
+            position += 1
+            continue
+        if not in_string and (character.isalpha() or character == "_"):
+            end = position + 1
+            while end < len(cleaned) and (
+                cleaned[end].isalnum() or cleaned[end] == "_"
+            ):
+                end += 1
+            if cleaned[position:end] in {"module", "function"}:
+                declaration_offset = position
+                break
+            position = end
+            continue
+        position += 1
+    prefix = cleaned if declaration_offset is None else cleaned[:declaration_offset]
     statements: list[str] = []
     start = 0
     in_string = False

@@ -63,6 +63,8 @@ def resolve_variables(
     history: dict[str, list[VariableLayer]] = {}
     for kind, source_id, typed_values, raw_values in layers:
         for name, value in typed_values.items():
+            if name == "set":
+                continue
             frozen = _freeze(value)
             typed[name] = frozen
             raw.pop(name, None)
@@ -70,6 +72,8 @@ def resolve_variables(
                 VariableLayer(kind, source_id, value=frozen)
             )
         for name, expression in raw_values.items():
+            if name == "set":
+                continue
             raw[name] = expression
             typed.pop(name, None)
             history.setdefault(name, []).append(

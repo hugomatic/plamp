@@ -640,6 +640,22 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(command, expected)
         self.assertEqual(json.loads(self.argv_file.read_text()), command[1:])
 
+    def test_generation_emits_exactly_one_selector_owned_set_define(self):
+        source_plan = plan("first")
+        unsafe_job = replace(
+            source_plan.jobs[0],
+            variables={**source_plan.jobs[0].variables, "set": "typed-override"},
+            raw_defines={**source_plan.jobs[0].raw_defines, "set": '"raw-override"'},
+        )
+        unsafe_plan = replace(source_plan, jobs=(unsafe_job,))
+
+        result = self.generate(unsafe_plan)
+        command = load_run(result.run_dir)["jobs"][0]["command"]
+        defines = [command[index + 1] for index, value in enumerate(command) if value == "-D"]
+
+        self.assertEqual([value for value in defines if value.startswith("set=")],
+                         ['set="first"'])
+
     def test_output_is_streamed_logged_and_statistics_are_extracted(self):
         stream = io.StringIO()
         result = self.generate(plan("first"), stdout=stream)

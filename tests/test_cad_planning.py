@@ -48,6 +48,18 @@ def product(name, items, *, variables=None, profiles=(), slicing=None):
 
 
 class CadPlanningTests(unittest.TestCase):
+    def test_selection_rejects_selector_owned_set_variable_overrides(self):
+        cases = (
+            {"defines": {"set": "floor"}},
+            {"set_defines": {"floor": {"set": "floor"}}},
+            {"raw_defines": ('set="floor"',)},
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments), self.assertRaisesRegex(
+                ValueError, "selector-owned variable 'set'"
+            ):
+                CadSelection(**arguments)
+
     def test_resolver_retains_typed_and_raw_replacement_history(self):
         typed, raw, provenance = resolve_variables((
             ("scad", "box.scad", {"width": 2, "height": 4}, {}),
@@ -67,6 +79,19 @@ class CadPlanningTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             provenance["new"] = provenance["width"]
 
+    def test_selector_owned_set_is_removed_from_every_variable_layer(self):
+        kinds = ("scad", "model", "set", "profile", "product", "item", "cli")
+        layers = []
+        for index, kind in enumerate(kinds):
+            layers.append((kind, str(index), {"set": f"typed-{kind}"}, {}))
+            layers.append((kind, f"raw-{index}", {}, {"set": f'"raw-{kind}"'}))
+
+        typed, raw, provenance = resolve_variables(tuple(layers))
+
+        self.assertNotIn("set", typed)
+        self.assertNotIn("set", raw)
+        self.assertNotIn("set", provenance)
+
     def test_exact_variable_precedence_and_complete_provenance(self):
         box = model(
             "box", {"floor": {"clearance": 0.2}},
@@ -81,7 +106,8 @@ class CadPlanningTests(unittest.TestCase):
             "complete",
             [item(model_id="box", set_name="floor",
                   variables={"clearance": 0.4})],
-            variables={"clearance": 0.35}, profiles=("draft",),
+            variables={"clearance": 0.35, "set": "product-choice"},
+            profiles=("draft",),
         )}
         system = CadSystem(
             "fixture", "", Path("cad/fixture.system.cad.json"),
