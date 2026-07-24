@@ -20,6 +20,7 @@ import time
 from typing import IO, Callable
 
 from plamp.cad_model import CadModel
+from plamp.cad_readme import render_run_readme
 from plamp.cad_planning import RenderJob, RenderPlan, plan_as_dict
 from plamp.cad_values import serialize_scad_value
 
@@ -354,20 +355,7 @@ def _write_manifest(run_dir: Path, manifest: dict[str, object]) -> None:
 
 
 def _write_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
-    lines = [
-        f"# CAD run {manifest['run_id']}",
-        "",
-        f"Status: {manifest['status']}",
-        "",
-        "| Artifact | Set | Status |",
-        "| --- | --- | --- |",
-    ]
-    jobs = manifest.get("jobs", [])
-    assert isinstance(jobs, list)
-    for job in jobs:
-        assert isinstance(job, Mapping)
-        lines.append(f"| {job['artifact_id']} | {job['set'] or 'default'} | {job['status']} |")
-    _atomic_text(run_dir / "readme.md", "\n".join(lines) + "\n")
+    _atomic_text(run_dir / "readme.md", render_run_readme(manifest))
 
 
 def _best_effort_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
@@ -399,7 +387,20 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
         "variables": _plain(job.variables),
         "raw_defines": dict(job.raw_defines),
         "variable_sources": {
-            name: {"kind": source.kind, "source_id": source.source_id}
+            name: {
+                "layers": [{
+                    "kind": layer.kind,
+                    "source_id": layer.source_id,
+                    "value": _plain(layer.value),
+                    "raw_expression": layer.raw_expression,
+                } for layer in source.layers],
+                "winner": {
+                    "kind": source.winner.kind,
+                    "source_id": source.winner.source_id,
+                    "value": _plain(source.winner.value),
+                    "raw_expression": source.winner.raw_expression,
+                },
+            }
             for name, source in job.variable_sources.items()
         },
         "profiles": [
@@ -433,6 +434,8 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
         "command": [],
         "artifact": None,
         "artifact_bytes": None,
+        "artifact_sha256": None,
+        "reused_from": None,
         "log": log,
         "exit_code": None,
         "echoes": [],
@@ -567,6 +570,73 @@ def _copy_snapshot(snapshot: SourceSnapshot, model_id: str, run_dir: Path) -> Pa
     return target
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _safe_archived_artifact(run_dir: Path, relative: object) -> Path | None:
+    if not isinstance(relative, str):
+        return None
+    candidate = run_dir / relative
+    try:
+        candidate.resolve(strict=True).relative_to(run_dir.resolve())
+    except (OSError, ValueError):
+        return None
+    return candidate if candidate.is_file() and candidate.stat().st_size > 0 else None
+
+
+def _find_geometry_artifact(
+    archive_root: Path, *, model_id: str, model_geometry_hash: str,
+    geometry_fingerprint: str, excluded: Path,
+) -> tuple[Path, dict[str, object], Mapping[str, object]] | None:
+    """Find a verified successful artifact with identical render inputs."""
+
+    if not archive_root.is_dir():
+        return None
+    for manifest_path in sorted(archive_root.glob("*/manifest.json"), reverse=True):
+        run_dir = manifest_path.parent
+        if run_dir == excluded or run_dir.name.startswith("."):
+            continue
+        try:
+            manifest = load_run(manifest_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        models = manifest.get("models")
+        jobs = manifest.get("jobs")
+        if not isinstance(models, Mapping) or not isinstance(jobs, list):
+            continue
+        model = models.get(model_id)
+        if not isinstance(model, Mapping) or model.get("geometry_hash") != model_geometry_hash:
+            continue
+        for job in jobs:
+            if not isinstance(job, Mapping) or (
+                job.get("model") != model_id
+                or job.get("geometry_fingerprint") != geometry_fingerprint
+                or job.get("status") != "complete"
+            ):
+                continue
+            artifact = _safe_archived_artifact(run_dir, job.get("artifact"))
+            if artifact is None:
+                continue
+            checksum = _file_sha256(artifact)
+            recorded = job.get("artifact_sha256")
+            if recorded is not None and recorded != checksum:
+                continue
+            return artifact, manifest, job
+    return None
+
+
+def _reuse_artifact(source: Path, target: Path) -> None:
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
 def _generation_identity(
     plan_data: Mapping[str, object], source_hashes: Mapping[str, str]
 ) -> dict[str, object]:
@@ -589,6 +659,28 @@ def _generation_identity(
             if isinstance(job, Mapping)
         ],
     }
+
+
+def _manufacturing_run_suffix(jobs: tuple[RenderJob, ...]) -> str:
+    fingerprints = tuple(job.manufacturing_fingerprint for job in jobs)
+    if len(fingerprints) == 1:
+        return fingerprints[0][:7]
+    digest = hashlib.sha256("\0".join(fingerprints).encode("ascii")).hexdigest()
+    return digest[:7]
+
+
+def _only_manufacturing_identity_differs(
+    first: Mapping[str, object], second: Mapping[str, object]
+) -> bool:
+    keys = (
+        "source_hashes", "system_manifest_hash", "selection",
+        "geometry_fingerprints",
+    )
+    return (
+        all(first.get(key) == second.get(key) for key in keys)
+        and first.get("manufacturing_fingerprints")
+        != second.get("manufacturing_fingerprints")
+    )
 
 
 def _manifest_generation_identity(
@@ -771,10 +863,11 @@ def generate_plan(
         archive_part_root = (
             Path(data_dir).resolve() / "cad" / "prints" / archive_name
         )
+        generation_identity = _generation_identity(plan_data, source_hashes)
         if output is None:
             duplicate = _find_duplicate_run(
                 archive_part_root,
-                _generation_identity(plan_data, source_hashes),
+                generation_identity,
                 local_now,
             )
             if duplicate is not None:
@@ -794,11 +887,20 @@ def generate_plan(
                 local_now, archive_name, selector,
                 "-".join(dict.fromkeys(snapshots[name].revision_label for name in selected_model_ids))
             )
-            run_dir = (
-                Path(output).resolve()
-                if output is not None
-                else archive_part_root / run_id
-            )
+            run_dir = Path(output).resolve() if output is not None else archive_part_root / run_id
+            if output is None and run_dir.is_dir():
+                try:
+                    existing_identity = _manifest_generation_identity(load_run(run_dir))
+                except (OSError, ValueError, json.JSONDecodeError):
+                    existing_identity = None
+                if (
+                    existing_identity is not None
+                    and _only_manufacturing_identity_differs(
+                        existing_identity, generation_identity
+                    )
+                ):
+                    run_id = f"{run_id}-mfg{_manufacturing_run_suffix(plan.jobs)}"
+                    run_dir = archive_part_root / run_id
             run_dir.mkdir(parents=True, exist_ok=False)
         else:
             run_dir = _hidden_directory(
@@ -878,6 +980,48 @@ def generate_plan(
             )
             temporary_artifact = run_dir / "artifacts" / f".{artifact_stem}.tmp.stl"
             final_artifact = run_dir / "artifacts" / f"{artifact_stem}.stl"
+            geometry_hash = (
+                snapshots[render_job.model_id].geometry_identity
+                or snapshots[render_job.model_id].source_identity
+            )
+            reusable = None if regeneration_target is not None else _find_geometry_artifact(
+                archive_part_root,
+                model_id=render_job.model_id,
+                model_geometry_hash=geometry_hash,
+                geometry_fingerprint=render_job.geometry_fingerprint,
+                excluded=run_dir,
+            )
+            if reusable is not None:
+                source_artifact, source_manifest, source_job = reusable
+                try:
+                    _reuse_artifact(source_artifact, final_artifact)
+                    (run_dir / str(job["log"])).touch()
+                    finished = _utc_now()
+                    job["status"] = "complete"
+                    job["finished_at"] = _timestamp(finished)
+                    job["elapsed_seconds"] = round(
+                        time.monotonic() - started_clock, 6
+                    )
+                    job["exit_code"] = 0
+                    job["artifact"] = str(final_artifact.relative_to(run_dir))
+                    job["artifact_bytes"] = final_artifact.stat().st_size
+                    job["artifact_sha256"] = _file_sha256(final_artifact)
+                    job["reused_from"] = {
+                        "run_id": source_manifest.get("run_id"),
+                        "artifact_id": source_job.get("artifact_id"),
+                        "artifact": source_job.get("artifact"),
+                    }
+                    _write_manifest(run_dir, manifest)
+                    _best_effort_readme(run_dir, manifest)
+                    continue
+                except Exception as error:
+                    _remove_temporary_artifact(final_artifact)
+                    errors = job["warnings"]
+                    assert isinstance(errors, list)
+                    errors.append(
+                        "Geometry reuse failed; rendering normally: "
+                        f"{_error_text(error)}"
+                    )
             command = _command(Path(openscad), temporary_artifact,
                                archived_sources[render_job.model_id],
                                snapshots[render_job.model_id].revision_label, render_job)
@@ -910,6 +1054,7 @@ def generate_plan(
                     job["status"] = "complete"
                     job["artifact"] = str(final_artifact.relative_to(run_dir))
                     job["artifact_bytes"] = final_artifact.stat().st_size
+                    job["artifact_sha256"] = _file_sha256(final_artifact)
                 else:
                     job["status"] = "failed"
                     failed = True

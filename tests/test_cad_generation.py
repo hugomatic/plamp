@@ -22,7 +22,8 @@ from plamp.cad_generation import (
 )
 from plamp.cad_model import CadModel, CadSet
 from plamp.cad_planning import CadSelection, RenderJob, RenderPlan, ResolvedProfile
-from plamp.cad_manufacturing import merge_manufacturing
+from plamp.cad_manufacturing import DirectiveSource, merge_manufacturing
+from plamp.cad_values import ResolvedVariable, VariableLayer
 
 
 JOB_FIELDS = {
@@ -31,7 +32,7 @@ JOB_FIELDS = {
     "variable_sources", "profiles", "manufacturing",
     "finished_at", "elapsed_seconds", "command", "artifact",
     "artifact_bytes", "log", "exit_code", "echoes", "messages", "warnings",
-    "errors", "geometry",
+    "errors", "geometry", "artifact_sha256", "reused_from",
 }
 
 
@@ -666,6 +667,127 @@ class CadGenerationTests(unittest.TestCase):
             "namespace": "local", "source": "local", "kind": "quality",
             "content_hash": "f" * 64, "path": "cad/profiles/draft.json",
         })
+
+    def test_manifest_preserves_complete_variable_provenance(self):
+        source_plan = plan("first")
+        job = replace(
+            source_plan.jobs[0],
+            variable_sources={"count": ResolvedVariable("count", (
+                VariableLayer("model", "fixture", value=3),
+                VariableLayer("cli", "defines", value=1),
+            ))},
+        )
+        result = self.generate(replace(source_plan, jobs=(job,)))
+        self.assertEqual(load_run(result.run_dir)["jobs"][0]["variable_sources"], {
+            "count": {
+                "layers": [
+                    {"kind": "model", "source_id": "fixture", "value": 3,
+                     "raw_expression": None},
+                    {"kind": "cli", "source_id": "defines", "value": 1,
+                     "raw_expression": None},
+                ],
+                "winner": {"kind": "cli", "source_id": "defines", "value": 1,
+                           "raw_expression": None},
+            },
+        })
+
+    def test_manufacturing_change_reuses_geometry_with_fresh_archive_metadata(self):
+        first_plan = plan("first")
+        first = self.generate(first_plan)
+        original_job = first_plan.jobs[0]
+        changed_job = replace(
+            original_job,
+            manufacturing=merge_manufacturing(((
+                DirectiveSource("profile:ironing"),
+                {"ironing": "recommended"},
+            ),)),
+            manufacturing_fingerprint="d" * 64,
+        )
+        changed_plan = replace(first_plan, jobs=(changed_job,))
+        self.argv_file.unlink()
+        zone = timezone(timedelta(hours=-10))
+        with mock.patch("plamp.cad_generation._local_now", return_value=datetime(
+            2026, 7, 23, 22, 20, tzinfo=zone,
+        )):
+            second = self.generate(changed_plan)
+        first_manifest = load_run(first.run_dir)
+        second_manifest = load_run(second.run_dir)
+        old_job = first_manifest["jobs"][0]
+        new_job = second_manifest["jobs"][0]
+
+        self.assertFalse(self.argv_file.exists())
+        self.assertNotEqual(first.run_dir, second.run_dir)
+        self.assertEqual(new_job["status"], "complete")
+        self.assertEqual(new_job["artifact_sha256"], old_job["artifact_sha256"])
+        self.assertEqual(new_job["reused_from"], {
+            "run_id": first_manifest["run_id"],
+            "artifact_id": old_job["artifact_id"],
+            "artifact": old_job["artifact"],
+        })
+        self.assertIn("Enable ironing", (second.run_dir / "readme.md").read_text())
+        self.assertEqual((second.run_dir / new_job["log"]).read_text(), "")
+
+    def test_same_minute_manufacturing_change_gets_distinct_run_identity(self):
+        source_plan = plan("first")
+        changed_plan = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        instant = datetime(
+            2026, 7, 23, 22, 19,
+            tzinfo=timezone(timedelta(hours=-10)),
+        )
+        with mock.patch("plamp.cad_generation._local_now", return_value=instant):
+            first = self.generate(source_plan)
+            second = self.generate(changed_plan)
+        self.assertNotEqual(first.run_dir, second.run_dir)
+        self.assertTrue(second.run_dir.name.endswith("-mfgddddddd"))
+
+    def test_geometry_reuse_rejects_failed_artifact(self):
+        source_plan = plan("first")
+        first = self.generate(source_plan)
+        manifest = load_run(first.run_dir)
+        manifest["jobs"][0]["status"] = "failed"
+        first.manifest_path.write_text(json.dumps(manifest))
+        changed = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        zone = timezone(timedelta(hours=-10))
+        with mock.patch("plamp.cad_generation._local_now", return_value=datetime(
+            2026, 7, 23, 22, 20, tzinfo=zone,
+        )):
+            self.generate(changed)
+        self.assertTrue(self.argv_file.exists())
+
+    def test_geometry_reuse_rejects_missing_artifact(self):
+        source_plan = plan("first")
+        first = self.generate(source_plan)
+        manifest = load_run(first.run_dir)
+        (first.run_dir / manifest["jobs"][0]["artifact"]).unlink()
+        self.argv_file.unlink()
+        changed = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        with mock.patch("plamp.cad_generation._local_now", return_value=datetime(
+            2026, 7, 23, 22, 20, tzinfo=timezone(timedelta(hours=-10)),
+        )):
+            self.generate(changed)
+        self.assertTrue(self.argv_file.exists())
+
+    def test_geometry_reuse_rejects_wrong_model_source_identity(self):
+        source_plan = plan("first")
+        first = self.generate(source_plan)
+        manifest = load_run(first.run_dir)
+        manifest["models"]["fixture"]["geometry_hash"] = "wrong-source"
+        first.manifest_path.write_text(json.dumps(manifest))
+        self.argv_file.unlink()
+        changed = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        with mock.patch("plamp.cad_generation._local_now", return_value=datetime(
+            2026, 7, 23, 22, 20, tzinfo=timezone(timedelta(hours=-10)),
+        )):
+            self.generate(changed)
+        self.assertTrue(self.argv_file.exists())
 
     def test_multiple_collision_allocated_jobs_publish_distinct_artifacts(self):
         source_plan = plan("a", "a-2", "a-2-2")
