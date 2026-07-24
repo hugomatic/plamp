@@ -22,12 +22,13 @@ from plamp.cad_generation import (
 )
 from plamp.cad_model import CadModel, CadSet
 from plamp.cad_planning import CadSelection, RenderJob, RenderPlan
+from plamp.cad_manufacturing import merge_manufacturing
 
 
 JOB_FIELDS = {
-    "artifact_id", "fingerprint", "model", "set", "variant_name", "product_paths",
+    "artifact_id", "geometry_fingerprint", "manufacturing_fingerprint", "model", "set", "variant_name", "product_paths",
     "variables", "raw_defines", "status", "queued_at", "started_at",
-    "variable_sources", "profiles", "slicing",
+    "variable_sources", "profiles", "manufacturing",
     "finished_at", "elapsed_seconds", "command", "artifact",
     "artifact_bytes", "log", "exit_code", "echoes", "messages", "warnings",
     "errors", "geometry",
@@ -38,12 +39,13 @@ def plan(*views):
     jobs = tuple(
         RenderJob(
             artifact_id=f"{view}--{'a' * 11}{index}",
-            fingerprint=f"{'a' * 63}{index}",
+            geometry_fingerprint=f"{'a' * 63}{index}",
+            manufacturing_fingerprint="c" * 64,
             model_id="fixture", set_name=view,
             variant_name=view,
             variables={"count": index, "label": "a b", "enabled": True},
             raw_defines={"quality": "$preview ? 2 : 20"},
-            variable_sources={}, profiles=(), slicing={},
+            variable_sources={}, profiles=(), manufacturing=merge_manufacturing(()),
             product_paths=(("print",),),
         )
         for index, view in enumerate(views, 1)
@@ -57,7 +59,7 @@ def distinct_plan(view):
     job = replace(
         source_plan.jobs[0],
         artifact_id=f"{view}--{'b' * 12}",
-        fingerprint="b" * 64,
+        geometry_fingerprint="b" * 64,
     )
     return RenderPlan(source_plan.system_name, source_plan.system_path,
                       source_plan.selection, (job,), source_plan.system_manifest_hash)
@@ -476,7 +478,7 @@ class CadGenerationTests(unittest.TestCase):
         source_plan = plan("floor")
         second = replace(
             source_plan.jobs[0], artifact_id=f"mount--{'d' * 12}",
-            fingerprint="d" * 64, model_id="holder", set_name="mount",
+            geometry_fingerprint="d" * 64, model_id="holder", set_name="mount",
             variant_name="mount",
         )
         two_model = replace(source_plan, jobs=(source_plan.jobs[0], second))
@@ -615,7 +617,9 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(set(manifest["jobs"][0]), JOB_FIELDS)
         self.assertEqual(manifest["jobs"][0]["variable_sources"], {})
         self.assertEqual(manifest["jobs"][0]["profiles"], [])
-        self.assertEqual(manifest["jobs"][0]["slicing"], {})
+        self.assertEqual(manifest["jobs"][0]["manufacturing"], {
+            "directives": {}, "notes": [],
+        })
         self.assertEqual(set(manifest["jobs"][0]["geometry"]), {
             "render_seconds", "simple", "vertices", "facets", "volumes",
         })

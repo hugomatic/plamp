@@ -90,7 +90,8 @@ class CadCliTests(unittest.TestCase):
         (self.root / "cad" / "profiles").mkdir(parents=True, exist_ok=True)
         (self.root / "cad" / "profiles" / "petg.json").write_text(json.dumps({
             "schema": "plamp-cad-profile/1", "name": "petg",
-            "kind": "material", "cad": {}, "slicing": {}, "machine": {},
+            "kind": "material", "cad": {"profile_gap": 0.2},
+            "slicing": {"supports": "forbidden"}, "machine": {},
         }) + "\n")
         (self.root / "cad" / "lib").mkdir(exist_ok=True)
         manifest = {
@@ -190,6 +191,57 @@ class CadCliTests(unittest.TestCase):
         )
         self.assertEqual(rc, 2)
         self.assertIn("cannot be combined", json.loads(conflict)[0]["message"])
+
+    def test_plan_resolves_default_and_explicit_profiles_with_human_advice(self):
+        self._clean_catalog()
+        preferences = self.data / "cad" / "preferences.json"
+        preferences.parent.mkdir(parents=True)
+        preferences.write_text(json.dumps({
+            "schema": "plamp-cad-preferences/1",
+            "default_profiles": {"alpha": ["petg"]},
+        }))
+
+        output, error, rc = self._run_main([
+            "cad", "plan", "fixture", "--set", "floor", "--profile", "petg",
+        ])
+        self.assertEqual((rc, error), (0, ""))
+        self.assertIn("Profiles: system:petg, system:petg", output)
+        self.assertIn("Supports: forbidden", output)
+        self.assertIn("Geometry fingerprint (SHA-256):", output)
+        self.assertIn("Manufacturing fingerprint (SHA-256):", output)
+
+        raw, error, rc = self._run_main([
+            "cad", "plan", "fixture", "--set", "floor",
+            "--no-default-profiles", "--json",
+        ])
+        self.assertEqual((rc, error), (0, ""))
+        value = json.loads(raw)
+        self.assertEqual(value["selection"]["profiles"], [])
+        self.assertFalse(value["selection"]["use_default_profiles"])
+        self.assertEqual(value["jobs"][0]["profiles"], [])
+        self.assertIn("manufacturing", value["jobs"][0])
+
+    def test_configured_default_system_precedes_noninteractive_ambiguity(self):
+        self._clean_catalog(second_system=True)
+        preferences = self.data / "cad" / "preferences.json"
+        preferences.parent.mkdir(parents=True)
+        preferences.write_text(json.dumps({
+            "schema": "plamp-cad-preferences/1", "default_system": "beta",
+        }))
+        output, error, rc = self._run_main(["cad", "models", "--json"])
+        self.assertEqual((rc, error), (0, ""))
+        self.assertEqual(json.loads(output)[0]["system"], "beta")
+
+        preferences.write_text(json.dumps({
+            "schema": "plamp-cad-preferences/1", "default_system": "missing",
+        }))
+        output, _error, rc = self._run_main(["cad", "models", "--json"])
+        self.assertEqual(rc, 2)
+        diagnostic = json.loads(output)[0]
+        self.assertIn(str(preferences), diagnostic["message"])
+        self.assertIn("plamp cad systems", diagnostic["message"])
+        self.assertIn("alpha", diagnostic["message"])
+        self.assertIn("beta", diagnostic["message"])
 
     def test_validate_uses_system_model_metadata_without_openscad(self):
         self._clean_catalog()

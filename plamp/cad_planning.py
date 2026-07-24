@@ -11,6 +11,12 @@ import re
 from types import MappingProxyType
 
 from plamp.cad_system import CadProductItem, CadSystem
+from plamp.cad_manufacturing import (
+    DirectiveSource,
+    ManufacturingPolicy,
+    merge_manufacturing,
+)
+from plamp.cad_profiles import CadProfile, resolve_profile_ids
 from plamp.cad_values import ResolvedVariable, parse_raw_defines, resolve_variables
 
 
@@ -53,6 +59,8 @@ class CadSelection:
     defines: Mapping[str, object] = field(default_factory=dict)
     set_defines: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     raw_defines: tuple[str, ...] = ()
+    profiles: tuple[str, ...] = ()
+    use_default_profiles: bool = True
 
     def __post_init__(self) -> None:
         if "set" in self.defines or any(
@@ -68,6 +76,7 @@ class CadSelection:
             name: _mapping(values) for name, values in self.set_defines.items()
         }))
         object.__setattr__(self, "raw_defines", tuple(self.raw_defines))
+        object.__setattr__(self, "profiles", tuple(self.profiles))
 
 
 @dataclass(frozen=True)
@@ -80,9 +89,10 @@ class RenderJob:
     raw_defines: Mapping[str, str]
     variable_sources: Mapping[str, ResolvedVariable]
     profiles: tuple[str, ...]
-    slicing: Mapping[str, object]
+    manufacturing: ManufacturingPolicy
     product_paths: tuple[tuple[str, ...], ...]
-    fingerprint: str
+    geometry_fingerprint: str
+    manufacturing_fingerprint: str
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "variables", _mapping(self.variables))
@@ -90,7 +100,6 @@ class RenderJob:
         object.__setattr__(self, "variable_sources",
                            MappingProxyType(dict(self.variable_sources)))
         object.__setattr__(self, "profiles", tuple(self.profiles))
-        object.__setattr__(self, "slicing", _mapping(self.slicing))
         object.__setattr__(self, "product_paths",
                            tuple(tuple(path) for path in self.product_paths))
 
@@ -178,7 +187,9 @@ def _selection_candidates(system: CadSystem, selection: CadSelection) -> list[_C
 
 
 def build_render_plan(system: CadSystem, selection: CadSelection,
-                      source_identities: Mapping[str, str]) -> RenderPlan:
+                      source_identities: Mapping[str, str], *,
+                      local_profiles: Mapping[str, CadProfile] = MappingProxyType({}),
+                      default_profile_ids: tuple[str, ...] = ()) -> RenderPlan:
     """Expand products or direct sets depth-first and deduplicate render jobs."""
 
     candidates = _selection_candidates(system, selection)
@@ -197,8 +208,12 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         variable_layers: list[
             tuple[str, str, Mapping[str, object], Mapping[str, str]]
         ] = []
-        profiles: list[str] = []
-        slicing: dict[str, object] = dict(model.sets[candidate.set_name].slicing)
+        requested_profiles: list[str] = []
+        manufacturing_layers: list[tuple[DirectiveSource, Mapping[str, object]]] = [
+            (DirectiveSource(f"model:{candidate.model_id}"), {}),
+            (DirectiveSource(f"set:{candidate.model_id}/{candidate.set_name}"),
+             model.sets[candidate.set_name].slicing),
+        ]
 
         def layer(values: Mapping[str, object], kind: str, source_id: str,
                   raw_values: Mapping[str, str] | None = None) -> None:
@@ -211,24 +226,53 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         layer(model.variables, "model", candidate.model_id)
         layer(model.sets[candidate.set_name].variables, "set",
               f"{candidate.model_id}/{candidate.set_name}")
-        for product_name, _item_index, product_item in candidate.layers:
-            profiles.extend(system.products[product_name].profiles)
-            profiles.extend(product_item.profiles)
-        for profile_id in profiles:
-            profile = system.profiles.get(profile_id)
-            if profile is not None:
-                layer(profile.cad, "profile", profile.qualified_id)
+        if candidate.layers:
+            top_product_name = candidate.layers[0][0]
+            requested_profiles.extend(system.products[top_product_name].profiles)
+            for layer_index, (product_name, _item_index, product_item) in enumerate(
+                candidate.layers
+            ):
+                if layer_index:
+                    requested_profiles.extend(system.products[product_name].profiles)
+                requested_profiles.extend(product_item.profiles)
+        requested_profiles.extend(selection.profiles)
+        resolved_profiles = resolve_profile_ids(
+            system.profiles, local_profiles,
+            defaults=default_profile_ids, requested=requested_profiles,
+            use_defaults=selection.use_default_profiles,
+        )
+        for profile in resolved_profiles:
+            layer(profile.cad, "profile", profile.qualified_id)
+            manufacturing_layers.append(
+                (DirectiveSource(profile.qualified_id), profile.slicing)
+            )
         for product_name, item_index, product_item in reversed(candidate.layers):
             layer(system.products[product_name].variables, "product", product_name)
             layer(product_item.variables, "item", f"{product_name}[{item_index}]")
-            slicing.update(system.products[product_name].slicing)
-            slicing.update(product_item.slicing)
+            manufacturing_layers.append(
+                (DirectiveSource(f"product:{product_name}"),
+                 system.products[product_name].slicing)
+            )
+            manufacturing_layers.append(
+                (DirectiveSource(f"item:{product_name}[{item_index}]"),
+                 product_item.slicing)
+            )
         layer(selection.defines, "cli", "defines")
         layer(selection.set_defines.get(candidate.set_name, {}), "cli", candidate.set_name)
         layer({}, "cli", "raw_defines", parse_raw_defines(selection.raw_defines))
         variables, raw, sources = resolve_variables(variable_layers)
+        manufacturing = merge_manufacturing(manufacturing_layers)
 
-        payload = {
+        effective_profile_ids = {
+            source.winner.source_id for source in sources.values()
+            if source.winner.kind == "profile"
+        }
+        geometry_profile_hashes = [
+            profile.content_hash for profile in resolved_profiles
+            if profile.qualified_id in effective_profile_ids
+        ]
+
+        geometry_payload = {
             "planning_schema_version": PLANNING_SCHEMA_VERSION,
             "system_manifest_hash": manifest_hash,
             "source_identity": source_identities[candidate.model_id],
@@ -236,27 +280,38 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
             "set_name": candidate.set_name,
             "variables": _plain(variables),
             "raw_defines": raw,
-            "profiles": profiles,
-            "slicing": _plain(slicing),
+            "profile_hashes": geometry_profile_hashes,
         }
-        fingerprint = _canonical_hash(payload)
-        if fingerprint not in unique:
-            unique[fingerprint] = {
+        geometry_fingerprint = _canonical_hash(geometry_payload)
+        manufacturing_fingerprint = _canonical_hash({
+            "profile_hashes": [profile.content_hash for profile in resolved_profiles],
+            "policy": manufacturing.fingerprint,
+        })
+        identity = _canonical_hash({
+            "geometry": geometry_fingerprint,
+            "manufacturing": manufacturing_fingerprint,
+        })
+        if identity not in unique:
+            unique[identity] = {
                 "candidate": candidate, "variables": variables, "raw": raw,
-                "sources": sources, "profiles": profiles, "slicing": slicing,
+                "sources": sources,
+                "profiles": [profile.qualified_id for profile in resolved_profiles],
+                "manufacturing": manufacturing,
+                "geometry_fingerprint": geometry_fingerprint,
+                "manufacturing_fingerprint": manufacturing_fingerprint,
                 "paths": [],
             }
-            order.append(fingerprint)
+            order.append(identity)
         if candidate.path is not None:
-            paths = unique[fingerprint]["paths"]
+            paths = unique[identity]["paths"]
             assert isinstance(paths, list)
             if candidate.path not in paths:
                 paths.append(candidate.path)
 
     jobs: list[RenderJob] = []
     base_counts: dict[str, int] = {}
-    for fingerprint in order:
-        details = unique[fingerprint]
+    for identity in order:
+        details = unique[identity]
         candidate = details["candidate"]
         assert isinstance(candidate, _Candidate)
         base = candidate.variant or candidate.set_name
@@ -264,16 +319,17 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         base_counts[base] = base_counts.get(base, 0) + 1
         variant_name = base if base_counts[base] == 1 else f"{base}-{base_counts[base]}"
         jobs.append(RenderJob(
-            artifact_id=f"{variant_name}--{fingerprint[:12]}",
+            artifact_id=f"{variant_name}--{str(details['geometry_fingerprint'])[:12]}",
             model_id=candidate.model_id, set_name=candidate.set_name,
             variant_name=variant_name,
             variables=details["variables"],  # type: ignore[arg-type]
             raw_defines=details["raw"],  # type: ignore[arg-type]
             variable_sources=details["sources"],  # type: ignore[arg-type]
             profiles=tuple(details["profiles"]),  # type: ignore[arg-type]
-            slicing=details["slicing"],  # type: ignore[arg-type]
+            manufacturing=details["manufacturing"],  # type: ignore[arg-type]
             product_paths=tuple(details["paths"]),  # type: ignore[arg-type]
-            fingerprint=fingerprint,
+            geometry_fingerprint=details["geometry_fingerprint"],  # type: ignore[arg-type]
+            manufacturing_fingerprint=details["manufacturing_fingerprint"],  # type: ignore[arg-type]
         ))
     return RenderPlan(system.name, system.path, selection, tuple(jobs), manifest_hash)
 
@@ -291,6 +347,8 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
             "defines": _plain(plan.selection.defines),
             "set_defines": _plain(plan.selection.set_defines),
             "raw_defines": list(plan.selection.raw_defines),
+            "profiles": list(plan.selection.profiles),
+            "use_default_profiles": plan.selection.use_default_profiles,
         },
         "jobs": [{
             "artifact_id": job.artifact_id, "model_id": job.model_id,
@@ -313,8 +371,20 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
                 }
                 for name, source in job.variable_sources.items()
             },
-            "profiles": list(job.profiles), "slicing": _plain(job.slicing),
+            "profiles": list(job.profiles),
+            "manufacturing": {
+                "directives": {
+                    key: {
+                        "value": _plain(directive.value),
+                        "strength": directive.strength,
+                        "source": directive.source.id,
+                    }
+                    for key, directive in job.manufacturing.directives.items()
+                },
+                "notes": [list(note) for note in job.manufacturing.notes],
+            },
             "product_paths": [list(path) for path in job.product_paths],
-            "fingerprint": job.fingerprint,
+            "geometry_fingerprint": job.geometry_fingerprint,
+            "manufacturing_fingerprint": job.manufacturing_fingerprint,
         } for job in plan.jobs],
     }

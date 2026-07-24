@@ -371,7 +371,8 @@ def _geometry() -> dict[str, object]:
 def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
     return {
         "artifact_id": job.artifact_id,
-        "fingerprint": job.fingerprint,
+        "geometry_fingerprint": job.geometry_fingerprint,
+        "manufacturing_fingerprint": job.manufacturing_fingerprint,
         "model": job.model_id,
         "set": job.set_name,
         "variant_name": job.variant_name,
@@ -383,7 +384,17 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
             for name, source in job.variable_sources.items()
         },
         "profiles": list(job.profiles),
-        "slicing": _plain(job.slicing),
+        "manufacturing": {
+            "directives": {
+                key: {
+                    "value": _plain(directive.value),
+                    "strength": directive.strength,
+                    "source": directive.source.id,
+                }
+                for key, directive in job.manufacturing.directives.items()
+            },
+            "notes": [list(note) for note in job.manufacturing.notes],
+        },
         "status": "queued",
         "queued_at": queued_at,
         "started_at": None,
@@ -537,8 +548,13 @@ def _generation_identity(
         "source_hashes": dict(source_hashes),
         "system_manifest_hash": plan_data.get("system_manifest_hash"),
         "selection": dict(selection),
-        "job_fingerprints": [
-            job.get("fingerprint")
+        "geometry_fingerprints": [
+            job.get("geometry_fingerprint")
+            for job in jobs
+            if isinstance(job, Mapping)
+        ],
+        "manufacturing_fingerprints": [
+            job.get("manufacturing_fingerprint")
             for job in jobs
             if isinstance(job, Mapping)
         ],
@@ -555,7 +571,9 @@ def _manifest_generation_identity(
     source_hashes = {str(name): value.get("content_hash") for name, value in models.items()
                      if isinstance(value, Mapping)}
     if len(source_hashes) != len(models) or not all(isinstance(value, str) for value in source_hashes.values()) or not all(
-        isinstance(job, Mapping) and isinstance(job.get("fingerprint"), str)
+        isinstance(job, Mapping)
+        and isinstance(job.get("geometry_fingerprint"), str)
+        and isinstance(job.get("manufacturing_fingerprint"), str)
         for job in jobs
     ):
         return None
@@ -563,7 +581,10 @@ def _manifest_generation_identity(
         "source_hashes": source_hashes,
         "system_manifest_hash": manifest.get("system", {}).get("manifest_hash") if isinstance(manifest.get("system"), Mapping) else None,
         "selection": manifest.get("selection"),
-        "job_fingerprints": [job["fingerprint"] for job in jobs],
+        "geometry_fingerprints": [job["geometry_fingerprint"] for job in jobs],
+        "manufacturing_fingerprints": [
+            job["manufacturing_fingerprint"] for job in jobs
+        ],
     }
 
 

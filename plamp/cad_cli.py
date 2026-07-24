@@ -31,6 +31,10 @@ from plamp.cad_system import (
     select_system,
 )
 from plamp.cad_planning import CadSelection, build_render_plan, plan_as_dict
+from plamp.cad_profiles import (
+    discover_local_profiles,
+    load_preferences,
+)
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
     CadSelectionError,
@@ -64,6 +68,14 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--revision", metavar="LABEL", help="literal revision engraving label"
+    )
+    parser.add_argument(
+        "--profile", action="append", default=[], metavar="NAME",
+        help="append a system or local manufacturing profile",
+    )
+    parser.add_argument(
+        "--no-default-profiles", action="store_true",
+        help="ignore configured default manufacturing profiles",
     )
 
 
@@ -188,6 +200,8 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "discover_systems": discover_systems,
         "select_system": select_system,
         "load_system": load_system,
+        "load_preferences": load_preferences,
+        "discover_local_profiles": discover_local_profiles,
     }
     if overrides:
         values.update(overrides)
@@ -270,8 +284,20 @@ def _selected_system(
 ) -> CadSystem:
     candidates = tuple(deps["discover_systems"](context.root))
     selector = getattr(args, "system", None)
+    configured = None
     if selector is not None:
         candidate = deps["select_system"](candidates, selector)
+    elif (configured := deps["load_preferences"](context.data_dir).default_system) is not None:
+        try:
+            candidate = deps["select_system"](candidates, configured)
+        except ValueError:
+            preferences_path = context.data_dir / "cad" / "preferences.json"
+            choices = ", ".join(item.name or str(item.path) for item in candidates)
+            raise ValueError(
+                f"configured default_system {configured!r} in {preferences_path} "
+                f"is not available; run 'plamp cad systems' and choose one of: "
+                f"{choices or '(none)'}"
+            ) from None
     elif len(candidates) == 1:
         candidate = candidates[0]
     elif not candidates:
@@ -288,6 +314,17 @@ def _selected_system(
     else:
         candidate = _choose_system(candidates, stdin, stdout)
     if candidate.status != "valid":
+        if configured is not None:
+            preferences_path = context.data_dir / "cad" / "preferences.json"
+            choices = ", ".join(
+                item.name or str(item.path)
+                for item in candidates if item.status == "valid"
+            )
+            raise ValueError(
+                f"configured default_system {configured!r} in {preferences_path} "
+                f"is invalid; run 'plamp cad systems' and choose one of: "
+                f"{choices or '(none)'}"
+            )
         if candidate.diagnostics:
             raise CadMetadataError(candidate.diagnostics)
         raise ValueError(f"CAD system is invalid: {candidate.path}")
@@ -518,6 +555,8 @@ def _selection(args: argparse.Namespace, *, menu: CadSelection | None = None) ->
         product=base.product, model=base.model, sets=base.sets,
         all_sets=base.all_sets, raw_defines=tuple(raw_defines),
         set_defines=_set_defines(list(getattr(args, "set_define", []) or [])),
+        profiles=tuple(getattr(args, "profile", []) or []),
+        use_default_profiles=not bool(getattr(args, "no_default_profiles", False)),
     )
 
 
@@ -576,12 +615,17 @@ def _prepare_system_plan(
 ) -> tuple[CadSystem, Any, dict[str, Any]]:
     system = selected_system or _selected_system(args, context, stdin, stdout, deps)
     selected = selection or _selection(args)
+    preferences = deps["load_preferences"](context.data_dir)
+    local_profiles = deps["discover_local_profiles"](context.data_dir)
+    default_profile_ids = preferences.default_profiles.get(system.name, ())
     if (selected.product is None and selected.model is None and not selected.sets
             and not selected.all_sets):
         if system.default_product is not None:
             selected = CadSelection(
                 product=system.default_product, defines=selected.defines,
                 set_defines=selected.set_defines, raw_defines=selected.raw_defines,
+                profiles=selected.profiles,
+                use_default_profiles=selected.use_default_profiles,
             )
         elif _interactive(stdin, args):
             chosen = _product_or_set_menu(system, stdin, stdout)
@@ -589,6 +633,8 @@ def _prepare_system_plan(
                 product=chosen.product, model=chosen.model, sets=chosen.sets,
                 all_sets=chosen.all_sets, defines=selected.defines,
                 set_defines=selected.set_defines, raw_defines=selected.raw_defines,
+                profiles=selected.profiles,
+                use_default_profiles=selected.use_default_profiles,
             )
         else:
             raise ValueError(
@@ -596,7 +642,8 @@ def _prepare_system_plan(
                 "or choose MODEL --set SET"
             )
     preliminary = deps["build_plan"](
-        system, selected, {name: "pending" for name in system.models}
+        system, selected, {name: "pending" for name in system.models},
+        local_profiles=local_profiles, default_profile_ids=default_profile_ids,
     )
     model_ids = tuple(dict.fromkeys(job.model_id for job in preliminary.jobs))
     snapshots: dict[str, Any] = {}
@@ -612,6 +659,7 @@ def _prepare_system_plan(
         plan = deps["build_plan"](
             system, selected,
             {name: snapshot.source_identity for name, snapshot in snapshots.items()},
+            local_profiles=local_profiles, default_profile_ids=default_profile_ids,
         )
         return system, plan, snapshots
     except BaseException:
@@ -686,6 +734,8 @@ def _generate(
             sets=selection.sets, all_sets=selection.all_sets,
             defines=overlays.defines, set_defines=overlays.set_defines,
             raw_defines=overlays.raw_defines,
+            profiles=overlays.profiles,
+            use_default_profiles=overlays.use_default_profiles,
         )
     system, plan, snapshots = _prepare_system_plan(
         args, context, deps, stdin, stdout, selection, selected_system=selected_system
@@ -853,7 +903,17 @@ def run_cad_command(
                     stdout.write(f"Selected {selected}\n{len(plan.jobs)} render job(s)\nJobs:\n")
                     for job in value["jobs"]:
                         stdout.write(f"- {job['model_id']} / {job['set_name'] or '(default)'}\n")
-                        stdout.write(f"  artifact: {job['artifact_id']}\n  fingerprint (SHA-256): {job['fingerprint']}\n")
+                        profiles = ", ".join(job["profiles"]) or "(none)"
+                        stdout.write(f"  Profiles: {profiles}\n")
+                        directives = job["manufacturing"]["directives"]
+                        if "supports" in directives:
+                            stdout.write(f"  Supports: {directives['supports']['value']}\n")
+                        stdout.write(
+                            f"  artifact: {job['artifact_id']}\n"
+                            f"  Geometry fingerprint (SHA-256): {job['geometry_fingerprint']}\n"
+                            f"  Manufacturing fingerprint (SHA-256): "
+                            f"{job['manufacturing_fingerprint']}\n"
+                        )
             finally:
                 for snapshot in snapshots.values():
                     if snapshot.cleanup_root is not None:

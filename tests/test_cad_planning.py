@@ -5,7 +5,7 @@ from types import MappingProxyType
 import unittest
 
 from plamp.cad_model import CadModel, CadSet
-from plamp.cad_profiles import CadProfile
+from plamp.cad_profiles import CadProfile, CadProfileError
 from plamp.cad_planning import (
     CadSelection,
     build_render_plan,
@@ -236,8 +236,8 @@ class CadPlanningTests(unittest.TestCase):
         explicit = build_render_plan(
             system, CadSelection(product="complete"), {"box": "a", "holder": "b"}
         )
-        self.assertEqual(tuple(j.fingerprint for j in default.jobs),
-                         tuple(j.fingerprint for j in explicit.jobs))
+        self.assertEqual(tuple(j.geometry_fingerprint for j in default.jobs),
+                         tuple(j.geometry_fingerprint for j in explicit.jobs))
 
         direct = build_render_plan(
             system, CadSelection(model="box", sets=("top", "floor", "top")),
@@ -295,27 +295,40 @@ class CadPlanningTests(unittest.TestCase):
                 item(product="inner", profiles=("edge",)),
             ], profiles=("outer-base",)),
         }
+        base = self.system(products=products)
+        profile_names = ("draft", "quality", "inner-base", "edge", "outer-base")
+        system = CadSystem(
+            base.name, base.description, base.path, base.models, base.products,
+            base.default_product, base.libraries,
+            MappingProxyType({
+                name: CadProfile(name, f"system:{name}", "quality",
+                                 Path(f"{name}.json"), {"mode": name}, {}, {},
+                                 f"{index:x}" * 64)
+                for index, name in enumerate(profile_names, 1)
+            }), base.metadata_snapshot,
+        )
         plan = build_render_plan(
-            self.system(products=products), CadSelection(product="complete"),
+            system, CadSelection(product="complete"),
             {"box": "source"},
         )
         self.assertEqual(len(plan.jobs), 2)
         self.assertEqual(plan.jobs[0].profiles, (
-            "outer-base", "edge", "inner-base", "draft",
+            "system:outer-base", "system:edge", "system:inner-base", "system:draft",
         ))
-        self.assertEqual(plan.jobs[1].profiles[-1], "quality")
-        self.assertNotEqual(plan.jobs[0].fingerprint, plan.jobs[1].fingerprint)
+        self.assertEqual(plan.jobs[1].profiles[-1], "system:quality")
+        self.assertNotEqual(plan.jobs[0].geometry_fingerprint,
+                            plan.jobs[1].geometry_fingerprint)
 
     def test_slicing_only_sibling_variants_remain_distinct_and_overlay_deepest_outward(self):
         products = {
             "inner": product("inner", [
                 item(model_id="box", set_name="floor", variant="fine",
-                     slicing={"layer_height": 0.12, "supports": "required"}),
+                     slicing={"layer_height": 0.12, "supports": "recommended"}),
                 item(model_id="box", set_name="floor", variant="coarse",
-                     slicing={"layer_height": 0.28, "supports": "required"}),
-            ], slicing={"supports": "discouraged", "brim": 2}),
+                     slicing={"layer_height": 0.28, "supports": "recommended"}),
+            ], slicing={"supports": "discouraged", "adhesion": "small brim"}),
             "complete": product("complete", [
-                item(product="inner", slicing={"brim": 5}),
+                item(product="inner", slicing={"adhesion": "large brim"}),
             ], slicing={"supports": "forbidden"}),
         }
         plan = build_render_plan(
@@ -323,25 +336,31 @@ class CadPlanningTests(unittest.TestCase):
             {"box": "source"},
         )
         self.assertEqual(len(plan.jobs), 2)
-        self.assertEqual(plan.jobs[0].slicing, {
-            "layer_height": 0.12, "supports": "forbidden", "brim": 5,
-        })
-        self.assertEqual(plan.jobs[1].slicing["layer_height"], 0.28)
-        self.assertNotEqual(plan.jobs[0].fingerprint, plan.jobs[1].fingerprint)
+        self.assertEqual(plan.jobs[0].manufacturing.directives["layer_height"].value,
+                         0.12)
+        self.assertEqual(plan.jobs[0].manufacturing.directives["supports"].value,
+                         "forbidden")
+        self.assertEqual(plan.jobs[0].manufacturing.directives["adhesion"].value,
+                         "large brim")
+        self.assertEqual(plan.jobs[1].manufacturing.directives["layer_height"].value,
+                         0.28)
+        self.assertNotEqual(plan.jobs[0].manufacturing_fingerprint,
+                            plan.jobs[1].manufacturing_fingerprint)
 
-    def test_fingerprint_is_stable_sha256_and_changes_with_manifest_or_source(self):
+    def test_geometry_fingerprint_is_stable_sha256_and_changes_with_source(self):
         system = self.nested_system()
         first = build_render_plan(system, CadSelection(product="complete"),
                                   {"box": "a", "holder": "b"})
         again = build_render_plan(system, CadSelection(product="complete"),
                                   {"box": "a", "holder": "b"})
-        self.assertEqual(tuple(j.fingerprint for j in first.jobs),
-                         tuple(j.fingerprint for j in again.jobs))
-        self.assertTrue(all(len(j.fingerprint) == 64 for j in first.jobs))
-        self.assertTrue(all(bytes.fromhex(j.fingerprint) for j in first.jobs))
+        self.assertEqual(tuple(j.geometry_fingerprint for j in first.jobs),
+                         tuple(j.geometry_fingerprint for j in again.jobs))
+        self.assertTrue(all(len(j.geometry_fingerprint) == 64 for j in first.jobs))
+        self.assertTrue(all(bytes.fromhex(j.geometry_fingerprint) for j in first.jobs))
         changed = build_render_plan(system, CadSelection(product="complete"),
                                     {"box": "different", "holder": "b"})
-        self.assertNotEqual(first.jobs[0].fingerprint, changed.jobs[0].fingerprint)
+        self.assertNotEqual(first.jobs[0].geometry_fingerprint,
+                            changed.jobs[0].geometry_fingerprint)
         expected_manifest_hash = hashlib.sha256(
             json.dumps(dict(system.metadata_snapshot), sort_keys=True, separators=(",", ":"))
             .encode()
@@ -364,9 +383,106 @@ class CadPlanningTests(unittest.TestCase):
                                       "system_manifest_hash", "jobs"})
         self.assertEqual(set(value["jobs"][0]), {
             "artifact_id", "model_id", "set_name", "variant_name", "variables",
-            "raw_defines", "variable_sources", "profiles", "slicing",
-            "product_paths", "fingerprint",
+            "raw_defines", "variable_sources", "profiles",
+            "product_paths", "geometry_fingerprint", "manufacturing_fingerprint",
+            "manufacturing",
         })
+
+    def test_slicing_only_profile_preserves_geometry_but_changes_manufacturing(self):
+        ironing = CadProfile(
+            "ironing", "system:ironing", "quality", Path("ironing.json"),
+            {}, {"ironing": "recommended"}, {}, "1" * 64,
+        )
+        base = self.system()
+        system = CadSystem(
+            base.name, base.description, base.path, base.models, base.products,
+            base.default_product, base.libraries,
+            MappingProxyType({"ironing": ironing}), base.metadata_snapshot,
+        )
+        plain = build_render_plan(
+            system, CadSelection(model="box", sets=("top",)), {"box": "source"}
+        ).jobs[0]
+        profiled = build_render_plan(
+            system,
+            CadSelection(model="box", sets=("top",), profiles=("system:ironing",)),
+            {"box": "source"},
+        ).jobs[0]
+        self.assertEqual(plain.geometry_fingerprint, profiled.geometry_fingerprint)
+        self.assertNotEqual(plain.manufacturing_fingerprint,
+                            profiled.manufacturing_fingerprint)
+        self.assertEqual(profiled.profiles, ("system:ironing",))
+        self.assertEqual(profiled.manufacturing.directives["ironing"].source.id,
+                         "system:ironing")
+
+    def test_defaults_profile_order_and_cad_precedence(self):
+        def profile_value(name, value, hash_character):
+            return CadProfile(name, f"system:{name}", "quality", Path(f"{name}.json"),
+                              {"clearance": value}, {}, {}, hash_character * 64)
+        profiles = MappingProxyType({
+            "default": profile_value("default", 1, "1"),
+            "product": profile_value("product", 2, "2"),
+            "item": profile_value("item", 3, "3"),
+            "cli": profile_value("cli", 4, "4"),
+        })
+        products = {"complete": product(
+            "complete", [item(model_id="box", set_name="floor",
+                              profiles=("item",), variables={"clearance": 5})],
+            profiles=("product",),
+        )}
+        base = self.system(products=products)
+        system = CadSystem(
+            base.name, base.description, base.path, base.models, base.products,
+            base.default_product, base.libraries, profiles, base.metadata_snapshot,
+        )
+        job = build_render_plan(
+            system,
+            CadSelection(product="complete", profiles=("cli",)),
+            {"box": "source"}, default_profile_ids=("default",),
+        ).jobs[0]
+        self.assertEqual(job.profiles, (
+            "system:default", "system:product", "system:item", "system:cli",
+        ))
+        self.assertEqual(job.variables["clearance"], 5)
+        self.assertEqual(tuple(layer.kind for layer in job.variable_sources["clearance"].layers),
+                         ("model", "profile", "profile", "profile", "profile",
+                          "item"))
+        without_defaults = build_render_plan(
+            system,
+            CadSelection(product="complete", profiles=("cli",),
+                         use_default_profiles=False),
+            {"box": "source"}, default_profile_ids=("default",),
+        ).jobs[0]
+        self.assertNotIn("system:default", without_defaults.profiles)
+
+    def test_ambiguous_short_profile_and_hard_manufacturing_conflict_fail(self):
+        system_profile = CadProfile(
+            "draft", "system:draft", "quality", Path("system.json"), {}, {}, {}, "a" * 64
+        )
+        local_profile = CadProfile(
+            "draft", "local:draft", "quality", Path("local.json"), {}, {}, {}, "b" * 64
+        )
+        base = self.system()
+        system = CadSystem(
+            base.name, base.description, base.path, base.models, base.products,
+            base.default_product, base.libraries,
+            MappingProxyType({"draft": system_profile}), base.metadata_snapshot,
+        )
+        with self.assertRaises(CadProfileError):
+            build_render_plan(
+                system,
+                CadSelection(model="box", profiles=("draft",)), {"box": "source"},
+                local_profiles={"draft": local_profile},
+            )
+
+        conflict_products = {"complete": product(
+            "complete", [item(model_id="box", set_name="floor",
+                              slicing={"supports": "required"})],
+            slicing={"supports": "forbidden"},
+        )}
+        conflict = self.system(products=conflict_products)
+        with self.assertRaisesRegex(ValueError, "Conflicting requirements"):
+            build_render_plan(conflict, CadSelection(product="complete"),
+                              {"box": "source"})
 
 
 if __name__ == "__main__":
