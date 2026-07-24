@@ -97,10 +97,11 @@ plamp cad generate
 
 ### Navigate systems, models, sets, and products
 
-A **system** is a catalog that can span several OpenSCAD **models**. Each model
-declares renderable **sets** in its adjacent `.cad.json` sidecar. A system
-defines ordered **products**, which may combine sets from multiple models or
-nest other products. Every navigation listing includes descriptions:
+A **system** is a catalog that can span several OpenSCAD **models**. Each
+model's SCAD `set` declaration is the authoritative ordered set list; its
+adjacent `.cad.json` sidecar describes those sets. A system defines ordered
+**products**, which may combine sets from multiple models or nest other
+products. Every navigation listing includes descriptions:
 
 ```bash
 plamp cad systems
@@ -157,7 +158,7 @@ sidecar, and registers the model in the selected system manifest.
 ### Run archives and diagnostics
 
 By default each generation is stored at
-`$PLAMP_DATA_DIR/cad/prints/<model>/<RUN_ID>/`. This instance-data directory
+`$PLAMP_DATA_DIR/cad/prints/<system>/<RUN_ID>/`. This instance-data directory
 contains `manifest.json`, a generated `readme.md`, the archived `source/`, STL
 files under `artifacts/`, and complete OpenSCAD output under `logs/`. The
 run ID is local-time and human-readable; for example:

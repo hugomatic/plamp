@@ -6,9 +6,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-import textwrap
 import unittest
-from argparse import Namespace
 from pathlib import Path
 from unittest import mock
 
@@ -24,37 +22,7 @@ from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
 
-SOURCE = textwrap.dedent("""\
-    view = "assembly"; // [floor, box, assembly]
-    /* generate.json
-    {
-      "default_preset": "split",
-      "views": {
-        "floor": {"description": "Printable floor", "variables": {"flag": true}},
-        "box": {"description": "Fused box"},
-        "assembly": {"description": "Complete assembly"}
-      },
-      "presets": {
-        "split": {
-          "description": "Separate printable pieces",
-          "items": ["view:floor", "view:box"]
-        }
-      }
-    }
-    */
-    cube(1);
-""")
-
-SCAFFOLD_SOURCE = b'''view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
-/* generate.json
-{"default_preset":"both","views":{"__PLAMP_PART__":{"description":"Part"},"assembly":{"description":"Assembly"}},"presets":{"both":{"items":["view:__PLAMP_PART__","view:assembly"]}}}
-*/
-module __PLAMP_PART___positive() { cube(1); }
-module __PLAMP_PART___negative() { cylinder(1); }
-module __PLAMP_PART__() { difference() { __PLAMP_PART___positive(); __PLAMP_PART___negative(); } }
-if (view == "__PLAMP_PART__") { __PLAMP_PART__(); }
-else if (view == "assembly") { __PLAMP_PART__(); }
-'''
+SOURCE = 'set = ""; // [floor, assembly]\ncube(1);\n'
 
 
 class CadCliTests(unittest.TestCase):
@@ -78,6 +46,17 @@ class CadCliTests(unittest.TestCase):
 
     def env(self):
         return {"PLAMP_ROOT": str(self.root), "PLAMP_DATA_DIR": str(self.data)}
+
+    def _fake_openscad(self):
+        fake = self.root / "fake-openscad-common"
+        fake.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = --version ]; then echo "OpenSCAD test"; exit 0; fi\n'
+            'out="$2"\n'
+            "printf 'solid fake\\nendsolid fake\\n' > \"$out\"\n"
+        )
+        fake.chmod(0o755)
+        return fake
 
     def test_cad_help_lists_all_commands(self):
         stdout = io.StringIO()
@@ -636,48 +615,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(diagnostics[0]["code"], "CAD100")
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_validate_does_not_call_openscad(self):
-        return self.test_validate_uses_system_model_metadata_without_openscad()
-        calls = []
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "validate", "fixture", "--json"], env=self.env(), stdout=stdout,
-            stderr=io.StringIO(), cad_generate_func=lambda *a, **k: calls.append((a, k)),
-        )
-        self.assertEqual(rc, 0)
-        self.assertEqual(calls, [])
-        self.assertTrue(json.loads(stdout.getvalue())["valid"])
 
-    def test_dirty_source_can_be_planned_without_revision(self):
-        return self.test_dirty_system_model_set_can_be_planned_without_revision()
-        self.scad.write_text(SOURCE + "// authoring change\n", encoding="utf-8")
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "plan", "fixture", "--json"], env=self.env(), stdout=stdout,
-            stderr=io.StringIO(),
-        )
-        self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(stdout.getvalue())["job_count"], 2)
 
-    def test_repeatable_views_and_raw_defines_reach_generation(self):
-        return self.test_repeatable_sets_keep_order_and_set_define_reaches_generation()
-        captured = []
-
-        def generate(plan, **kwargs):
-            captured.append((plan, kwargs))
-            return {"run_id": "run-1", "status": "complete", "jobs": []}
-
-        rc = main(
-            ["cad", "generate", "fixture", "--view", "assembly", "--view", "box",
-             "--openscad", str(self._fake_openscad()),
-             "--define", "quality=$preview ? 2 : 20", "--view-define", "box:fit=0.2", "--json"],
-            env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(), cad_generate_func=generate,
-        )
-        self.assertEqual(rc, 0)
-        selection = captured[0][0].selection
-        self.assertEqual(selection.views, ("assembly", "box"))
-        self.assertEqual(selection.raw_defines, ("quality=$preview ? 2 : 20",))
-        self.assertEqual(selection.raw_view_defines["box"], ("fit=0.2",))
 
     def test_generate_and_menu_accept_regenerate_switch(self):
         parser = build_parser()
@@ -688,349 +627,16 @@ class CadCliTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertTrue(parser.parse_args(argv).regenerate)
 
-    def test_noninteractive_duplicate_reports_existing_path_and_switch(self):
-        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
-        existing = self.data / "cad" / "prints" / "fixture" / "existing"
 
-        class NonInteractiveInput(io.StringIO):
-            def isatty(self):
-                return False
 
-            def readline(self, *args, **kwargs):
-                raise AssertionError("non-interactive duplicate must not read stdin")
 
-        for json_output in (False, True):
-            with self.subTest(json_output=json_output):
-                stdout, stderr = io.StringIO(), io.StringIO()
-                argv = ["cad", "generate", "fixture"]
-                if json_output:
-                    argv.append("--json")
-                rc = main(
-                    argv,
-                    env=self.env(),
-                    stdin=NonInteractiveInput(),
-                    stdout=stdout,
-                    stderr=stderr,
-                    cad_generate_func=lambda *args, **kwargs: (
-                        _ for _ in ()
-                    ).throw(CadRunExistsError("existing", existing)),
-                )
-                output = stdout.getvalue() + stderr.getvalue()
-                self.assertEqual(rc, 4)
-                self.assertIn(str(existing), output)
-                self.assertIn("--regenerate", output)
 
-    def test_interactive_duplicate_can_regenerate_existing_run(self):
-        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
-        existing = self.data / "cad" / "prints" / "fixture" / "existing"
-        calls = []
 
-        class TtyInput(io.StringIO):
-            def isatty(self):
-                return True
 
-        def generate(plan, **kwargs):
-            calls.append(kwargs)
-            if len(calls) == 1:
-                raise CadRunExistsError("existing", existing)
-            return {"run_id": "existing", "status": "complete", "jobs": []}
 
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "generate", "fixture"],
-            env=self.env(),
-            stdin=TtyInput("yes\n"),
-            stdout=stdout,
-            stderr=io.StringIO(),
-            cad_generate_func=generate,
-        )
 
-        self.assertEqual(rc, 0)
-        self.assertEqual([call["regenerate"] for call in calls], [False, True])
-        self.assertIn(
-            f"WARNING: matching CAD run already exists: {existing}\n",
-            stdout.getvalue(),
-        )
-        self.assertIn("Regenerate existing run? [y/N] ", stdout.getvalue())
 
-    def test_explicit_regenerate_skips_interactive_question(self):
-        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
-        calls = []
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "generate", "fixture", "--regenerate"],
-            env=self.env(),
-            stdin=io.StringIO(),
-            stdout=stdout,
-            stderr=io.StringIO(),
-            cad_generate_func=lambda plan, **kwargs: calls.append(kwargs) or {
-                "run_id": "existing", "status": "complete", "jobs": [],
-            },
-        )
 
-        self.assertEqual(rc, 0)
-        self.assertTrue(calls[0]["regenerate"])
-        self.assertNotIn("Regenerate existing run?", stdout.getvalue())
-
-    def test_interactive_duplicate_decline_keeps_existing_run(self):
-        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
-        existing = self.data / "cad" / "prints" / "fixture" / "existing"
-        calls = []
-
-        class TtyInput(io.StringIO):
-            def isatty(self):
-                return True
-
-        stderr = io.StringIO()
-        rc = main(
-            ["cad", "generate", "fixture"],
-            env=self.env(),
-            stdin=TtyInput("n\n"),
-            stdout=io.StringIO(),
-            stderr=stderr,
-            cad_generate_func=lambda *args, **kwargs: calls.append(kwargs) or (
-                _ for _ in ()
-            ).throw(CadRunExistsError("existing", existing)),
-        )
-
-        self.assertEqual(rc, 4)
-        self.assertEqual(len(calls), 1)
-        self.assertIn(str(existing), stderr.getvalue())
-
-    def test_menu_uses_same_regeneration_confirmation(self):
-        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
-        existing = self.data / "cad" / "prints" / "fixture" / "existing"
-        calls = []
-
-        class TtyInput(io.StringIO):
-            def isatty(self):
-                return True
-
-        def generate(plan, **kwargs):
-            calls.append(kwargs)
-            if len(calls) == 1:
-                raise CadRunExistsError("existing", existing)
-            return {"run_id": "existing", "status": "complete", "jobs": []}
-
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "menu", "fixture"],
-            env=self.env(),
-            stdin=TtyInput("1\ny\n"),
-            stdout=stdout,
-            stderr=io.StringIO(),
-            cad_generate_func=generate,
-        )
-
-        self.assertEqual(rc, 0)
-        self.assertEqual([call["regenerate"] for call in calls], [False, True])
-        self.assertIn("Select one preset", stdout.getvalue())
-        self.assertIn("Regenerate existing run?", stdout.getvalue())
-
-    def _fake_openscad(self):
-        fake = self.root / "fake-openscad-common"
-        fake.write_text(
-            "#!/bin/sh\n"
-            'if [ "$1" = --version ]; then echo "OpenSCAD test"; exit 0; fi\n'
-            'out="$2"\n'
-            "printf 'solid fake\\nendsolid fake\\n' > \"$out\"\n"
-        )
-        fake.chmod(0o755)
-        return fake
-
-    def test_menu_and_generate_share_the_same_openscad_resolver(self):
-        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
-        parser = build_parser()
-        resolved = self.root / "resolved-openscad"
-        calls = []
-        dependencies = {
-            "resolve_openscad": lambda explicit: calls.append(explicit) or resolved,
-            "generate": lambda plan, **kwargs: {
-                "run_id": "run-1", "status": "complete", "jobs": [],
-                "openscad": str(kwargs["openscad"]),
-            },
-        }
-        for argv, stdin in (
-            (["cad", "generate", "fixture", "--json"], io.StringIO()),
-            (["cad", "menu", "fixture"], io.StringIO("1\n")),
-        ):
-            with self.subTest(argv=argv):
-                rc = run_cad_command(
-                    parser.parse_args(argv), self.context, stdin,
-                    io.StringIO(), io.StringIO(), dependencies,
-                )
-                self.assertEqual(rc, 0)
-        self.assertEqual(calls, [None, None])
-
-    def test_direct_preview_defaults_precede_explicit_overrides(self):
-        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
-        argv_path = self.root / "preview-argv.json"
-        fake = self.root / "preview-openscad"
-        fake.write_text(textwrap.dedent(f"""\
-            #!/usr/bin/env python3
-            import json, pathlib, sys
-            if "--version" in sys.argv:
-                print("OpenSCAD test")
-                raise SystemExit(0)
-            pathlib.Path({str(argv_path)!r}).write_text(json.dumps(sys.argv[1:]))
-            pathlib.Path(sys.argv[sys.argv.index("-o") + 1]).write_text(
-                "solid preview\\nendsolid preview\\n"
-            )
-        """))
-        fake.chmod(0o755)
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "generate", "fixture", "--preview",
-             "--define", "render_fn=48", "--define", "render_text=true",
-             "--openscad", str(fake), "--json"],
-            env=self.env(), stdout=stdout, stderr=io.StringIO(),
-        )
-        self.assertEqual(rc, 0)
-        manifest = json.loads(stdout.getvalue())
-        effective = manifest["jobs"][0]["raw_defines"]
-        self.assertEqual(effective["render_fn"], "48")
-        self.assertEqual(effective["render_text"], "true")
-        self.assertNotIn("ball_quality", effective)
-        argv = json.loads(argv_path.read_text())
-        defines = [argv[index + 1] for index, item in enumerate(argv) if item == "-D"]
-        self.assertEqual(defines.count("render_fn=48"), 1)
-        self.assertEqual(defines.count("render_text=true"), 1)
-        self.assertFalse(any(item.startswith("ball_quality=") for item in defines))
-
-    def test_legacy_commit_uses_commit_mode_but_revision_is_literal(self):
-        return self.test_generate_has_no_legacy_output_or_commit_arguments()
-        parser = build_parser()
-        modes = []
-
-        def prepare(root, source, revision, *, revision_is_commit=False):
-            modes.append((revision, revision_is_commit))
-            return __import__("plamp.cad_generation", fromlist=["SourceSnapshot"]).SourceSnapshot(
-                source, "identity", "commit", "label", False, None
-            )
-
-        dependencies = {
-            "prepare_source": prepare,
-            "resolve_openscad": lambda explicit: self._fake_openscad(),
-            "generate": lambda plan, **kwargs: {"run_id": "run", "status": "complete", "jobs": []},
-        }
-        cases = (
-            (["cad", "generate", "fixture", str(self.root / "out"), "abc123"], ("abc123", True)),
-            (["cad", "generate", "fixture", "--revision", "HEAD"], ("HEAD", False)),
-        )
-        for argv, expected in cases:
-            with self.subTest(argv=argv):
-                rc = run_cad_command(
-                    parser.parse_args(argv), self.context, io.StringIO(),
-                    io.StringIO(), io.StringIO(), dependencies,
-                )
-                self.assertEqual(rc, 0)
-                self.assertEqual(modes[-1], expected)
-
-    def test_legacy_positional_commit_archives_and_names_with_short_hash(self):
-        return self.test_generate_has_no_legacy_output_or_commit_arguments()
-        old_commit = subprocess.run(
-            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
-            check=True, text=True, stdout=subprocess.PIPE,
-        ).stdout.strip()
-        old_source = self.scad.read_text()
-        self.scad.write_text(SOURCE.replace("cube(1)", "cube(2)"), encoding="utf-8")
-        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
-        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "second"], check=True)
-        short = subprocess.run(
-            ["git", "-C", str(self.root), "rev-parse", "--short", old_commit],
-            check=True, text=True, stdout=subprocess.PIPE,
-        ).stdout.strip()
-        output = self.root / "historical-output"
-        stdout = io.StringIO()
-
-        rc = main(
-            ["cad", "generate", "fixture", str(output), old_commit,
-             "--openscad", str(self._fake_openscad()), "--json"],
-            env=self.env(), stdout=stdout, stderr=io.StringIO(),
-        )
-
-        self.assertEqual(rc, 0)
-        manifest = json.loads(stdout.getvalue())
-        self.assertEqual(manifest["source"]["commit"], old_commit)
-        self.assertEqual(manifest["source"]["revision"], short)
-        artifact_name = Path(manifest["jobs"][0]["artifact"]).name
-        self.assertIn(short, artifact_name)
-        self.assertNotIn(old_commit, artifact_name)
-        self.assertIn(f'revision_string="{short}"', manifest["jobs"][0]["command"])
-        archived = output / "source" / "things" / "fixture" / "fixture.scad"
-        self.assertEqual(archived.read_text(), old_source)
-
-    def test_generate_uses_the_same_snapshot_for_planning_and_rendering(self):
-        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
-        captured = {}
-
-        def generate(plan, **kwargs):
-            captured["fingerprint"] = plan.jobs[0].fingerprint
-            self.scad.write_text(SOURCE.replace("cube(1)", "cube(99)"))
-            return generate_plan(
-                plan,
-                env={**os.environ, "FAKE_ARGV": str(self.root / "argv")},
-                **kwargs,
-            )
-
-        fake = self.root / "fake-openscad"
-        fake.write_text(
-            "#!/bin/sh\n"
-            'if [ "$1" = --version ]; then echo fake; exit 0; fi\n'
-            'out="$2"\n'
-            "printf 'solid x\\nendsolid x\\n' > \"$out\"\n"
-        )
-        fake.chmod(0o755)
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "generate", "fixture", "--view", "floor", "--openscad", str(fake), "--json"],
-            env=self.env(), stdout=stdout, stderr=io.StringIO(), cad_generate_func=generate,
-        )
-
-        self.assertEqual(rc, 0)
-        manifest = json.loads(stdout.getvalue())
-        run_dir = self.data / "cad" / "prints" / "fixture" / manifest["run_id"]
-        archived = run_dir / "source" / "things" / "fixture" / "fixture.scad"
-        self.assertIn("cube(1)", archived.read_text())
-        self.assertNotIn("cube(99)", archived.read_text())
-        self.assertEqual(manifest["jobs"][0]["fingerprint"], captured["fingerprint"])
-
-    def test_menu_retains_planned_snapshot_through_real_generation_then_cleans_it(self):
-        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
-        fake = self.root / "fake-openscad"
-        fake.write_text(
-            "#!/bin/sh\n"
-            'if [ "$1" = --version ]; then echo fake; exit 0; fi\n'
-            'out="$2"\n'
-            "printf 'solid x\\nendsolid x\\n' > \"$out\"\n"
-        )
-        fake.chmod(0o755)
-        observed = {}
-
-        def generate(plan, **kwargs):
-            snapshot_root = kwargs["snapshot"].cleanup_root
-            observed["snapshot_root"] = snapshot_root
-            self.assertIsNotNone(snapshot_root)
-            self.assertTrue(snapshot_root.is_dir())
-            self.assertTrue(kwargs["snapshot"].scad_path.is_file())
-            return generate_plan(plan, env=os.environ, **kwargs)
-
-        rc = main(
-            ["cad", "menu", "fixture", "--openscad", str(fake)],
-            env=self.env(),
-            stdin=io.StringIO("1\n"),
-            stdout=io.StringIO(),
-            stderr=io.StringIO(),
-            cad_generate_func=generate,
-        )
-
-        self.assertEqual(rc, 0)
-        self.assertFalse(observed["snapshot_root"].exists())
-        manifests = list(
-            (self.data / "cad" / "prints" / "fixture").glob("*/manifest.json")
-        )
-        self.assertEqual(len(manifests), 1)
-        self.assertEqual(json.loads(manifests[0].read_text())["status"], "complete")
 
     def test_menu_json_is_rejected_before_stdin_or_generation(self):
         reads = []
@@ -1054,49 +660,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(reads, [])
         self.assertEqual(calls, [])
 
-    def test_menu_eof_cancels_without_retry_or_generation(self):
-        return self.test_menu_eof_and_interrupt_are_clean_cancellations()
-        calls = []
-        stdout, stderr = io.StringIO(), io.StringIO()
-        rc = main(
-            ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO(""),
-            stdout=stdout, stderr=stderr,
-            cad_generate_func=lambda *a, **k: calls.append((a, k)),
-        )
-        self.assertEqual(rc, 2)
-        self.assertEqual(stdout.getvalue().count("Select"), 1)
-        self.assertIn("cancelled", stderr.getvalue().lower())
-        self.assertEqual(calls, [])
 
-    def test_menu_interrupt_is_selection_cancellation(self):
-        return self.test_menu_eof_and_interrupt_are_clean_cancellations()
-        class InterruptingInput:
-            def readline(self):
-                raise KeyboardInterrupt()
 
-        calls = []
-        stderr = io.StringIO()
-        rc = main(
-            ["cad", "menu", "fixture"], env=self.env(), stdin=InterruptingInput(),
-            stdout=io.StringIO(), stderr=stderr,
-            cad_generate_func=lambda *a, **k: calls.append((a, k)),
-        )
-        self.assertEqual(rc, 2)
-        self.assertIn("cancelled", stderr.getvalue().lower())
-        self.assertNotIn("CAD400", stderr.getvalue())
-        self.assertEqual(calls, [])
-
-    def test_menu_reprompts_once_then_returns_diagnostic(self):
-        return self.test_menu_reprompts_after_invalid_new_contract_selection()
-        stdout, stderr = io.StringIO(), io.StringIO()
-        rc = main(
-            ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO("wrong\nstill-wrong\n"),
-            stdout=stdout, stderr=stderr,
-        )
-        self.assertEqual(rc, 2)
-        self.assertEqual(stdout.getvalue().count("Select"), 2)
-        self.assertIn("invalid menu selection", stderr.getvalue())
-        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_runs_show_and_log_use_archive_interfaces(self):
         manifest = {
