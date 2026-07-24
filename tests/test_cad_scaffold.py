@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from plamp.cad_model import load_model
+from plamp.cad_model import CadDiagnostic, CadMetadataError, load_model
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
     CadSelectionError,
@@ -116,10 +116,53 @@ class CadScaffoldTests(unittest.TestCase):
         for unsafe in ("../pump", "pump/name", "pump name", "$(owned)"):
             with self.subTest(unsafe=unsafe), self.assertRaises(CadSelectionError):
                 create_model(self.root, self.system, unsafe, "cad")
-        destination = self.root / "things" / "linked"
-        destination.symlink_to(self.templates)
-        with self.assertRaises(CadDestinationExistsError):
-            create_model(self.root, self.system, "linked", "cad")
+        for name, create in (
+            ("directory", lambda path: path.mkdir()),
+            ("file", lambda path: path.write_text("keep")),
+            ("linked", lambda path: path.symlink_to(self.templates)),
+        ):
+            destination = self.root / "things" / name
+            create(destination)
+            with self.subTest(kind=name), self.assertRaises(CadDestinationExistsError):
+                create_model(self.root, self.system, name, "cad")
+
+    def test_rejects_normalized_identifier_collision(self):
+        (self.root / "things" / "pump_bracket").mkdir()
+        with self.assertRaisesRegex(CadSelectionError, "shared OpenSCAD stem"):
+            create_model(self.root, self.system, "pump-bracket", "cad")
+
+    def test_staging_failures_leave_no_model_or_stage(self):
+        for target, failure in (
+            ("_read_template", OSError("read failed")),
+            ("_make_staging", OSError("mkdir failed")),
+            ("_write_exclusive", OSError("write failed")),
+        ):
+            with self.subTest(target=target), mock.patch(
+                f"plamp.cad_scaffold.{target}", side_effect=failure
+            ):
+                with self.assertRaises(OSError):
+                    create_model(self.root, self.system, "pump", "cad")
+            self.assertFalse((self.root / "things" / "pump").exists())
+            self.assertEqual(list((self.root / "things").glob(".pump.staging-*")), [])
+
+    def test_generated_modes_follow_umask(self):
+        previous = os.umask(0o027)
+        try:
+            created = create_model(self.root, self.system, "pump", "cad")
+        finally:
+            os.umask(previous)
+        self.assertEqual(created.directory.stat().st_mode & 0o777, 0o750)
+        self.assertEqual(created.scad_path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(created.sidecar_path.stat().st_mode & 0o777, 0o640)
+
+    def test_canonical_invalid_sidecar_metadata_never_publishes(self):
+        sidecar_path = self.templates / "cad.cad.json"
+        value = json.loads(sidecar_path.read_text())
+        value["sets"]["missing"] = {"description": "not declared"}
+        sidecar_path.write_text(json.dumps(value))
+        with self.assertRaises(CadSelectionError):
+            create_model(self.root, self.system, "pump", "cad")
+        self.assertFalse((self.root / "things" / "pump").exists())
 
     def test_template_replacement_symlink_race_is_rejected(self):
         source = self.templates / "cad.scad"
@@ -133,6 +176,25 @@ class CadScaffoldTests(unittest.TestCase):
                 create_model(self.root, self.system, "pump", "cad")
         self.assertFalse((self.root / "things" / "pump").exists())
 
+    def test_discovery_rejects_sidecar_inode_replacement_before_description_read(self):
+        sidecar_path = self.templates / "cad.cad.json"
+        replacement = self.root / "replacement.json"
+        replacement.write_text(json.dumps(sidecar("attacker description")))
+        from plamp import cad_scaffold
+        real_identity = cad_scaffold._regular_identity
+        replaced = False
+        def race(path):
+            nonlocal replaced
+            identity = real_identity(path)
+            if path == sidecar_path and not replaced:
+                replaced = True
+                sidecar_path.unlink()
+                replacement.rename(sidecar_path)
+            return identity
+        with mock.patch("plamp.cad_scaffold._regular_identity", side_effect=race):
+            with self.assertRaises(OSError):
+                discover_templates(self.root)
+
     def test_manifest_replace_failure_rolls_back_published_model(self):
         original = self.system_path.read_bytes()
         with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("disk full")):
@@ -140,6 +202,42 @@ class CadScaffoldTests(unittest.TestCase):
                 create_model(self.root, self.system, "pump", "cad")
         self.assertFalse((self.root / "things" / "pump").exists())
         self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_rollback_does_not_delete_concurrent_destination_replacement(self):
+        original = self.system_path.read_bytes()
+        destination = self.root / "things" / "pump"
+        moved = self.root / "things" / "published-elsewhere"
+        def replace_then_fail(_path, _data):
+            destination.rename(moved)
+            destination.mkdir()
+            (destination / "sentinel").write_text("unrelated")
+            raise OSError("manifest failed")
+        with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=replace_then_fail):
+            with self.assertRaises(OSError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertEqual((destination / "sentinel").read_text(), "unrelated")
+        self.assertTrue(moved.is_dir())
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_prospective_manifest_failure_prevents_publication(self):
+        from plamp import cad_scaffold
+        real_load = cad_scaffold.load_system
+        calls = 0
+        def reject_second(path, root):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise CadMetadataError((CadDiagnostic(
+                    "CAD120", "invalid_system_metadata", "prospective invalid",
+                    str(path),
+                ),))
+            return real_load(path, root)
+        published = []
+        with mock.patch("plamp.cad_scaffold.load_system", side_effect=reject_second), \
+             mock.patch("plamp.cad_scaffold._publish_noreplace", side_effect=lambda *args: published.append(args)):
+            with self.assertRaises(CadMetadataError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertEqual(published, [])
 
     def test_publish_race_preserves_competing_directory_and_manifest(self):
         original = self.system_path.read_bytes()

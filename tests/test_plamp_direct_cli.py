@@ -333,50 +333,27 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 0)
         self.assertIn("cad", stdout.getvalue())
 
-    @unittest.skip("paired model/system templates are introduced by CAD migration Task 6")
     def test_project_neutral_cad_template_supports_no_render_workflow(self):
         repo_root = Path(__file__).resolve().parents[1]
-        part = "things/3d_template/cad.scad"
-        real_run = subprocess.run
-        real_popen = subprocess.Popen
-
-        def git_only_run(command, *args, **kwargs):
-            executable = Path(command[0]).name
-            self.assertEqual(executable, "git", f"unexpected subprocess: {command!r}")
-            return real_run(command, *args, **kwargs)
-
-        def git_only_popen(command, *args, **kwargs):
-            executable = Path(command[0]).name
-            self.assertEqual(executable, "git", f"unexpected process start: {command!r}")
-            return real_popen(command, *args, **kwargs)
-
         with tempfile.TemporaryDirectory() as tmp:
             env = {
                 "PLAMP_ROOT": str(repo_root),
                 "PLAMP_DATA_DIR": str(Path(tmp) / "data"),
             }
 
-            with patch("subprocess.run", side_effect=git_only_run), patch(
-                "subprocess.Popen", side_effect=git_only_popen
-            ):
-                for args in (
-                    ["cad", "views", part, "--json"],
-                    ["cad", "validate", part, "--json"],
-                    ["cad", "plan", part, "--preset", "all-views-default", "--json"],
-                ):
-                    with self.subTest(command=args[1]):
-                        stdout = io.StringIO()
-                        rc = main(
-                            args,
-                            env=env,
-                            stdout=stdout,
-                            stderr=io.StringIO(),
-                            cad_generate_func=lambda *a, **k: self.fail(
-                                "no-render workflow must not invoke OpenSCAD"
-                            ),
-                        )
-                        self.assertEqual(rc, 0)
-                        self.assertTrue(json.loads(stdout.getvalue()))
+            stdout = io.StringIO()
+            rc = main(
+                ["cad", "templates", "--json"], env=env, stdout=stdout,
+                stderr=io.StringIO(), cad_generate_func=lambda *a, **k: self.fail(
+                    "template navigation must not invoke OpenSCAD"
+                ),
+            )
+            self.assertEqual(rc, 0)
+            rows = json.loads(stdout.getvalue())
+            self.assertEqual(tuple(row["id"] for row in rows),
+                             ("cad", "flat_plate", "positive_negative"))
+            self.assertTrue(all(row["description"] for row in rows))
+            self.assertTrue(all(len(row["files"]) == 2 for row in rows))
 
     def test_camera_capture_calls_shared_library_operation(self):
         with tempfile.TemporaryDirectory() as tmp:

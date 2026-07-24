@@ -130,9 +130,14 @@ def discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]:
         if sidecar_identity is None:
             raise CadSelectionError(f"CAD template {name!r} has no regular sidecar: {sidecar_path}")
         _resolved_beneath(sidecar_path, resolved_template_root, "CAD template sidecar")
+        provisional = CadTemplate(
+            name, path, sidecar_path, "", *identity, *sidecar_identity
+        )
         try:
-            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            sidecar = json.loads(
+                _read_template_sidecar(resolved_template_root, provisional).decode("utf-8")
+            )
+        except (UnicodeError, json.JSONDecodeError) as error:
             raise CadSelectionError(f"CAD template sidecar is invalid: {sidecar_path}: {error}") from None
         description = sidecar.get("description") if isinstance(sidecar, dict) else None
         if not isinstance(description, str) or not description.strip():
@@ -146,11 +151,20 @@ def discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]:
 def _read_template(template_root: Path, template: CadTemplate) -> bytes:
     """Read a discovered regular file without following replacement symlinks."""
 
+    return _read_regular_file(
+        template_root, template.path, template.device, template.inode,
+        "CAD template",
+    )
+
+
+def _read_regular_file(template_root: Path, path: Path, device: int | None,
+                       inode: int | None, description: str) -> bytes:
+
     try:
-        relative = template.path.relative_to(template_root)
+        relative = path.relative_to(template_root)
     except ValueError:
         raise CadSelectionError(
-            f"CAD template escapes expected root: {template.path}"
+            f"{description} escapes expected root: {path}"
         ) from None
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     directory_flags = flags | getattr(os, "O_DIRECTORY", 0)
@@ -165,11 +179,11 @@ def _read_template(template_root: Path, template: CadTemplate) -> bytes:
         descriptors.append(descriptor)
         details = os.fstat(descriptor)
         if not stat.S_ISREG(details.st_mode):
-            raise OSError(errno.EINVAL, f"CAD template is not a regular file: {template.path}")
-        if template.device is None or template.inode is None:
-            raise OSError(errno.ESTALE, f"CAD template has no discovered identity: {template.path}")
-        if (details.st_dev, details.st_ino) != (template.device, template.inode):
-            raise OSError(errno.ESTALE, f"CAD template identity changed: {template.path}")
+            raise OSError(errno.EINVAL, f"{description} is not a regular file: {path}")
+        if device is None or inode is None:
+            raise OSError(errno.ESTALE, f"{description} has no discovered identity: {path}")
+        if (details.st_dev, details.st_ino) != (device, inode):
+            raise OSError(errno.ESTALE, f"{description} identity changed: {path}")
         chunks: list[bytes] = []
         while chunk := os.read(descriptor, 64 * 1024):
             chunks.append(chunk)
@@ -180,15 +194,10 @@ def _read_template(template_root: Path, template: CadTemplate) -> bytes:
 
 
 def _read_template_sidecar(template_root: Path, template: CadTemplate) -> bytes:
-    paired = CadTemplate(
-        template.name,
-        template.sidecar_path,
-        template.sidecar_path,
-        template.description,
-        device=template.sidecar_device,
-        inode=template.sidecar_inode,
+    return _read_regular_file(
+        template_root, template.sidecar_path, template.sidecar_device,
+        template.sidecar_inode, "CAD template sidecar",
     )
-    return _read_template(template_root, paired)
 
 
 def _metadata(source: str, description: str) -> dict[str, object]:
@@ -510,6 +519,67 @@ def _restore_system_manifest(path: Path, data: bytes) -> None:
             temporary.unlink()
 
 
+def _validate_prospective_manifest(system_path: Path, repository: Path,
+                                   manifest: dict[str, object], model_id: str,
+                                   staged_sidecar: Path) -> None:
+    prospective = json.loads(json.dumps(manifest))
+    prospective.setdefault("models", {})[model_id] = staged_sidecar.relative_to(
+        repository
+    ).as_posix()
+    temporary = system_path.with_name(
+        f".{system_path.name}.prospective-{secrets.token_hex(6)}"
+    )
+    try:
+        _write_exclusive(
+            temporary,
+            (json.dumps(prospective, indent=2, ensure_ascii=False) + "\n").encode(
+                "utf-8"
+            ),
+        )
+        load_system(temporary, repository)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    details = path.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(details.st_mode):
+        raise OSError(errno.ENOTDIR, f"published CAD model is not a directory: {path}")
+    return details.st_dev, details.st_ino
+
+
+def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
+    """Remove only the directory inode published by this transaction."""
+
+    try:
+        if _directory_identity(path) != identity:
+            return False
+    except FileNotFoundError:
+        return False
+    quarantine = path.with_name(f".{path.name}.rollback-{secrets.token_hex(6)}")
+    try:
+        os.rename(path, quarantine)
+    except FileNotFoundError:
+        return False
+    if _directory_identity(quarantine) != identity:
+        if not path.exists() and not path.is_symlink():
+            os.rename(quarantine, path)
+        return False
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(quarantine, flags | getattr(os, "O_DIRECTORY", 0))
+    try:
+        for name in os.listdir(descriptor):
+            details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if not stat.S_ISREG(details.st_mode):
+                raise OSError(errno.EINVAL, f"unexpected staged model entry: {name}")
+            os.unlink(name, dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+    os.rmdir(quarantine)
+    return True
+
+
 def create_model(repo_root: Path, system: CadSystem, model_id: str,
                  template_name: str) -> CreatedModel:
     """Create a paired model and register it in ``system`` as one transaction."""
@@ -557,7 +627,7 @@ def create_model(repo_root: Path, system: CadSystem, model_id: str,
 
         lock_path = system_path.with_name(system_path.name + ".lock")
         lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
-        published = False
+        published_identity: tuple[int, int] | None = None
         original = b""
         try:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
@@ -575,14 +645,19 @@ def create_model(repo_root: Path, system: CadSystem, model_id: str,
             manifest_data = (
                 json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
             ).encode("utf-8")
+            prospective_manifest = json.loads(original.decode("utf-8"))
+            _validate_prospective_manifest(
+                system_path, repository, prospective_manifest, model_id,
+                staged_sidecar,
+            )
             _publish_noreplace(staging, destination)
-            published = True
+            published_identity = _directory_identity(destination)
             try:
                 _replace_system_manifest(system_path, manifest_data)
                 load_system(system_path, repository)
             except BaseException:
-                if published and destination.exists():
-                    shutil.rmtree(destination)
+                if published_identity is not None:
+                    _remove_owned_directory(destination, published_identity)
                 if system_path.read_bytes() != original:
                     _restore_system_manifest(system_path, original)
                 raise
