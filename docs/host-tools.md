@@ -187,6 +187,92 @@ command that expands the exact same selection and identities without invoking
 OpenSCAD. It is useful for inspecting a large product before committing Pi CPU
 time, but it is not a prerequisite for `generate`.
 
+### OpenSCAD dependencies and offline generation
+
+OpenSCAD models have two related kinds of dependency:
+
+- `use <library.scad>` makes modules and functions available without evaluating
+  the library's top-level geometry. `include <library.scad>` also evaluates its
+  top-level statements. Both are source dependencies.
+- `import("shape.svg")`, `import("part.stl")`, and similar calls load geometry or
+  data assets. Plamp tracks imported SVG, DXF, STL, PNG, and other files as
+  dependencies too.
+
+OpenSCAD first resolves calling-file-relative references, then searches its
+active library paths. Those paths can include `OPENSCADPATH`, the user's library
+directory, and installation libraries. A model-local source or asset belongs
+beside the model; repository-local shared code belongs elsewhere in this Git
+checkout. A shared library outside the repository must be declared by the
+system. Installation libraries reported by OpenSCAD are recorded separately;
+an undeclared file found only in the user's library directory is rejected.
+
+Declare a shared library in the selected `*.system.cad.json` manifest. The path
+may be repository-relative or absolute. Include license and pinned revision
+metadata when the library has an independent origin:
+
+```json
+{
+  "libraries": {
+    "fasteners": {
+      "path": "vendor/fasteners",
+      "license": "SPDX-license-identifier",
+      "revision": "exact-tag-or-commit"
+    }
+  }
+}
+```
+
+The declaration authorizes an already installed or vendored directory; CAD
+generation never downloads a missing library. Check declarations and their
+resolved paths before generating:
+
+```bash
+plamp cad libraries --system plamp
+plamp cad libraries --system plamp --json
+```
+
+If generation reports an `undeclared host CAD dependency`, either move that
+file into the model/repository or add the library containing it to the system
+manifest with its license and revision. If `plamp cad libraries` says a path is
+missing or is not a directory, install or vendor the exact declared revision at
+that path. Do not fix either error by adding an unrecorded workstation search
+path: another host would silently use different geometry.
+
+Generation asks OpenSCAD for its complete transitive dependency list with a
+cheap CSG `-d` pass. For a clean or historical run, discovery uses a Git archive
+of the selected commit, so a repository helper cannot leak in from the current
+working tree. A dirty run uses the explicitly revision-labelled working-tree
+closure. Plamp then hashes and classifies the closure, stages it without
+flattening paths, and renders with an isolated home and a sanitized
+`OPENSCADPATH`. It compares a second `-d` result after rendering; a missing,
+changed, escaped, or newly host-resolved dependency fails before publication.
+There is no network fallback, so a fully staged run can render offline.
+
+The staged layout preserves relative references:
+
+```text
+repository/<repository-relative model and shared files>
+libraries/<declared-library-name>/<library-relative files>
+libraries/openscad-N/<installation-library-relative files>
+```
+
+Every run's `manifest.json` records each job's `dependencies` with its logical
+name, classification, staged archive path, SHA-256 content hash, asset flag,
+license, and revision. It also records the discovery and sanitized render
+search environments. The generated `readme.md` summarizes the same inventory.
+Inspect it without guessing paths:
+
+```bash
+plamp cad show RUN_ID
+jq '.jobs[] | {model, set, dependencies, dependency_environment}' \
+  "$PLAMP_DATA_DIR/cad/prints/plamp/RUN_ID/manifest.json"
+```
+
+OpenSCAD documents the [library search paths and `use`/`include`
+semantics](https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Libraries) and
+the command-line [`-d` dependency-file
+option](https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Using_OpenSCAD_in_a_command_line_environment).
+
 ### Create a model from a template
 
 List the human-readable templates, then select one explicitly. If an

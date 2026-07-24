@@ -57,6 +57,24 @@ class CadDependencyTests(unittest.TestCase):
             raw_defines={"quality": "$preview ? 2 : 20"},
         )
 
+    @unittest.skipUnless(shutil.which("openscad"), "OpenSCAD is not installed")
+    def test_real_openscad_reports_nested_source_and_import_asset(self):
+        fixture = Path(__file__).parent / "fixtures/cad_dependencies"
+        source = fixture / "root.scad"
+        environment = DiscoveryEnvironment(fixture, source, None, False, None)
+        job = SimpleNamespace(set_name="", variables={}, raw_defines={})
+
+        result = run_dependency_discovery(
+            Path(shutil.which("openscad")), environment, job,
+            self.root / "real-openscad", revision="fixture", env=os.environ,
+        )
+
+        names = {path.name for path in result.dependencies}
+        self.assertTrue(
+            {"root.scad", "helper.scad", "profile.svg"} <= names,
+            f"OpenSCAD dependency output omitted fixture inputs: {result.output}",
+        )
+
     def test_verify_staged_dependencies_rejects_host_fallback_and_mismatch(self):
         stage = self.root / "stage"
         staged_source = self.write("stage/repository/things/box/box.scad", "cube(1);")
