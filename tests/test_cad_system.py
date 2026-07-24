@@ -251,7 +251,10 @@ class CadSystemTests(unittest.TestCase):
         )
 
     def test_different_sibling_profiles_or_slicing_require_variants(self):
-        self.write("cad/profiles/draft.json", "{}")
+        self.write("cad/profiles/draft.json", json.dumps({
+            "schema": "plamp-cad-profile/1", "name": "draft",
+            "kind": "quality", "cad": {}, "slicing": {}, "machine": {},
+        }))
         for assignment in (
             ("profiles", ["draft"], []),
             ("slicing", {"wall": 1}, {"wall": 2}),
@@ -269,6 +272,19 @@ class CadSystemTests(unittest.TestCase):
                     ),
                     self.root,
                 )
+
+    def test_loads_system_profiles_as_typed_profiles(self):
+        profile_path = self.write("cad/profiles/draft.json", json.dumps({
+            "schema": "plamp-cad-profile/1", "name": "draft",
+            "kind": "quality", "cad": {"render_fn": 24},
+            "slicing": {}, "machine": {},
+        }))
+        system = load_system(
+            self.system(profiles={"draft": str(profile_path.relative_to(self.root))}),
+            self.root,
+        )
+        self.assertEqual(system.profiles["draft"].qualified_id, "system:draft")
+        self.assertEqual(system.profiles["draft"].cad["render_fn"], 24)
 
     def test_rejects_duplicate_or_unsafe_variants(self):
         for variants in (("same", "same"), ("good", "not safe")):

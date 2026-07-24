@@ -11,6 +11,7 @@ import re
 from types import MappingProxyType
 
 from plamp.cad_model import CadDiagnostic, CadMetadataError, CadModel, load_model
+from plamp.cad_profiles import CadProfile, load_system_profiles
 
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -67,7 +68,7 @@ class CadSystem:
     products: Mapping[str, CadProduct]
     default_product: str | None
     libraries: Mapping[str, object]
-    profiles: Mapping[str, Path]
+    profiles: Mapping[str, CadProfile]
     metadata_snapshot: Mapping[str, object]
 
 
@@ -249,12 +250,13 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
         models[model_id] = load_model(model_id, Path(raw_reference), repo_root)
 
     raw_profiles = _mapping(metadata, "profiles", path, "$.profiles")
-    profiles = {}
+    profile_paths = {}
     for profile_name, raw_reference in raw_profiles.items():
         _safe_name(profile_name, path, f"$.profiles.{profile_name}")
         if not isinstance(raw_reference, str):
             _fail(path, "Profile reference must be a string", json_path=f"$.profiles.{profile_name}", value=raw_reference)
-        profiles[profile_name] = _resolve_existing(raw_reference, repo_root, path, f"$.profiles.{profile_name}")
+        profile_paths[profile_name] = _resolve_existing(raw_reference, repo_root, path, f"$.profiles.{profile_name}")
+    profiles = load_system_profiles(profile_paths)
 
     raw_libraries = _mapping(metadata, "libraries", path, "$.libraries")
     libraries = {}

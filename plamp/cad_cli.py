@@ -434,10 +434,10 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
                          "description": _described(product.description),
                          "path": _relative(system.path, context.root)})
     elif action == "profiles":
-        for name, path in system.profiles.items():
+        for name, profile in system.profiles.items():
             rows.append({"kind": "profile", "id": name, **base,
                          "description": "(no description)",
-                         "path": _relative(path, context.root)})
+                         "path": _relative(profile.path, context.root)})
     elif action == "libraries":
         for name, declaration in system.libraries.items():
             if isinstance(declaration, str):

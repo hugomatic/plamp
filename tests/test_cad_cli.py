@@ -88,7 +88,10 @@ class CadCliTests(unittest.TestCase):
             },
         }), encoding="utf-8")
         (self.root / "cad" / "profiles").mkdir(parents=True, exist_ok=True)
-        (self.root / "cad" / "profiles" / "petg.json").write_text("{}\n")
+        (self.root / "cad" / "profiles" / "petg.json").write_text(json.dumps({
+            "schema": "plamp-cad-profile/1", "name": "petg",
+            "kind": "material", "cad": {}, "slicing": {}, "machine": {},
+        }) + "\n")
         (self.root / "cad" / "lib").mkdir(exist_ok=True)
         manifest = {
             "schema": "plamp-cad-system/1",
