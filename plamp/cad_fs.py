@@ -62,10 +62,11 @@ def remove_owned_entry_at(
 ) -> bool:
     """Atomically claim and remove one inode, finding it if concurrently moved."""
 
+    active_claims: set[str] = set()
     for _attempt in range(4):
         candidates = (preferred_name, *(
             name for name in os.listdir(parent_fd)
-            if name != preferred_name and not name.startswith(".")
+            if name != preferred_name and name not in active_claims
         ))
         retry = False
         for candidate in candidates:
@@ -76,6 +77,7 @@ def remove_owned_entry_at(
             if (device, inode) != identity:
                 continue
             placeholder = f".plamp-owned-{secrets.token_hex(8)}"
+            active_claims.add(placeholder)
             if stat.S_ISDIR(mode):
                 os.mkdir(placeholder, dir_fd=parent_fd)
                 remove_placeholder = lambda: os.rmdir(placeholder, dir_fd=parent_fd)
@@ -113,6 +115,7 @@ def remove_owned_entry_at(
                     remove_placeholder()
                 except FileNotFoundError:
                     pass
+                active_claims.discard(placeholder)
         if not retry:
             return False
     return False
