@@ -37,7 +37,7 @@ from plamp.cad_planning import CadSelection, build_render_plan, plan_as_dict
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
     CadSelectionError,
-    create_part,
+    create_model,
     discover_templates,
 )
 from plamp.context import RuntimeContext
@@ -97,9 +97,9 @@ def add_cad_parser(
     actions = cad.add_subparsers(dest="action", required=True)
 
     new = actions.add_parser("new")
-    new.add_argument("part", nargs="?")
+    new.add_argument("model", nargs="?")
+    new.add_argument("--system", metavar="NAME_OR_PATH")
     new.add_argument("--template")
-    new.add_argument("--list-templates", action="store_true")
     new.add_argument("--json", action="store_true")
 
     systems = actions.add_parser("systems", help="list discoverable CAD systems")
@@ -211,7 +211,7 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "load_run": load_run,
         "load_job_log": load_job_log,
         "discover_templates": discover_templates,
-        "create_part": create_part,
+        "create_model": create_model,
         "discover_systems": discover_systems,
         "select_system": select_system,
         "load_system": load_system,
@@ -267,6 +267,25 @@ def _choose_system(
     if not 1 <= choice <= len(selectable):
         raise ValueError("invalid system selection")
     return selectable[choice - 1]
+
+
+def _choose_template(templates: tuple[object, ...], stdin: TextIO,
+                     stdout: TextIO) -> str:
+    if not templates:
+        raise ValueError("no CAD templates are available")
+    stdout.write("Templates:\n")
+    for index, item in enumerate(templates, 1):
+        stdout.write(f"{index}. {item.name} - {_described(item.description)}\n")
+    stdout.write("Select Template: ")
+    stdout.flush()
+    value = stdin.readline().strip()
+    try:
+        choice = int(value)
+    except ValueError:
+        choice = 0
+    if not 1 <= choice <= len(templates):
+        raise ValueError("invalid template selection")
+    return templates[choice - 1].name
 
 
 def _selected_system(
@@ -996,50 +1015,44 @@ def run_cad_command(
                 path = _relative(item.path, context.root)
                 rows.append({
                     "kind": "template", "id": item.name,
-                    "description": "(no description)", "status": "valid",
-                    "diagnostics": [], "path": path, "files": [path],
+                    "description": _described(item.description), "status": "valid",
+                    "diagnostics": [], "path": path,
+                    "files": [path, _relative(item.sidecar_path, context.root)],
                 })
             _emit_rows(rows, args.json, stdout)
             return 0
 
         if args.action == "new":
-            if args.list_templates:
-                if args.part is not None or args.template is not None:
-                    raise ValueError(
-                        "--list-templates cannot be combined with PART or --template"
-                    )
-                templates = deps["discover_templates"](context.root)
-                value = {
-                    "templates": [
-                        {
-                            "name": item.name,
-                            "path": item.path.relative_to(context.root).as_posix(),
-                        }
-                        for item in templates
-                    ]
-                }
-                if args.json:
-                    _json_line(stdout, value)
-                else:
-                    for item in value["templates"]:
-                        stdout.write(f"{item['name']} {item['path']}\n")
-                return 0
-            if args.part is None:
-                raise ValueError("cad new requires PART unless --list-templates is used")
-            template = args.template or "cad"
-            created = deps["create_part"](context.root, args.part, template)
+            if args.model is None:
+                raise ValueError("cad new requires MODEL")
+            system = _selected_system(args, context, stdin, stdout, deps)
+            if args.template is not None:
+                template = args.template
+            elif _interactive(stdin, args):
+                template = _choose_template(
+                    tuple(deps["discover_templates"](context.root)), stdin, stdout
+                )
+            else:
+                template = "cad"
+            created = deps["create_model"](
+                context.root, system, args.model, template
+            )
             value = {
-                "part": created.part,
+                "model": created.model_id,
+                "system": system.name,
                 "template": created.template,
                 "directory": created.directory.relative_to(context.root).as_posix(),
                 "scad_path": created.scad_path.relative_to(context.root).as_posix(),
+                "sidecar_path": created.sidecar_path.relative_to(context.root).as_posix(),
                 "metadata_valid": True,
             }
             if args.json:
                 _json_line(stdout, value)
             else:
-                stdout.write(f"{value['scad_path']}\n")
-                stdout.write(f"plamp cad validate {created.part} --json\n")
+                stdout.write(f"{value['scad_path']}\n{value['sidecar_path']}\n")
+                stdout.write(
+                    f"plamp cad sets {created.model_id} --system {system.name}\n"
+                )
             return 0
 
         if args.action == "menu" and args.json:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 import errno
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,8 @@ import stat
 import sys
 
 from plamp.cad_metadata import CadMetadataError, parse_cad_document, parse_cad_source
+from plamp.cad_model import CadMetadataError as CadModelMetadataError, load_model
+from plamp.cad_system import CadSystem, load_system
 
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -39,16 +42,21 @@ class CadDestinationExistsError(FileExistsError):
 class CadTemplate:
     name: str
     path: Path
+    sidecar_path: Path
+    description: str
     device: int | None = None
     inode: int | None = None
+    sidecar_device: int | None = None
+    sidecar_inode: int | None = None
 
 
 @dataclass(frozen=True)
-class CreatedPart:
-    part: str
+class CreatedModel:
+    model_id: str
     template: str
     directory: Path
     scad_path: Path
+    sidecar_path: Path
 
 
 def _validate_name(name: str, kind: str) -> None:
@@ -117,7 +125,21 @@ def discover_templates(repo_root: Path) -> tuple[CadTemplate, ...]:
         identity = _regular_identity(path)
         if identity is None:
             raise OSError(errno.ESTALE, f"CAD template identity changed: {path}")
-        discovered[name] = CadTemplate(name, path, *identity)
+        sidecar_path = path.with_suffix(".cad.json")
+        sidecar_identity = _regular_identity(sidecar_path) if sidecar_path.exists() else None
+        if sidecar_identity is None:
+            raise CadSelectionError(f"CAD template {name!r} has no regular sidecar: {sidecar_path}")
+        _resolved_beneath(sidecar_path, resolved_template_root, "CAD template sidecar")
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise CadSelectionError(f"CAD template sidecar is invalid: {sidecar_path}: {error}") from None
+        description = sidecar.get("description") if isinstance(sidecar, dict) else None
+        if not isinstance(description, str) or not description.strip():
+            raise CadSelectionError(f"CAD template {name!r} requires a description")
+        discovered[name] = CadTemplate(
+            name, path, sidecar_path, description, *identity, *sidecar_identity
+        )
     return tuple(discovered[name] for name in sorted(discovered))
 
 
@@ -155,6 +177,18 @@ def _read_template(template_root: Path, template: CadTemplate) -> bytes:
     finally:
         for descriptor in reversed(descriptors):
             os.close(descriptor)
+
+
+def _read_template_sidecar(template_root: Path, template: CadTemplate) -> bytes:
+    paired = CadTemplate(
+        template.name,
+        template.sidecar_path,
+        template.sidecar_path,
+        template.description,
+        device=template.sidecar_device,
+        inode=template.sidecar_inode,
+    )
+    return _read_template(template_root, paired)
 
 
 def _metadata(source: str, description: str) -> dict[str, object]:
@@ -429,70 +463,140 @@ def _publish_noreplace(source: Path, destination: Path) -> None:
         raise OSError(value, os.strerror(value), destination)
 
 
-def create_part(repo_root: Path, part_name: str, template_name: str) -> CreatedPart:
-    """Atomically create one part directory from a validated SCAD template."""
+def _substitute_pair(raw_scad: bytes, raw_sidecar: bytes, model_id: str,
+                     template: CadTemplate) -> tuple[bytes, bytes]:
+    identifier = _part_identifier(model_id)
+    try:
+        scad = raw_scad.decode("utf-8")
+        sidecar_text = raw_sidecar.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CadSelectionError(f"CAD template is not valid UTF-8: {error}") from None
+    if _TOKEN not in scad or _TOKEN not in sidecar_text:
+        raise CadSelectionError(
+            f"CAD template {template.name!r} must use {_TOKEN} in both files"
+        )
+    generated_scad = scad.replace(_TOKEN, identifier)
+    generated_sidecar = sidecar_text.replace(_TOKEN, identifier)
+    try:
+        value = json.loads(generated_sidecar)
+    except json.JSONDecodeError as error:
+        raise CadSelectionError(f"generated model sidecar is invalid: {error}") from None
+    if not isinstance(value, dict):
+        raise CadSelectionError("generated model sidecar must be an object")
+    value["name"] = model_id
+    value["source"] = f"{model_id}.scad"
+    return generated_scad.encode("utf-8"), (
+        json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
 
-    _validate_name(part_name, "part")
+
+def _replace_system_manifest(path: Path, data: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.tmp-{secrets.token_hex(6)}")
+    try:
+        _write_exclusive(temporary, data)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _restore_system_manifest(path: Path, data: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.restore-{secrets.token_hex(6)}")
+    try:
+        _write_exclusive(temporary, data)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def create_model(repo_root: Path, system: CadSystem, model_id: str,
+                 template_name: str) -> CreatedModel:
+    """Create a paired model and register it in ``system`` as one transaction."""
+
+    _validate_name(model_id, "model")
     _validate_name(template_name, "template")
-    identifier = _part_identifier(part_name)
-    templates = {item.name: item for item in discover_templates(repo_root)}
+    identifier = _part_identifier(model_id)
+    repository = Path(repo_root).resolve()
+    things_root = repository / "things"
+    _resolved_beneath(things_root, repository, "things directory")
+    system_path = Path(system.path).resolve()
+    _resolved_beneath(system_path, repository, "system manifest")
+    templates = {item.name: item for item in discover_templates(repository)}
     if template_name not in templates:
         choices = ", ".join(sorted(templates)) or "none"
         raise CadSelectionError(
             f"unknown CAD template {template_name!r}; available: {choices}"
         )
-
-    repository = Path(repo_root).resolve()
-    things_root = repository / "things"
-    template_root = things_root / "3d_template"
-    _resolved_beneath(things_root, repository, "things directory")
-    destination = things_root / part_name
-    _resolved_beneath(destination, things_root, "part destination")
-    _reject_normalized_collision(things_root, part_name, identifier)
+    destination = things_root / model_id
+    _resolved_beneath(destination, things_root, "model destination")
+    _reject_normalized_collision(things_root, model_id, identifier)
     if destination.exists() or destination.is_symlink():
         raise CadDestinationExistsError(
-            f"CAD part destination already exists: {destination}"
+            f"CAD model destination already exists: {destination}"
         )
 
     template = templates[template_name]
-    raw = _read_template(template_root, template)
-    generated = _substitute_template(raw, identifier, str(template.path))
+    template_root = things_root / "3d_template"
+    scad_data, sidecar_data = _substitute_pair(
+        _read_template(template_root, template),
+        _read_template_sidecar(template_root, template),
+        model_id,
+        template,
+    )
+    staging = _make_staging(things_root, model_id)
+    staged_scad = staging / f"{model_id}.scad"
+    staged_sidecar = staging / f"{model_id}.cad.json"
     try:
-        generated_document = parse_cad_source(
-            generated, destination / f"{part_name}.scad"
-        )
-    except (CadMetadataError, UnicodeError, ValueError) as error:
-        raise CadSelectionError(f"generated CAD part is invalid: {error}") from None
-    if not generated_document.metadata_snapshot:
-        raise CadSelectionError(
-            f"generated CAD part has no generation metadata: {destination / f'{part_name}.scad'}"
-        )
+        _write_exclusive(staged_scad, scad_data)
+        _write_exclusive(staged_sidecar, sidecar_data)
+        try:
+            load_model(model_id, staged_sidecar, repository)
+        except CadModelMetadataError as error:
+            raise CadSelectionError(f"generated CAD model is invalid: {error}") from None
 
-    staging = _make_staging(things_root, part_name)
-    staged_scad = staging / f"{part_name}.scad"
-    try:
-        _write_exclusive(staged_scad, generated.encode("utf-8"))
+        lock_path = system_path.with_name(system_path.name + ".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o666)
+        published = False
+        original = b""
         try:
-            staged_document = parse_cad_document(staged_scad)
-        except (CadMetadataError, UnicodeError, ValueError) as error:
-            raise CadSelectionError(f"staged CAD part is invalid: {error}") from None
-        if not staged_document.metadata_snapshot:
-            raise CadSelectionError(f"staged CAD part has no generation metadata: {staged_scad}")
-        _validate_contract(generated, identifier, str(staged_scad))
-        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            original = system_path.read_bytes()
+            current = load_system(system_path, repository)
+            if model_id in current.models:
+                raise CadDestinationExistsError(
+                    f"CAD model {model_id!r} already exists in system {current.name!r}"
+                )
+            manifest = json.loads(original.decode("utf-8"))
+            relative_sidecar = (destination / f"{model_id}.cad.json").relative_to(
+                repository
+            ).as_posix()
+            manifest.setdefault("models", {})[model_id] = relative_sidecar
+            manifest_data = (
+                json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+            ).encode("utf-8")
             _publish_noreplace(staging, destination)
-        except FileExistsError:
-            raise CadDestinationExistsError(
-                f"CAD part destination already exists: {destination}"
-            ) from None
+            published = True
+            try:
+                _replace_system_manifest(system_path, manifest_data)
+                load_system(system_path, repository)
+            except BaseException:
+                if published and destination.exists():
+                    shutil.rmtree(destination)
+                if system_path.read_bytes() != original:
+                    _restore_system_manifest(system_path, original)
+                raise
+        finally:
+            os.close(lock_fd)
     except BaseException:
         if staging.exists():
             shutil.rmtree(staging)
         raise
 
-    return CreatedPart(
-        part=part_name,
+    return CreatedModel(
+        model_id=model_id,
         template=template_name,
         directory=destination,
-        scad_path=destination / f"{part_name}.scad",
+        scad_path=destination / f"{model_id}.scad",
+        sidecar_path=destination / f"{model_id}.cad.json",
     )

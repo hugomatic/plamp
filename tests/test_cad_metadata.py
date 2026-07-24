@@ -33,7 +33,7 @@ class CadMetadataTests(unittest.TestCase):
         path.write_text(source, encoding="utf-8")
         return path
 
-    def test_real_scad_templates_have_valid_generation_metadata(self):
+    def test_real_scad_templates_use_clean_set_selectors_and_sidecars(self):
         template_paths = (
             REPO_ROOT / "things/3d_template/cad.scad",
             REPO_ROOT / "things/3d_template/scad/flat_plate.scad",
@@ -42,9 +42,12 @@ class CadMetadataTests(unittest.TestCase):
 
         for path in template_paths:
             with self.subTest(path=path):
-                document = parse_cad_document(path)
-                self.assertIsNotNone(document.default_preset)
-                self.assertTrue(document.presets)
+                source = path.read_text(encoding="utf-8")
+                self.assertIn('set = "__PLAMP_PART__";', source)
+                self.assertNotIn("generate.json", source)
+                sidecar = json.loads(path.with_suffix(".cad.json").read_text())
+                self.assertEqual(sidecar["schema"], "plamp-cad-model/1")
+                self.assertTrue(sidecar["description"])
 
     def test_parse_document_keeps_customizer_order_and_metadata_overlay(self):
         path = self.write_scad('''

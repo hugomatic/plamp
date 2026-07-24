@@ -102,7 +102,6 @@ class SetupShTests(unittest.TestCase):
             self.assertNotIn("systemd", completed.stderr.lower())
             self.assertNotIn("traceback", completed.stderr.lower())
 
-    @unittest.skip("paired model/system templates are introduced by CAD migration Task 6")
     def test_cad_commands_run_in_bare_venv_without_device_dependencies(self):
         with tempfile.TemporaryDirectory() as tmp:
             environment = Path(tmp) / "bare"
@@ -146,7 +145,7 @@ class SetupShTests(unittest.TestCase):
             self.assertNotIn("traceback", completed.stderr.lower())
 
             completed = subprocess.run(
-                [python, "-m", "plamp", "cad", "views", "plamp_stand", "--json"],
+                [python, "-m", "plamp", "cad", "templates", "--json"],
                 cwd=REPO_ROOT,
                 env={"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin"},
                 text=True,
@@ -156,7 +155,8 @@ class SetupShTests(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn('"part": "plamp_stand"', completed.stdout)
+            self.assertIn('"kind": "template"', completed.stdout)
+            self.assertIn('"description":', completed.stdout)
             self.assertNotIn("traceback", completed.stderr.lower())
 
     def test_second_activation_removes_first_checkout_from_path(self):

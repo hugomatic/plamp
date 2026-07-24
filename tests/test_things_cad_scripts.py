@@ -352,20 +352,31 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("web", documentation.lower())
         self.assertNotIn("three.js", documentation.lower())
 
-    def test_versioned_scad_sources_embed_generation_metadata(self):
+    def test_versioned_legacy_scad_sources_embed_generation_metadata(self):
         paths = (
             "things/plamp8/plamp8.scad",
             "things/plamp_stand/plamp_stand.scad",
             "things/iharvest_cover/iharvest_cover.scad",
-            "things/3d_template/cad.scad",
-            "things/3d_template/scad/flat_plate.scad",
-            "things/3d_template/scad/positive_negative.scad",
         )
 
         for relative_path in paths:
             with self.subTest(path=relative_path):
                 document = parse_cad_document(REPO_ROOT / relative_path)
                 self.assertTrue(document.metadata_snapshot)
+
+    def test_scaffold_templates_keep_metadata_in_adjacent_sidecars(self):
+        paths = (
+            "things/3d_template/cad.scad",
+            "things/3d_template/scad/flat_plate.scad",
+            "things/3d_template/scad/positive_negative.scad",
+        )
+        for relative_path in paths:
+            with self.subTest(path=relative_path):
+                path = REPO_ROOT / relative_path
+                source = path.read_text(encoding="utf-8")
+                self.assertIn('set = "__PLAMP_PART__";', source)
+                self.assertNotIn("generate.json", source)
+                self.assertTrue(path.with_suffix(".cad.json").is_file())
 
     def test_plamp8_flat_wall_corner_stack_contract(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

@@ -1,374 +1,174 @@
+import json
 import os
-import re
+from pathlib import Path
 import shutil
-import stat
 import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
-from plamp.cad_metadata import parse_cad_document
-from plamp.cad_scaffold import _validate_contract, create_part, discover_templates
+from plamp.cad_model import load_model
+from plamp.cad_scaffold import (
+    CadDestinationExistsError,
+    CadSelectionError,
+    create_model,
+    discover_templates,
+)
+from plamp.cad_system import load_system
 
 
-VALID_SOURCE = b'''view = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
-/* generate.json
-{"default_preset":"both","views":{"__PLAMP_PART__":{"description":"Part"},"assembly":{"description":"Assembly"}},"presets":{"both":{"items":["view:__PLAMP_PART__","view:assembly"]}}}
-*/
-part_h = 4;
-boolean_overlap = 0.1;
-module __PLAMP_PART___positive() { cube([10, 10, part_h], center = true); }
-module __PLAMP_PART___negative() {
-  echo("BOM", "M3x16 screw", 1);
-  cylinder(d = 3.4, h = part_h + 2 * boolean_overlap, center = true);
-}
-module __PLAMP_PART__() {
-  difference() { __PLAMP_PART___positive(); __PLAMP_PART___negative(); }
-}
-if (view == "__PLAMP_PART__") { __PLAMP_PART__(); }
-else if (view == "assembly") { __PLAMP_PART__(); }
+SCAD = '''set = "__PLAMP_PART__"; // [__PLAMP_PART__, assembly]
+module __PLAMP_PART___positive() { cube(1); }
+module __PLAMP_PART___negative() {}
+module __PLAMP_PART__() { difference() { __PLAMP_PART___positive(); __PLAMP_PART___negative(); } }
+if (set == "__PLAMP_PART__") { __PLAMP_PART__(); }
+else if (set == "assembly") { __PLAMP_PART__(); }
 '''
+
+
+def sidecar(description="General model"):
+    return {
+        "schema": "plamp-cad-model/1", "name": "__PLAMP_PART__",
+        "source": "__PLAMP_PART__.scad", "description": description,
+        "sets": {
+            "__PLAMP_PART__": {"description": "Printable model"},
+            "assembly": {"description": "Assembly", "printable": False},
+        },
+    }
 
 
 class CadScaffoldTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
         self.templates = self.root / "things" / "3d_template"
         (self.templates / "scad").mkdir(parents=True)
+        self.write_template("cad", root=True)
+        self.system_path = self.root / "cad" / "test.system.cad.json"
+        self.system_path.parent.mkdir()
+        self.system_path.write_text(json.dumps({
+            "schema": "plamp-cad-system/1", "name": "test",
+            "description": "Test system", "models": {}, "libraries": {},
+            "profiles": {}, "products": {},
+        }), encoding="utf-8")
+        self.system = load_system(self.system_path, self.root)
 
-    def tearDown(self):
-        self.temp.cleanup()
-
-    def write_template(self, relative: str, content: bytes = VALID_SOURCE) -> Path:
-        path = self.templates / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-        return path
-
-    def test_discovers_root_cad_and_arbitrary_named_templates_in_sorted_order(self):
-        cad = self.write_template("cad.scad")
-        zeta = self.write_template("scad/zeta_fixture.scad")
-        alpha = self.write_template("scad/alpha_plate.scad")
-        self.write_template("scad/readme.txt")
-        (self.templates / "scad" / "not_a_file.scad").mkdir()
-
-        templates = discover_templates(self.root)
-
-        self.assertEqual(
-            tuple((item.name, item.path) for item in templates),
-            (("alpha_plate", alpha), ("cad", cad), ("zeta_fixture", zeta)),
+    def write_template(self, name, *, root=False, description=None):
+        directory = self.templates if root else self.templates / "scad"
+        scad_path = directory / f"{name}.scad"
+        scad_path.write_text(SCAD, encoding="utf-8")
+        scad_path.with_suffix(".cad.json").write_text(
+            json.dumps(sidecar(description or f"{name} description")), encoding="utf-8"
         )
+        return scad_path
 
-    def test_discovery_rejects_missing_template_root(self):
-        (self.templates / "scad").rmdir()
-        self.templates.rmdir()
-        with self.assertRaisesRegex(FileNotFoundError, "3d_template"):
+    def test_discovers_sorted_paired_templates_with_descriptions(self):
+        self.write_template("zeta")
+        alpha = self.write_template("alpha", description="Flat plate")
+        rows = discover_templates(self.root)
+        self.assertEqual(tuple(item.name for item in rows), ("alpha", "cad", "zeta"))
+        self.assertEqual(rows[0].description, "Flat plate")
+        self.assertEqual(rows[0].sidecar_path, alpha.with_suffix(".cad.json"))
+
+    def test_discovery_rejects_missing_sidecar_description_and_symlink(self):
+        lonely = self.templates / "scad" / "lonely.scad"
+        lonely.write_text(SCAD)
+        with self.assertRaisesRegex(ValueError, "sidecar"):
             discover_templates(self.root)
+        lonely.unlink()
+        bad = self.write_template("bad")
+        value = sidecar("")
+        bad.with_suffix(".cad.json").write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError, "description"):
+            discover_templates(self.root)
+        bad.unlink(); bad.with_suffix(".cad.json").unlink()
+        outside = self.root / "outside.scad"; outside.write_text(SCAD)
+        (self.templates / "scad" / "linked.scad").symlink_to(outside)
+        self.assertNotIn("linked", tuple(item.name for item in discover_templates(self.root)))
 
-    def test_unknown_template_reports_sorted_available_choices(self):
-        self.write_template("cad.scad")
-        self.write_template("scad/flat_plate.scad")
-
-        with self.assertRaisesRegex(ValueError, "cad, flat_plate"):
-            create_part(self.root, "pump_bracket", "missing")
-
-        self.assertFalse((self.root / "things" / "pump_bracket").exists())
-
-    def test_rejects_unsafe_part_and_template_names_without_mutation(self):
-        self.write_template("cad.scad")
-        unsafe_names = (
-            "nested/part",
-            r"nested\\part",
-            "../part",
-            " part",
-            "part ",
-            "part name",
-            "$(touch-owned)",
-            "part;false",
-        )
-        for unsafe in unsafe_names:
-            with self.subTest(part=unsafe):
-                with self.assertRaisesRegex(ValueError, "name"):
-                    create_part(self.root, unsafe, "cad")
-            with self.subTest(template=unsafe):
-                with self.assertRaisesRegex(ValueError, "name"):
-                    create_part(self.root, "safe_part", unsafe)
-            self.assertFalse((self.root / "things" / "safe_part").exists())
-
-    def test_refuses_every_preexisting_destination_kind(self):
-        self.write_template("cad.scad")
-        things = self.root / "things"
-        for part, make_destination in (
-            ("existing_dir", lambda path: path.mkdir()),
-            ("existing_file", lambda path: path.write_text("keep", encoding="utf-8")),
-            ("existing_link", lambda path: path.symlink_to(self.templates)),
-        ):
-            destination = things / part
-            make_destination(destination)
-            with self.subTest(part=part):
-                with self.assertRaisesRegex(FileExistsError, part):
-                    create_part(self.root, part, "cad")
-            self.assertTrue(destination.exists())
-
-    def test_invalid_or_missing_metadata_leaves_no_destination_or_staging(self):
-        self.write_template("scad/invalid.scad", b"/* generate.json\n{\n*/\n")
-        self.write_template("scad/missing.scad", b"cube(1);\n")
-
-        for template in ("invalid", "missing"):
-            part = f"from_{template}"
-            with self.subTest(template=template):
-                with self.assertRaises(ValueError):
-                    create_part(self.root, part, template)
-                self.assertFalse((self.root / "things" / part).exists())
-                self.assertEqual(list((self.root / "things").glob(f".{part}.staging-*")), [])
-
-    def test_generates_named_document_for_underscore_and_hyphen_spelling(self):
-        content = VALID_SOURCE + b'// preserve exact trailing bytes: "quoted"   \n'
-        self.write_template("scad/fixture_any_name.scad", content)
-        for requested in ("pump_bracket", "pump-bracket"):
-            with self.subTest(requested=requested):
-                created = create_part(self.root, requested, "fixture_any_name")
-                expected = self.root / "things" / requested / f"{requested}.scad"
-                self.assertEqual(created.scad_path, expected)
-                document = parse_cad_document(expected)
-                self.assertEqual(document.default_view, "pump_bracket")
-                self.assertEqual(document.views, ("pump_bracket", "assembly"))
-                self.assertEqual(
-                    document.presets[document.default_preset].items,
-                    ("view:pump_bracket", "view:assembly"),
-                )
-                self.assertEqual(set(document.view_metadata), {"pump_bracket", "assembly"})
-                self.assertTrue(document.presets)
-                source = expected.read_text(encoding="utf-8")
-                self.assertEqual(
-                    expected.read_bytes(),
-                    content.replace(b"__PLAMP_PART__", b"pump_bracket"),
-                )
-                for declaration in (
-                    "module pump_bracket_positive()",
-                    "module pump_bracket_negative()",
-                    "module pump_bracket()",
-                ):
-                    self.assertIn(declaration, source)
-                for generic in ("module part(", "module part_positive(", "module part_negative("):
-                    self.assertNotIn(generic, source)
-                self.assertEqual(len(re.findall(r'view == "(?:pump_bracket|assembly)"[^}]*pump_bracket\(\)', source)), 2)
-                shutil.rmtree(created.directory)
-
-    def test_generated_contract_rejects_leftover_reserved_token(self):
-        generated = VALID_SOURCE.decode("utf-8").replace(
-            "__PLAMP_PART__", "pump_bracket"
-        )
-
-        with self.assertRaisesRegex(ValueError, "retains reserved token"):
-            _validate_contract(
-                generated + "\n// __PLAMP_PART__\n",
-                "pump_bracket",
-                "generated fixture",
-            )
-
-    def test_repository_templates_follow_named_geometry_and_bom_contract(self):
-        repository = Path(__file__).resolve().parents[1]
-        for template in discover_templates(repository):
-            with self.subTest(template=template.name):
-                raw = template.path.read_text(encoding="utf-8")
-                self.assertGreaterEqual(raw.count("__PLAMP_PART__"), 10)
-                with tempfile.TemporaryDirectory() as temp:
-                    root = Path(temp)
-                    target = root / "things" / "3d_template"
-                    (target / "scad").mkdir(parents=True)
-                    relative = "cad.scad" if template.name == "cad" else f"scad/{template.name}.scad"
-                    (target / relative).write_text(raw, encoding="utf-8")
-                    generated = create_part(root, "pump-bracket", template.name).scad_path.read_text(encoding="utf-8")
-                positive = re.search(r"module pump_bracket_positive\(\)\s*\{(?P<body>.*?)\n\}", generated, re.S).group("body")
-                negative = re.search(r"module pump_bracket_negative\(\)\s*\{(?P<body>.*?)\n\}", generated, re.S).group("body")
-                composed = re.search(r"module pump_bracket\(\)\s*\{(?P<body>.*?)\n\}", generated, re.S).group("body")
-                self.assertIn("cube", positive)
-                self.assertIn('echo("BOM", "M3x16 screw", 1);', negative)
-                self.assertRegex(negative, r"cylinder\s*\(d\s*=\s*3\.4,\s*h\s*=\s*part_h\s*\+\s*2\s*\*\s*boolean_overlap,\s*center\s*=\s*true\)")
-                self.assertIn("difference()", composed)
-                self.assertIn("pump_bracket_positive();", composed)
-                self.assertIn("pump_bracket_negative();", composed)
-
-    def test_rejects_invalid_identifier_and_normalized_sibling_collision(self):
-        self.write_template("cad.scad")
-        with self.assertRaisesRegex(ValueError, "identifier"):
-            create_part(self.root, "3d_part", "cad")
-        self.assertFalse((self.root / "things" / "3d_part").exists())
-
-        for existing, requested in (("pump_bracket", "pump-bracket"), ("pump-bracket", "pump_bracket")):
-            with self.subTest(existing=existing):
-                existing_path = self.root / "things" / existing
-                existing_path.mkdir()
-                try:
-                    with self.assertRaisesRegex(ValueError, rf"{requested}.*{existing}.*pump_bracket"):
-                        create_part(self.root, requested, "cad")
-                finally:
-                    existing_path.rmdir()
-
-        create_part(self.root, "Pump-bracket", "cad")
-        create_part(self.root, "pump-bracket", "cad")
-
-    def test_rejects_template_contract_errors_before_staging(self):
-        mutations = {
-            "invalid_utf8": b"\xff" + VALID_SOURCE,
-            "no_token": VALID_SOURCE.replace(b"__PLAMP_PART__", b"fixed"),
-            "missing_module": VALID_SOURCE.replace(b"module __PLAMP_PART___negative()", b"module absent()"),
-            "generic_alias": VALID_SOURCE + b"\nmodule part() {}\n",
-            "wrong_default": VALID_SOURCE.replace(b'view = "__PLAMP_PART__"', b'view = "assembly"'),
-            "wrong_views": VALID_SOURCE.replace(b"[__PLAMP_PART__, assembly]", b"[assembly, __PLAMP_PART__]"),
-            "missing_view_metadata": VALID_SOURCE.replace(b',"assembly":{"description":"Assembly"}', b""),
-            "no_preset": VALID_SOURCE.replace(b',"presets":{"both":{"items":["view:__PLAMP_PART__","view:assembly"]}}', b""),
-            "missing_default_preset": VALID_SOURCE.replace(b'"default_preset":"both",', b""),
-            "wrong_items": VALID_SOURCE.replace(b'"view:__PLAMP_PART__","view:assembly"', b'"view:assembly","view:__PLAMP_PART__"'),
-            "unknown_view": VALID_SOURCE.replace(b'"view:assembly"]', b'"view:missing"]'),
-        }
-        for name, content in mutations.items():
-            with self.subTest(name=name):
-                self.write_template(f"scad/{name}.scad", content)
-                with self.assertRaises(ValueError):
-                    create_part(self.root, f"from_{name}", name)
-                self.assertFalse((self.root / "things" / f"from_{name}").exists())
-                self.assertEqual(list((self.root / "things").glob(f".from_{name}.staging-*")), [])
-
-    def test_contract_ignores_module_and_dispatch_decoys_in_comments_and_strings(self):
-        mutations = {
-            "commented_declaration": VALID_SOURCE.replace(
-                b"module __PLAMP_PART___positive()",
-                b"/* module __PLAMP_PART___positive() */ module absent_positive()",
-            ),
-            "string_declaration": VALID_SOURCE.replace(
-                b"module __PLAMP_PART___negative()",
-                b'echo("module __PLAMP_PART___negative()"); module absent_negative()',
-            ),
-            "commented_dispatch": VALID_SOURCE.replace(
-                b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
-                b'{ /* __PLAMP_PART__(); */ }\nelse if (view == "assembly")',
-                1,
-            ),
-            "string_dispatch": VALID_SOURCE.replace(
-                b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
-                b'{ echo("__PLAMP_PART__();"); }\nelse if (view == "assembly")',
-                1,
-            ),
-            "truncated_dispatch": VALID_SOURCE.replace(
-                b'if (view == "__PLAMP_PART__") { __PLAMP_PART__(); }\n'
-                b'else if (view == "assembly") { __PLAMP_PART__(); }',
-                b'if (view == "__PLAMP_PART__")',
-            ),
-        }
-        for name, content in mutations.items():
-            with self.subTest(name=name):
-                self.write_template(f"scad/{name}.scad", content)
-                with mock.patch(
-                    "plamp.cad_scaffold._make_staging",
-                    side_effect=AssertionError("contract reached staging"),
-                ):
-                    with self.assertRaises(ValueError):
-                        create_part(self.root, f"decoy_{name}", name)
-
-    def test_dispatch_accepts_closing_brace_inside_string(self):
-        valid = VALID_SOURCE.replace(
-            b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
-            b'{ echo("}"); __PLAMP_PART__(); }\nelse if (view == "assembly")',
-            1,
-        )
-        self.write_template("scad/string_close.scad", valid)
-        created = create_part(self.root, "string_close", "string_close")
+    def test_generates_two_clean_files_and_registers_model(self):
+        created = create_model(self.root, self.system, "pump-bracket", "cad")
         self.assertTrue(created.scad_path.is_file())
-
-    def test_dispatch_rejects_out_of_block_call_after_open_brace_string(self):
-        false_dispatch = VALID_SOURCE.replace(
-            b'{ __PLAMP_PART__(); }\nelse if (view == "assembly")',
-            b'{ echo("{"); }\n__PLAMP_PART__();\n}\nelse if (view == "assembly")',
-            1,
+        self.assertTrue(created.sidecar_path.is_file())
+        self.assertNotIn("generate.json", created.scad_path.read_text())
+        metadata = json.loads(created.sidecar_path.read_text())
+        self.assertEqual(metadata["name"], "pump-bracket")
+        self.assertEqual(metadata["source"], "pump-bracket.scad")
+        model = load_model("pump-bracket", created.sidecar_path, self.root)
+        self.assertEqual(tuple(model.sets), ("pump_bracket", "assembly"))
+        manifest = json.loads(self.system_path.read_text())
+        self.assertEqual(
+            manifest["models"]["pump-bracket"],
+            "things/pump-bracket/pump-bracket.cad.json",
         )
-        self.write_template("scad/string_open.scad", false_dispatch)
-        with mock.patch(
-            "plamp.cad_scaffold._make_staging",
-            side_effect=AssertionError("false dispatch reached staging"),
-        ):
-            with self.assertRaises(ValueError):
-                create_part(self.root, "string_open", "string_open")
 
-    def test_canonical_metadata_errors_are_rejected_before_staging(self):
-        mutations = {
-            "non_finite_nested": VALID_SOURCE.replace(
-                b'"description":"Part"',
-                b'"description":"Part","variables":{"size":NaN}',
-            ),
-            "positive_infinity_nested": VALID_SOURCE.replace(
-                b'"description":"Part"',
-                b'"description":"Part","variables":{"size":Infinity}',
-            ),
-            "negative_infinity_nested": VALID_SOURCE.replace(
-                b'"description":"Part"',
-                b'"description":"Part","variables":{"size":-Infinity}',
-            ),
-            "invalid_nested_description": VALID_SOURCE.replace(
-                b'"description":"Part"', b'"description":42'
-            ),
-            "invalid_nested_preset_item": VALID_SOURCE.replace(
-                b'"view:assembly"]', b'"view:assembly",42]'
-            ),
-        }
-        for name, content in mutations.items():
-            with self.subTest(name=name):
-                self.write_template(f"scad/{name}.scad", content)
-                with mock.patch(
-                    "plamp.cad_scaffold._make_staging",
-                    side_effect=AssertionError("metadata reached staging"),
-                ):
-                    with self.assertRaises(ValueError):
-                        create_part(self.root, f"metadata_{name}", name)
-                self.assertFalse((self.root / "things" / f"metadata_{name}").exists())
+    def test_unknown_template_and_duplicate_model_are_non_mutating(self):
+        original = self.system_path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "available: cad"):
+            create_model(self.root, self.system, "pump", "missing")
+        self.assertEqual(self.system_path.read_bytes(), original)
+        create_model(self.root, self.system, "pump", "cad")
+        refreshed = load_system(self.system_path, self.root)
+        with self.assertRaises(CadDestinationExistsError):
+            create_model(self.root, refreshed, "pump", "cad")
 
-    def test_generated_modes_follow_umask_and_ignore_source_executable_bits(self):
-        source = self.write_template("cad.scad")
-        source.chmod(0o755)
-        previous = os.umask(0o027)
-        try:
-            created = create_part(self.root, "mode_part", "cad")
-        finally:
-            os.umask(previous)
-        self.assertEqual(stat.S_IMODE(created.directory.stat().st_mode), 0o750)
-        self.assertEqual(stat.S_IMODE(created.scad_path.stat().st_mode), 0o640)
+    def test_rejects_unsafe_names_and_existing_destination_kinds(self):
+        for unsafe in ("../pump", "pump/name", "pump name", "$(owned)"):
+            with self.subTest(unsafe=unsafe), self.assertRaises(CadSelectionError):
+                create_model(self.root, self.system, unsafe, "cad")
+        destination = self.root / "things" / "linked"
+        destination.symlink_to(self.templates)
+        with self.assertRaises(CadDestinationExistsError):
+            create_model(self.root, self.system, "linked", "cad")
 
-    def test_atomic_publication_never_clobbers_commit_time_destination(self):
-        self.write_template("cad.scad")
-        from plamp import cad_scaffold
-        real_publish = cad_scaffold._publish_noreplace
-        destination = self.root / "things" / "raced"
-
-        def race(staging, target):
-            target.mkdir()
-            (target / "sentinel").write_bytes(b"competitor")
-            return real_publish(staging, target)
-
-        with mock.patch("plamp.cad_scaffold._publish_noreplace", side_effect=race):
-            with self.assertRaises(FileExistsError):
-                create_part(self.root, "raced", "cad")
-        self.assertEqual((destination / "sentinel").read_bytes(), b"competitor")
-        self.assertEqual(tuple(destination.iterdir()), (destination / "sentinel",))
-        self.assertEqual(list((self.root / "things").glob(".raced.staging-*")), [])
-
-    def test_template_identity_change_to_outside_symlink_is_rejected(self):
-        source = self.write_template("cad.scad")
-        outside = self.root / "outside.scad"
-        outside.write_bytes(VALID_SOURCE.replace(b"cube", b"sphere"))
+    def test_template_replacement_symlink_race_is_rejected(self):
+        source = self.templates / "cad.scad"
+        outside = self.root / "outside.scad"; outside.write_text(SCAD.replace("cube", "sphere"))
         discovered = discover_templates(self.root)
-
         def raced(_root):
-            source.unlink()
-            source.symlink_to(outside)
+            source.unlink(); source.symlink_to(outside)
             return discovered
-
         with mock.patch("plamp.cad_scaffold.discover_templates", side_effect=raced):
             with self.assertRaises(OSError):
-                create_part(self.root, "symlink_race", "cad")
-        self.assertFalse((self.root / "things" / "symlink_race").exists())
-        self.assertEqual(list((self.root / "things").glob(".symlink_race.staging-*")), [])
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertFalse((self.root / "things" / "pump").exists())
+
+    def test_manifest_replace_failure_rolls_back_published_model(self):
+        original = self.system_path.read_bytes()
+        with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertFalse((self.root / "things" / "pump").exists())
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_publish_race_preserves_competing_directory_and_manifest(self):
+        original = self.system_path.read_bytes()
+        destination = self.root / "things" / "pump"
+        def race(staging, target):
+            target.mkdir(); (target / "sentinel").write_text("keep")
+            raise FileExistsError("won elsewhere")
+        with mock.patch("plamp.cad_scaffold._publish_noreplace", side_effect=race):
+            with self.assertRaises(FileExistsError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertEqual((destination / "sentinel").read_text(), "keep")
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_repository_templates_are_complete_and_generate_navigable_models(self):
+        repository = Path(__file__).resolve().parents[1]
+        for template in discover_templates(repository):
+            with self.subTest(template=template.name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                shutil.copytree(repository / "things" / "3d_template", root / "things" / "3d_template")
+                manifest = root / "cad" / "test.system.cad.json"; manifest.parent.mkdir()
+                manifest.write_text(json.dumps({
+                    "schema": "plamp-cad-system/1", "name": "test", "models": {},
+                    "products": {}, "profiles": {}, "libraries": {},
+                }))
+                system = load_system(manifest, root)
+                created = create_model(root, system, f"from-{template.name}", template.name)
+                loaded = load_system(manifest, root)
+                self.assertIn(created.model_id, loaded.models)
+                self.assertEqual(tuple(loaded.models[created.model_id].sets)[-1], "assembly")
 
 
 if __name__ == "__main__":
