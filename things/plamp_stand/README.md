@@ -15,8 +15,8 @@ From the repository root after `source ./setup.sh`:
 
 ```bash
 plamp cad validate plamp_stand
-plamp cad plan plamp_stand --preset all-views-default
-plamp cad generate plamp_stand --preset all-views-default
+plamp cad plan --system plamp plamp_stand --all-sets
+plamp cad generate --system plamp plamp_stand --all-sets
 ```
 
 If you are changing the model or generation flow, run the manual check from the repo checklist:
@@ -33,4 +33,4 @@ A local reference image may exist at:
 - `./doc/stand.jpg`
 
 If that file is missing in GitHub or another checkout, treat it as optional documentation, not as part of the generation contract.
-The source of truth for this part is the SCAD file and its embedded generation metadata.
+The source of truth is the SCAD file and its adjacent model sidecar.

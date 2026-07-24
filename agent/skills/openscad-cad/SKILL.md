@@ -9,34 +9,35 @@ description: Use when creating or modifying OpenSCAD CAD, STL files, laser-cut D
 
 1. Inspect the part and repository conventions. Under plamp `things/`, read [plamp-things.md](references/plamp-things.md).
 2. Identify the process and keep dimensions/fit controls parametric.
-3. Preserve printable and assembly views. Compose positive geometry and negative cutters/engraving with `difference()`.
+3. Preserve printable and assembly sets. Compose positive geometry and negative cutters/engraving with `difference()`.
 4. Put `revision_string` where readable without affecting fit.
-5. Render and verify requested views.
+5. Render and verify requested sets.
 
 ## Plamp CAD
 
-Use `plamp cad` as the only Plamp CAD generation interface. Discover with `views`, check metadata with `validate`, and always run `plan` before `generate`. Planning expands the exact jobs and variables without invoking OpenSCAD, so it works even when OpenSCAD is unavailable.
+Use `plamp cad` as the only Plamp CAD generation interface. Discover systems, models, sets, and products; validate metadata; then generate directly. `plan` is an optional advanced preview that expands jobs and variables without invoking OpenSCAD.
 
 ```bash
-plamp cad views PART --json
-plamp cad validate PART --json
-plamp cad plan PART --preset PRESET --json
-plamp cad generate PART --preset PRESET --json
+plamp cad systems --json
+plamp cad models --system SYSTEM --json
+plamp cad sets MODEL --system SYSTEM --json
+plamp cad products --system SYSTEM --json
+plamp cad validate MODEL --system SYSTEM --json
+plamp cad generate --system SYSTEM --product PRODUCT --json
 ```
 
-Use `--json` for agents. Selection supports repeatable `--view`, `--define NAME=EXPR`, and `--view-define VIEW:NAME=EXPR`. Omit output arguments to use the managed archive.
+Use `--json` for agents. Direct selection supports repeatable `--set`, `--define NAME=EXPR`, and `--set-define SET:NAME=EXPR`; `--all-sets` selects every named set. Omit output arguments to use the managed archive.
 
 Read [plamp-things.md](references/plamp-things.md) for metadata, precedence, source snapshots, archives/logs, and the exact Plamp8 workflow.
 
 ## New Parts
 
-Create a named part from the repository template; the command writes
-`things/PART/PART.scad`. List templates when you need a non-default starting
-point:
+Create and register a named model from a described template. The command writes
+the paired SCAD source and sidecar:
 
 ```bash
-plamp cad new --list-templates --json
-plamp cad new PART --template TEMPLATE --json
+plamp cad templates --json
+plamp cad new PART --system SYSTEM --template TEMPLATE
 ```
 
 ## FDM Printing

@@ -14,7 +14,7 @@ commit=$(git -C "$REPO_ROOT" log -n 1 --pretty=format:%h -- "$SCRIPT_DIR/plamp_s
 outdir=$(mktemp -d /tmp/plamp-stand-check-XXXXXX)
 trap 'rm -rf "$outdir"' EXIT
 
-"$REPO_ROOT/bin/plamp" cad generate plamp_stand --preset all-views-default --revision "$commit" --output "$outdir/out" --json
+"$REPO_ROOT/bin/plamp" cad generate --system plamp plamp_stand --all-sets --revision "$commit" --output "$outdir/out" --json
 
 python3 - "$outdir/out/manifest.json" <<'PY'
 import json
@@ -31,15 +31,15 @@ if not isinstance(jobs, list) or not jobs:
     raise SystemExit("FAIL: CAD manifest has no jobs")
 if not all(isinstance(job, dict) for job in jobs):
     raise SystemExit("FAIL: CAD manifest contains an invalid job")
-expected_views = {"assembly", "tripod", "plate", "camera_clip"}
-actual_view_values = [job.get("view") for job in jobs]
-if not all(isinstance(view, str) for view in actual_view_values):
-    raise SystemExit(f"FAIL: CAD manifest contains invalid views: {actual_view_values!r}")
-actual_views = set(actual_view_values)
-if len(actual_view_values) != len(expected_views) or actual_views != expected_views:
-    missing = sorted(expected_views - actual_views)
-    extra = sorted(actual_views - expected_views)
-    raise SystemExit(f"FAIL: unexpected Stand views; missing={missing}, extra={extra}")
+expected_sets = {"assembly", "tripod", "plate", "camera_clip"}
+actual_set_values = [job.get("set") for job in jobs]
+if not all(isinstance(set_name, str) for set_name in actual_set_values):
+    raise SystemExit(f"FAIL: CAD manifest contains invalid sets: {actual_set_values!r}")
+actual_sets = set(actual_set_values)
+if len(actual_set_values) != len(expected_sets) or actual_sets != expected_sets:
+    missing = sorted(expected_sets - actual_sets)
+    extra = sorted(actual_sets - expected_sets)
+    raise SystemExit(f"FAIL: unexpected Stand sets; missing={missing}, extra={extra}")
 for job in jobs:
     if job.get("status") != "complete":
         raise SystemExit(f"FAIL: CAD job is not complete: {job!r}")

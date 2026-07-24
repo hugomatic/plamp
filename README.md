@@ -63,24 +63,31 @@ See the direct CLI with `plamp --help`, or the
 
 ## Generate printable CAD
 
-The direct CLI validates and plans repository CAD before running OpenSCAD. For
-the Plamp8 fused enclosure workflow:
+The direct CLI generates the default product when one CAD system is available:
 
 ```bash
-plamp cad views plamp8
-plamp cad validate plamp8
-plamp cad plan plamp8 --preset fuse-box
-plamp cad generate plamp8 --preset fuse-box
+plamp cad generate
+```
+
+Discover the catalog or make a more specific selection when needed:
+
+```bash
+plamp cad systems
+plamp cad models --system plamp
+plamp cad sets plamp8 --system plamp
+plamp cad products --system plamp
+plamp cad generate --system plamp --product fuse-box
 plamp cad runs plamp8
 plamp cad show RUN_ID
 ```
 
-Use `plan` before `generate`: planning expands the selected recipe and reports
-the exact jobs without rendering. Generation can take several minutes per job
-on a Raspberry Pi. Generated STL files, archived source, manifests, and
+Generate directly for normal work. `plan` is an optional advanced preview that
+expands the same selection without invoking OpenSCAD. Generation can take
+several minutes per job on a Raspberry Pi. Generated STL files, archived
+source, manifests, and
 OpenSCAD logs are instance data under `$PLAMP_DATA_DIR/cad/prints`, not source
 files to commit. See [Host tools](./docs/host-tools.md#openscad-on-a-pi) for the
-metadata format, selector behavior, and archive layout.
+catalog, selection behavior, and archive layout.
 
 ## Web and API
 

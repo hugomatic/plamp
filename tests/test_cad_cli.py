@@ -249,25 +249,6 @@ class CadCliTests(unittest.TestCase):
         self.assertNotIn("gap", observed["variables"][0])
         self.assertEqual(observed["variables"][1]["gap"], 0.3)
 
-    def test_removed_views_command_reports_exact_replacement(self):
-        output, error, rc = self._run_main(["cad", "views", "fixture"])
-        self.assertEqual((output, rc), ("", 2))
-        self.assertIn("cad views was removed", error)
-        self.assertIn("plamp cad sets MODEL", error)
-
-    def test_removed_selection_options_report_their_replacements(self):
-        replacements = {
-            "--view": "--set", "--view-define": "--set-define",
-            "--preset": "--product",
-        }
-        for option, replacement in replacements.items():
-            with self.subTest(option=option):
-                stderr = io.StringIO()
-                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
-                    build_parser().parse_args(["cad", "plan", "fixture", option, "old"])
-                self.assertIn(f"{option} was removed", stderr.getvalue())
-                self.assertIn(replacement, stderr.getvalue())
-
     def test_generate_has_no_legacy_output_or_commit_arguments(self):
         parser = build_parser()
         args = parser.parse_args(["cad", "generate", "fixture"])
@@ -645,17 +626,6 @@ class CadCliTests(unittest.TestCase):
         )
         self.assertEqual(openscad_calls, [])
 
-    @unittest.skip("replaced by cad sets replacement diagnostic coverage")
-    def test_views_resolves_part_name_and_path_and_keeps_assembly_last(self):
-        for part in ("fixture", "things/fixture/fixture.scad"):
-            with self.subTest(part=part):
-                stdout = io.StringIO()
-                rc = main(["cad", "views", part, "--json"], env=self.env(), stdout=stdout, stderr=io.StringIO())
-                result = json.loads(stdout.getvalue())
-                self.assertEqual(rc, 0)
-                self.assertEqual([item["name"] for item in result["views"]], ["floor", "box", "assembly"])
-                self.assertEqual(result["views"][0]["description"], "Printable floor")
-
     def test_invalid_sidecar_metadata_prints_json_diagnostics_without_traceback(self):
         self._clean_catalog()
         self.scad.with_suffix(".cad.json").write_text("{", encoding="utf-8")
@@ -677,75 +647,6 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(calls, [])
         self.assertTrue(json.loads(stdout.getvalue())["valid"])
-
-    @unittest.skip("legacy preset plan contract removed")
-    def test_plan_json_does_not_call_openscad_and_reports_counts(self):
-        calls = []
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "plan", "fixture", "--preset", "split", "--json"],
-            env=self.env(), stdout=stdout, stderr=io.StringIO(),
-            cad_generate_func=lambda *a, **k: calls.append((a, k)),
-        )
-        result = json.loads(stdout.getvalue())
-        self.assertEqual(rc, 0)
-        self.assertEqual(result["job_count"], 2)
-        self.assertEqual([job["view"] for job in result["jobs"]], ["floor", "box"])
-        self.assertEqual(calls, [])
-
-    @unittest.skip("legacy preset plan contract removed")
-    def test_plan_text_includes_descriptions_jobs_and_effective_values(self):
-        stdout = io.StringIO()
-        rc = main(
-            ["cad", "plan", "fixture", "--preset", "split"], env=self.env(),
-            stdout=stdout, stderr=io.StringIO(),
-        )
-        self.assertEqual(rc, 0)
-        self.assertIn("2 render job(s)", stdout.getvalue())
-        self.assertIn("Separate printable pieces", stdout.getvalue())
-        self.assertIn("Printable floor", stdout.getvalue())
-        self.assertIn("artifact:", stdout.getvalue())
-        self.assertIn("variables:", stdout.getvalue())
-
-    @unittest.skip("legacy view history contract removed")
-    def test_direct_view_plan_uses_median_of_strictly_comparable_history(self):
-        stdout = io.StringIO()
-        def run(path="things/fixture/fixture.scad", generator=1, *, view="floor",
-                variables=None, raw_defines=None, status="complete", elapsed=10.0,
-                size=1000):
-            return {
-                "source": {"scad_path": path}, "generator_version": generator,
-                "jobs": [{
-                    "view": view,
-                    "variables": {"flag": True} if variables is None else variables,
-                    "raw_defines": raw_defines or {},
-                    "elapsed_seconds": elapsed, "artifact_bytes": size, "status": status,
-                }],
-            }
-
-        archived = [
-            run(elapsed=99.0, size=9900),  # newest is intentionally not the median
-            run(elapsed=10.0, size=1000),
-            run(elapsed=11.0, size=1100),
-            run(path="things/other/fixture.scad", elapsed=1.0, size=1),
-            run(generator=2, elapsed=2.0, size=2),
-            run(view="box", elapsed=3.0, size=3),
-            run(variables={"quality": 2}, elapsed=4.0, size=4),
-            run(status="failed", elapsed=5.0, size=5),
-            run(variables={"flag": 1}, elapsed=0.0, size=0),
-            run(generator=True, elapsed=1.0, size=1),
-            run(raw_defines={"quality": "2"}, elapsed=2.0, size=2),
-        ]
-        rc = main(
-            ["cad", "plan", "fixture", "--view", "floor", "--json"], env=self.env(),
-            stdout=stdout, stderr=io.StringIO(), cad_list_runs_func=lambda *a, **k: archived,
-        )
-        result = json.loads(stdout.getvalue())
-        self.assertEqual(rc, 0)
-        self.assertEqual(result["jobs"][0]["description"], "Printable floor")
-        self.assertEqual(result["jobs"][0]["estimate"], {
-            "elapsed_seconds": 11.0, "artifact_bytes": 1100,
-        })
 
     def test_dirty_source_can_be_planned_without_revision(self):
         return self.test_dirty_system_model_set_can_be_planned_without_revision()
@@ -1059,24 +960,6 @@ class CadCliTests(unittest.TestCase):
         archived = output / "source" / "things" / "fixture" / "fixture.scad"
         self.assertEqual(archived.read_text(), old_source)
 
-    @unittest.skip("legacy view/preset help contract removed")
-    def test_generate_help_documents_all_direct_generation_behavior(self):
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
-            main(["cad", "generate", "--help"], env=self.env())
-        self.assertEqual(caught.exception.code, 0)
-        help_text = stdout.getvalue()
-        for required in (
-            "mutually exclusive", "repeatable", "--preset", "--view",
-            "--define NAME=EXPR", "--view-define VIEW:NAME=EXPR", "later wins",
-            "dirty", "--revision LABEL", "historical", "short hash",
-            "managed archive", "--output DIR", "--preview", "render_fn=24",
-            "render_text=false", "--openscad", "OPENSCAD_BIN", "PATH",
-            "platform fallback",
-        ):
-            with self.subTest(required=required):
-                self.assertIn(required, help_text)
-
     def test_generate_uses_the_same_snapshot_for_planning_and_rendering(self):
         return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
         captured = {}
@@ -1111,34 +994,6 @@ class CadCliTests(unittest.TestCase):
         self.assertIn("cube(1)", archived.read_text())
         self.assertNotIn("cube(99)", archived.read_text())
         self.assertEqual(manifest["jobs"][0]["fingerprint"], captured["fingerprint"])
-
-    @unittest.skip("removed options have exact replacement diagnostics")
-    def test_preset_and_view_conflict_is_stable_usage_error(self):
-        stdout, stderr = io.StringIO(), io.StringIO()
-        rc = main(
-            ["cad", "plan", "fixture", "--preset", "split", "--view", "box"],
-            env=self.env(), stdout=stdout, stderr=stderr,
-        )
-        self.assertEqual(rc, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("cannot be combined", stderr.getvalue())
-        self.assertNotIn("Traceback", stderr.getvalue())
-
-    @unittest.skip("legacy preset/view menu removed")
-    def test_menu_accepts_one_preset_or_multiple_views(self):
-        for answer, expected in (("1\n", ("split", ())), ("2 4\n", (None, ("floor", "assembly")))):
-            captured = []
-            with self.subTest(answer=answer):
-                rc = main(
-                    ["cad", "menu", "fixture", "--openscad", str(self._fake_openscad())],
-                    env=self.env(), stdin=io.StringIO(answer),
-                    stdout=io.StringIO(), stderr=io.StringIO(),
-                    cad_generate_func=lambda plan, **kwargs: captured.append(plan.selection) or {
-                        "run_id": "run-1", "status": "complete", "jobs": []
-                    },
-                )
-                self.assertEqual(rc, 0)
-                self.assertEqual((captured[0].preset, captured[0].views), expected)
 
     def test_menu_retains_planned_snapshot_through_real_generation_then_cleans_it(self):
         return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()

@@ -347,7 +347,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )[0]
         self.assertEqual(floor_context.count("floor_revision_negative();"), 1)
 
-    def test_cad_documentation_covers_the_stable_local_workflow(self):
+    def test_cad_documentation_uses_system_model_set_product_vocabulary(self):
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         host_tools = (REPO_ROOT / "docs" / "host-tools.md").read_text(
             encoding="utf-8"
@@ -359,10 +359,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         documentation = f"{readme_cad}\n{host_tools_cad}"
 
         for command in (
-            "plamp cad views plamp8",
-            "plamp cad validate plamp8",
-            "plamp cad plan plamp8 --preset fuse-box",
-            "plamp cad generate plamp8 --preset fuse-box",
+            "plamp cad generate",
+            "plamp cad systems",
+            "plamp cad models",
+            "plamp cad sets",
+            "plamp cad products",
+            "plamp cad templates",
+            "plamp cad generate --system plamp --product fuse-box",
+            "plamp cad generate --system plamp plamp8 --set top_panel",
+            "plamp cad generate --system plamp plamp8 --all-sets",
+            "plamp cad new pump_bracket --system plamp --template flat_plate",
             "plamp cad runs plamp8",
             "plamp cad show RUN_ID",
         ):
@@ -374,19 +380,23 @@ class ThingsCadScriptsTest(unittest.TestCase):
             documentation,
         )
         self.assertIn(
-            "plamp cad generate plamp8 --view top_panel --regenerate",
+            "plamp cad generate --system plamp plamp8 --set top_panel --regenerate",
             documentation,
         )
         self.assertIn(
             "explicit --output bypasses managed duplicate detection",
             " ".join(documentation.lower().replace("`", "").split()),
         )
-        self.assertIn("plan before generate", documentation.lower().replace("`", ""))
+        self.assertIn("generate directly", documentation.lower().replace("`", ""))
         self.assertIn(
-            "SCAD defaults → global → view → outer-to-inner preset variables → "
-            "outer-to-inner matching preset-view variables → CLI global → CLI per-view",
+            "SCAD defaults → model → set → deepest product outward → "
+            "product item → parent product → CLI global → CLI per-set",
             " ".join(documentation.split()),
         )
+        self.assertIn("noninteractive", documentation.lower())
+        self.assertNotIn("plamp cad views", documentation)
+        self.assertNotIn("--preset", documentation)
+        self.assertNotIn("--view", documentation)
         self.assertNotIn("web", documentation.lower())
         self.assertNotIn("three.js", documentation.lower())
 

@@ -86,72 +86,78 @@ strace -f -e trace=file ./plampctl status
 
 ## OpenSCAD on a Pi
 
-Use the local Plamp CAD commands so validation, revision engraving, source
-selection, manifests, and logs all follow the same reproducible path. A part
-name such as `plamp8` resolves to `things/plamp8/plamp8.scad`; a repository
-relative or absolute SCAD path also works.
-
-Start with this Plate 1 workflow:
+Use the local Plamp CAD commands so source selection, revision engraving,
+manifests, and logs follow one reproducible path. For the usual case, generate
+directly with no arguments. If exactly one system is available, Plamp selects
+that system and its default product:
 
 ```bash
-plamp cad views plamp8
-plamp cad validate plamp8
-plamp cad plan plamp8 --preset fuse-box
-plamp cad generate plamp8 --preset fuse-box
-plamp cad runs plamp8
-plamp cad show RUN_ID
+plamp cad generate
 ```
 
-Create a new named part with the same interface:
+### Navigate systems, models, sets, and products
+
+A **system** is a catalog that can span several OpenSCAD **models**. Each model
+declares renderable **sets** in its adjacent `.cad.json` sidecar. A system
+defines ordered **products**, which may combine sets from multiple models or
+nest other products. Every navigation listing includes descriptions:
 
 ```bash
-plamp cad new --list-templates
-plamp cad new pump_bracket --template cad
-plamp cad validate pump_bracket
-plamp cad plan pump_bracket
-plamp cad generate pump_bracket
+plamp cad systems
+plamp cad models --system plamp
+plamp cad sets plamp8 --system plamp
+plamp cad products --system plamp
+plamp cad templates
 ```
 
-Use `plan` before `generate`. `plan` never invokes OpenSCAD: it expands the
-recipe, shows the render jobs and effective variables, and uses compatible
-archived runs for time and size estimates. The same selection options work for
-both commands. `--preset NAME` chooses one named recipe; repeatable
-`--view NAME` chooses individual views. The synthetic selectors
-`--preset all-views` and `--preset all-presets` expand every declared view or
-every named preset respectively, but are not names that may be embedded in a
-SCAD file. With no selection, Plamp uses `default_preset` when present and
-otherwise falls back to one render using the SCAD document's default view.
+Several `*.system.cad.json` files may live in the same `cad/` directory. In an
+interactive terminal Plamp offers a choice. In noninteractive or JSON mode,
+ambiguity is an error and the command names the available systems; select one
+with `--system NAME_OR_PATH`.
 
-### Embedded generation metadata
+### Generate products or model sets
 
-Generation recipes live with the model inside a `/* generate.json ... */`
-comment. The JSON object may contain:
+Choose an entire product, one or more ordered sets from one model, or every
+named set in that model:
 
-- `global_variables`: typed OpenSCAD values applied to every job.
-- `views`: metadata keyed by names from the Customizer declaration
-  `view = "..."; // [view_a, view_b]`; each entry may have `description` and
-  `variables`.
-- `presets`: named recipes with `description`, ordered `items` using
-  `view:NAME` or `preset:NAME`, plus optional `variables` and per-view
-  `view_variables`.
-- `default_preset`: the named recipe selected when the command has no explicit
-  preset or views.
+```bash
+plamp cad generate --system plamp --product fuse-box
+plamp cad generate --system plamp plamp8 --set top_panel
+plamp cad generate --system plamp plamp8 --set top_panel --set sub_panel
+plamp cad generate --system plamp plamp8 --all-sets
+```
 
-Metadata is optional for older parts. Plamp still reads their Customizer view
-declaration and can render the implicit default; `validate` reports malformed
-JSON, unknown references, reserved selector names, and preset cycles before a
-render begins. Command-line `--define NAME=EXPR` and
-`--view-define VIEW:NAME=EXPR` overrides are repeatable; use them only for
-intentional OpenSCAD expressions because they are archived verbatim.
+The model's empty set is the direct model output. Request it by naming the
+model without `--set`; `--all-sets` deliberately expands named sets only.
+`--define NAME=EXPR` applies a raw OpenSCAD expression globally and
+`--set-define SET:NAME=VALUE` targets one selected set. Later assignments win
+in this order: SCAD defaults → model → set → deepest product outward →
+product item → parent product → CLI global → CLI per-set.
 
-Nested variables use one exact, later-wins precedence order: SCAD defaults →
-global → view → outer-to-inner preset variables → outer-to-inner matching
-preset-view variables → CLI global → CLI per-view.
+Generate directly for normal work. `plamp cad plan` is an optional advanced
+command that expands the exact same selection and identities without invoking
+OpenSCAD. It is useful for inspecting a large product before committing Pi CPU
+time, but it is not a prerequisite for `generate`.
+
+### Create a model from a template
+
+List the human-readable templates, then select one explicitly. If an
+interactive `new` command omits `--template`, Plamp prompts for the choice:
+
+```bash
+plamp cad templates
+plamp cad new pump_bracket --system plamp --template flat_plate
+plamp cad sets pump_bracket --system plamp
+plamp cad generate --system plamp pump_bracket
+```
+
+The scaffold creates a clean `.scad` file plus an adjacent `.cad.json` model
+sidecar, and registers the model in the selected system manifest.
 
 ### Run archives and diagnostics
 
 By default each generation is stored at
-`$PLAMP_DATA_DIR/cad/prints/<part>/<RUN_ID>/`. This instance-data directory
+`$PLAMP_DATA_DIR/cad/prints/<model>/<RUN_ID>/`. This instance-data directory
 contains `manifest.json`, a generated `readme.md`, the archived `source/`, STL
 files under `artifacts/`, and complete OpenSCAD output under `logs/`. The
 run ID is local-time and human-readable; for example:
@@ -166,15 +172,23 @@ interactive command shows the existing path and asks whether to regenerate.
 For automation, request the same safe replacement explicitly:
 
 ```bash
-plamp cad generate plamp8 --view top_panel --regenerate
+plamp cad generate --system plamp plamp8 --set top_panel --regenerate
 ```
 
 The replacement is rendered separately and published only after it succeeds;
 a failed regeneration leaves the existing run intact. Explicit `--output`
 bypasses managed duplicate detection and keeps its exact-directory behavior.
 
-Each versioned manifest records source identity, the metadata snapshot,
-selection, preset expansion, effective typed and raw variables, exact OpenSCAD
+Inspect archives with:
+
+```bash
+plamp cad runs plamp8
+plamp cad show RUN_ID
+plamp cad log RUN_ID ARTIFACT_ID
+```
+
+Each versioned manifest records system, model, set, and source identities,
+product membership, effective typed and raw variables, exact OpenSCAD
 commands, job state, timings, artifact sizes, captured echoes, typed `PLAMP`
 messages, warnings, errors, and geometry statistics. Unknown OpenSCAD output
 remains in the per-artifact log. Use `plamp cad show RUN_ID` for the manifest

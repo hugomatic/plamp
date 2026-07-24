@@ -15,7 +15,6 @@ import shutil
 import stat
 import sys
 
-from plamp.cad_metadata import CadMetadataError, parse_cad_document, parse_cad_source
 from plamp.cad_model import CadMetadataError as CadModelMetadataError, load_model
 from plamp.cad_system import CadSystem, load_system
 
@@ -203,13 +202,13 @@ def _read_template_sidecar(template_root: Path, template: CadTemplate) -> bytes:
 def _metadata(source: str, description: str) -> dict[str, object]:
     match = _METADATA.search(source)
     if match is None:
-        raise CadSelectionError(f"{description} has no generate.json metadata")
+        raise CadSelectionError(f"{description} has no embedded legacy metadata")
     try:
         value = json.loads(match.group("body"))
     except (json.JSONDecodeError, ValueError) as error:
-        raise CadSelectionError(f"{description} has invalid generate.json metadata: {error}") from None
+        raise CadSelectionError(f"{description} has invalid embedded legacy metadata: {error}") from None
     if not isinstance(value, dict):
-        raise CadSelectionError(f"{description} generate.json metadata must be an object")
+        raise CadSelectionError(f"{description} embedded legacy metadata must be an object")
     return value
 
 
@@ -336,12 +335,12 @@ def _validate_contract(
 ) -> None:
     if not allow_reserved and _TOKEN in source:
         raise CadSelectionError(f"{description} retains reserved token {_TOKEN}")
-    view = _VIEW_ASSIGNMENT.search(source)
+    assignment = _VIEW_ASSIGNMENT.search(source)
     expected_views = (identifier, "assembly")
-    if view is None:
+    if assignment is None:
         raise CadSelectionError(f"{description} has no declared view choices")
-    choices = tuple(item.strip() for item in view.group("choices").split(",") if item.strip())
-    if view.group("default") != identifier or choices != expected_views:
+    choices = tuple(item.strip() for item in assignment.group("choices").split(",") if item.strip())
+    if assignment.group("default") != identifier or choices != expected_views:
         raise CadSelectionError(
             f"{description} must default to {identifier!r} with exactly {expected_views!r}"
         )

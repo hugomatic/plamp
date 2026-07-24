@@ -7,14 +7,12 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import shutil
-from statistics import median
 import subprocess
 from collections.abc import Callable, Mapping
 from typing import Any, TextIO
 
 from plamp.cad_generation import (
     CadRunExistsError,
-    GENERATOR_VERSION,
     GenerationResult,
     generate_plan,
     list_runs,
@@ -24,8 +22,7 @@ from plamp.cad_generation import (
     resolve_openscad,
     resolve_part,
 )
-from plamp.cad_metadata import CadDiagnostic, CadMetadataError
-from plamp.cad_model import CadMetadataError as CadCatalogMetadataError
+from plamp.cad_model import CadDiagnostic, CadMetadataError
 from plamp.cad_system import (
     CadSystem,
     SystemCandidate,
@@ -44,22 +41,6 @@ from plamp.context import RuntimeContext
 
 
 CadFunction = Callable[..., Any]
-
-
-class _RemovedOption(argparse.Action):
-    def __init__(self, option_strings: list[str], dest: str, **kwargs: object) -> None:
-        kwargs.setdefault("nargs", 1)
-        super().__init__(option_strings, dest, **kwargs)
-
-    def __call__(self, parser: argparse.ArgumentParser, namespace: argparse.Namespace,
-                 values: object, option_string: str | None = None) -> None:
-        replacements = {
-            "--view": "--set", "--view-define": "--set-define",
-            "--preset": "--product (or MODEL --set SET)",
-        }
-        parser.error(
-            f"{option_string} was removed; use {replacements[option_string or '']}"
-        )
 
 
 class CadOperationError(RuntimeError):
@@ -84,8 +65,6 @@ def _selection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--revision", metavar="LABEL", help="literal revision engraving label"
     )
-    for obsolete in ("--view", "--view-define", "--preset"):
-        parser.add_argument(obsolete, action=_RemovedOption, help=argparse.SUPPRESS)
 
 
 def add_cad_parser(
@@ -118,12 +97,6 @@ def add_cad_parser(
     templates = actions.add_parser("templates", help="list CAD model templates")
     templates.add_argument("--json", action="store_true")
 
-    obsolete = actions.add_parser("views", help=argparse.SUPPRESS)
-    obsolete.add_argument("model", nargs="?")
-    obsolete.add_argument("--json", action="store_true")
-    # Keep a parser solely to emit the migration diagnostic without advertising
-    # the removed command in normal navigation/help.
-    actions._choices_actions.pop()  # type: ignore[attr-defined]
     validate = actions.add_parser("validate")
     validate.add_argument("model", nargs="?")
     validate.add_argument("--system", metavar="NAME_OR_PATH")
@@ -481,12 +454,6 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
     return rows
 
 
-def _typed_json(value: object) -> str:
-    """Canonical JSON that preserves scalar types for exact comparisons."""
-
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
-
-
 def _diagnostic(
     error: BaseException, source: str, *, code: str, kind: str
 ) -> CadDiagnostic:
@@ -516,34 +483,6 @@ def _emit_diagnostics(
         if item.fix:
             message += f"; {item.fix}"
         stderr.write(message + "\n")
-
-
-def _ordered_views(document: Any) -> list[dict[str, str]]:
-    names = [name for name in document.views if name != "assembly"]
-    names.extend(name for name in document.views if name == "assembly")
-    return [
-        {
-            "name": name,
-            "description": document.view_metadata.get(name).description
-            if name in document.view_metadata
-            else "",
-        }
-        for name in names
-    ]
-
-
-def _catalog(document: Any, source: Path) -> dict[str, object]:
-    return {
-        "part": source.parent.name,
-        "source": str(source),
-        "default_view": document.default_view,
-        "default_preset": document.default_preset,
-        "presets": [
-            {"name": name, "description": preset.description}
-            for name, preset in document.presets.items()
-        ],
-        "views": _ordered_views(document),
-    }
 
 
 def _set_defines(values: list[str]) -> dict[str, dict[str, object]]:
@@ -590,142 +529,6 @@ def _generation_output(args: argparse.Namespace) -> Path | None:
     return getattr(args, "output", None)
 
 
-def _with_plan(
-    args: argparse.Namespace,
-    context: RuntimeContext,
-    deps: Mapping[str, CadFunction],
-    selection: Selection | None = None,
-    *,
-    allow_dirty: bool = False,
-    retain_snapshot: bool = False,
-) -> tuple[Path, Any, Any, Any]:
-    source = deps["resolve_part"](args.part, context.root)
-    revision = (
-        _generation_revision(args)
-        if getattr(args, "action", None) == "generate"
-        else getattr(args, "revision", None)
-    )
-    if allow_dirty and revision is None:
-        revision = "working-tree-plan"
-    snapshot = deps["prepare_source"](
-        context.root,
-        source,
-        revision,
-        revision_is_commit=(
-            False
-        ),
-    )
-    snapshot_returned = False
-    try:
-        document = deps["parse_document"](snapshot.scad_path)
-        selected = _selection(args, document, menu=selection)
-        plan = deps["build_plan"](document, selected, snapshot.source_identity)
-        snapshot_returned = retain_snapshot
-        return source, document, plan, snapshot
-    finally:
-        if not snapshot_returned and snapshot.cleanup_root is not None:
-            shutil.rmtree(snapshot.cleanup_root, ignore_errors=True)
-
-
-def _plan_object(
-    plan: Any,
-    document: Any,
-    archived_runs: list[Mapping[str, object]],
-    source_path: str,
-) -> dict[str, object]:
-    value = plan_as_dict(plan)
-    value["job_count"] = len(plan.jobs)
-    value["shared_job_count"] = sum(1 for job in plan.jobs if len(job.preset_paths) > 1)
-    for job in value["jobs"]:  # type: ignore[assignment]
-        view = job["view"]
-        job["description"] = (
-            document.view_metadata[view].description
-            if view in document.view_metadata
-            else ""
-        )
-        elapsed_samples: list[float] = []
-        size_samples: list[int] = []
-        for run in archived_runs:
-            source = run.get("source")
-            generator_version = run.get("generator_version")
-            if (
-                not isinstance(source, Mapping)
-                or source.get("scad_path") != source_path
-                or type(generator_version) is not int
-                or generator_version != GENERATOR_VERSION
-            ):
-                continue
-            archived_jobs = run.get("jobs", [])
-            if not isinstance(archived_jobs, list):
-                continue
-            for archived_job in archived_jobs:
-                if (
-                    not isinstance(archived_job, Mapping)
-                    or archived_job.get("status") != "complete"
-                    or archived_job.get("view") != job["view"]
-                    or _typed_json(archived_job.get("variables"))
-                    != _typed_json(job["variables"])
-                    or _typed_json(archived_job.get("raw_defines", {}))
-                    != _typed_json(job["raw_defines"])
-                ):
-                    continue
-                elapsed = archived_job.get("elapsed_seconds")
-                artifact_bytes = archived_job.get("artifact_bytes")
-                if isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool):
-                    elapsed_samples.append(float(elapsed))
-                if isinstance(artifact_bytes, int) and not isinstance(artifact_bytes, bool):
-                    size_samples.append(artifact_bytes)
-        estimate: dict[str, object] = {}
-        if elapsed_samples:
-            estimate["elapsed_seconds"] = median(elapsed_samples)
-        if size_samples:
-            estimate["artifact_bytes"] = median(size_samples)
-        job["estimate"] = estimate or None
-    estimated = [job["estimate"] for job in value["jobs"] if job["estimate"]]  # type: ignore[index]
-    value["estimated_job_count"] = len(estimated)
-    value["estimated_elapsed_seconds"] = sum(
-        float(estimate.get("elapsed_seconds", 0)) for estimate in estimated
-    )
-    value["estimated_artifact_bytes"] = sum(
-        int(estimate.get("artifact_bytes", 0)) for estimate in estimated
-    )
-    return value
-
-
-def _print_plan(value: Mapping[str, object], stdout: TextIO) -> None:
-    stdout.write(f"{value['job_count']} render job(s)\n")
-    tree = value["preset_tree"]
-    if tree:
-        stdout.write("Preset tree:\n")
-
-        def print_item(item: Mapping[str, object], indent: str) -> None:
-            description = f" - {item['description']}" if item.get("description") else ""
-            stdout.write(
-                f"{indent}{item['kind']} {item.get('name') or 'default'}"
-                f"{description}\n"
-            )
-            for child in item.get("items", []):
-                print_item(child, indent + "  ")
-
-        for node in tree:  # type: ignore[assignment]
-            print_item({"kind": "preset", **node}, "- ")
-    stdout.write("Jobs:\n")
-    for job in value["jobs"]:  # type: ignore[assignment]
-        description = f" - {job['description']}" if job["description"] else ""
-        stdout.write(
-            f"- {job['variant_name']} ({job['view'] or 'default'}){description}\n"
-        )
-        stdout.write(f"  artifact: {job['artifact_id']}\n")
-        stdout.write(f"  fingerprint: {job['fingerprint']}\n")
-        stdout.write(f"  variables: {json.dumps(job['variables'], sort_keys=True)}\n")
-        if job["raw_defines"]:
-            stdout.write(f"  raw defines: {json.dumps(job['raw_defines'], sort_keys=True)}\n")
-        if len(job["preset_paths"]) > 1:
-            stdout.write(f"  shared by: {json.dumps(job['preset_paths'])}\n")
-        if job["estimate"]:
-            stdout.write(f"  estimate: {json.dumps(job['estimate'], sort_keys=True)}\n")
-
-
 def _load_exact_run(
     value: str, data_dir: Path, deps: Mapping[str, CadFunction]
 ) -> tuple[Path, Mapping[str, object]]:
@@ -752,42 +555,6 @@ def _load_exact_run(
     if not isinstance(manifest, Mapping) or manifest.get("run_id") != value:
         raise ValueError(f"CAD manifest run_id does not match requested ID: {value}")
     return matches[0], manifest
-
-
-def _menu_selection(document: Any, stdin: TextIO, output: TextIO) -> Selection:
-    entries: list[tuple[str, str]] = []
-    for name, preset in document.presets.items():
-        entries.append(("preset", name))
-        output.write(f"{len(entries)}. preset {name} - {preset.description}\n")
-    for item in _ordered_views(document):
-        entries.append(("view", item["name"]))
-        output.write(f"{len(entries)}. view {item['name']} - {item['description']}\n")
-    if not entries:
-        raise ValueError("no presets or selectable views were declared")
-
-    for attempt in range(2):
-        output.write("Select one preset or one or more views: ")
-        output.flush()
-        try:
-            line = stdin.readline()
-        except KeyboardInterrupt:
-            raise CadSelectionCancelled("CAD menu selection cancelled") from None
-        if line == "":
-            raise CadSelectionCancelled("CAD menu selection cancelled at end of input")
-        tokens = line.split()
-        try:
-            numbers = [int(token) for token in tokens]
-        except ValueError:
-            numbers = []
-        if numbers and all(1 <= number <= len(entries) for number in numbers):
-            chosen = [entries[number - 1] for number in numbers]
-            if len(chosen) == 1 and chosen[0][0] == "preset":
-                return Selection(preset=chosen[0][1])
-            if all(kind == "view" for kind, _ in chosen):
-                return Selection(views=tuple(name for _, name in chosen))
-        if attempt == 0:
-            output.write("Invalid selection; try once more.\n")
-    raise ValueError("invalid menu selection")
 
 
 def _generation_manifest(
@@ -1057,8 +824,6 @@ def run_cad_command(
 
         if args.action == "menu" and args.json:
             raise ValueError("cad menu does not support --json")
-        if args.action == "views":
-            raise ValueError("cad views was removed; use `plamp cad sets MODEL`")
         if args.action == "validate":
             system = _selected_system(args, context, stdin, stdout, deps)
             if args.model is not None and args.model not in system.models:
@@ -1149,7 +914,7 @@ def run_cad_command(
         )
         _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
         return 4
-    except (CadMetadataError, CadCatalogMetadataError) as error:
+    except CadMetadataError as error:
         _emit_diagnostics(error.diagnostics, args.json, stdout, stderr)
         return 2
     except (CadSelectionError, ValueError, TypeError) as error:
