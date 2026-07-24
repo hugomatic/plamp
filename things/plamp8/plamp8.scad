@@ -173,7 +173,9 @@ panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
 panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
 panel_screw_land_d = 9.5;
-panel_nut_d = screw_nut_trap_d(panel_screw_size);
+panel_nut_d = panel_screw_size == "M3"
+    ? 6.1
+    : screw_nut_trap_d(panel_screw_size);
 panel_nut_h = screw_nut_trap_h(panel_screw_size);
 panel_nut_clearance = 0.1;
 panel_nut_entry_l = 12;

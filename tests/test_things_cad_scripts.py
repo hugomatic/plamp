@@ -1413,6 +1413,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for definition in (
             "sub_panel_bonding_tower_d=11;",
+            'panel_nut_d=panel_screw_size=="M3"?6.1:screw_nut_trap_d(panel_screw_size);',
             "panel_nut_clearance=0.1;",
             "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
             "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
