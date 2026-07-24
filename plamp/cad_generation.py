@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import secrets
 from typing import IO, Callable
 
 from plamp.cad_model import CadModel
@@ -351,16 +352,51 @@ def _atomic_text(path: Path, text: str) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _write_manifest(run_dir: Path, manifest: dict[str, object]) -> None:
-    manifest["updated_at"] = _timestamp(_utc_now())
-    _atomic_text(
-        run_dir / "manifest.json",
-        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+def _atomic_text_at(directory_fd: int, name: str, text: str) -> None:
+    temporary = f".{name}.{secrets.token_hex(8)}"
+    fd = os.open(
+        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _CLOEXEC,
+        0o644, dir_fd=directory_fd,
     )
+    try:
+        try:
+            data = text.encode("utf-8")
+            view = memoryview(data)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(
+            temporary, name, src_dir_fd=directory_fd, dst_dir_fd=directory_fd
+        )
+    finally:
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
 
 
-def _write_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
-    _atomic_text(run_dir / "readme.md", render_run_readme(manifest))
+def _write_manifest(
+    run_dir: Path, manifest: dict[str, object], run_fd: int | None = None,
+) -> None:
+    manifest["updated_at"] = _timestamp(_utc_now())
+    text = json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    if run_fd is None:
+        _atomic_text(run_dir / "manifest.json", text)
+    else:
+        _atomic_text_at(run_fd, "manifest.json", text)
+
+
+def _write_readme(
+    run_dir: Path, manifest: Mapping[str, object], run_fd: int | None = None,
+) -> None:
+    text = render_run_readme(manifest)
+    if run_fd is None:
+        _atomic_text(run_dir / "readme.md", text)
+    else:
+        _atomic_text_at(run_fd, "readme.md", text)
 
 
 def _best_effort_readme(run_dir: Path, manifest: Mapping[str, object]) -> None:
@@ -568,11 +604,19 @@ def _finalize_job_failure(
     _remove_temporary_artifact(temporary_artifact)
 
 
-def _copy_snapshot(snapshot: SourceSnapshot, model_id: str, run_dir: Path) -> Path:
-    target = run_dir / "source" / _safe_component(model_id) / snapshot.scad_path.name
+def _copy_snapshot(
+    snapshot: SourceSnapshot, model_id: str, run_dir: Path,
+    source_fd: int | None = None,
+) -> Path:
+    visible = run_dir / "source" / _safe_component(model_id) / snapshot.scad_path.name
+    target = (
+        Path(f"/proc/self/fd/{source_fd}") / _safe_component(model_id)
+        / snapshot.scad_path.name
+        if source_fd is not None else visible
+    )
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(snapshot.scad_path.parent, target.parent, dirs_exist_ok=True)
-    return target
+    return visible
 
 
 def _file_sha256(path: Path) -> str:
@@ -763,10 +807,12 @@ def _find_geometry_artifact(
         os.close(root_fd)
 
 
-def _copy_verified_artifact(source: _VerifiedArtifact, target: Path) -> None:
+def _copy_verified_artifact(
+    source: _VerifiedArtifact, target: Path, destination_fd: int | None = None,
+) -> None:
     """Atomically copy a verified open regular file into a fresh run."""
 
-    directory_fd = os.open(
+    directory_fd = os.dup(destination_fd) if destination_fd is not None else os.open(
         target.parent, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
     )
     temporary_name = f".{target.name}.reuse.tmp"
@@ -814,6 +860,20 @@ def _copy_verified_artifact(source: _VerifiedArtifact, target: Path) -> None:
             pass
         finally:
             os.close(directory_fd)
+
+
+def _destination_exists(path: Path, destination_fd: int | None = None) -> bool:
+    directory_fd = os.dup(destination_fd) if destination_fd is not None else os.open(
+        path.parent, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+    )
+    try:
+        try:
+            os.stat(path.name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        return True
+    finally:
+        os.close(directory_fd)
 
 
 def _generation_identity(
@@ -881,12 +941,12 @@ def _secure_existing_identity(
 def _create_managed_run_directory(
     archive_root: Path, base_run_id: str, plan: RenderPlan,
     identity: Mapping[str, object], archive_fd: int,
-) -> tuple[str, Path]:
+) -> tuple[str, Path, int]:
     """Atomically allocate a deterministic unique managed run directory."""
 
     archive_root.mkdir(parents=True, exist_ok=True)
 
-    def claim(name: str) -> Path | None:
+    def claim(name: str) -> tuple[Path, int] | None:
         candidate = archive_root / name
         try:
             os.mkdir(name, dir_fd=archive_fd)
@@ -906,13 +966,14 @@ def _create_managed_run_directory(
                 ) from error
             if (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino):
                 raise OSError("CAD archive path changed during run allocation")
-        finally:
+        except BaseException:
             os.close(run_fd)
-        return candidate
+            raise
+        return candidate, run_fd
 
     claimed = claim(base_run_id)
     if claimed is not None:
-        return base_run_id, claimed
+        return base_run_id, claimed[0], claimed[1]
 
     existing = _secure_existing_identity(archive_root, base_run_id, archive_fd)
     if existing is not None and _only_manufacturing_identity_differs(existing, identity):
@@ -921,7 +982,7 @@ def _create_managed_run_directory(
             name = f"{base_run_id}-mfg{token[:length]}"
             claimed = claim(name)
             if claimed is not None:
-                return name, claimed
+                return name, claimed[0], claimed[1]
         stem = f"{base_run_id}-mfg{token}"
     else:
         stem = base_run_id
@@ -931,8 +992,33 @@ def _create_managed_run_directory(
         name = f"{stem}-{counter}"
         claimed = claim(name)
         if claimed is not None:
-            return name, claimed
+            return name, claimed[0], claimed[1]
         counter += 1
+
+
+def _verify_visible_directory(fd: int, path: Path, label: str) -> None:
+    opened = os.fstat(fd)
+    try:
+        visible = os.stat(path, follow_symlinks=False)
+    except OSError as error:
+        raise OSError(f"CAD {label} path changed during generation") from error
+    if (not stat.S_ISDIR(visible.st_mode)
+            or (opened.st_dev, opened.st_ino) != (visible.st_dev, visible.st_ino)):
+        raise OSError(f"CAD {label} path changed during generation")
+
+
+def _publish_rendered_artifact(
+    temporary: Path, final: Path, artifacts_fd: int,
+) -> None:
+    details = os.stat(temporary.name, dir_fd=artifacts_fd, follow_symlinks=False)
+    if not stat.S_ISREG(details.st_mode) or details.st_size <= 0:
+        raise OSError("rendered artifact is not a non-empty regular file")
+    os.link(
+        temporary.name, final.name,
+        src_dir_fd=artifacts_fd, dst_dir_fd=artifacts_fd,
+        follow_symlinks=False,
+    )
+    os.unlink(temporary.name, dir_fd=artifacts_fd)
 
 
 def _manifest_generation_identity(
@@ -1114,6 +1200,10 @@ def generate_plan(
     regeneration_target: Path | None = None
     run_dir: Path | None = None
     archive_fd = -1
+    run_fd = -1
+    source_fd = -1
+    artifacts_fd = -1
+    logs_fd = -1
     try:
         local_now = _local_now()
         selector = (f"product-{plan.selection.product}" if plan.selection.product else
@@ -1151,7 +1241,7 @@ def generate_plan(
                 "-".join(dict.fromkeys(snapshots[name].revision_label for name in selected_model_ids))
             )
             if output is None:
-                run_id, run_dir = _create_managed_run_directory(
+                run_id, run_dir, run_fd = _create_managed_run_directory(
                     archive_part_root, base_run_id, plan, generation_identity,
                     archive_fd,
                 )
@@ -1162,15 +1252,46 @@ def generate_plan(
                     run_dir.mkdir(parents=True, exist_ok=False)
                 except FileExistsError as error:
                     raise ValueError(f"CAD output directory already exists: {run_dir}") from error
+                run_fd = os.open(
+                    run_dir, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+                )
         else:
             run_dir = _hidden_directory(
                 archive_part_root,
                 f"{regeneration_target.name}.regenerating",
             )
-        (run_dir / "artifacts").mkdir()
-        (run_dir / "logs").mkdir()
-        archived_sources = {name: _copy_snapshot(snapshots[name], name, run_dir)
-                            for name in selected_model_ids}
+            run_fd = os.open(
+                run_dir, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+            )
+        for child in ("source", "artifacts", "logs"):
+            os.mkdir(child, dir_fd=run_fd)
+        source_fd = os.open(
+            "source", os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+            dir_fd=run_fd,
+        )
+        artifacts_fd = os.open(
+            "artifacts", os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+            dir_fd=run_fd,
+        )
+        logs_fd = os.open(
+            "logs", os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+            dir_fd=run_fd,
+        )
+
+        def verify_destination() -> None:
+            _verify_visible_directory(archive_fd, archive_part_root, "system archive")
+            _verify_visible_directory(run_fd, run_dir, "run")
+            _verify_visible_directory(source_fd, run_dir / "source", "source")
+            _verify_visible_directory(artifacts_fd, run_dir / "artifacts", "artifacts")
+            _verify_visible_directory(logs_fd, run_dir / "logs", "logs")
+
+        archived_sources: dict[str, Path] = {}
+        for name in selected_model_ids:
+            verify_destination()
+            archived_sources[name] = _copy_snapshot(
+                snapshots[name], name, run_dir, source_fd
+            )
+            verify_destination()
         created = _timestamp(now)
         jobs = [
             _job_entry(job, created, f"logs/{job.artifact_id}.log")
@@ -1207,9 +1328,23 @@ def generate_plan(
             "openscad_version": openscad_version,
             "jobs": jobs,
         }
-        _write_manifest(run_dir, manifest)
+        def write_manifest_state() -> None:
+            verify_destination()
+            _write_manifest(run_dir, manifest, run_fd)
+
+        def write_readme_state() -> None:
+            verify_destination()
+            _write_readme(run_dir, manifest, run_fd)
+
+        def best_effort_readme_state() -> None:
+            try:
+                write_readme_state()
+            except OSError:
+                pass
+
+        write_manifest_state()
         try:
-            _write_readme(run_dir, manifest)
+            write_readme_state()
         except OSError as error:
             finished_at = _timestamp(_utc_now())
             manifest["status"] = "failed"
@@ -1223,7 +1358,7 @@ def generate_plan(
                 first_errors = first_job["errors"]
                 assert isinstance(first_errors, list)
                 first_errors.append(_error_text(error))
-            _write_manifest(run_dir, manifest)
+            write_manifest_state()
             return _finish_regeneration(
                 GenerationResult(run_dir, run_dir / "manifest.json", "failed"),
                 regeneration_target,
@@ -1244,6 +1379,7 @@ def generate_plan(
                 snapshots[render_job.model_id].geometry_identity
                 or snapshots[render_job.model_id].source_identity
             )
+            verify_destination()
             reusable = None if regeneration_target is not None else _find_geometry_artifact(
                 archive_part_root,
                 model_id=render_job.model_id,
@@ -1254,8 +1390,16 @@ def generate_plan(
             )
             if reusable is not None:
                 try:
-                    _copy_verified_artifact(reusable, final_artifact)
-                    (run_dir / str(job["log"])).touch()
+                    verify_destination()
+                    _copy_verified_artifact(
+                        reusable, final_artifact, artifacts_fd
+                    )
+                    log_name = Path(str(job["log"])).name
+                    empty_log_fd = os.open(
+                        log_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                        0o644, dir_fd=logs_fd,
+                    )
+                    os.close(empty_log_fd)
                     finished = _utc_now()
                     job["status"] = "complete"
                     job["finished_at"] = _timestamp(finished)
@@ -1271,8 +1415,8 @@ def generate_plan(
                         "artifact_id": reusable.job.get("artifact_id"),
                         "artifact": reusable.job.get("artifact"),
                     }
-                    _write_manifest(run_dir, manifest)
-                    _best_effort_readme(run_dir, manifest)
+                    write_manifest_state()
+                    best_effort_readme_state()
                     continue
                 except _ReuseTargetExists as error:
                     _finalize_job_failure(
@@ -1284,29 +1428,48 @@ def generate_plan(
                     )
                     failed = True
                 except Exception as error:
-                    _remove_temporary_artifact(final_artifact)
-                    errors = job["warnings"]
-                    assert isinstance(errors, list)
-                    errors.append(
-                        "Geometry reuse failed; rendering normally: "
-                        f"{_error_text(error)}"
-                    )
+                    if _destination_exists(final_artifact, artifacts_fd):
+                        _finalize_job_failure(
+                            job,
+                            started_clock=started_clock,
+                            error=RuntimeError(
+                                "artifact target appeared after reuse failure; "
+                                "the existing target was preserved"
+                            ),
+                            process=None,
+                            temporary_artifact=temporary_artifact,
+                        )
+                        failed = True
+                    else:
+                        warnings = job["warnings"]
+                        assert isinstance(warnings, list)
+                        warnings.append(
+                            "Geometry reuse failed; rendering normally: "
+                            f"{_error_text(error)}"
+                        )
                 finally:
                     reusable.close()
             if failed:
-                _write_manifest(run_dir, manifest)
-                _best_effort_readme(run_dir, manifest)
+                write_manifest_state()
+                best_effort_readme_state()
                 break
             command = _command(Path(openscad), temporary_artifact,
                                archived_sources[render_job.model_id],
                                snapshots[render_job.model_id].revision_label, render_job)
             job["command"] = command
-            _write_manifest(run_dir, manifest)
+            write_manifest_state()
             log_path = run_dir / str(job["log"])
             process: subprocess.Popen[str] | None = None
             try:
-                _write_readme(run_dir, manifest)
-                with log_path.open("w", encoding="utf-8") as log:
+                write_readme_state()
+                verify_destination()
+                log_fd = os.open(
+                    log_path.name,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                    0o644, dir_fd=logs_fd,
+                )
+                with os.fdopen(log_fd, "w", encoding="utf-8") as log:
+                    verify_destination()
                     process = subprocess.Popen(
                         command, text=True, stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT, env=dict(env) if env is not None else None,
@@ -1324,8 +1487,11 @@ def generate_plan(
                 finished = _utc_now()
                 job["finished_at"] = _timestamp(finished)
                 job["elapsed_seconds"] = round(time.monotonic() - started_clock, 6)
+                verify_destination()
                 if exit_code == 0 and temporary_artifact.is_file() and temporary_artifact.stat().st_size > 0:
-                    os.replace(temporary_artifact, final_artifact)
+                    _publish_rendered_artifact(
+                        temporary_artifact, final_artifact, artifacts_fd
+                    )
                     job["status"] = "complete"
                     job["artifact"] = str(final_artifact.relative_to(run_dir))
                     job["artifact_bytes"] = final_artifact.stat().st_size
@@ -1351,8 +1517,8 @@ def generate_plan(
                 manifest["status"] = "interrupted"
                 manifest["finished_at"] = job["finished_at"]
                 _remove_temporary_artifact(temporary_artifact)
-                _write_manifest(run_dir, manifest)
-                _best_effort_readme(run_dir, manifest)
+                write_manifest_state()
+                best_effort_readme_state()
                 raise
             except Exception as error:
                 if process is not None and process.poll() is None:
@@ -1366,16 +1532,16 @@ def generate_plan(
                     temporary_artifact=temporary_artifact,
                 )
                 failed = True
-            _write_manifest(run_dir, manifest)
-            _best_effort_readme(run_dir, manifest)
+            write_manifest_state()
+            best_effort_readme_state()
             if failed:
                 break
 
         finished_at = _timestamp(_utc_now())
         manifest["status"] = "failed" if failed else "complete"
         manifest["finished_at"] = finished_at
-        _write_manifest(run_dir, manifest)
-        _best_effort_readme(run_dir, manifest)
+        write_manifest_state()
+        best_effort_readme_state()
         return _finish_regeneration(
             GenerationResult(
                 run_dir,
@@ -1402,6 +1568,9 @@ def generate_plan(
         print(str(error), file=err)
         raise
     finally:
+        for fd in (logs_fd, artifacts_fd, source_fd, run_fd):
+            if fd >= 0:
+                os.close(fd)
         if archive_fd >= 0:
             os.close(archive_fd)
 

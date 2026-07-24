@@ -579,7 +579,7 @@ class CadGenerationTests(unittest.TestCase):
             original_files = self.tree_bytes(original.run_dir)
             real_replace = os.replace
 
-            def fail_staging_publication(source, target):
+            def fail_staging_publication(source, target, **kwargs):
                 source_path = Path(source)
                 target_path = Path(target)
                 if (
@@ -587,7 +587,7 @@ class CadGenerationTests(unittest.TestCase):
                     and target_path == original.run_dir
                 ):
                     raise OSError("injected publication failure")
-                return real_replace(source, target)
+                return real_replace(source, target, **kwargs)
 
             with mock.patch(
                 "plamp.cad_generation.os.replace",
@@ -828,11 +828,11 @@ class CadGenerationTests(unittest.TestCase):
         original = artifact.read_bytes()
         real_copy = generation._copy_verified_artifact
 
-        def swap_then_copy(candidate, target):
+        def swap_then_copy(candidate, target, destination_fd=None):
             replacement = artifact.with_suffix(".replacement")
             replacement.write_bytes(b"swapped")
             os.replace(replacement, artifact)
-            return real_copy(candidate, target)
+            return real_copy(candidate, target, destination_fd)
 
         changed = replace(plan("first"), jobs=(replace(
             plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
@@ -876,11 +876,34 @@ class CadGenerationTests(unittest.TestCase):
         changed = replace(plan("first"), jobs=(replace(
             plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
         ),))
-        with mock.patch("plamp.cad_generation.os.link",
+        with mock.patch("plamp.cad_generation._copy_verified_artifact",
                         side_effect=OSError(errno.EIO, "injected publish failure")):
             result = self.generate(changed, output=self.root / "publish-failure")
         self.assertEqual(result.status, "complete")
         self.assertFalse(list((result.run_dir / "artifacts").glob(".*.reuse.tmp")))
+
+    def test_generic_reuse_failure_preserves_concurrent_target_and_does_not_render(self):
+        self.generate(plan("first"))
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        output = self.root / "generic-reuse-race"
+        final = output / "artifacts" / (
+            f"{changed.jobs[0].artifact_id}--{self.commit[:7]}.stl"
+        )
+
+        def fail_copy(_source, _target, _destination_fd=None):
+            final.write_bytes(b"concurrent-owner")
+            raise OSError(errno.EIO, "injected generic reuse failure")
+
+        self.argv_file.unlink(missing_ok=True)
+        with mock.patch("plamp.cad_generation._copy_verified_artifact",
+                        side_effect=fail_copy):
+            result = self.generate(changed, output=output)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(final.read_bytes(), b"concurrent-owner")
+        self.assertFalse(self.argv_file.exists())
+        self.assertFalse(list(final.parent.glob(".*.reuse.tmp")))
 
     def test_archive_intermediate_symlinks_are_rejected(self):
         for component in ("cad", "prints", "fixture-system"):
@@ -934,6 +957,95 @@ class CadGenerationTests(unittest.TestCase):
         finally:
             os.close(archive_fd)
         self.assertFalse((outside / "run").exists())
+
+    def _swap_run_path(self, output, label):
+        moved = self.root / f"held-{label}"
+        outside = self.root / f"outside-{label}"
+        output.rename(moved)
+        outside.mkdir()
+        output.symlink_to(outside, target_is_directory=True)
+        return outside
+
+    def test_post_claim_run_swap_before_source_never_writes_replacement(self):
+        import plamp.cad_generation as generation
+        output = self.root / "source-swap"
+        real_copy = generation._copy_snapshot
+        outside = None
+
+        def swap_then_copy(*args, **kwargs):
+            nonlocal outside
+            outside = self._swap_run_path(output, "source")
+            return real_copy(*args, **kwargs)
+
+        with mock.patch("plamp.cad_generation._copy_snapshot",
+                        side_effect=swap_then_copy), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(output=output)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_post_claim_run_swap_before_manifest_never_writes_replacement(self):
+        import plamp.cad_generation as generation
+        output = self.root / "manifest-swap"
+        real_write = generation._write_manifest
+        outside = None
+
+        def swap_then_write(*args, **kwargs):
+            nonlocal outside
+            if outside is None:
+                outside = self._swap_run_path(output, "manifest")
+            return real_write(*args, **kwargs)
+
+        with mock.patch("plamp.cad_generation._write_manifest",
+                        side_effect=swap_then_write), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(output=output)
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_post_claim_run_swap_before_render_never_starts_openscad(self):
+        import plamp.cad_generation as generation
+        output = self.root / "render-swap"
+        real_write = generation._write_readme
+        outside = None
+
+        def swap_running_readme(run_dir, manifest, run_fd=None):
+            nonlocal outside
+            jobs = manifest.get("jobs", [])
+            if outside is None and jobs and jobs[0].get("status") == "running":
+                outside = self._swap_run_path(output, "render")
+            return real_write(run_dir, manifest, run_fd)
+
+        self.argv_file.unlink(missing_ok=True)
+        with mock.patch("plamp.cad_generation._write_readme",
+                        side_effect=swap_running_readme), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(output=output)
+        self.assertFalse(self.argv_file.exists())
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_post_claim_run_swap_before_reuse_never_writes_replacement(self):
+        import plamp.cad_generation as generation
+        self.generate(plan("first"))
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        output = self.root / "reuse-swap"
+        real_copy = generation._copy_verified_artifact
+        outside = None
+
+        def swap_then_copy(source, target, destination_fd=None):
+            nonlocal outside
+            outside = self._swap_run_path(output, "reuse")
+            return real_copy(source, target, destination_fd)
+
+        with mock.patch("plamp.cad_generation._copy_verified_artifact",
+                        side_effect=swap_then_copy), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(changed, output=output)
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_geometry_reuse_rejects_failed_artifact(self):
         source_plan = plan("first")
