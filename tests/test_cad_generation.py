@@ -27,6 +27,7 @@ from plamp.cad_planning import CadSelection, RenderJob, RenderPlan
 JOB_FIELDS = {
     "artifact_id", "fingerprint", "model", "set", "variant_name", "product_paths",
     "variables", "raw_defines", "status", "queued_at", "started_at",
+    "variable_sources", "profiles", "slicing",
     "finished_at", "elapsed_seconds", "command", "artifact",
     "artifact_bytes", "log", "exit_code", "echoes", "messages", "warnings",
     "errors", "geometry",
@@ -612,6 +613,9 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], 1)
         self.assertEqual(manifest["generator_version"], 1)
         self.assertEqual(set(manifest["jobs"][0]), JOB_FIELDS)
+        self.assertEqual(manifest["jobs"][0]["variable_sources"], {})
+        self.assertEqual(manifest["jobs"][0]["profiles"], [])
+        self.assertEqual(manifest["jobs"][0]["slicing"], {})
         self.assertEqual(set(manifest["jobs"][0]["geometry"]), {
             "render_seconds", "simple", "vertices", "facets", "volumes",
         })

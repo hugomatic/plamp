@@ -156,9 +156,8 @@ def add_cad_parser(
         ),
         epilog=(
             "Source and revision: use --revision LABEL for a literal engraving; "
-            "dirty source is archived from the working tree. The historical "
-            "target_directory commit form archives that commit and engraves its "
-            "short hash. Output: the default is a managed archive; --output DIR "
+            "dirty source is archived from the working tree. Output: the default "
+            "is a managed archive; --output DIR "
             "selects a directory. Preview: --preview inserts render_fn=24 and "
             "render_text=false before explicit definitions, so explicit values "
             "override them. OpenSCAD resolution order is --openscad, OPENSCAD_BIN, "
@@ -181,14 +180,6 @@ def add_cad_parser(
         help="replace a matching managed run after rendering succeeds",
     )
     generate.add_argument("--json", action="store_true")
-    generate.add_argument("legacy_output", nargs="?", metavar="target_directory")
-    generate.add_argument("legacy_commit", nargs="?", metavar="commit")
-    generate.add_argument(
-        "--legacy-output", dest="legacy_output", type=Path, help=argparse.SUPPRESS
-    )
-    generate.add_argument(
-        "--legacy-commit", dest="legacy_commit", help=argparse.SUPPRESS
-    )
 
     runs = actions.add_parser("runs")
     runs.add_argument("part", nargs="?")
@@ -573,19 +564,11 @@ def _selection(args: argparse.Namespace, *, menu: CadSelection | None = None) ->
 
 
 def _generation_revision(args: argparse.Namespace) -> str | None:
-    revision = getattr(args, "revision", None)
-    legacy_commit = getattr(args, "legacy_commit", None)
-    if revision is not None and legacy_commit is not None:
-        raise ValueError("commit positional argument cannot be combined with --revision")
-    return legacy_commit if legacy_commit is not None else revision
+    return getattr(args, "revision", None)
 
 
 def _generation_output(args: argparse.Namespace) -> Path | None:
-    output = getattr(args, "output", None)
-    legacy_output = getattr(args, "legacy_output", None)
-    if output is not None and legacy_output is not None:
-        raise ValueError("target_directory positional argument cannot be combined with --output")
-    return Path(legacy_output) if legacy_output is not None else output
+    return getattr(args, "output", None)
 
 
 def _with_plan(
@@ -598,7 +581,6 @@ def _with_plan(
     retain_snapshot: bool = False,
 ) -> tuple[Path, Any, Any, Any]:
     source = deps["resolve_part"](args.part, context.root)
-    legacy_commit = getattr(args, "legacy_commit", None)
     revision = (
         _generation_revision(args)
         if getattr(args, "action", None) == "generate"
@@ -611,9 +593,7 @@ def _with_plan(
         source,
         revision,
         revision_is_commit=(
-            getattr(args, "action", None) == "generate"
-            and legacy_commit is not None
-            and getattr(args, "revision", None) is None
+            False
         ),
     )
     snapshot_returned = False
@@ -841,7 +821,7 @@ def _prepare_system_plan(
         for model_id in model_ids:
             snapshots[model_id] = deps["prepare_source"](
                 context.root, system.models[model_id].source_path, revision,
-                revision_is_commit=bool(getattr(args, "legacy_commit", None)),
+                revision_is_commit=False,
             )
         plan = deps["build_plan"](
             system, selected,
@@ -913,6 +893,14 @@ def _generate(
     selection: CadSelection | None = None,
     selected_system: CadSystem | None = None,
 ) -> int:
+    if selection is not None:
+        overlays = _selection(args)
+        selection = CadSelection(
+            product=selection.product, model=selection.model,
+            sets=selection.sets, all_sets=selection.all_sets,
+            defines=overlays.defines, set_defines=overlays.set_defines,
+            raw_defines=overlays.raw_defines,
+        )
     system, plan, snapshots = _prepare_system_plan(
         args, context, deps, stdin, stdout, selection, selected_system=selected_system
     )
@@ -1110,9 +1098,12 @@ def run_cad_command(
                 _json_line(stdout, value)
             else:
                 for run in value:
+                    system_name = run.get("system_name")
+                    if not system_name and isinstance(run.get("system"), Mapping):
+                        system_name = run["system"].get("name")  # type: ignore[index]
                     stdout.write(
                         f"{run.get('created_at', '?')} {run.get('run_id', '?')} "
-                        f"{run.get('part', '?')} {run.get('status', '?')}\n"
+                        f"{system_name or '?'} {run.get('status', '?')}\n"
                     )
             return 0
 

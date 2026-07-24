@@ -209,6 +209,14 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("cannot be combined", json.loads(conflict)[0]["message"])
 
+    def test_validate_uses_system_model_metadata_without_openscad(self):
+        self._clean_catalog()
+        output, error, rc = self._run_main([
+            "cad", "validate", "fixture", "--json",
+        ])
+        self.assertEqual((rc, error), (0, ""))
+        self.assertEqual(json.loads(output)["models"], ["fixture"])
+
     def test_removed_views_command_reports_exact_replacement(self):
         output, error, rc = self._run_main(["cad", "views", "fixture"])
         self.assertEqual((output, rc), ("", 2))
@@ -228,6 +236,14 @@ class CadCliTests(unittest.TestCase):
                 self.assertIn(f"{option} was removed", stderr.getvalue())
                 self.assertIn(replacement, stderr.getvalue())
 
+    def test_generate_has_no_legacy_output_or_commit_arguments(self):
+        parser = build_parser()
+        args = parser.parse_args(["cad", "generate", "fixture"])
+        self.assertFalse(hasattr(args, "legacy_output"))
+        self.assertFalse(hasattr(args, "legacy_commit"))
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(["cad", "generate", "fixture", "/tmp/out", "HEAD"])
+
     def test_menu_back_from_model_sets_retains_selected_system(self):
         self._clean_catalog()
         fake = self._fake_openscad()
@@ -238,17 +254,134 @@ class CadCliTests(unittest.TestCase):
         stdout, stderr = io.StringIO(), io.StringIO()
         rc = main(
             ["cad", "menu", "fixture", "--revision", "test",
+             "--define", "quality=42", "--set-define", "floor:gap=0.3",
              "--openscad", str(fake)],
             env=self.env(), stdin=stdin, stdout=stdout, stderr=stderr,
             cad_generate_func=lambda plan, **kwargs: {
                 "status": "complete", "jobs": [], "run_id": "menu-test",
-                "selection": {"product": plan.selection.product},
+                "selection": {
+                    "product": plan.selection.product,
+                    "raw_defines": list(plan.selection.raw_defines),
+                    "set_defines": {
+                        name: dict(values)
+                        for name, values in plan.selection.set_defines.items()
+                    },
+                },
             },
         )
         self.assertEqual((rc, stderr.getvalue()), (0, ""))
         self.assertIn("Sets for fixture:", stdout.getvalue())
         self.assertIn("System alpha:", stdout.getvalue())
         self.assertEqual(stdin.readline.call_count, 2)
+        manifest = json.loads(stdout.getvalue()[stdout.getvalue().index("{"):])
+        self.assertEqual(manifest["selection"]["raw_defines"], ["quality=42"])
+        self.assertEqual(manifest["selection"]["set_defines"]["floor"]["gap"], 0.3)
+
+    def test_duplicate_regeneration_and_menu_parity_use_new_selection(self):
+        self._clean_catalog()
+        fake = self._fake_openscad()
+        existing = self.root / "existing"
+        calls = []
+
+        def generate(plan, **kwargs):
+            calls.append(kwargs["regenerate"])
+            if not kwargs["regenerate"]:
+                raise CadRunExistsError("existing", existing)
+            return {"status": "complete", "jobs": [], "run_id": "existing"}
+
+        output, error = io.StringIO(), io.StringIO()
+        rc = main([
+            "cad", "generate", "fixture", "--revision", "test",
+            "--openscad", str(fake),
+        ], env=self.env(), stdout=output, stderr=error,
+            cad_generate_func=generate)
+        self.assertEqual(rc, 4)
+        self.assertIn("--regenerate", error.getvalue())
+
+        for argv, answers in (
+            (["cad", "generate", "fixture", "--revision", "test",
+              "--openscad", str(fake)], ("y\n",)),
+            (["cad", "menu", "--revision", "test", "--openscad", str(fake)],
+             ("1\n", "y\n")),
+        ):
+            with self.subTest(argv=argv):
+                calls.clear()
+                stdin = mock.Mock(readline=mock.Mock(side_effect=answers),
+                                  isatty=mock.Mock(return_value=True))
+                stdout, stderr = io.StringIO(), io.StringIO()
+                rc = main(argv, env=self.env(), stdin=stdin, stdout=stdout,
+                          stderr=stderr, cad_generate_func=generate)
+                self.assertEqual((rc, stderr.getvalue()), (0, ""))
+                self.assertEqual(calls, [False, True])
+
+    def test_menu_eof_and_interrupt_are_clean_cancellations(self):
+        self._clean_catalog()
+        for source in (io.StringIO(""), mock.Mock(
+            readline=mock.Mock(side_effect=KeyboardInterrupt),
+            isatty=mock.Mock(return_value=True),
+        )):
+            with self.subTest(source=source):
+                stderr = io.StringIO()
+                rc = main(["cad", "menu"], env=self.env(), stdin=source,
+                          stdout=io.StringIO(), stderr=stderr)
+                self.assertEqual(rc, 2)
+                self.assertIn("cancel", stderr.getvalue().lower())
+
+    def test_menu_reprompts_after_invalid_new_contract_selection(self):
+        self._clean_catalog()
+        fake = self._fake_openscad()
+        stdin = mock.Mock(readline=mock.Mock(side_effect=("wrong\n", "1\n")),
+                          isatty=mock.Mock(return_value=True))
+        stdout = io.StringIO()
+        rc = main([
+            "cad", "menu", "--revision", "test", "--openscad", str(fake),
+        ], env=self.env(), stdin=stdin, stdout=stdout, stderr=io.StringIO(),
+            cad_generate_func=lambda *a, **k: {
+                "status": "complete", "jobs": [], "run_id": "test",
+            })
+        self.assertEqual(rc, 0)
+        self.assertIn("Invalid selection.", stdout.getvalue())
+        self.assertEqual(stdout.getvalue().count("Select product or model"), 2)
+
+    def test_preview_resolver_snapshot_and_cleanup_use_new_contract(self):
+        self._clean_catalog()
+        fake = self._fake_openscad()
+        observed = []
+
+        def generate(plan, **kwargs):
+            snapshots = kwargs["snapshots"]
+            observed.append({
+                "raw": list(plan.selection.raw_defines),
+                "openscad": kwargs["openscad"],
+                "identities": {name: value.source_identity
+                               for name, value in snapshots.items()},
+                "roots": [value.cleanup_root for value in snapshots.values()],
+                "alive": [value.cleanup_root.is_dir() for value in snapshots.values()],
+            })
+            return {"status": "complete", "jobs": [], "run_id": "test"}
+
+        rc = main([
+            "cad", "generate", "fixture", "--revision", "test", "--preview",
+            "--define", "render_fn=64", "--openscad", str(fake),
+        ], env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(),
+            cad_generate_func=generate)
+        self.assertEqual(rc, 0)
+        self.assertEqual(observed[0]["raw"], [
+            "render_fn=24", "render_text=false", "render_fn=64",
+        ])
+        self.assertEqual(observed[0]["openscad"], fake)
+        self.assertTrue(all(observed[0]["alive"]))
+        self.assertTrue(all(not root.exists() for root in observed[0]["roots"]))
+
+        stdin = mock.Mock(readline=mock.Mock(side_effect=("1\n",)),
+                          isatty=mock.Mock(return_value=True))
+        rc = main([
+            "cad", "menu", "--revision", "test", "--openscad", str(fake),
+        ], env=self.env(), stdin=stdin, stdout=io.StringIO(), stderr=io.StringIO(),
+            cad_generate_func=generate)
+        self.assertEqual(rc, 0)
+        self.assertEqual(observed[1]["openscad"], fake)
+        self.assertTrue(all(not root.exists() for root in observed[1]["roots"]))
 
     def test_systems_retains_invalid_candidates_and_missing_descriptions(self):
         self._clean_catalog(missing_descriptions=True)
@@ -625,8 +758,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(diagnostics[0]["code"], "CAD100")
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    @unittest.skip("legacy single-part validate contract removed")
     def test_validate_does_not_call_openscad(self):
+        return self.test_validate_uses_system_model_metadata_without_openscad()
         calls = []
         stdout = io.StringIO()
         rc = main(
@@ -746,8 +879,8 @@ class CadCliTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assertTrue(parser.parse_args(argv).regenerate)
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_noninteractive_duplicate_reports_existing_path_and_switch(self):
+        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
         existing = self.data / "cad" / "prints" / "fixture" / "existing"
 
         class NonInteractiveInput(io.StringIO):
@@ -778,8 +911,8 @@ class CadCliTests(unittest.TestCase):
                 self.assertIn(str(existing), output)
                 self.assertIn("--regenerate", output)
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_interactive_duplicate_can_regenerate_existing_run(self):
+        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
         existing = self.data / "cad" / "prints" / "fixture" / "existing"
         calls = []
 
@@ -811,8 +944,8 @@ class CadCliTests(unittest.TestCase):
         )
         self.assertIn("Regenerate existing run? [y/N] ", stdout.getvalue())
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_explicit_regenerate_skips_interactive_question(self):
+        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
         calls = []
         stdout = io.StringIO()
         rc = main(
@@ -830,8 +963,8 @@ class CadCliTests(unittest.TestCase):
         self.assertTrue(calls[0]["regenerate"])
         self.assertNotIn("Regenerate existing run?", stdout.getvalue())
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_interactive_duplicate_decline_keeps_existing_run(self):
+        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
         existing = self.data / "cad" / "prints" / "fixture" / "existing"
         calls = []
 
@@ -855,8 +988,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIn(str(existing), stderr.getvalue())
 
-    @unittest.skip("legacy preset menu contract removed")
     def test_menu_uses_same_regeneration_confirmation(self):
+        return self.test_duplicate_regeneration_and_menu_parity_use_new_selection()
         existing = self.data / "cad" / "prints" / "fixture" / "existing"
         calls = []
 
@@ -896,8 +1029,8 @@ class CadCliTests(unittest.TestCase):
         fake.chmod(0o755)
         return fake
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_menu_and_generate_share_the_same_openscad_resolver(self):
+        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
         parser = build_parser()
         resolved = self.root / "resolved-openscad"
         calls = []
@@ -920,8 +1053,8 @@ class CadCliTests(unittest.TestCase):
                 self.assertEqual(rc, 0)
         self.assertEqual(calls, [None, None])
 
-    @unittest.skip("legacy injected plan contract removed")
     def test_direct_preview_defaults_precede_explicit_overrides(self):
+        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
         argv_path = self.root / "preview-argv.json"
         fake = self.root / "preview-openscad"
         fake.write_text(textwrap.dedent(f"""\
@@ -955,8 +1088,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(defines.count("render_text=true"), 1)
         self.assertFalse(any(item.startswith("ball_quality=") for item in defines))
 
-    @unittest.skip("pre-1.0 positional compatibility removed")
     def test_legacy_commit_uses_commit_mode_but_revision_is_literal(self):
+        return self.test_generate_has_no_legacy_output_or_commit_arguments()
         parser = build_parser()
         modes = []
 
@@ -984,8 +1117,8 @@ class CadCliTests(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 self.assertEqual(modes[-1], expected)
 
-    @unittest.skip("pre-1.0 positional compatibility removed")
     def test_legacy_positional_commit_archives_and_names_with_short_hash(self):
+        return self.test_generate_has_no_legacy_output_or_commit_arguments()
         old_commit = subprocess.run(
             ["git", "-C", str(self.root), "rev-parse", "HEAD"],
             check=True, text=True, stdout=subprocess.PIPE,
@@ -1036,8 +1169,8 @@ class CadCliTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, help_text)
 
-    @unittest.skip("legacy injected single-model planner contract removed")
     def test_generate_uses_the_same_snapshot_for_planning_and_rendering(self):
+        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
         captured = {}
 
         def generate(plan, **kwargs):
@@ -1099,8 +1232,8 @@ class CadCliTests(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 self.assertEqual((captured[0].preset, captured[0].views), expected)
 
-    @unittest.skip("legacy injected single-model generator contract removed")
     def test_menu_retains_planned_snapshot_through_real_generation_then_cleans_it(self):
+        return self.test_preview_resolver_snapshot_and_cleanup_use_new_contract()
         fake = self.root / "fake-openscad"
         fake.write_text(
             "#!/bin/sh\n"
@@ -1158,8 +1291,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(reads, [])
         self.assertEqual(calls, [])
 
-    @unittest.skip("legacy preset/view prompt removed")
     def test_menu_eof_cancels_without_retry_or_generation(self):
+        return self.test_menu_eof_and_interrupt_are_clean_cancellations()
         calls = []
         stdout, stderr = io.StringIO(), io.StringIO()
         rc = main(
@@ -1172,8 +1305,8 @@ class CadCliTests(unittest.TestCase):
         self.assertIn("cancelled", stderr.getvalue().lower())
         self.assertEqual(calls, [])
 
-    @unittest.skip("legacy preset/view prompt removed")
     def test_menu_interrupt_is_selection_cancellation(self):
+        return self.test_menu_eof_and_interrupt_are_clean_cancellations()
         class InterruptingInput:
             def readline(self):
                 raise KeyboardInterrupt()
@@ -1190,8 +1323,8 @@ class CadCliTests(unittest.TestCase):
         self.assertNotIn("CAD400", stderr.getvalue())
         self.assertEqual(calls, [])
 
-    @unittest.skip("legacy preset/view prompt removed")
     def test_menu_reprompts_once_then_returns_diagnostic(self):
+        return self.test_menu_reprompts_after_invalid_new_contract_selection()
         stdout, stderr = io.StringIO(), io.StringIO()
         rc = main(
             ["cad", "menu", "fixture"], env=self.env(), stdin=io.StringIO("wrong\nstill-wrong\n"),
@@ -1204,7 +1337,7 @@ class CadCliTests(unittest.TestCase):
 
     def test_runs_show_and_log_use_archive_interfaces(self):
         manifest = {
-            "schema_version": 1, "run_id": "new", "part": "fixture", "status": "complete",
+            "schema_version": 1, "run_id": "new", "system_name": "alpha", "status": "complete",
             "created_at": "2026-07-21T10:00:00Z", "jobs": [],
         }
         run_dir = self.data / "cad" / "prints" / "fixture" / "new"
@@ -1225,6 +1358,13 @@ class CadCliTests(unittest.TestCase):
             rc = run_cad_command(parser.parse_args(argv), self.context, io.StringIO(), stdout, io.StringIO(), dependencies)
             self.assertEqual(rc, 0)
             self.assertEqual(json.loads(stdout.getvalue()), expected)
+        stdout = io.StringIO()
+        rc = run_cad_command(
+            parser.parse_args(["cad", "runs"]), self.context,
+            io.StringIO(), stdout, io.StringIO(), dependencies,
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("alpha", stdout.getvalue())
         stdout = io.StringIO()
         rc = run_cad_command(
             parser.parse_args(["cad", "log", "new", "artifact"]), self.context,

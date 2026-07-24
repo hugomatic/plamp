@@ -378,6 +378,12 @@ def _job_entry(job: RenderJob, queued_at: str, log: str) -> dict[str, object]:
         "product_paths": [list(path) for path in job.product_paths],
         "variables": _plain(job.variables),
         "raw_defines": dict(job.raw_defines),
+        "variable_sources": {
+            name: {"kind": source.kind, "source_id": source.source_id}
+            for name, source in job.variable_sources.items()
+        },
+        "profiles": list(job.profiles),
+        "slicing": _plain(job.slicing),
         "status": "queued",
         "queued_at": queued_at,
         "started_at": None,
