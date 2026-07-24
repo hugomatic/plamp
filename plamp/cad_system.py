@@ -11,7 +11,7 @@ import re
 from types import MappingProxyType
 
 from plamp.cad_model import CadDiagnostic, CadMetadataError, CadModel, load_model
-from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
+from plamp.cad_manufacturing import DirectiveSource, validated_slicing
 from plamp.cad_profiles import CadProfile, load_system_profiles
 
 
@@ -88,10 +88,9 @@ def _fail(path: Path, message: str, **fields: object) -> None:
 def _validated_slicing(value: Mapping[str, object], path: Path,
                        json_path: str, source_id: str) -> Mapping[str, object]:
     try:
-        normalize_slicing(value, DirectiveSource(source_id))
+        return validated_slicing(value, DirectiveSource(source_id))
     except ValueError as error:
         _fail(path, str(error), json_path=json_path, value=dict(value))
-    return MappingProxyType(dict(value))
 
 
 def _read_json(path: Path) -> dict[str, object]:

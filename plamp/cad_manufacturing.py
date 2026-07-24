@@ -61,6 +61,14 @@ class ManufacturingPolicy:
     fingerprint: str
 
 
+def _freeze(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
 def _unwrap(key: str, raw: object) -> tuple[object, str]:
     if isinstance(raw, Mapping):
         unknown = tuple(item for item in raw if item not in {"value", "strength"})
@@ -121,6 +129,15 @@ def normalize_slicing(
         )
     notes = tuple((source.id, note) for note in raw_notes)
     return MappingProxyType(directives), notes
+
+
+def validated_slicing(
+    slicing: Mapping[str, object], source: DirectiveSource
+) -> Mapping[str, object]:
+    """Return a validated, recursively immutable copy of raw slicing metadata."""
+
+    normalize_slicing(slicing, source)
+    return _freeze(slicing)  # type: ignore[return-value]
 
 
 def manufacturing_fingerprint(

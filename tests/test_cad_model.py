@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from plamp.cad_manufacturing import DirectiveSource, merge_manufacturing
 from plamp.cad_model import (
     CadMetadataError,
     load_model,
@@ -82,6 +83,24 @@ if (set == "floor") floor_set();
             load_model("fixture", sidecar, self.root)
         self.assertEqual(caught.exception.diagnostics[0].json_path,
                          "$.sets.floor.slicing")
+
+    def test_loaded_set_slicing_is_deeply_immutable(self):
+        sidecar = self.sidecar(sets={"floor": {"slicing": {
+            "layer_height": {"value": 0.2, "strength": "required"},
+            "notes": ["keep this stable"],
+        }}})
+        model = load_model("fixture", sidecar, self.root)
+        slicing = model.sets["floor"].slicing
+        before = merge_manufacturing(((DirectiveSource("loaded:set"), slicing),))
+
+        with self.assertRaises(TypeError):
+            slicing["layer_height"]["value"] = 0.3
+        with self.assertRaises(AttributeError):
+            slicing["notes"].append("changed")
+        with self.assertRaises(TypeError):
+            slicing["notes"][0] = "changed"
+        after = merge_manufacturing(((DirectiveSource("loaded:set"), slicing),))
+        self.assertEqual(before.fingerprint, after.fingerprint)
 
     def test_set_declaration_decodes_default_and_preserves_choice_order(self):
         default, choices = parse_set_declaration(

@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 from types import MappingProxyType
 
-from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
+from plamp.cad_manufacturing import DirectiveSource, validated_slicing
 
 
 SET_ASSIGNMENT = re.compile(
@@ -128,10 +128,9 @@ def _validated_slicing(
     value: Mapping[str, object], path: Path, json_path: str, source_id: str
 ) -> Mapping[str, object]:
     try:
-        normalize_slicing(value, DirectiveSource(source_id))
+        return validated_slicing(value, DirectiveSource(source_id))
     except ValueError as error:
         _fail(path, str(error), json_path=json_path, value=dict(value))
-    return MappingProxyType(dict(value))
 
 
 def _suggest(value: str, choices: tuple[str, ...]) -> str | None:

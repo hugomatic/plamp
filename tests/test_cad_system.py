@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from plamp.cad_manufacturing import DirectiveSource, merge_manufacturing
 from plamp.cad_model import CadMetadataError
 from plamp.cad_system import discover_systems, load_system, select_system
 
@@ -138,6 +139,39 @@ class CadSystemTests(unittest.TestCase):
             with self.subTest(products=products):
                 error = self.assert_invalid(products=products)
                 self.assertIn("slicing", error.diagnostics[0].json_path)
+
+    def test_loaded_product_and_item_slicing_are_deeply_immutable(self):
+        path = self.system(products={"complete": {
+            "slicing": {
+                "material": {"value": "PETG", "strength": "required"},
+                "notes": ["product note"],
+            },
+            "items": [{
+                "model": "widget", "set": "one",
+                "slicing": {
+                    "layer_height": {"value": 0.2, "strength": "required"},
+                    "notes": ["item note"],
+                },
+            }],
+        }})
+        system = load_system(path, self.root)
+        product = system.products["complete"]
+
+        for slicing, key in (
+            (product.slicing, "material"),
+            (product.items[0].slicing, "layer_height"),
+        ):
+            with self.subTest(key=key):
+                source = DirectiveSource(f"loaded:{key}")
+                before = merge_manufacturing(((source, slicing),))
+                with self.assertRaises(TypeError):
+                    slicing[key]["value"] = "changed"
+                with self.assertRaises(AttributeError):
+                    slicing["notes"].append("changed")
+                with self.assertRaises(TypeError):
+                    slicing["notes"][0] = "changed"
+                after = merge_manufacturing(((source, slicing),))
+                self.assertEqual(before.fingerprint, after.fingerprint)
 
     def test_selects_by_unique_name_or_explicit_path(self):
         self.system("cad/plamp.system.cad.json", name="plamp")
