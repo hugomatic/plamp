@@ -25,6 +25,14 @@ from plamp.cad_generation import (
     resolve_part,
 )
 from plamp.cad_metadata import CadDiagnostic, CadMetadataError, parse_cad_document
+from plamp.cad_model import CadMetadataError as CadCatalogMetadataError
+from plamp.cad_system import (
+    CadSystem,
+    SystemCandidate,
+    discover_systems,
+    load_system,
+    select_system,
+)
 from plamp.cad_recipes import Selection, build_render_plan, plan_as_dict
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
@@ -73,6 +81,22 @@ def add_cad_parser(
     new.add_argument("--template")
     new.add_argument("--list-templates", action="store_true")
     new.add_argument("--json", action="store_true")
+
+    systems = actions.add_parser("systems", help="list discoverable CAD systems")
+    systems.add_argument("--json", action="store_true")
+
+    for action in ("models", "products", "profiles", "libraries"):
+        command = actions.add_parser(action, help=f"list CAD {action}")
+        command.add_argument("--system", metavar="NAME_OR_PATH")
+        command.add_argument("--json", action="store_true")
+
+    sets = actions.add_parser("sets", help="list authoritative model sets")
+    sets.add_argument("model")
+    sets.add_argument("--system", metavar="NAME_OR_PATH")
+    sets.add_argument("--json", action="store_true")
+
+    templates = actions.add_parser("templates", help="list CAD model templates")
+    templates.add_argument("--json", action="store_true")
 
     for action in ("views", "validate"):
         command = actions.add_parser(action)
@@ -169,6 +193,9 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "load_job_log": load_job_log,
         "discover_templates": discover_templates,
         "create_part": create_part,
+        "discover_systems": discover_systems,
+        "select_system": select_system,
+        "load_system": load_system,
     }
     if overrides:
         values.update(overrides)
@@ -177,6 +204,148 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
 
 def _json_line(stream: TextIO, value: object) -> None:
     stream.write(json.dumps(value, sort_keys=True) + "\n")
+
+
+def _relative(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _described(value: str) -> str:
+    return value or "(no description)"
+
+
+def _diagnostics_value(diagnostics: tuple[CadDiagnostic, ...]) -> list[dict[str, object]]:
+    return [asdict(item) for item in diagnostics]
+
+
+def _interactive(stdin: TextIO, args: argparse.Namespace) -> bool:
+    return not bool(getattr(args, "json", False)) and bool(
+        getattr(stdin, "isatty", lambda: False)()
+    )
+
+
+def _choose_system(
+    candidates: tuple[SystemCandidate, ...], stdin: TextIO, stdout: TextIO
+) -> SystemCandidate:
+    selectable = tuple(item for item in candidates if item.status == "valid")
+    if not selectable:
+        raise ValueError("no valid CAD systems are available")
+    stdout.write("Systems:\n")
+    for index, item in enumerate(selectable, 1):
+        stdout.write(f"{index}. {item.name} - {_described(item.description)}\n")
+    stdout.write("Select System (or b to go back): ")
+    stdout.flush()
+    value = stdin.readline().strip()
+    if value.lower() in {"b", "back"}:
+        raise CadSelectionCancelled("CAD system selection cancelled")
+    try:
+        choice = int(value)
+    except ValueError:
+        choice = 0
+    if not 1 <= choice <= len(selectable):
+        raise ValueError("invalid system selection")
+    return selectable[choice - 1]
+
+
+def _selected_system(
+    args: argparse.Namespace,
+    context: RuntimeContext,
+    stdin: TextIO,
+    stdout: TextIO,
+    deps: Mapping[str, CadFunction],
+) -> CadSystem:
+    candidates = tuple(deps["discover_systems"](context.root))
+    selector = getattr(args, "system", None)
+    if selector is not None:
+        candidate = deps["select_system"](candidates, selector)
+    elif len(candidates) == 1:
+        candidate = candidates[0]
+    elif not _interactive(stdin, args):
+        choices = ", ".join(item.name or str(item.path) for item in candidates)
+        raise ValueError(
+            "multiple CAD systems are available; select one with "
+            f"--system NAME_OR_PATH (available: {choices or '(none)'})"
+        )
+    else:
+        candidate = _choose_system(candidates, stdin, stdout)
+    if candidate.status != "valid":
+        if candidate.diagnostics:
+            raise CadMetadataError(candidate.diagnostics)
+        raise ValueError(f"CAD system is invalid: {candidate.path}")
+    return deps["load_system"](candidate.path, context.root)
+
+
+def _emit_rows(rows: list[dict[str, object]], json_output: bool, stdout: TextIO) -> None:
+    if json_output:
+        _json_line(stdout, rows)
+        return
+    if not rows:
+        stdout.write("(none)\n")
+        return
+    for row in rows:
+        status = "" if row.get("status") == "valid" else f" [{row.get('status')}]"
+        stdout.write(
+            f"{row['kind']} {row['id'] or '(default)'}{status} - "
+            f"{row['description']} - {row['path']}\n"
+        )
+
+
+def _system_rows(context: RuntimeContext, deps: Mapping[str, CadFunction]) -> list[dict[str, object]]:
+    rows = []
+    for item in deps["discover_systems"](context.root):
+        rows.append({
+            "kind": "system", "id": item.name, "system": item.name,
+            "description": _described(item.description),
+            "default_product": item.default_product, "status": item.status,
+            "diagnostics": _diagnostics_value(item.diagnostics),
+            "path": _relative(item.path, context.root),
+        })
+    return rows
+
+
+def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
+                  model_id: str | None = None) -> list[dict[str, object]]:
+    base = {"system": system.name, "status": "valid", "diagnostics": []}
+    rows: list[dict[str, object]] = []
+    if action == "models":
+        for name, model in system.models.items():
+            rows.append({"kind": "model", "id": name, **base,
+                         "description": _described(model.description),
+                         "path": _relative(model.sidecar_path or model.source_path, context.root),
+                         "source": _relative(model.source_path, context.root)})
+    elif action == "sets":
+        if model_id not in system.models:
+            raise ValueError(f"unknown CAD model {model_id!r}")
+        model = system.models[model_id]
+        for name, cad_set in model.sets.items():
+            rows.append({"kind": "set", "id": name, **base, "model": model_id,
+                         "description": _described(cad_set.description),
+                         "printable": cad_set.printable,
+                         "source": _relative(model.source_path, context.root),
+                         "path": _relative(model.source_path, context.root)})
+    elif action == "products":
+        for name, product in system.products.items():
+            rows.append({"kind": "product", "id": name, **base,
+                         "description": _described(product.description),
+                         "path": _relative(system.path, context.root)})
+    elif action == "profiles":
+        for name, path in system.profiles.items():
+            rows.append({"kind": "profile", "id": name, **base,
+                         "description": "(no description)",
+                         "path": _relative(path, context.root)})
+    elif action == "libraries":
+        for name, declaration in system.libraries.items():
+            if isinstance(declaration, str):
+                path, description = declaration, ""
+            else:
+                path = str(declaration.get("path", ""))
+                description = str(declaration.get("description", ""))
+            rows.append({"kind": "library", "id": name, **base,
+                         "description": _described(description), "path": path})
+    return rows
 
 
 def _typed_json(value: object) -> str:
@@ -593,6 +762,30 @@ def run_cad_command(
 
     deps = _dependencies(dependencies)
     try:
+        if args.action == "systems":
+            _emit_rows(_system_rows(context, deps), args.json, stdout)
+            return 0
+
+        if args.action in {"models", "sets", "products", "profiles", "libraries"}:
+            system = _selected_system(args, context, stdin, stdout, deps)
+            rows = _catalog_rows(
+                args.action, system, context, getattr(args, "model", None)
+            )
+            _emit_rows(rows, args.json, stdout)
+            return 0
+
+        if args.action == "templates":
+            rows = []
+            for item in deps["discover_templates"](context.root):
+                path = _relative(item.path, context.root)
+                rows.append({
+                    "kind": "template", "id": item.name,
+                    "description": "(no description)", "status": "valid",
+                    "diagnostics": [], "path": path, "files": [path],
+                })
+            _emit_rows(rows, args.json, stdout)
+            return 0
+
         if args.action == "new":
             if args.list_templates:
                 if args.part is not None or args.template is not None:
@@ -715,7 +908,7 @@ def run_cad_command(
         )
         _emit_diagnostics((diagnostic,), args.json, stdout, stderr)
         return 4
-    except CadMetadataError as error:
+    except (CadMetadataError, CadCatalogMetadataError) as error:
         _emit_diagnostics(error.diagnostics, args.json, stdout, stderr)
         return 2
     except (CadSelectionError, ValueError, TypeError) as error:

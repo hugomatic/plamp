@@ -87,6 +87,160 @@ class CadCliTests(unittest.TestCase):
         for command in ("new", "views", "validate", "plan", "menu", "generate", "runs", "show", "log"):
             self.assertIn(command, stdout.getvalue())
 
+    def _clean_catalog(self, *, second_system=False, missing_descriptions=False):
+        self.scad.write_text(
+            'set = ""; // [floor, assembly]\n'
+            'if (set == "floor") cube(1);\n',
+            encoding="utf-8",
+        )
+        sidecar = self.scad.with_suffix(".cad.json")
+        sidecar.write_text(json.dumps({
+            "schema": "plamp-cad-model/1",
+            "name": "fixture",
+            "source": "fixture.scad",
+            "description": "" if missing_descriptions else "Fixture model",
+            "sets": {
+                "": {"description": "Normal output"},
+                "floor": {"description": "Printable floor"},
+                "assembly": {
+                    "description": "Complete assembly", "printable": False,
+                },
+            },
+        }), encoding="utf-8")
+        (self.root / "cad" / "profiles").mkdir(parents=True)
+        (self.root / "cad" / "profiles" / "petg.json").write_text("{}\n")
+        (self.root / "cad" / "lib").mkdir()
+        manifest = {
+            "schema": "plamp-cad-system/1",
+            "name": "alpha",
+            "description": "" if missing_descriptions else "Alpha system",
+            "models": {"fixture": "things/fixture/fixture.cad.json"},
+            "libraries": {"fasteners": {
+                "path": "cad/lib", "description": "Fastener library",
+            }},
+            "profiles": {"petg": "cad/profiles/petg.json"},
+            "default_product": "printable",
+            "products": {"printable": {
+                "description": "Printable fixture",
+                "items": [{"model": "fixture", "set": "floor"}],
+            }},
+        }
+        path = self.root / "cad" / "alpha.system.cad.json"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        if second_system:
+            manifest["name"] = "beta"
+            manifest["description"] = "Beta system"
+            manifest["default_product"] = None
+            (self.root / "cad" / "beta.system.cad.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+        return path
+
+    def test_help_adds_complete_catalog_navigation(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit):
+            main(["cad", "--help"], env=self.env())
+        for command in (
+            "systems", "models", "sets", "products", "profiles", "libraries",
+            "templates", "new", "plan", "generate",
+        ):
+            self.assertIn(command, stdout.getvalue())
+
+    def test_navigation_lists_descriptions_and_parent_ids_in_json(self):
+        self._clean_catalog()
+        cases = {
+            ("sets", "fixture"): ("set", "", "Normal output"),
+            ("models",): ("model", "fixture", "Fixture model"),
+            ("products",): ("product", "printable", "Printable fixture"),
+            ("profiles",): ("profile", "petg", "(no description)"),
+            ("libraries",): ("library", "fasteners", "Fastener library"),
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                stdout = io.StringIO()
+                argv = ["cad", *command, "--system", "alpha", "--json"]
+                self.assertEqual(main(argv, env=self.env(), stdout=stdout,
+                                      stderr=io.StringIO()), 0)
+                row = json.loads(stdout.getvalue())[0]
+                self.assertEqual((row["kind"], row["id"], row["description"]), expected)
+                self.assertEqual(row["system"], "alpha")
+                self.assertIn("path", row)
+                self.assertEqual(row["status"], "valid")
+                self.assertEqual(row["diagnostics"], [])
+        rows = json.loads(self._run_main(["cad", "sets", "fixture", "--json"])[0])
+        self.assertEqual(rows[0]["model"], "fixture")
+        self.assertTrue(rows[0]["printable"])
+
+    def _run_main(self, argv, *, stdin=None):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        rc = main(argv, env=self.env(), stdin=stdin or io.StringIO(),
+                  stdout=stdout, stderr=stderr)
+        return stdout.getvalue(), stderr.getvalue(), rc
+
+    def test_systems_retains_invalid_candidates_and_missing_descriptions(self):
+        self._clean_catalog(missing_descriptions=True)
+        (self.root / "cad" / "broken.system.cad.json").write_text("{")
+        output, _error, rc = self._run_main(["cad", "systems", "--json"])
+        self.assertEqual(rc, 0)
+        rows = json.loads(output)
+        self.assertEqual([row["status"] for row in rows], ["valid", "invalid"])
+        alpha = next(row for row in rows if row["id"] == "alpha")
+        self.assertEqual(alpha["description"], "(no description)")
+        broken = next(row for row in rows if row["status"] == "invalid")
+        self.assertTrue(broken["diagnostics"])
+
+        selected, selected_error, selected_rc = self._run_main(
+            ["cad", "models", "--system", "cad/broken.system.cad.json", "--json"]
+        )
+        self.assertEqual(selected_rc, 2)
+        self.assertEqual(json.loads(selected)[0]["code"], "CAD100")
+        self.assertNotIn("Traceback", selected_error)
+
+        external = self.root / "other" / "outside.system.cad.json"
+        external.parent.mkdir()
+        external.write_text(json.dumps({
+            "schema": "plamp-cad-system/1", "name": "outside",
+            "models": {"lost": "things/missing.cad.json"},
+        }))
+        selected, selected_error, selected_rc = self._run_main(
+            ["cad", "models", "--system", "other/outside.system.cad.json", "--json"]
+        )
+        self.assertEqual(selected_rc, 2)
+        self.assertEqual(json.loads(selected)[0]["code"], "CAD121")
+        self.assertNotIn("Traceback", selected_error)
+
+    def test_multiple_systems_require_exact_guidance_noninteractive(self):
+        self._clean_catalog(second_system=True)
+        output, _error, rc = self._run_main(["cad", "models", "--json"])
+        self.assertEqual(rc, 2)
+        diagnostic = json.loads(output)[0]
+        self.assertEqual(diagnostic["code"], "CAD200")
+        self.assertIn("--system NAME_OR_PATH", diagnostic["message"])
+
+    def test_multiple_systems_can_be_chosen_interactively_and_explicit_path_works(self):
+        alpha = self._clean_catalog(second_system=True)
+        stdout, _stderr, rc = self._run_main(
+            ["cad", "models"], stdin=mock.Mock(
+                readline=mock.Mock(return_value="2\n"),
+                isatty=mock.Mock(return_value=True),
+            )
+        )
+        self.assertEqual(rc, 0)
+        self.assertIn("System", stdout)
+        self.assertIn("fixture", stdout)
+        output, _error, rc = self._run_main(
+            ["cad", "models", "--system", str(alpha), "--json"]
+        )
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(output)[0]["system"], "alpha")
+
+    def test_human_navigation_always_shows_descriptions(self):
+        self._clean_catalog(missing_descriptions=True)
+        output, _error, rc = self._run_main(["cad", "models"])
+        self.assertEqual(rc, 0)
+        self.assertIn("fixture", output)
+        self.assertIn("(no description)", output)
+
     def test_new_lists_templates_as_repository_relative_json(self):
         parser = build_parser()
         stdout = io.StringIO()
