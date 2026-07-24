@@ -73,3 +73,33 @@ Result: 678 tests passed in 19.160 seconds.
 ## Concerns
 
 None.
+
+## Review fix: manufacturing metadata identity
+
+Review found that effective product/item profiles and slicing were discarded,
+allowing profile-only or slicing-only sibling variants to collapse during
+fingerprint deduplication.
+
+### RED
+
+```text
+.venv/bin/python -m unittest \
+  tests.test_cad_planning.CadPlanningTests.test_profile_only_sibling_variants_remain_distinct_and_compose_root_to_leaf \
+  tests.test_cad_planning.CadPlanningTests.test_slicing_only_sibling_variants_remain_distinct_and_overlay_deepest_outward -v
+```
+
+Result: both tests failed because each plan contained one job instead of two.
+
+### GREEN
+
+```text
+.venv/bin/python -m unittest tests.test_cad_planning -v
+```
+
+Result: 9 tests passed. Effective profiles and slicing now survive in immutable
+jobs and JSON, and both participate in the canonical fingerprint.
+
+### Fix commit
+
+`Preserve CAD manufacturing plan metadata` (the review-fix commit following the
+Task 3 implementation commit)

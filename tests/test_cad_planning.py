@@ -172,6 +172,52 @@ class CadPlanningTests(unittest.TestCase):
         self.assertTrue(all(j.raw_defines == {"width": "2+2", "formula": "last=value"}
                             for j in plan.jobs))
 
+    def test_profile_only_sibling_variants_remain_distinct_and_compose_root_to_leaf(self):
+        products = {
+            "inner": product("inner", [
+                item(model_id="box", set_name="floor", variant="draft",
+                     profiles=("draft",)),
+                item(model_id="box", set_name="floor", variant="quality",
+                     profiles=("quality",)),
+            ], profiles=("inner-base",)),
+            "complete": product("complete", [
+                item(product="inner", profiles=("edge",)),
+            ], profiles=("outer-base",)),
+        }
+        plan = build_render_plan(
+            self.system(products=products), CadSelection(product="complete"),
+            {"box": "source"},
+        )
+        self.assertEqual(len(plan.jobs), 2)
+        self.assertEqual(plan.jobs[0].profiles, (
+            "outer-base", "edge", "inner-base", "draft",
+        ))
+        self.assertEqual(plan.jobs[1].profiles[-1], "quality")
+        self.assertNotEqual(plan.jobs[0].fingerprint, plan.jobs[1].fingerprint)
+
+    def test_slicing_only_sibling_variants_remain_distinct_and_overlay_deepest_outward(self):
+        products = {
+            "inner": product("inner", [
+                item(model_id="box", set_name="floor", variant="fine",
+                     slicing={"layer_height": 0.12, "supports": "required"}),
+                item(model_id="box", set_name="floor", variant="coarse",
+                     slicing={"layer_height": 0.28, "supports": "required"}),
+            ], slicing={"supports": "discouraged", "brim": 2}),
+            "complete": product("complete", [
+                item(product="inner", slicing={"brim": 5}),
+            ], slicing={"supports": "forbidden"}),
+        }
+        plan = build_render_plan(
+            self.system(products=products), CadSelection(product="complete"),
+            {"box": "source"},
+        )
+        self.assertEqual(len(plan.jobs), 2)
+        self.assertEqual(plan.jobs[0].slicing, {
+            "layer_height": 0.12, "supports": "forbidden", "brim": 5,
+        })
+        self.assertEqual(plan.jobs[1].slicing["layer_height"], 0.28)
+        self.assertNotEqual(plan.jobs[0].fingerprint, plan.jobs[1].fingerprint)
+
     def test_fingerprint_is_stable_sha256_and_changes_with_manifest_or_source(self):
         system = self.nested_system()
         first = build_render_plan(system, CadSelection(product="complete"),
@@ -207,7 +253,8 @@ class CadPlanningTests(unittest.TestCase):
                                       "system_manifest_hash", "jobs"})
         self.assertEqual(set(value["jobs"][0]), {
             "artifact_id", "model_id", "set_name", "variant_name", "variables",
-            "raw_defines", "variable_sources", "product_paths", "fingerprint",
+            "raw_defines", "variable_sources", "profiles", "slicing",
+            "product_paths", "fingerprint",
         })
 
 

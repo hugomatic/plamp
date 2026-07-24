@@ -78,6 +78,8 @@ class RenderJob:
     variables: Mapping[str, object]
     raw_defines: Mapping[str, str]
     variable_sources: Mapping[str, VariableSource]
+    profiles: tuple[str, ...]
+    slicing: Mapping[str, object]
     product_paths: tuple[tuple[str, ...], ...]
     fingerprint: str
 
@@ -86,6 +88,8 @@ class RenderJob:
         object.__setattr__(self, "raw_defines", MappingProxyType(dict(self.raw_defines)))
         object.__setattr__(self, "variable_sources",
                            MappingProxyType(dict(self.variable_sources)))
+        object.__setattr__(self, "profiles", tuple(self.profiles))
+        object.__setattr__(self, "slicing", _mapping(self.slicing))
         object.__setattr__(self, "product_paths",
                            tuple(tuple(path) for path in self.product_paths))
 
@@ -192,6 +196,8 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         variables: dict[str, object] = {}
         raw: dict[str, str] = {}
         sources: dict[str, VariableSource] = {}
+        profiles: list[str] = []
+        slicing: dict[str, object] = dict(model.sets[candidate.set_name].slicing)
 
         def apply(values: Mapping[str, object], kind: str, source_id: str) -> None:
             variables.update(values)
@@ -202,10 +208,15 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         apply(model.variables, "model", candidate.model_id)
         apply(model.sets[candidate.set_name].variables, "set",
               f"{candidate.model_id}/{candidate.set_name}")
+        for product_name, product_item in candidate.layers:
+            profiles.extend(system.products[product_name].profiles)
+            profiles.extend(product_item.profiles)
         for product_name, product_item in reversed(candidate.layers):
             apply(system.products[product_name].variables, "product", product_name)
             index = system.products[product_name].items.index(product_item)
             apply(product_item.variables, "product_item", f"{product_name}[{index}]")
+            slicing.update(system.products[product_name].slicing)
+            slicing.update(product_item.slicing)
         apply(selection.defines, "cli", "defines")
         apply(selection.set_defines.get(candidate.set_name, {}), "cli", candidate.set_name)
         for name, expression in parse_raw_defines(selection.raw_defines).items():
@@ -221,12 +232,15 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
             "set_name": candidate.set_name,
             "variables": _plain(variables),
             "raw_defines": raw,
+            "profiles": profiles,
+            "slicing": _plain(slicing),
         }
         fingerprint = _canonical_hash(payload)
         if fingerprint not in unique:
             unique[fingerprint] = {
                 "candidate": candidate, "variables": variables, "raw": raw,
-                "sources": sources, "paths": [],
+                "sources": sources, "profiles": profiles, "slicing": slicing,
+                "paths": [],
             }
             order.append(fingerprint)
         if candidate.path is not None:
@@ -252,6 +266,8 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
             variables=details["variables"],  # type: ignore[arg-type]
             raw_defines=details["raw"],  # type: ignore[arg-type]
             variable_sources=details["sources"],  # type: ignore[arg-type]
+            profiles=tuple(details["profiles"]),  # type: ignore[arg-type]
+            slicing=details["slicing"],  # type: ignore[arg-type]
             product_paths=tuple(details["paths"]),  # type: ignore[arg-type]
             fingerprint=fingerprint,
         ))
@@ -280,6 +296,7 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
                 name: {"kind": source.kind, "source_id": source.source_id}
                 for name, source in job.variable_sources.items()
             },
+            "profiles": list(job.profiles), "slicing": _plain(job.slicing),
             "product_paths": [list(path) for path in job.product_paths],
             "fingerprint": job.fingerprint,
         } for job in plan.jobs],
