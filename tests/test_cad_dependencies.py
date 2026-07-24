@@ -303,6 +303,52 @@ OPENSCAD_FONT_PATH:
                     repo, source, dirty=True, revision_label="dirty-fit"
                 )
 
+    def test_dirty_discovery_reads_anchored_source_after_path_replacement(self):
+        repo, source = self.init_repository()
+        environment = prepare_discovery_environment(
+            repo, source, dirty=True, revision_label="dirty-fit"
+        )
+        self.addCleanup(environment.cleanup)
+        moved = source.with_name("original.scad")
+        observed = self.root / "observed-source"
+        fake = self.root / "fd-openscad"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            f"pathlib.Path({str(observed)!r}).write_text(pathlib.Path(sys.argv[-1]).read_text())\n"
+            "pathlib.Path(sys.argv[sys.argv.index('-d')+1]).write_text('out: '+sys.argv[-1]+'\\n')\n"
+        )
+        fake.chmod(0o755)
+        real_run = subprocess.run
+        swapped = False
+        def swap_at_launch(*args, **kwargs):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                source.rename(moved)
+                source.write_text("replacement must remain")
+            return real_run(*args, **kwargs)
+        with patch("plamp.cad_dependencies.subprocess.run", side_effect=swap_at_launch):
+            run_dependency_discovery(
+                fake, environment, self.job(), self.root / "fd-run",
+                revision="dirty-fit", env={"PATH": "/usr/bin"},
+            )
+        self.assertIn("cube(1)", observed.read_text())
+        self.assertEqual(source.read_text(), "replacement must remain")
+
+    def test_dirty_discovery_fails_safely_without_proc_descriptor_access(self):
+        repo, source = self.init_repository()
+        environment = prepare_discovery_environment(
+            repo, source, dirty=True, revision_label="dirty-fit"
+        )
+        self.addCleanup(environment.cleanup)
+        with patch("plamp.cad_dependencies._proc_fd_path", return_value=None):
+            with self.assertRaisesRegex(CadDependencyError, "/proc/self/fd"):
+                run_dependency_discovery(
+                    self.root / "unused", environment, self.job(), self.root / "no-proc",
+                    revision="dirty-fit", env={},
+                )
+
     def test_historical_source_is_lexical_and_independent_of_current_symlinks(self):
         repo, source = self.init_repository()
         old = self.revision(repo)
@@ -353,7 +399,7 @@ OPENSCAD_FONT_PATH:
 
     def test_dependency_pass_uses_csg_exact_defines_environment_and_cwd(self):
         repo, source = self.init_repository()
-        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        environment = DiscoveryEnvironment(repo, source, None, False, None)
         output = self.root / "discovery"
         fake = self.root / "fake-openscad"
         argv_log = self.root / "argv"
@@ -400,7 +446,7 @@ OPENSCAD_FONT_PATH:
         repo, source = self.init_repository()
         conditional = repo / "shared/historical.scad"
         conditional.write_text("historical")
-        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        environment = DiscoveryEnvironment(repo, source, None, False, None)
         fake = self.root / "conditional-openscad"
         fake.write_text(
             "#!/usr/bin/env python3\n"
@@ -419,7 +465,7 @@ OPENSCAD_FONT_PATH:
 
     def test_dependency_pass_reports_launch_failure_exit_and_missing_makefile(self):
         repo, source = self.init_repository()
-        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        environment = DiscoveryEnvironment(repo, source, None, False, None)
         output = self.root / "failure"
         with self.assertRaisesRegex(CadDependencyError, "cannot run.*vanished"):
             run_dependency_discovery(
@@ -516,6 +562,75 @@ OPENSCAD_FONT_PATH:
             list(archived.root.parent.glob(f".{archived.root.name}.*")), []
         )
         shutil.rmtree(archived.root)
+
+    def test_atomic_child_cleanup_tracks_moved_directory_and_file(self):
+        from plamp import cad_fs
+
+        for kind in ("directory", "file"):
+            parent = self.root / f"atomic-{kind}"
+            parent.mkdir()
+            owned = parent / "owned"
+            moved = parent / "owned-moved"
+            if kind == "directory":
+                owned.mkdir()
+                (owned / "child").write_text("owned")
+            else:
+                owned.write_text("owned")
+            details = owned.stat(follow_symlinks=False)
+            descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+            real_exchange = cad_fs.exchange_at
+            swapped = False
+
+            def swap_at_claim(first_fd, first, second_fd, second):
+                nonlocal swapped
+                if not swapped and first == "owned":
+                    swapped = True
+                    os.rename("owned", "owned-moved", src_dir_fd=descriptor,
+                              dst_dir_fd=descriptor)
+                    if kind == "directory":
+                        os.mkdir("owned", dir_fd=descriptor)
+                        marker = os.open("owned/replacement", os.O_WRONLY | os.O_CREAT,
+                                         0o600, dir_fd=descriptor)
+                        os.close(marker)
+                    else:
+                        marker = os.open("owned", os.O_WRONLY | os.O_CREAT, 0o600,
+                                         dir_fd=descriptor)
+                        os.write(marker, b"replacement")
+                        os.close(marker)
+                return real_exchange(first_fd, first, second_fd, second)
+
+            try:
+                with self.subTest(kind=kind), patch(
+                    "plamp.cad_fs.exchange_at", side_effect=swap_at_claim
+                ):
+                    self.assertTrue(cad_fs.remove_owned_entry_at(
+                        descriptor, "owned", (details.st_dev, details.st_ino)
+                    ))
+                self.assertFalse(moved.exists())
+                self.assertTrue(owned.exists())
+                self.assertEqual(list(parent.glob(".plamp-owned-*")), [])
+            finally:
+                os.close(descriptor)
+
+    def test_atomic_child_cleanup_unlinks_symlink_without_following_it(self):
+        from plamp.cad_fs import remove_owned_entry_at
+
+        parent = self.root / "atomic-symlink"
+        outside = self.root / "outside-owned-target"
+        parent.mkdir()
+        outside.write_text("keep")
+        link = parent / "owned"
+        link.symlink_to(outside)
+        details = link.stat(follow_symlinks=False)
+        descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            self.assertTrue(remove_owned_entry_at(
+                descriptor, "owned", (details.st_dev, details.st_ino)
+            ))
+        finally:
+            os.close(descriptor)
+        self.assertFalse(link.exists())
+        self.assertEqual(outside.read_text(), "keep")
 
     def test_archive_applies_directory_modes_after_writing_children(self):
         import tarfile

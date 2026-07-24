@@ -48,6 +48,10 @@ class _CleanupKey:
     pass
 
 
+class _SourceKey:
+    pass
+
+
 @dataclass
 class _CleanupRecord:
     root: Path
@@ -65,6 +69,20 @@ _CLEANUP_RECORDS: weakref.WeakKeyDictionary[_CleanupKey, _CleanupRecord] = (
 _CLEANUP_LOCK = threading.RLock()
 
 
+@dataclass
+class _SourceRecord:
+    descriptor: int
+    device: int
+    inode: int
+    finalizer: weakref.finalize | None = None
+    closed: bool = False
+
+
+_SOURCE_RECORDS: weakref.WeakKeyDictionary[_SourceKey, _SourceRecord] = (
+    weakref.WeakKeyDictionary()
+)
+
+
 @dataclass(frozen=True)
 class DiscoveryEnvironment:
     """Repository tree used only to discover one job's dependency closure."""
@@ -75,6 +93,7 @@ class DiscoveryEnvironment:
     dirty: bool
     cleanup_root: Path | None
     _cleanup_key: _CleanupKey | None = field(default=None, repr=False, compare=False)
+    _source_key: _SourceKey | None = field(default=None, repr=False, compare=False)
 
     def cleanup(self) -> None:
         cleanup_discovery_environment(self)
@@ -225,7 +244,7 @@ def _archived_regular_file(root: Path, relative: Path, revision: str) -> Path:
     return root / relative
 
 
-def _dirty_regular_file(root: Path, relative: Path) -> Path:
+def _dirty_regular_file(root: Path, relative: Path) -> tuple[Path, int, os.stat_result]:
     """Open and validate a dirty source without permitting links or escapes."""
 
     lexical = root / relative
@@ -264,9 +283,10 @@ def _dirty_regular_file(root: Path, relative: Path) -> Path:
             raise CadDependencyError(
                 f"dirty CAD discovery source must remain inside the repository: {lexical}"
             ) from error
-        return resolved
-    finally:
+        return resolved, descriptor, opened
+    except BaseException:
         os.close(descriptor)
+        raise
 
 
 def _close_cleanup_descriptors(parent_fd: int, root_fd: int) -> None:
@@ -279,25 +299,14 @@ def _close_cleanup_descriptors(parent_fd: int, root_fd: int) -> None:
 
 def _clear_cleanup_descriptor(descriptor: int) -> None:
     """Delete contents relative to the retained owned-root descriptor."""
+    from plamp.cad_fs import remove_owned_entry_at
 
-    flags = (
-        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0)
-    )
-    for name in os.listdir(descriptor):
+    for name in tuple(os.listdir(descriptor)):
         details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-        if stat.S_ISDIR(details.st_mode):
-            child = os.open(name, flags, dir_fd=descriptor)
-            try:
-                opened = os.fstat(child)
-                if (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino):
-                    raise CadDependencyError(f"cleanup child changed during deletion: {name}")
-                _clear_cleanup_descriptor(child)
-            finally:
-                os.close(child)
-            os.rmdir(name, dir_fd=descriptor)
-        else:
-            os.unlink(name, dir_fd=descriptor)
+        if not remove_owned_entry_at(
+            descriptor, name, (details.st_dev, details.st_ino)
+        ):
+            raise CadDependencyError(f"cleanup child changed during deletion: {name}")
 
 
 def prepare_discovery_environment(
@@ -320,8 +329,19 @@ def prepare_discovery_environment(
             raise ValueError("dirty CAD dependency discovery requires an explicit revision label")
         if relative_source is None:
             raise CadDependencyError("dirty CAD dependency discovery requires a source file")
-        source = _dirty_regular_file(root, relative_source)
-        return DiscoveryEnvironment(root, source, None, True, None)
+        source, source_fd, source_stat = _dirty_regular_file(root, relative_source)
+        source_key = _SourceKey()
+        with _CLEANUP_LOCK:
+            source_record = _SourceRecord(
+                source_fd, source_stat.st_dev, source_stat.st_ino
+            )
+            source_record.finalizer = weakref.finalize(
+                source_key, _close_cleanup_descriptors, -1, source_fd
+            )
+            _SOURCE_RECORDS[source_key] = source_record
+        return DiscoveryEnvironment(
+            root, source, None, True, None, None, source_key
+        )
 
     commit = _git_revision(root, revision)
     cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-discovery-"))
@@ -379,6 +399,18 @@ def prepare_discovery_environment(
 def cleanup_discovery_environment(environment: DiscoveryEnvironment) -> None:
     """Remove an archived discovery tree; dirty working trees are never removed."""
 
+    source_key = environment._source_key
+    if source_key is not None:
+        with _CLEANUP_LOCK:
+            source_record = _SOURCE_RECORDS.get(source_key)
+            if source_record is None:
+                raise CadDependencyError("CAD discovery source descriptor is not owned")
+            if not source_record.closed:
+                if source_record.finalizer is not None:
+                    source_record.finalizer()
+                else:
+                    os.close(source_record.descriptor)
+                source_record.closed = True
     if environment.cleanup_root is None and environment._cleanup_key is None:
         return
     key = environment._cleanup_key
@@ -419,6 +451,11 @@ def _discovery_context(
     return f"argv={argv!r}; cwd={cwd}; env={visible!r}"
 
 
+def _proc_fd_path(descriptor: int) -> Path | None:
+    root = Path("/proc/self/fd")
+    return root / str(descriptor) if root.is_dir() else None
+
+
 def run_dependency_discovery(
     openscad: str | os.PathLike[str],
     environment: DiscoveryEnvironment,
@@ -441,9 +478,25 @@ def run_dependency_discovery(
         raise CadDependencyError(
             f"cannot clear stale dependency discovery output in {output_root}: {error}"
         ) from error
+    source_argument = environment.source_path
+    pass_fds: tuple[int, ...] = ()
+    if environment.dirty:
+        key = environment._source_key
+        with _CLEANUP_LOCK:
+            record = _SOURCE_RECORDS.get(key) if key is not None else None
+            if record is None or record.closed:
+                raise CadDependencyError("dirty CAD discovery source descriptor is unavailable")
+            details = os.fstat(record.descriptor)
+            if (details.st_dev, details.st_ino) != (record.device, record.inode):
+                raise CadDependencyError("dirty CAD discovery source descriptor changed")
+            proc_path = _proc_fd_path(record.descriptor)
+            if proc_path is None:
+                raise CadDependencyError("dirty CAD discovery requires /proc/self/fd")
+            source_argument = proc_path
+            pass_fds = (record.descriptor,)
     argv = (
         str(openscad), "-o", str(csg), "-d", str(dependencies),
-        *geometry_define_argv(job, revision), str(environment.source_path),
+        *geometry_define_argv(job, revision), str(source_argument),
     )
     cwd = environment.source_path.parent
     context = _discovery_context(argv, cwd, env)
@@ -451,6 +504,7 @@ def run_dependency_discovery(
         completed = subprocess.run(
             list(argv), cwd=cwd, env=dict(env), text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+            pass_fds=pass_fds,
         )
     except OSError as error:
         raise CadDependencyError(

@@ -332,19 +332,11 @@ def _directory_identity(path: Path) -> tuple[int, int]:
 
 def _exchange_paths(first: Path, second: Path) -> None:
     """Atomically exchange two paths where the host kernel supports it."""
-
-    if not sys.platform.startswith("linux"):
-        raise _AtomicExchangeUnsupported("atomic rollback exchange requires Linux renameat2")
-    library = ctypes.CDLL(None, use_errno=True)
-    rename = getattr(library, "renameat2", None)
-    if rename is None:
-        raise _AtomicExchangeUnsupported("renameat2 is unavailable")
-    result = rename(-100, os.fsencode(first), -100, os.fsencode(second), 2)
-    if result != 0:
-        value = ctypes.get_errno()
-        if value in {errno.ENOSYS, errno.ENOTSUP, errno.EINVAL}:
-            raise _AtomicExchangeUnsupported(os.strerror(value))
-        raise OSError(value, os.strerror(value))
+    from plamp.cad_fs import AtomicExchangeUnsupported, exchange_paths
+    try:
+        exchange_paths(first, second)
+    except AtomicExchangeUnsupported as error:
+        raise _AtomicExchangeUnsupported(str(error)) from error
 
 
 class _AtomicExchangeUnsupported(OSError):
