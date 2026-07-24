@@ -99,10 +99,17 @@ class CadGenerationTests(unittest.TestCase):
             if "--version" in sys.argv:
                 print("OpenSCAD version 2099.01")
                 raise SystemExit(0)
+            if "--info" in sys.argv:
+                print("OpenSCAD Version: 2099.01")
+                print("User Library Path: " + os.environ["FAKE_USER_LIBRARY"])
+                print("OpenSCAD library path:")
+                print(os.environ["FAKE_INSTALL_LIBRARY"])
+                print()
+                raise SystemExit(0)
             pathlib.Path(os.environ["FAKE_ARGV"]).write_text(json.dumps(sys.argv[1:]))
             output = pathlib.Path(sys.argv[sys.argv.index("-o") + 1])
             state_log = os.environ.get("FAKE_STATE_LOG")
-            if state_log:
+            if state_log and os.environ.get("PLAMP_CAD_MANIFEST"):
                 manifest = json.loads(pathlib.Path(os.environ["PLAMP_CAD_MANIFEST"]).read_text())
                 with pathlib.Path(state_log).open("a") as stream:
                     stream.write(json.dumps([manifest["status"], [job["status"] for job in manifest["jobs"]]]) + "\\n")
@@ -120,17 +127,77 @@ class CadGenerationTests(unittest.TestCase):
             if os.environ.get("FAKE_FAIL_VIEW") == view:
                 print("ERROR: requested failure")
                 raise SystemExit(7)
+            if "-d" in sys.argv:
+                dependency = pathlib.Path(sys.argv[sys.argv.index("-d") + 1])
+                final_render = "--export-format" in sys.argv
+                if final_render and os.environ.get("FAKE_MUTATE_SOURCE"):
+                    pathlib.Path(sys.argv[-1]).write_text("changed during render")
+                if not (final_render and os.environ.get("FAKE_SKIP_FINAL_D")):
+                    rows = [sys.argv[-1]]
+                    if final_render and os.environ.get("FAKE_FINAL_DEP"):
+                        rows.append(os.environ["FAKE_FINAL_DEP"])
+                    dependency.write_text(str(output) + ": " + " ".join(rows) + "\\n")
+            env_log = os.environ.get("FAKE_ENV_LOG")
+            if env_log:
+                pathlib.Path(env_log).write_text(json.dumps({
+                    key: os.environ.get(key) for key in
+                    ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "OPENSCADPATH")
+                }))
             if not os.environ.get("FAKE_EMPTY"):
                 output.write_text("solid fixture\\nendsolid fixture\\n")
         """))
         self.fake.chmod(0o755)
         self.argv_file = self.root / "argv.json"
+        self.user_library = self.root / "user-library"
+        self.install_library = self.root / "install-library"
+        self.user_library.mkdir()
+        self.install_library.mkdir()
 
     def tearDown(self):
         self.temp.cleanup()
 
     def env(self, **values):
-        return {**os.environ, "FAKE_ARGV": str(self.argv_file), **values}
+        return {
+            **os.environ, "FAKE_ARGV": str(self.argv_file),
+            "FAKE_USER_LIBRARY": str(self.user_library),
+            "FAKE_INSTALL_LIBRARY": str(self.install_library), **values,
+        }
+
+    def test_render_uses_staged_source_makefile_and_isolated_library_environment(self):
+        environment_log = self.root / "render-env.json"
+        result = self.generate(env=self.env(FAKE_ENV_LOG=str(environment_log)))
+        self.assertEqual(result.status, "complete")
+        argv = json.loads(self.argv_file.read_text())
+        self.assertIn("-d", argv)
+        self.assertIn("/repository/things/fixture/fixture.scad", argv[-1])
+        rendered_env = json.loads(environment_log.read_text())
+        self.assertNotEqual(rendered_env["HOME"], str(Path.home()))
+        self.assertTrue(rendered_env["OPENSCADPATH"].endswith("/libraries"))
+
+    def test_successful_openscad_with_host_fallback_discards_artifact(self):
+        host_dependency = self.root / "host-only.scad"
+        host_dependency.write_text("cube(99);")
+        result = self.generate(env=self.env(FAKE_FINAL_DEP=str(host_dependency)))
+        job = load_run(result.run_dir)["jobs"][0]
+        self.assertEqual(job["status"], "failed")
+        self.assertIsNone(job["artifact"])
+        self.assertIn("outside staged dependency closure", job["errors"][-1])
+        self.assertFalse(list((result.run_dir / "artifacts").glob("*.stl")))
+
+    def test_missing_second_makefile_and_staged_content_change_fail_closed(self):
+        for variable, expected in (
+            ("FAKE_SKIP_FINAL_D", "cannot read dependency file"),
+            ("FAKE_MUTATE_SOURCE", "content hash mismatch"),
+        ):
+            with self.subTest(variable=variable):
+                output = self.root / variable.lower()
+                result = self.generate(
+                    output=output, env=self.env(**{variable: "1"})
+                )
+                job = load_run(result.run_dir)["jobs"][0]
+                self.assertEqual(job["status"], "failed")
+                self.assertIsNone(job["artifact"])
+                self.assertIn(expected, job["errors"][-1])
 
     def generate(self, source_plan=None, **kwargs):
         environment = kwargs.pop("env", self.env())
@@ -354,7 +421,7 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(archived.read_text(), "cube(1);\n")
         self.assertRegex(
             manifest["jobs"][0]["command"][-1],
-            r"^/proc/self/fd/\d+/fixture/fixture\.scad$",
+            r"/stage/repository/things/fixture/fixture\.scad$",
         )
 
     def test_commit_revision_mode_engraves_resolved_short_hash(self):
@@ -493,8 +560,8 @@ class CadGenerationTests(unittest.TestCase):
         )
         jobs = load_run(result.run_dir)["jobs"]
         self.assertIn('set="floor"', jobs[0]["command"])
-        self.assertRegex(jobs[0]["command"][-1], r"^/proc/self/fd/\d+/fixture/fixture\.scad$")
-        self.assertRegex(jobs[1]["command"][-1], r"^/proc/self/fd/\d+/holder/holder\.scad$")
+        self.assertRegex(jobs[0]["command"][-1], r"/stage/repository/things/fixture/fixture\.scad$")
+        self.assertRegex(jobs[1]["command"][-1], r"/stage/repository/things/holder/holder\.scad$")
         self.assertEqual(set(load_run(result.run_dir)["models"]), {"fixture", "holder"})
 
     def test_duplicate_identity_allows_different_jobs_or_local_day(self):
@@ -1033,7 +1100,8 @@ class CadGenerationTests(unittest.TestCase):
                             OSError, "path changed"
                         ):
             self.generate(output=output)
-        self.assertFalse(self.argv_file.exists())
+        self.assertTrue(self.argv_file.exists())
+        self.assertNotIn("--export-format", json.loads(self.argv_file.read_text()))
         self.assertEqual(list(outside.iterdir()), [])
 
     def test_post_claim_run_swap_before_reuse_never_writes_replacement(self):
@@ -1066,7 +1134,7 @@ class CadGenerationTests(unittest.TestCase):
         captured = []
 
         def swap_inside_popen(command, **kwargs):
-            if "-o" not in command:
+            if "--export-format" not in command:
                 return real_popen(command, **kwargs)
             captured.extend(command)
             output.rename(held)
@@ -1081,7 +1149,7 @@ class CadGenerationTests(unittest.TestCase):
             self.generate(output=output)
         output_arg = captured[captured.index("-o") + 1]
         self.assertRegex(output_arg, r"^/proc/self/fd/\d+/")
-        self.assertRegex(captured[-1], r"^/proc/self/fd/\d+/")
+        self.assertRegex(captured[-1], r"/stage/repository/things/fixture/fixture\.scad$")
         self.assertEqual(list(replacement.iterdir()), [])
         self.assertFalse(list((held / "artifacts").glob("*.tmp.stl")))
 
@@ -1181,9 +1249,11 @@ class CadGenerationTests(unittest.TestCase):
         anchored_output = command[2]
         anchored_source = command[-1]
         self.assertRegex(anchored_output, r"^/proc/self/fd/\d+/\.first--")
-        self.assertRegex(anchored_source, r"^/proc/self/fd/\d+/fixture/fixture\.scad$")
+        self.assertRegex(anchored_source, r"/stage/repository/things/fixture/fixture\.scad$")
+        dependency_file = command[4]
         expected = [
             str(self.fake), "-o", anchored_output,
+            "-d", dependency_file,
             "-D", f'revision_string="{self.commit[:7]}"',
             "-D", 'set="first"', "-D", "count=1", "-D", 'label="a b"',
             "-D", "enabled=true", "-D", "quality=$preview ? 2 : 20",

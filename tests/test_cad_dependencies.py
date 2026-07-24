@@ -27,6 +27,7 @@ from plamp.cad_dependencies import (
     query_openscad_info,
     run_dependency_discovery,
     stage_dependency_closure,
+    verify_staged_dependencies,
     _extract_git_archive,
 )
 from plamp.cad_generation import _command
@@ -55,6 +56,35 @@ class CadDependencyTests(unittest.TestCase):
             variables={"count": 1, "label": "a b", "enabled": True},
             raw_defines={"quality": "$preview ? 2 : 20"},
         )
+
+    def test_verify_staged_dependencies_rejects_host_fallback_and_mismatch(self):
+        stage = self.root / "stage"
+        staged_source = self.write("stage/repository/things/box/box.scad", "cube(1);")
+        helper = self.write("stage/repository/things/box/helper.scad", "cube(2);")
+        expected = (
+            DependencyRecord(staged_source, "model-local", "box.scad",
+                             Path("repository/things/box/box.scad"), content_hash(staged_source)),
+            DependencyRecord(helper, "model-local", "helper.scad",
+                             Path("repository/things/box/helper.scad"), content_hash(helper)),
+        )
+        verify_staged_dependencies(expected=expected, actual=(staged_source, helper),
+                                   staged_root=stage)
+        outside = self.write("host-only.scad", "bad")
+        with self.assertRaisesRegex(CadDependencyError, "outside staged dependency closure"):
+            verify_staged_dependencies(expected=expected, actual=(staged_source, outside),
+                                       staged_root=stage)
+        helper.write_text("changed")
+        with self.assertRaisesRegex(CadDependencyError, "content hash"):
+            verify_staged_dependencies(expected=expected, actual=(staged_source, helper),
+                                       staged_root=stage)
+
+    def test_final_command_writes_a_second_dependency_makefile(self):
+        source = self.write("staged/model.scad", "cube(1);")
+        dependency_file = self.root / "render.d"
+        command = _command(Path("openscad"), self.root / "part.stl", source,
+                           "rev", self.job(), dependency_file=dependency_file)
+        self.assertEqual(command[1:5], ["-o", str(self.root / "part.stl"),
+                                        "-d", str(dependency_file)])
 
     def test_make_dependencies_handle_continuations_spaces_and_escapes(self):
         expected = [
@@ -98,6 +128,13 @@ class CadDependencyTests(unittest.TestCase):
                 CadDependencyError, message
             ):
                 parse_make_dependencies(path, self.root)
+
+    def test_make_dependencies_reject_symlinked_path_components(self):
+        real = self.write("real/helper.scad", "cube(1);")
+        (self.root / "linked").symlink_to(real.parent, target_is_directory=True)
+        makefile = self.write("linked.d", "out: linked/helper.scad\n")
+        with self.assertRaisesRegex(CadDependencyError, "unsafe symlink"):
+            parse_make_dependencies(makefile, self.root)
 
     def test_make_dependencies_reject_malformed_input(self):
         for text in ("out.csg root.scad\n", "out.csg: dangling\\"):

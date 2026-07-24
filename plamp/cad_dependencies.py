@@ -631,6 +631,7 @@ def parse_make_dependencies(path: Path, working_directory: Path) -> tuple[Path, 
             candidate = Path(token)
             if not candidate.is_absolute():
                 candidate = working_directory / candidate
+            _reject_link_components(candidate)
             resolved = candidate.resolve(strict=True)
         except ValueError as error:
             raise CadDependencyError(
@@ -1033,3 +1034,46 @@ def stage_dependency_closure(
         stage, closure.records, stage / "repository" / source_relative,
         tuple(openscad_paths),
     )
+
+
+def verify_staged_dependencies(
+    *,
+    expected: tuple[DependencyRecord, ...],
+    actual: tuple[Path, ...],
+    staged_root: str | os.PathLike[str],
+) -> None:
+    """Verify a final render resolved the exact staged logical closure."""
+
+    root = Path(staged_root).resolve(strict=True)
+    expected_by_archive = {record.archive_path: record for record in expected}
+    actual_by_archive: dict[Path, Path] = {}
+    for supplied in actual:
+        _reject_link_components(Path(supplied))
+        resolved = Path(supplied).resolve(strict=True)
+        try:
+            archive_path = resolved.relative_to(root)
+        except ValueError as error:
+            raise CadDependencyError(
+                f"final dependency outside staged dependency closure: {resolved}"
+            ) from error
+        if archive_path in actual_by_archive:
+            continue
+        record = expected_by_archive.get(archive_path)
+        if record is None:
+            raise CadDependencyError(
+                f"final dependency logical closure mismatch: unexpected {archive_path}"
+            )
+        if content_hash(resolved) != record.content_hash:
+            raise CadDependencyError(
+                f"final dependency content hash mismatch: {archive_path}"
+            )
+        actual_by_archive[archive_path] = resolved
+    missing = sorted(
+        set(expected_by_archive).difference(actual_by_archive),
+        key=lambda item: item.as_posix(),
+    )
+    if missing:
+        raise CadDependencyError(
+            "final dependency logical closure mismatch: missing "
+            + ", ".join(item.as_posix() for item in missing)
+        )

@@ -22,7 +22,17 @@ import secrets
 from typing import IO, Callable
 
 from plamp.cad_model import CadModel
-from plamp.cad_dependencies import geometry_define_argv
+from plamp.cad_dependencies import (
+    CadLibrary,
+    classify_dependencies,
+    geometry_define_argv,
+    parse_make_dependencies,
+    prepare_discovery_environment,
+    query_openscad_info,
+    run_dependency_discovery,
+    stage_dependency_closure,
+    verify_staged_dependencies,
+)
 from plamp.cad_readme import render_run_readme
 from plamp.cad_planning import RenderJob, RenderPlan, plan_as_dict
 
@@ -543,11 +553,55 @@ def _command(
     source: Path,
     revision: str,
     job: RenderJob,
+    *,
+    dependency_file: Path | None = None,
 ) -> list[str]:
     command = [str(openscad), "-o", str(output)]
+    if dependency_file is not None:
+        command.extend(("-d", str(dependency_file)))
     command.extend(geometry_define_argv(job, revision))
     command.extend(["--export-format", "asciistl", str(source)])
     return command
+
+
+def _declared_libraries_for_environment(
+    libraries: Mapping[str, CadLibrary], repository_root: Path, staged_root: Path
+) -> dict[str, CadLibrary]:
+    """Translate repository library declarations into a revision snapshot."""
+
+    translated: dict[str, CadLibrary] = {}
+    for name, library in libraries.items():
+        try:
+            relative = library.path.resolve().relative_to(repository_root)
+        except ValueError:
+            path = library.path
+        else:
+            path = staged_root / relative
+        translated[name] = CadLibrary(
+            library.name, path, library.license, library.revision
+        )
+    return translated
+
+
+def _staged_render_environment(
+    base: Mapping[str, str], openscad_paths: tuple[Path, ...], isolated_root: Path
+) -> dict[str, str]:
+    environment = dict(base)
+    home = isolated_root / "home"
+    config = isolated_root / "config"
+    data = isolated_root / "data"
+    local_data = isolated_root / "local-data"
+    for directory in (home, config, data, local_data):
+        directory.mkdir(parents=True, exist_ok=True)
+    environment.update({
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(config),
+        "XDG_DATA_HOME": str(data),
+        "APPDATA": str(data),
+        "LOCALAPPDATA": str(local_data),
+        "OPENSCADPATH": os.pathsep.join(str(path) for path in openscad_paths),
+    })
+    return environment
 
 
 def _safe_component(value: str) -> str:
@@ -1212,6 +1266,7 @@ def generate_plan(
     data_dir: str | os.PathLike[str],
     models: Mapping[str, CadModel],
     snapshots: Mapping[str, SourceSnapshot],
+    libraries: Mapping[str, CadLibrary] | None = None,
     output: str | os.PathLike[str] | None = None,
     openscad: str | os.PathLike[str] = "openscad",
     revision: str | None = None,
@@ -1223,6 +1278,7 @@ def generate_plan(
     """Render a plan sequentially and persist every observable state change."""
 
     root = Path(repo_root).resolve()
+    declared_libraries = dict(libraries or {})
     if not plan.jobs:
         raise ValueError("CAD render plan contains no jobs")
     selected_model_ids = tuple(dict.fromkeys(job.model_id for job in plan.jobs))
@@ -1272,6 +1328,7 @@ def generate_plan(
         if version_result.returncode != 0:
             raise RuntimeError(version_result.stdout.strip() or "OpenSCAD version check failed")
         openscad_version = version_result.stdout.strip()
+        base_environment = dict(env) if env is not None else dict(os.environ)
         # Derive the archive creation instant and its local-day identity from
         # one clock sample; crossing midnight between separate samples must
         # not make a just-created run invisible to duplicate detection.
@@ -1417,11 +1474,6 @@ def generate_plan(
             temporary_artifact = run_dir / "artifacts" / f".{artifact_stem}.tmp.stl"
             final_artifact = run_dir / "artifacts" / f"{artifact_stem}.stl"
             anchored_output = _proc_fd_path(artifacts_fd, temporary_artifact.name)
-            model_component = _safe_component(render_job.model_id)
-            anchored_source = _proc_fd_path(
-                source_fd, model_component,
-                archived_sources[render_job.model_id].name,
-            )
             geometry_hash = (
                 snapshots[render_job.model_id].geometry_identity
                 or snapshots[render_job.model_id].source_identity
@@ -1509,14 +1561,125 @@ def generate_plan(
                 write_manifest_state()
                 best_effort_readme_state()
                 break
-            command = _command(Path(openscad), anchored_output,
-                               anchored_source,
-                               snapshots[render_job.model_id].revision_label, render_job)
+            stage_context: tempfile.TemporaryDirectory[str] | None = None
+            staged = None
+            render_dependencies: Path | None = None
+            process_env: dict[str, str] | None = None
+            discovery_output = ""
+            try:
+                verify_destination()
+                stage_context = tempfile.TemporaryDirectory(
+                    prefix="plamp-cad-render-"
+                )
+                transaction_root = Path(stage_context.name)
+                openscad_info = query_openscad_info(
+                    openscad, env=base_environment
+                )
+                snapshot = snapshots[render_job.model_id]
+                model = models[render_job.model_id]
+                discovery_env = prepare_discovery_environment(
+                    root,
+                    model.source_path,
+                    revision=snapshot.full_commit or revision,
+                    dirty=snapshot.dirty,
+                    revision_label=snapshot.revision_label,
+                )
+                try:
+                    translated_libraries = _declared_libraries_for_environment(
+                        declared_libraries, root, discovery_env.root
+                    )
+                    source_environment = dict(base_environment)
+                    discovery_paths = [
+                        str(library.path)
+                        for library in translated_libraries.values()
+                    ]
+                    configured_paths = source_environment.get("OPENSCADPATH")
+                    if configured_paths:
+                        discovery_paths.extend(
+                            item for item in configured_paths.split(os.pathsep) if item
+                        )
+                    else:
+                        discovery_paths.extend(
+                            str(path) for path in openscad_info.library_paths
+                        )
+                    source_environment["OPENSCADPATH"] = os.pathsep.join(
+                        dict.fromkeys(discovery_paths)
+                    )
+                    discovery = run_dependency_discovery(
+                        openscad,
+                        discovery_env,
+                        render_job,
+                        transaction_root / "discovery",
+                        env=source_environment,
+                        revision=snapshot.revision_label,
+                    )
+                    discovery_output = discovery.output
+                    installation_roots = tuple(
+                        path for path in openscad_info.library_paths
+                        if openscad_info.user_library_path is None
+                        or path.resolve() != openscad_info.user_library_path.resolve()
+                    )
+                    closure = classify_dependencies(
+                        dependencies=discovery.dependencies,
+                        model_root=discovery_env.source_path.parent,
+                        repository_root=discovery_env.root,
+                        declared_libraries=translated_libraries,
+                        openscad_library_roots=installation_roots,
+                        selected_revision=discovery_env.revision,
+                    )
+                    staged = stage_dependency_closure(
+                        closure, transaction_root / "stage"
+                    )
+                    discovered_set = set(discovery.dependencies)
+                    expected_records = tuple(
+                        record for record in staged.records
+                        if record.source_path in discovered_set
+                    )
+                finally:
+                    discovery_env.cleanup()
+                render_dependencies = transaction_root / "render.d"
+                process_env = _staged_render_environment(
+                    base_environment, staged.openscad_paths,
+                    transaction_root / "isolated",
+                )
+                process_env["PLAMP_CAD_MANIFEST"] = str(
+                    _proc_fd_path(run_fd, "manifest.json")
+                )
+                command = _command(
+                    Path(openscad), anchored_output, staged.model_source,
+                    snapshot.revision_label, render_job,
+                    dependency_file=render_dependencies,
+                )
+            except Exception as error:
+                if stage_context is not None:
+                    stage_context.cleanup()
+                log_name = Path(str(job["log"])).name
+                try:
+                    failed_log_fd = os.open(
+                        log_name,
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                        0o644,
+                        dir_fd=logs_fd,
+                    )
+                except FileExistsError:
+                    pass
+                else:
+                    with os.fdopen(failed_log_fd, "w", encoding="utf-8") as failed_log:
+                        failed_log.write(f"dependency transaction failed: {_error_text(error)}\n")
+                _finalize_job_failure(
+                    job, started_clock=started_clock, error=error, process=None,
+                    temporary_artifact=temporary_artifact,
+                    artifacts_fd=artifacts_fd,
+                )
+                failed = True
+                write_manifest_state()
+                best_effort_readme_state()
+                break
             job["command"] = command
-            write_manifest_state()
             log_path = run_dir / str(job["log"])
             process: subprocess.Popen[str] | None = None
             try:
+                write_manifest_state()
                 write_readme_state()
                 verify_destination()
                 log_fd = os.open(
@@ -1526,14 +1689,19 @@ def generate_plan(
                 )
                 with os.fdopen(log_fd, "w", encoding="utf-8") as log:
                     verify_destination()
-                    process_env = dict(env) if env is not None else dict(os.environ)
-                    process_env["PLAMP_CAD_MANIFEST"] = str(
-                        _proc_fd_path(run_fd, "manifest.json")
-                    )
+                    if discovery_output:
+                        log.write("OpenSCAD dependency discovery:\n")
+                        log.write(discovery_output)
+                        if not discovery_output.endswith("\n"):
+                            log.write("\n")
+                        log.flush()
+                    assert process_env is not None
+                    assert staged is not None
                     process = subprocess.Popen(
                         command, text=True, stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT, env=process_env,
                         pass_fds=(artifacts_fd, source_fd, run_fd),
+                        cwd=staged.model_source.parent,
                     )
                     assert process.stdout is not None
                     with process.stdout:
@@ -1553,6 +1721,14 @@ def generate_plan(
                 if rendered is not None:
                     os.close(rendered[0])
                 if exit_code == 0 and rendered is not None:
+                    assert render_dependencies is not None
+                    verify_staged_dependencies(
+                        expected=expected_records,
+                        actual=parse_make_dependencies(
+                            render_dependencies, staged.model_source.parent
+                        ),
+                        staged_root=staged.root,
+                    )
                     artifact_bytes, artifact_sha256 = _publish_rendered_artifact(
                         temporary_artifact, final_artifact, artifacts_fd
                     )
@@ -1597,6 +1773,9 @@ def generate_plan(
                     artifacts_fd=artifacts_fd,
                 )
                 failed = True
+            finally:
+                if stage_context is not None:
+                    stage_context.cleanup()
             write_manifest_state()
             best_effort_readme_state()
             if failed:

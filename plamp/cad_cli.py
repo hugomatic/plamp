@@ -754,6 +754,7 @@ def _generate(
                     data_dir=context.data_dir,
                     models=system.models,
                     snapshots=snapshots,
+                    libraries=system.libraries,
                     output=_generation_output(args),
                     openscad=resolved_openscad,
                     revision=_generation_revision(args),
