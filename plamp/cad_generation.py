@@ -19,7 +19,8 @@ import tempfile
 import time
 from typing import IO, Callable
 
-from plamp.cad_recipes import RenderJob, RenderPlan, plan_as_dict, serialize_scad_value
+from plamp.cad_recipes import RenderJob, RenderPlan, plan_as_dict
+from plamp.cad_values import serialize_scad_value
 
 
 MANIFEST_SCHEMA_VERSION = 1

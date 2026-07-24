@@ -172,6 +172,39 @@ class CadSystemTests(unittest.TestCase):
         system = load_system(self.system(products={"complete": {"items": repeated}}), self.root)
         self.assertEqual(tuple(item.variant for item in system.products["complete"].items), ("narrow", "wide"))
 
+    def test_identical_sibling_assignments_allow_deduplication_without_variants(self):
+        repeated = [
+            {"model": "widget", "set": "one", "description": "first label"},
+            {"model": "widget", "set": "one", "description": "second label"},
+        ]
+        system = load_system(
+            self.system(products={"complete": {"items": repeated}}), self.root
+        )
+        self.assertEqual(
+            tuple(item.variant for item in system.products["complete"].items),
+            (None, None),
+        )
+
+    def test_different_sibling_profiles_or_slicing_require_variants(self):
+        self.write("cad/profiles/draft.json", "{}")
+        for assignment in (
+            ("profiles", ["draft"], []),
+            ("slicing", {"wall": 1}, {"wall": 2}),
+        ):
+            field, first, second = assignment
+            items = [
+                {"model": "widget", "set": "one", field: first},
+                {"model": "widget", "set": "one", field: second},
+            ]
+            with self.subTest(field=field), self.assertRaises(CadMetadataError):
+                load_system(
+                    self.system(
+                        profiles={"draft": "cad/profiles/draft.json"},
+                        products={"complete": {"items": items}},
+                    ),
+                    self.root,
+                )
+
     def test_rejects_duplicate_or_unsafe_variants(self):
         for variants in (("same", "same"), ("good", "not safe")):
             items = [

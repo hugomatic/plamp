@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 import hashlib
 import json
-import math
 import re
 from types import MappingProxyType
 
 from plamp.cad_metadata import CadDocument, PresetMetadata
+from plamp.cad_values import parse_raw_defines, serialize_scad_value
 
 
 GENERATOR_SCHEMA_VERSION = 1
@@ -141,46 +141,6 @@ class _Candidate:
     preset_path: tuple[str, ...] | None
 
 
-def serialize_scad_value(value: object) -> str:
-    """Serialize a JSON-like Python value as a deterministic OpenSCAD expression."""
-
-    if value is None:
-        return "undef"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError("OpenSCAD values must use finite numbers")
-        return repr(value)
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    if isinstance(value, Mapping):
-        if not all(isinstance(key, str) for key in value):
-            raise TypeError("OpenSCAD object keys must be strings")
-        entries = (
-            f"[{serialize_scad_value(key)}, {serialize_scad_value(value[key])}]"
-            for key in sorted(value)
-        )
-        return f"[{', '.join(entries)}]"
-    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
-        return f"[{', '.join(serialize_scad_value(item) for item in value)}]"
-    raise TypeError(f"Unsupported OpenSCAD value: {type(value).__name__}")
-
-
-def _parse_raw_defines(defines: tuple[str, ...]) -> dict[str, str]:
-    parsed: dict[str, str] = {}
-    for define in defines:
-        if "=" not in define:
-            raise ValueError("Raw defines must use NAME=EXPRESSION")
-        name, expression = define.split("=", 1)
-        if not name:
-            raise ValueError("Raw defines must use NAME=EXPRESSION")
-        parsed[name] = expression
-    return parsed
-
-
 def _effective_defines(
     document: CadDocument,
     selection: Selection,
@@ -196,7 +156,7 @@ def _effective_defines(
             raw_defines.pop(name, None)
 
     def apply_raw(defines: tuple[str, ...]) -> None:
-        for name, expression in _parse_raw_defines(defines).items():
+        for name, expression in parse_raw_defines(defines).items():
             variables.pop(name, None)
             raw_defines[name] = expression
 

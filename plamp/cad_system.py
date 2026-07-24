@@ -348,8 +348,22 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
         for model_set, repeated in siblings.items():
             if len(repeated) > 1:
                 variants = tuple(item.variant for item in repeated)
-                if any(variant is None for variant in variants) or len(set(variants)) != len(variants):
+                assignments = tuple(
+                    (dict(item.variables), item.profiles, dict(item.slicing))
+                    for item in repeated
+                )
+                assignments_differ = any(
+                    assignment != assignments[0] for assignment in assignments[1:]
+                )
+                variants_invalid = (
+                    any(variant is None for variant in variants)
+                    or len(set(variants)) != len(variants)
+                )
+                if assignments_differ and variants_invalid:
                     _fail(path, f"Sibling references to {model_set[0]}/{model_set[1]} require distinct variants",
+                          code="CAD125", kind="invalid_variant", value=variants)
+                if not assignments_differ and any(variants) and variants_invalid:
+                    _fail(path, f"Sibling references to {model_set[0]}/{model_set[1]} use duplicate variants",
                           code="CAD125", kind="invalid_variant", value=variants)
 
     default = metadata.get("default_product")
