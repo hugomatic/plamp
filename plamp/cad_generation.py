@@ -593,6 +593,7 @@ def _finalize_job_failure(
     error: BaseException,
     process: subprocess.Popen[str] | None,
     temporary_artifact: Path,
+    artifacts_fd: int | None = None,
 ) -> None:
     job["status"] = "failed"
     job["exit_code"] = None if process is None else process.returncode
@@ -601,7 +602,10 @@ def _finalize_job_failure(
     errors = job["errors"]
     assert isinstance(errors, list)
     errors.append(_error_text(error))
-    _remove_temporary_artifact(temporary_artifact)
+    if artifacts_fd is None:
+        _remove_temporary_artifact(temporary_artifact)
+    else:
+        _unlink_artifact(artifacts_fd, temporary_artifact.name)
 
 
 def _copy_snapshot(
@@ -668,6 +672,43 @@ def _sha256_fd(fd: int) -> str:
             return digest.hexdigest()
         digest.update(chunk)
         offset += len(chunk)
+
+
+def _proc_fd_path(fd: int, *parts: str) -> Path:
+    root = Path("/proc/self/fd")
+    if not root.is_dir():
+        raise RuntimeError(
+            "descriptor-anchored CAD rendering requires Linux /proc/self/fd"
+        )
+    anchored = root / str(fd)
+    try:
+        os.fstat(fd)
+    except OSError as error:
+        raise RuntimeError("CAD render descriptor is not open") from error
+    return anchored.joinpath(*parts)
+
+
+def _open_artifact(
+    artifacts_fd: int, name: str,
+) -> tuple[int, os.stat_result] | None:
+    try:
+        fd = os.open(
+            name, os.O_RDONLY | _NOFOLLOW | _CLOEXEC, dir_fd=artifacts_fd
+        )
+    except FileNotFoundError:
+        return None
+    details = os.fstat(fd)
+    if not stat.S_ISREG(details.st_mode) or details.st_size <= 0:
+        os.close(fd)
+        return None
+    return fd, details
+
+
+def _unlink_artifact(artifacts_fd: int, name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=artifacts_fd)
+    except FileNotFoundError:
+        pass
 
 
 def _open_run_manifest(root_fd: int, run_name: str) -> tuple[int, dict[str, object]]:
@@ -1009,16 +1050,21 @@ def _verify_visible_directory(fd: int, path: Path, label: str) -> None:
 
 def _publish_rendered_artifact(
     temporary: Path, final: Path, artifacts_fd: int,
-) -> None:
-    details = os.stat(temporary.name, dir_fd=artifacts_fd, follow_symlinks=False)
-    if not stat.S_ISREG(details.st_mode) or details.st_size <= 0:
+) -> tuple[int, str]:
+    opened = _open_artifact(artifacts_fd, temporary.name)
+    if opened is None:
         raise OSError("rendered artifact is not a non-empty regular file")
-    os.link(
-        temporary.name, final.name,
-        src_dir_fd=artifacts_fd, dst_dir_fd=artifacts_fd,
-        follow_symlinks=False,
+    fd, details = opened
+    checksum = _sha256_fd(fd)
+    candidate = _VerifiedArtifact(
+        fd, details.st_size, checksum, temporary, {}, {}
     )
-    os.unlink(temporary.name, dir_fd=artifacts_fd)
+    try:
+        _copy_verified_artifact(candidate, final, artifacts_fd)
+    finally:
+        candidate.close()
+    _unlink_artifact(artifacts_fd, temporary.name)
+    return details.st_size, checksum
 
 
 def _manifest_generation_identity(
@@ -1375,6 +1421,12 @@ def generate_plan(
             )
             temporary_artifact = run_dir / "artifacts" / f".{artifact_stem}.tmp.stl"
             final_artifact = run_dir / "artifacts" / f"{artifact_stem}.stl"
+            anchored_output = _proc_fd_path(artifacts_fd, temporary_artifact.name)
+            model_component = _safe_component(render_job.model_id)
+            anchored_source = _proc_fd_path(
+                source_fd, model_component,
+                archived_sources[render_job.model_id].name,
+            )
             geometry_hash = (
                 snapshots[render_job.model_id].geometry_identity
                 or snapshots[render_job.model_id].source_identity
@@ -1408,8 +1460,15 @@ def generate_plan(
                     )
                     job["exit_code"] = 0
                     job["artifact"] = str(final_artifact.relative_to(run_dir))
-                    job["artifact_bytes"] = final_artifact.stat().st_size
-                    job["artifact_sha256"] = _file_sha256(final_artifact)
+                    reused_output = _open_artifact(artifacts_fd, final_artifact.name)
+                    if reused_output is None:
+                        raise OSError("reused artifact disappeared after publication")
+                    reused_fd, reused_details = reused_output
+                    try:
+                        job["artifact_bytes"] = reused_details.st_size
+                        job["artifact_sha256"] = _sha256_fd(reused_fd)
+                    finally:
+                        os.close(reused_fd)
                     job["reused_from"] = {
                         "run_id": reusable.manifest.get("run_id"),
                         "artifact_id": reusable.job.get("artifact_id"),
@@ -1425,6 +1484,7 @@ def generate_plan(
                         error=error,
                         process=None,
                         temporary_artifact=temporary_artifact,
+                        artifacts_fd=artifacts_fd,
                     )
                     failed = True
                 except Exception as error:
@@ -1438,6 +1498,7 @@ def generate_plan(
                             ),
                             process=None,
                             temporary_artifact=temporary_artifact,
+                            artifacts_fd=artifacts_fd,
                         )
                         failed = True
                     else:
@@ -1453,8 +1514,8 @@ def generate_plan(
                 write_manifest_state()
                 best_effort_readme_state()
                 break
-            command = _command(Path(openscad), temporary_artifact,
-                               archived_sources[render_job.model_id],
+            command = _command(Path(openscad), anchored_output,
+                               anchored_source,
                                snapshots[render_job.model_id].revision_label, render_job)
             job["command"] = command
             write_manifest_state()
@@ -1470,9 +1531,14 @@ def generate_plan(
                 )
                 with os.fdopen(log_fd, "w", encoding="utf-8") as log:
                     verify_destination()
+                    process_env = dict(env) if env is not None else dict(os.environ)
+                    process_env["PLAMP_CAD_MANIFEST"] = str(
+                        _proc_fd_path(run_fd, "manifest.json")
+                    )
                     process = subprocess.Popen(
                         command, text=True, stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT, env=dict(env) if env is not None else None,
+                        stderr=subprocess.STDOUT, env=process_env,
+                        pass_fds=(artifacts_fd, source_fd, run_fd),
                     )
                     assert process.stdout is not None
                     with process.stdout:
@@ -1488,18 +1554,21 @@ def generate_plan(
                 job["finished_at"] = _timestamp(finished)
                 job["elapsed_seconds"] = round(time.monotonic() - started_clock, 6)
                 verify_destination()
-                if exit_code == 0 and temporary_artifact.is_file() and temporary_artifact.stat().st_size > 0:
-                    _publish_rendered_artifact(
+                rendered = _open_artifact(artifacts_fd, temporary_artifact.name)
+                if rendered is not None:
+                    os.close(rendered[0])
+                if exit_code == 0 and rendered is not None:
+                    artifact_bytes, artifact_sha256 = _publish_rendered_artifact(
                         temporary_artifact, final_artifact, artifacts_fd
                     )
                     job["status"] = "complete"
                     job["artifact"] = str(final_artifact.relative_to(run_dir))
-                    job["artifact_bytes"] = final_artifact.stat().st_size
-                    job["artifact_sha256"] = _file_sha256(final_artifact)
+                    job["artifact_bytes"] = artifact_bytes
+                    job["artifact_sha256"] = artifact_sha256
                 else:
                     job["status"] = "failed"
                     failed = True
-                    temporary_artifact.unlink(missing_ok=True)
+                    _unlink_artifact(artifacts_fd, temporary_artifact.name)
                     errors = job["errors"]
                     assert isinstance(errors, list)
                     if exit_code == 0:
@@ -1516,7 +1585,7 @@ def generate_plan(
                 job["elapsed_seconds"] = round(time.monotonic() - started_clock, 6)
                 manifest["status"] = "interrupted"
                 manifest["finished_at"] = job["finished_at"]
-                _remove_temporary_artifact(temporary_artifact)
+                _unlink_artifact(artifacts_fd, temporary_artifact.name)
                 write_manifest_state()
                 best_effort_readme_state()
                 raise
@@ -1530,6 +1599,7 @@ def generate_plan(
                     error=error,
                     process=process,
                     temporary_artifact=temporary_artifact,
+                    artifacts_fd=artifacts_fd,
                 )
                 failed = True
             write_manifest_state()

@@ -103,7 +103,7 @@ class CadGenerationTests(unittest.TestCase):
             output = pathlib.Path(sys.argv[sys.argv.index("-o") + 1])
             state_log = os.environ.get("FAKE_STATE_LOG")
             if state_log:
-                manifest = json.loads((output.parent.parent / "manifest.json").read_text())
+                manifest = json.loads(pathlib.Path(os.environ["PLAMP_CAD_MANIFEST"]).read_text())
                 with pathlib.Path(state_log).open("a") as stream:
                     stream.write(json.dumps([manifest["status"], [job["status"] for job in manifest["jobs"]]]) + "\\n")
             defines = [sys.argv[i + 1] for i, arg in enumerate(sys.argv) if arg == "-D"]
@@ -352,7 +352,10 @@ class CadGenerationTests(unittest.TestCase):
         archived = result.run_dir / "source" / "fixture" / "fixture.scad"
         self.assertEqual(manifest["models"]["fixture"]["commit"], old_commit)
         self.assertEqual(archived.read_text(), "cube(1);\n")
-        self.assertEqual(Path(manifest["jobs"][0]["command"][-1]), archived)
+        self.assertRegex(
+            manifest["jobs"][0]["command"][-1],
+            r"^/proc/self/fd/\d+/fixture/fixture\.scad$",
+        )
 
     def test_commit_revision_mode_engraves_resolved_short_hash(self):
         old_commit = self.commit
@@ -490,8 +493,8 @@ class CadGenerationTests(unittest.TestCase):
         )
         jobs = load_run(result.run_dir)["jobs"]
         self.assertIn('set="floor"', jobs[0]["command"])
-        self.assertTrue(jobs[0]["command"][-1].endswith("source/fixture/fixture.scad"))
-        self.assertTrue(jobs[1]["command"][-1].endswith("source/holder/holder.scad"))
+        self.assertRegex(jobs[0]["command"][-1], r"^/proc/self/fd/\d+/fixture/fixture\.scad$")
+        self.assertRegex(jobs[1]["command"][-1], r"^/proc/self/fd/\d+/holder/holder\.scad$")
         self.assertEqual(set(load_run(result.run_dir)["models"]), {"fixture", "holder"})
 
     def test_duplicate_identity_allows_different_jobs_or_local_day(self):
@@ -876,8 +879,16 @@ class CadGenerationTests(unittest.TestCase):
         changed = replace(plan("first"), jobs=(replace(
             plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
         ),))
+        import plamp.cad_generation as generation
+        real_copy = generation._copy_verified_artifact
+
+        def fail_reuse_only(source, target, destination_fd=None):
+            if source.manifest:
+                raise OSError(errno.EIO, "injected publish failure")
+            return real_copy(source, target, destination_fd)
+
         with mock.patch("plamp.cad_generation._copy_verified_artifact",
-                        side_effect=OSError(errno.EIO, "injected publish failure")):
+                        side_effect=fail_reuse_only):
             result = self.generate(changed, output=self.root / "publish-failure")
         self.assertEqual(result.status, "complete")
         self.assertFalse(list((result.run_dir / "artifacts").glob(".*.reuse.tmp")))
@@ -1047,6 +1058,67 @@ class CadGenerationTests(unittest.TestCase):
             self.generate(changed, output=output)
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_popen_boundary_uses_anchored_source_output_and_swap_cleanup(self):
+        output = self.root / "popen-swap"
+        held = self.root / "held-popen"
+        replacement = self.root / "outside-popen"
+        real_popen = subprocess.Popen
+        captured = []
+
+        def swap_inside_popen(command, **kwargs):
+            if "-o" not in command:
+                return real_popen(command, **kwargs)
+            captured.extend(command)
+            output.rename(held)
+            replacement.mkdir()
+            output.symlink_to(replacement, target_is_directory=True)
+            return real_popen(command, **kwargs)
+
+        with mock.patch("plamp.cad_generation.subprocess.Popen",
+                        side_effect=swap_inside_popen), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(output=output)
+        output_arg = captured[captured.index("-o") + 1]
+        self.assertRegex(output_arg, r"^/proc/self/fd/\d+/")
+        self.assertRegex(captured[-1], r"^/proc/self/fd/\d+/")
+        self.assertEqual(list(replacement.iterdir()), [])
+        self.assertFalse(list((held / "artifacts").glob("*.tmp.stl")))
+
+    def test_popen_boundary_artifacts_swap_uses_retained_directory(self):
+        output = self.root / "artifacts-popen-swap"
+        held = self.root / "held-artifacts"
+        replacement = self.root / "outside-artifacts"
+        real_popen = subprocess.Popen
+
+        def swap_inside_popen(command, **kwargs):
+            if "-o" not in command:
+                return real_popen(command, **kwargs)
+            (output / "artifacts").rename(held)
+            replacement.mkdir()
+            (output / "artifacts").symlink_to(replacement, target_is_directory=True)
+            return real_popen(command, **kwargs)
+
+        with mock.patch("plamp.cad_generation.subprocess.Popen",
+                        side_effect=swap_inside_popen), self.assertRaisesRegex(
+                            OSError, "path changed"
+                        ):
+            self.generate(output=output)
+        self.assertEqual(list(replacement.iterdir()), [])
+        self.assertFalse(list(held.glob("*.tmp.stl")))
+
+    def test_descriptor_anchoring_fails_safely_without_proc(self):
+        read_fd, write_fd = os.pipe()
+        try:
+            with mock.patch("plamp.cad_generation.Path.is_dir", return_value=False), \
+                    self.assertRaisesRegex(RuntimeError, "requires Linux /proc"):
+                __import__("plamp.cad_generation", fromlist=["_proc_fd_path"])._proc_fd_path(
+                    read_fd, "artifact.stl"
+                )
+        finally:
+            os.close(read_fd)
+            os.close(write_fd)
+
     def test_geometry_reuse_rejects_failed_artifact(self):
         source_plan = plan("first")
         first = self.generate(source_plan)
@@ -1106,16 +1178,16 @@ class CadGenerationTests(unittest.TestCase):
         result = self.generate()
         manifest = load_run(result.run_dir)
         command = manifest["jobs"][0]["command"]
-        archived = result.run_dir / "source" / "fixture" / "fixture.scad"
+        anchored_output = command[2]
+        anchored_source = command[-1]
+        self.assertRegex(anchored_output, r"^/proc/self/fd/\d+/\.first--")
+        self.assertRegex(anchored_source, r"^/proc/self/fd/\d+/fixture/fixture\.scad$")
         expected = [
-            str(self.fake), "-o", str(
-                result.run_dir / "artifacts"
-                / f".first--aaaaaaaaaaa1--{self.commit[:7]}.tmp.stl"
-            ),
+            str(self.fake), "-o", anchored_output,
             "-D", f'revision_string="{self.commit[:7]}"',
             "-D", 'set="first"', "-D", "count=1", "-D", 'label="a b"',
             "-D", "enabled=true", "-D", "quality=$preview ? 2 : 20",
-            "--export-format", "asciistl", str(archived),
+            "--export-format", "asciistl", anchored_source,
         ]
         self.assertEqual(command, expected)
         self.assertEqual(json.loads(self.argv_file.read_text()), command[1:])
