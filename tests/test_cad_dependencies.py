@@ -2,18 +2,24 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from plamp.cad_dependencies import (
     CadDependencyError,
     DependencyRecord,
+    DiscoveryEnvironment,
+    cleanup_discovery_environment,
     content_hash,
     parse_make_dependencies,
     parse_openscad_info,
+    prepare_discovery_environment,
     query_openscad_info,
+    run_dependency_discovery,
 )
 
 
@@ -33,6 +39,13 @@ class CadDependencyTests(unittest.TestCase):
         else:
             path.write_text(content)
         return path
+
+    def job(self, set_name: str = "top_panel") -> SimpleNamespace:
+        return SimpleNamespace(
+            set_name=set_name,
+            variables={"count": 1, "label": "a b", "enabled": True},
+            raw_defines={"quality": "$preview ? 2 : 20"},
+        )
 
     def test_make_dependencies_handle_continuations_spaces_and_escapes(self):
         expected = [
@@ -191,6 +204,154 @@ OPENSCAD_FONT_PATH:
         )
         with self.assertRaises(FrozenInstanceError):
             info.version = "changed"  # type: ignore[misc]
+
+    def init_repository(self) -> tuple[Path, Path]:
+        repo = self.root / "repo"
+        source = repo / "things/widget/widget.scad"
+        source.parent.mkdir(parents=True)
+        source.write_text("include <../../shared/lib.scad>\ncube(1);\n")
+        (repo / "shared").mkdir()
+        (repo / "shared/lib.scad").write_text("old geometry")
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Test"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "old"], check=True)
+        return repo, source
+
+    def revision(self, repo: Path) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True,
+            text=True, stdout=subprocess.PIPE,
+        ).stdout.strip()
+
+    def test_historical_and_clean_discovery_archive_selected_repository_revision(self):
+        repo, source = self.init_repository()
+        old = self.revision(repo)
+        (repo / "shared/lib.scad").write_text("new geometry")
+        subprocess.run(["git", "-C", str(repo), "commit", "-am", "new", "-q"], check=True)
+        unrelated = repo / "notes.txt"
+        unrelated.write_text("uncommitted and irrelevant")
+
+        old_env = prepare_discovery_environment(
+            repo, source, revision=old, dirty=False
+        )
+        self.addCleanup(cleanup_discovery_environment, old_env)
+        self.assertEqual((old_env.root / "shared/lib.scad").read_text(), "old geometry")
+        self.assertEqual(old_env.revision, old)
+        self.assertFalse(old_env.dirty)
+        self.assertEqual(old_env.source_path.relative_to(old_env.root), Path("things/widget/widget.scad"))
+
+        current = prepare_discovery_environment(repo, source, dirty=False)
+        self.addCleanup(cleanup_discovery_environment, current)
+        self.assertEqual((current.root / "shared/lib.scad").read_text(), "new geometry")
+        self.assertNotEqual(current.root, repo)
+
+    def test_dirty_discovery_references_worktree_and_requires_revision_label(self):
+        repo, source = self.init_repository()
+        source.write_text("cube(2);\n")
+        with self.assertRaisesRegex(ValueError, "dirty.*revision label"):
+            prepare_discovery_environment(repo, source, dirty=True)
+        environment = prepare_discovery_environment(
+            repo, source, dirty=True, revision_label="fit-1"
+        )
+        self.assertEqual(environment.root, repo.resolve())
+        self.assertEqual(environment.source_path, source.resolve())
+        self.assertTrue(environment.dirty)
+        self.assertIsNone(environment.cleanup_root)
+
+    def test_archive_rejects_traversal_and_links_and_cleans_temporary_root(self):
+        repo, source = self.init_repository()
+        import io
+        import tarfile
+
+        for kind in ("traversal", "symlink"):
+            stream = io.BytesIO()
+            with tarfile.open(fileobj=stream, mode="w") as archive:
+                member = tarfile.TarInfo("../escape" if kind == "traversal" else "bad-link")
+                if kind == "symlink":
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = "/outside"
+                archive.addfile(member)
+            completed = subprocess.CompletedProcess([], 0, stdout=stream.getvalue(), stderr=b"")
+            with self.subTest(kind=kind), patch(
+                "plamp.cad_dependencies.subprocess.run", return_value=completed
+            ), patch(
+                "plamp.cad_dependencies.shutil.rmtree", wraps=shutil.rmtree
+            ) as remove:
+                with self.assertRaisesRegex(CadDependencyError, "unsafe"):
+                    prepare_discovery_environment(repo, source, dirty=False)
+                remove.assert_called_once()
+
+    def test_dependency_pass_uses_csg_exact_defines_environment_and_cwd(self):
+        repo, source = self.init_repository()
+        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        output = self.root / "discovery"
+        fake = self.root / "fake-openscad"
+        argv_log = self.root / "argv"
+        cwd_log = self.root / "cwd"
+        env_log = self.root / "env"
+        fake.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            f"pathlib.Path({str(argv_log)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+            f"pathlib.Path({str(cwd_log)!r}).write_text(os.getcwd())\n"
+            f"pathlib.Path({str(env_log)!r}).write_text(os.environ['OPENSCADPATH'])\n"
+            "deps=pathlib.Path(sys.argv[sys.argv.index('-d')+1])\n"
+            "deps.write_text('out: '+str(pathlib.Path(sys.argv[-1]).resolve())+'\\n')\n"
+            "pathlib.Path(sys.argv[sys.argv.index('-o')+1]).write_text('csg')\n"
+        )
+        fake.chmod(0o755)
+        job = self.job()
+        result = run_dependency_discovery(
+            fake, environment, job, output, env={"OPENSCADPATH": "/chosen", "PATH": "/usr/bin"}
+        )
+        self.assertEqual(result.argv[1:5], (
+            "-o", str(output / "discovery.csg"), "-d", str(output / "discovery.d")
+        ))
+        self.assertIn('set="top_panel"', result.argv)
+        self.assertIn("count=1", result.argv)
+        self.assertIn("quality=$preview ? 2 : 20", result.argv)
+        self.assertNotIn("--export-format", result.argv)
+        self.assertFalse(any(value.endswith(".stl") for value in result.argv))
+        self.assertEqual(Path(cwd_log.read_text()), source.parent)
+        self.assertEqual(env_log.read_text(), "/chosen")
+        self.assertEqual(result.dependencies, (source.resolve(),))
+
+    def test_dependency_pass_reports_launch_failure_exit_and_missing_makefile(self):
+        repo, source = self.init_repository()
+        environment = DiscoveryEnvironment(repo, source, None, True, None)
+        output = self.root / "failure"
+        with self.assertRaisesRegex(CadDependencyError, "cannot run.*vanished"):
+            run_dependency_discovery(
+                self.root / "vanished", environment, self.job("one"), output, env={}
+            )
+        fake = self.root / "failing-openscad"
+        fake.write_text("#!/bin/sh\necho diagnostic output\nexit 9\n")
+        fake.chmod(0o755)
+        with self.assertRaisesRegex(CadDependencyError, "status 9.*diagnostic output"):
+            run_dependency_discovery(fake, environment, self.job("one"), output, env={})
+        fake.write_text("#!/bin/sh\nexit 0\n")
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "discovery.d").write_text(f"old: {source}\n")
+        (output / "discovery.csg").write_text("stale")
+        with self.assertRaisesRegex(CadDependencyError, "did not produce.*discovery.d"):
+            run_dependency_discovery(fake, environment, self.job("one"), output, env={})
+
+    def test_discovery_archive_cleanup_is_explicit_idempotent_and_never_removes_worktree(self):
+        repo, source = self.init_repository()
+        archived = prepare_discovery_environment(repo, source, dirty=False)
+        archived_root = archived.root
+        self.assertTrue(archived_root.is_dir())
+        archived.cleanup()
+        archived.cleanup()
+        self.assertFalse(archived_root.exists())
+
+        dirty = prepare_discovery_environment(
+            repo, source, dirty=True, revision_label="working-fit"
+        )
+        cleanup_discovery_environment(dirty)
+        self.assertTrue(repo.is_dir())
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ import secrets
 from typing import IO, Callable
 
 from plamp.cad_model import CadModel
+from plamp.cad_dependencies import job_define_argv
 from plamp.cad_readme import render_run_readme
 from plamp.cad_planning import RenderJob, RenderPlan, plan_as_dict
 from plamp.cad_values import serialize_scad_value
@@ -545,15 +546,7 @@ def _command(
     job: RenderJob,
 ) -> list[str]:
     command = [str(openscad), "-o", str(output), "-D", f"revision_string={serialize_scad_value(revision)}"]
-    command.extend(["-D", f"set={serialize_scad_value(job.set_name)}"])
-    for name, value in job.variables.items():
-        if name == "set":
-            continue
-        command.extend(["-D", f"{name}={serialize_scad_value(value)}"])
-    for name, expression in job.raw_defines.items():
-        if name == "set":
-            continue
-        command.extend(["-D", f"{name}={expression}"])
+    command.extend(job_define_argv(job))
     command.extend(["--export-format", "asciistl", str(source)])
     return command
 

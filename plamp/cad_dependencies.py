@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import tarfile
+import tempfile
 from typing import Mapping
+
+from plamp.cad_values import serialize_scad_value
 
 
 class CadDependencyError(RuntimeError):
@@ -32,6 +38,209 @@ class DependencyRecord:
     git_revision: str | None = None
     license: str | None = None
     asset: bool = False
+
+
+@dataclass(frozen=True)
+class DiscoveryEnvironment:
+    """Repository tree used only to discover one job's dependency closure."""
+
+    root: Path
+    source_path: Path
+    revision: str | None
+    dirty: bool
+    cleanup_root: Path | None
+
+    def cleanup(self) -> None:
+        cleanup_discovery_environment(self)
+
+    def __enter__(self) -> "DiscoveryEnvironment":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.cleanup()
+
+
+@dataclass(frozen=True)
+class DiscoveryResult:
+    argv: tuple[str, ...]
+    dependencies: tuple[Path, ...]
+    output: str
+
+
+def job_define_argv(job: object) -> tuple[str, ...]:
+    """Build the common, ordered OpenSCAD defines for discovery and rendering."""
+
+    arguments: list[str] = [
+        "-D", f"set={serialize_scad_value(getattr(job, 'set_name'))}"
+    ]
+    for name, value in getattr(job, "variables").items():
+        if name != "set":
+            arguments.extend(("-D", f"{name}={serialize_scad_value(value)}"))
+    for name, expression in getattr(job, "raw_defines").items():
+        if name != "set":
+            arguments.extend(("-D", f"{name}={expression}"))
+    return tuple(arguments)
+
+
+def _git_revision(repo_root: Path, revision: str | None) -> str:
+    requested = revision.strip() if revision is not None else "HEAD"
+    if not requested:
+        requested = "HEAD"
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--verify", f"{requested}^{{commit}}"],
+            check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = getattr(error, "stderr", "") or str(error)
+        raise CadDependencyError(
+            f"cannot resolve CAD discovery revision {requested!r}: {detail}"
+        ) from error
+    return completed.stdout.strip()
+
+
+def _extract_git_archive(archive_bytes: bytes, destination: Path) -> None:
+    """Extract only ordinary Git archive directories/files within destination."""
+
+    import io
+
+    boundary = destination.resolve()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
+            members = archive.getmembers()
+            for member in members:
+                relative = Path(member.name)
+                if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+                    raise CadDependencyError("unsafe path in Git discovery archive")
+                target = (destination / relative).resolve()
+                try:
+                    target.relative_to(boundary)
+                except ValueError as error:
+                    raise CadDependencyError("unsafe path in Git discovery archive") from error
+                if not (member.isdir() or member.isfile()):
+                    raise CadDependencyError("unsafe link or special file in Git discovery archive")
+            for member in members:
+                target = destination / member.name
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = archive.extractfile(member)
+                if source is None:
+                    raise CadDependencyError("cannot read file in Git discovery archive")
+                with source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+                os.chmod(target, member.mode & 0o777)
+    except (tarfile.TarError, OSError) as error:
+        if isinstance(error, CadDependencyError):
+            raise
+        raise CadDependencyError(f"cannot extract Git discovery archive: {error}") from error
+
+
+def prepare_discovery_environment(
+    repo_root: str | os.PathLike[str],
+    source_path: str | os.PathLike[str] | None = None,
+    *,
+    revision: str | None = None,
+    dirty: bool = False,
+    revision_label: str | None = None,
+) -> DiscoveryEnvironment:
+    """Prepare current dirty or revision-pinned repository dependency discovery."""
+
+    root = Path(repo_root).resolve()
+    supplied_source = Path(source_path) if source_path is not None else Path(".")
+    source = supplied_source.resolve() if supplied_source.is_absolute() else (root / supplied_source).resolve()
+    try:
+        relative_source = source.relative_to(root)
+    except ValueError as error:
+        raise CadDependencyError("CAD discovery source must be inside the repository") from error
+    if dirty:
+        if revision_label is None or not revision_label.strip():
+            raise ValueError("dirty CAD dependency discovery requires an explicit revision label")
+        if not source.exists():
+            raise CadDependencyError(f"CAD discovery source does not exist: {source}")
+        return DiscoveryEnvironment(root, source, None, True, None)
+
+    commit = _git_revision(root, revision)
+    cleanup = Path(tempfile.mkdtemp(prefix="plamp-cad-discovery-"))
+    try:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(root), "archive", "--format=tar", commit],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            detail = getattr(error, "stderr", b"")
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors="replace")
+            raise CadDependencyError(
+                f"cannot archive CAD discovery revision {commit}: {detail or error}"
+            ) from error
+        _extract_git_archive(completed.stdout, cleanup)
+        archived_source = cleanup / relative_source
+        if not archived_source.exists():
+            raise CadDependencyError(
+                f"CAD discovery source {relative_source} is absent from revision {commit}"
+            )
+        return DiscoveryEnvironment(cleanup, archived_source, commit, False, cleanup)
+    except BaseException:
+        shutil.rmtree(cleanup, ignore_errors=True)
+        raise
+
+
+def cleanup_discovery_environment(environment: DiscoveryEnvironment) -> None:
+    """Remove an archived discovery tree; dirty working trees are never removed."""
+
+    if environment.cleanup_root is not None:
+        shutil.rmtree(environment.cleanup_root, ignore_errors=True)
+
+
+def run_dependency_discovery(
+    openscad: str | os.PathLike[str],
+    environment: DiscoveryEnvironment,
+    job: object,
+    output_dir: str | os.PathLike[str],
+    *,
+    env: Mapping[str, str],
+) -> DiscoveryResult:
+    """Run OpenSCAD's cheap CSG dependency pass without producing an STL."""
+
+    output_root = Path(output_dir)
+    output_root.mkdir(parents=True, exist_ok=True)
+    csg = output_root / "discovery.csg"
+    dependencies = output_root / "discovery.d"
+    try:
+        csg.unlink(missing_ok=True)
+        dependencies.unlink(missing_ok=True)
+    except OSError as error:
+        raise CadDependencyError(
+            f"cannot clear stale dependency discovery output in {output_root}: {error}"
+        ) from error
+    argv = (
+        str(openscad), "-o", str(csg), "-d", str(dependencies),
+        *job_define_argv(job), str(environment.source_path),
+    )
+    try:
+        completed = subprocess.run(
+            list(argv), cwd=environment.source_path.parent, env=dict(env), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+        )
+    except OSError as error:
+        raise CadDependencyError(
+            f"cannot run OpenSCAD dependency discovery using {openscad}: {error}"
+        ) from error
+    output = completed.stdout or ""
+    if completed.returncode != 0:
+        raise CadDependencyError(
+            f"OpenSCAD dependency discovery failed with status {completed.returncode}: {output}"
+        )
+    if not dependencies.is_file():
+        raise CadDependencyError(
+            f"OpenSCAD dependency discovery did not produce {dependencies}: {output}"
+        )
+    return DiscoveryResult(
+        argv, parse_make_dependencies(dependencies, environment.source_path.parent), output
+    )
 
 
 def _join_make_continuations(source: str) -> str:
