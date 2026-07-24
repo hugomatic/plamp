@@ -226,19 +226,19 @@ class CadScaffoldTests(unittest.TestCase):
         destination = self.root / "things" / "pump"
         moved = self.root / "things" / "owned-moved"
         from plamp import cad_scaffold
-        real_rename = os.rename
-        real_exchange = cad_scaffold._exchange_paths
+        from plamp import cad_fs
+        real_exchange = cad_fs.exchange_at
         swapped = False
-        def race(source, target):
+        def race(first_fd, source, second_fd, target):
             nonlocal swapped
-            if not swapped and Path(source) == destination:
+            if not swapped and source == destination.name:
                 swapped = True
-                real_rename(destination, moved)
+                destination.rename(moved)
                 destination.mkdir()
                 (destination / "sentinel").write_text("unrelated")
-            return real_exchange(source, target)
+            return real_exchange(first_fd, source, second_fd, target)
         with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("fail")), \
-             mock.patch("plamp.cad_scaffold._exchange_paths", side_effect=race):
+             mock.patch("plamp.cad_fs.exchange_at", side_effect=race):
             with self.assertRaises(OSError):
                 create_model(self.root, self.system, "pump", "cad")
         self.assertEqual((destination / "sentinel").read_text(), "unrelated")
@@ -274,18 +274,18 @@ class CadScaffoldTests(unittest.TestCase):
         destination = self.root / "things" / "pump"
         moved = self.root / "things" / "owned-after-clean"
         from plamp import cad_scaffold
-        real_finalize = cad_scaffold._clear_claimed_directory
+        from plamp import cad_fs
+        real_remove = cad_fs.remove_owned_entry_at
         swapped = False
-        def clean_then_swap(path, identity):
+        def swap_then_remove(parent_fd, name, identity):
             nonlocal swapped
-            result = real_finalize(path, identity)
             if not swapped:
                 swapped = True
-                path.rename(moved)
-                path.mkdir()
-            return result
+                destination.rename(moved)
+                destination.mkdir()
+            return real_remove(parent_fd, name, identity)
         with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("fail")), \
-             mock.patch("plamp.cad_scaffold._clear_claimed_directory", side_effect=clean_then_swap):
+             mock.patch("plamp.cad_fs.remove_owned_entry_at", side_effect=swap_then_remove):
             with self.assertRaises(OSError):
                 create_model(self.root, self.system, "pump", "cad")
         self.assertTrue(destination.is_dir())

@@ -451,28 +451,11 @@ def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
     leave the owned directory in place rather than risk deleting another path.
     """
 
+    from plamp.cad_fs import AtomicExchangeUnsupported, remove_owned_path
     try:
-        for candidate in (path,):
-            try:
-                if _directory_identity(candidate) != identity:
-                    continue
-                if _claim_and_remove(candidate, identity):
-                    return True
-            except (FileNotFoundError, NotADirectoryError):
-                continue
-        for candidate in path.parent.iterdir():
-            if candidate == path or candidate.name.startswith("."):
-                continue
-            try:
-                if _directory_identity(candidate) == identity and _claim_and_remove(
-                    candidate, identity
-                ):
-                    return True
-            except (FileNotFoundError, NotADirectoryError):
-                continue
-    except _AtomicExchangeUnsupported:
+        return remove_owned_path(path, identity)
+    except AtomicExchangeUnsupported:
         return False
-    return False
 
 
 def create_model(repo_root: Path, system: CadSystem, model_id: str,

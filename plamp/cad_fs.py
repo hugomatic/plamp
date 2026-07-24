@@ -119,3 +119,17 @@ def remove_owned_entry_at(
         if not retry:
             return False
     return False
+
+
+def remove_owned_path(path: Path, identity: tuple[int, int]) -> bool:
+    """Remove an owned path relative to a trusted, no-follow parent descriptor."""
+
+    flags = (
+        os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_fd = os.open(path.parent, flags)
+    try:
+        return remove_owned_entry_at(parent_fd, path.name, identity)
+    finally:
+        os.close(parent_fd)

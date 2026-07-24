@@ -441,9 +441,9 @@ def cleanup_discovery_environment(environment: DiscoveryEnvironment) -> None:
         ) != (record.device, record.inode):
             raise CadDependencyError("CAD discovery cleanup descriptor lost ownership")
         _clear_cleanup_descriptor(record.root_fd)
-        from plamp.cad_scaffold import _remove_owned_directory
+        from plamp.cad_fs import remove_owned_path
 
-        if not _remove_owned_directory(record.root, (record.device, record.inode)):
+        if not remove_owned_path(record.root, (record.device, record.inode)):
             raise CadDependencyError("owned CAD discovery cleanup root could not be removed safely")
         if record.finalizer is not None:
             record.finalizer()

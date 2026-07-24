@@ -567,7 +567,7 @@ OPENSCAD_FONT_PATH:
     def test_cleanup_tracks_owned_inode_across_validation_deletion_swap(self):
         repo, source = self.init_repository()
         archived = prepare_discovery_environment(repo, source)
-        moved = archived.root.with_name(archived.root.name + "-moved")
+        moved = archived.root.with_name(".moved")
         from plamp import cad_dependencies
 
         real_clear = cad_dependencies._clear_cleanup_descriptor
