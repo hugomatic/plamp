@@ -11,7 +11,7 @@ import re
 from types import MappingProxyType
 
 from plamp.cad_system import CadProductItem, CadSystem
-from plamp.cad_values import parse_raw_defines
+from plamp.cad_values import ResolvedVariable, parse_raw_defines, resolve_variables
 
 
 PLANNING_SCHEMA_VERSION = 1
@@ -64,12 +64,6 @@ class CadSelection:
 
 
 @dataclass(frozen=True)
-class VariableSource:
-    kind: str
-    source_id: str
-
-
-@dataclass(frozen=True)
 class RenderJob:
     artifact_id: str
     model_id: str
@@ -77,7 +71,7 @@ class RenderJob:
     variant_name: str
     variables: Mapping[str, object]
     raw_defines: Mapping[str, str]
-    variable_sources: Mapping[str, VariableSource]
+    variable_sources: Mapping[str, ResolvedVariable]
     profiles: tuple[str, ...]
     slicing: Mapping[str, object]
     product_paths: tuple[tuple[str, ...], ...]
@@ -193,36 +187,40 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         model = system.models[candidate.model_id]
         if candidate.set_name not in model.sets:
             raise ValueError(f"Unknown set {candidate.set_name!r} for model {candidate.model_id!r}")
-        variables: dict[str, object] = {}
-        raw: dict[str, str] = {}
-        sources: dict[str, VariableSource] = {}
+        variable_layers: list[
+            tuple[str, str, Mapping[str, object], Mapping[str, str]]
+        ] = []
         profiles: list[str] = []
         slicing: dict[str, object] = dict(model.sets[candidate.set_name].slicing)
 
-        def apply(values: Mapping[str, object], kind: str, source_id: str) -> None:
-            variables.update(values)
-            for variable in values:
-                raw.pop(variable, None)
-                sources[variable] = VariableSource(kind, source_id)
+        def layer(values: Mapping[str, object], kind: str, source_id: str,
+                  raw_values: Mapping[str, str] | None = None) -> None:
+            variable_layers.append((kind, source_id, values, raw_values or {}))
 
-        apply(model.variables, "model", candidate.model_id)
-        apply(model.sets[candidate.set_name].variables, "set",
+        source_defaults = {
+            name: value for name, value in model.source_defaults.items() if name != "set"
+        }
+        layer(source_defaults, "scad", str(model.source_path))
+        layer(model.variables, "model", candidate.model_id)
+        layer(model.sets[candidate.set_name].variables, "set",
               f"{candidate.model_id}/{candidate.set_name}")
         for product_name, product_item in candidate.layers:
             profiles.extend(system.products[product_name].profiles)
             profiles.extend(product_item.profiles)
+        for profile_id in profiles:
+            profile = system.profiles.get(profile_id)
+            if profile is not None:
+                layer(profile.cad, "profile", profile.qualified_id)
         for product_name, product_item in reversed(candidate.layers):
-            apply(system.products[product_name].variables, "product", product_name)
+            layer(system.products[product_name].variables, "product", product_name)
             index = system.products[product_name].items.index(product_item)
-            apply(product_item.variables, "product_item", f"{product_name}[{index}]")
+            layer(product_item.variables, "item", f"{product_name}[{index}]")
             slicing.update(system.products[product_name].slicing)
             slicing.update(product_item.slicing)
-        apply(selection.defines, "cli", "defines")
-        apply(selection.set_defines.get(candidate.set_name, {}), "cli", candidate.set_name)
-        for name, expression in parse_raw_defines(selection.raw_defines).items():
-            variables.pop(name, None)
-            raw[name] = expression
-            sources[name] = VariableSource("cli", "raw_defines")
+        layer(selection.defines, "cli", "defines")
+        layer(selection.set_defines.get(candidate.set_name, {}), "cli", candidate.set_name)
+        layer({}, "cli", "raw_defines", parse_raw_defines(selection.raw_defines))
+        variables, raw, sources = resolve_variables(variable_layers)
 
         payload = {
             "planning_schema_version": PLANNING_SCHEMA_VERSION,
@@ -293,7 +291,20 @@ def plan_as_dict(plan: RenderPlan) -> dict[str, object]:
             "set_name": job.set_name, "variant_name": job.variant_name,
             "variables": _plain(job.variables), "raw_defines": dict(job.raw_defines),
             "variable_sources": {
-                name: {"kind": source.kind, "source_id": source.source_id}
+                name: {
+                    "layers": [{
+                        "kind": layer.kind,
+                        "source_id": layer.source_id,
+                        "value": _plain(layer.value),
+                        "raw_expression": layer.raw_expression,
+                    } for layer in source.layers],
+                    "winner": {
+                        "kind": source.winner.kind,
+                        "source_id": source.winner.source_id,
+                        "value": _plain(source.winner.value),
+                        "raw_expression": source.winner.raw_expression,
+                    },
+                }
                 for name, source in job.variable_sources.items()
             },
             "profiles": list(job.profiles), "slicing": _plain(job.slicing),

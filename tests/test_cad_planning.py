@@ -5,15 +5,17 @@ from types import MappingProxyType
 import unittest
 
 from plamp.cad_model import CadModel, CadSet
+from plamp.cad_profiles import CadProfile
 from plamp.cad_planning import (
     CadSelection,
     build_render_plan,
     plan_as_dict,
 )
+from plamp.cad_values import resolve_variables
 from plamp.cad_system import CadProduct, CadProductItem, CadSystem, load_system
 
 
-def model(model_id, sets, *, variables=None):
+def model(model_id, sets, *, variables=None, source_defaults=None):
     return CadModel(
         model_id=model_id,
         name=model_id.title(),
@@ -27,6 +29,7 @@ def model(model_id, sets, *, variables=None):
         }),
         variables=variables or {},
         metadata_snapshot={},
+        source_defaults=source_defaults or {},
     )
 
 
@@ -45,6 +48,59 @@ def product(name, items, *, variables=None, profiles=(), slicing=None):
 
 
 class CadPlanningTests(unittest.TestCase):
+    def test_resolver_retains_typed_and_raw_replacement_history(self):
+        typed, raw, provenance = resolve_variables((
+            ("scad", "box.scad", {"width": 2, "height": 4}, {}),
+            ("profile", "system:draft", {}, {"width": "2+2"}),
+            ("cli", "defines", {"width": 5}, {"height": "sqrt(16)"}),
+        ))
+
+        self.assertEqual(typed, {"width": 5})
+        self.assertEqual(raw, {"height": "sqrt(16)"})
+        self.assertEqual(
+            tuple((layer.kind, layer.value, layer.raw_expression)
+                  for layer in provenance["width"].layers),
+            (("scad", 2, None), ("profile", None, "2+2"),
+             ("cli", 5, None)),
+        )
+        self.assertEqual(provenance["height"].winner.raw_expression, "sqrt(16)")
+        with self.assertRaises(TypeError):
+            provenance["new"] = provenance["width"]
+
+    def test_exact_variable_precedence_and_complete_provenance(self):
+        box = model(
+            "box", {"floor": {"clearance": 0.2}},
+            variables={"clearance": 0.1},
+            source_defaults={"clearance": 0.05, "set": "floor"},
+        )
+        profile = CadProfile(
+            "draft", "system:draft", "quality", Path("draft.json"),
+            {"clearance": 0.25}, {}, {}, "a" * 64,
+        )
+        products = {"complete": product(
+            "complete",
+            [item(model_id="box", set_name="floor",
+                  variables={"clearance": 0.4})],
+            variables={"clearance": 0.35}, profiles=("draft",),
+        )}
+        system = CadSystem(
+            "fixture", "", Path("cad/fixture.system.cad.json"),
+            MappingProxyType({"box": box}), MappingProxyType(products),
+            "complete", MappingProxyType({}), MappingProxyType({"draft": profile}),
+            MappingProxyType({"schema": "plamp-cad-system/1", "name": "fixture"}),
+        )
+
+        job = build_render_plan(
+            system, CadSelection(product="complete", defines={"clearance": 0.45}),
+            {"box": "source"},
+        ).jobs[0]
+
+        self.assertEqual(job.variables["clearance"], 0.45)
+        resolved = job.variable_sources["clearance"]
+        self.assertEqual(tuple(layer.kind for layer in resolved.layers),
+                         ("scad", "model", "set", "profile", "product", "item", "cli"))
+        self.assertEqual(resolved.winner.kind, "cli")
+        self.assertNotIn("set", job.variables)
     def test_repository_fit_and_function_expands_exact_order_and_paths(self):
         repo_root = Path(__file__).resolve().parents[1]
         system = load_system(repo_root / "cad" / "plamp.system.cad.json", repo_root)

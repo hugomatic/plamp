@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from difflib import get_close_matches
 import json
+import math
 from pathlib import Path
 import re
 from types import MappingProxyType
@@ -88,6 +89,7 @@ class CadModel:
     sets: Mapping[str, CadSet]
     variables: Mapping[str, object]
     metadata_snapshot: Mapping[str, object]
+    source_defaults: Mapping[str, object] = field(default_factory=dict)
     advisories: tuple[CadDiagnostic, ...] = ()
 
 
@@ -145,6 +147,194 @@ def parse_set_declaration(source: str, path: Path) -> tuple[str, tuple[str, ...]
         item.strip() for item in match.group("choices").split(",") if item.strip()
     )
     return default, choices
+
+
+class _LiteralParser:
+    """Small, non-evaluating parser for the safe OpenSCAD literal subset."""
+
+    _NUMBER = re.compile(
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    )
+
+    def __init__(self, text: str):
+        self.text = text
+        self.position = 0
+
+    def parse(self) -> object:
+        value = self._value()
+        self._space()
+        if self.position != len(self.text):
+            raise ValueError("expression is not a literal")
+        return value
+
+    def _space(self) -> None:
+        while self.position < len(self.text) and self.text[self.position].isspace():
+            self.position += 1
+
+    def _value(self) -> object:
+        self._space()
+        if self.position >= len(self.text):
+            raise ValueError("missing literal")
+        if self.text[self.position] == '"':
+            return self._string()
+        if self.text[self.position] == "[":
+            return self._vector()
+        for token, value in (("true", True), ("false", False), ("undef", None)):
+            if self.text.startswith(token, self.position):
+                end = self.position + len(token)
+                if end == len(self.text) or not (
+                    self.text[end].isalnum() or self.text[end] == "_"
+                ):
+                    self.position = end
+                    return value
+        match = self._NUMBER.match(self.text, self.position)
+        if match is None:
+            raise ValueError("expression is not a literal")
+        token = match.group(0)
+        self.position = match.end()
+        value = float(token) if any(character in token for character in ".eE") else int(token)
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("literal number must be finite")
+        return value
+
+    def _string(self) -> str:
+        start = self.position
+        self.position += 1
+        while self.position < len(self.text):
+            character = self.text[self.position]
+            self.position += 1
+            if character == '"':
+                backslashes = 0
+                index = self.position - 2
+                while index >= start and self.text[index] == "\\":
+                    backslashes += 1
+                    index -= 1
+                if backslashes % 2:
+                    continue
+                token = self.text[start:self.position]
+                try:
+                    value = json.loads(token)
+                except json.JSONDecodeError as error:
+                    raise ValueError("invalid string literal") from error
+                if not isinstance(value, str):
+                    raise ValueError("invalid string literal")
+                return value
+        raise ValueError("unterminated string literal")
+
+    def _vector(self) -> list[object]:
+        self.position += 1
+        values: list[object] = []
+        self._space()
+        if self.position < len(self.text) and self.text[self.position] == "]":
+            self.position += 1
+            return []
+        while True:
+            values.append(self._value())
+            self._space()
+            if self.position >= len(self.text):
+                raise ValueError("unterminated vector literal")
+            separator = self.text[self.position]
+            self.position += 1
+            if separator == "]":
+                return values
+            if separator != ",":
+                raise ValueError("invalid vector literal")
+
+
+def _without_comments(source: str) -> str:
+    """Replace comments with whitespace while retaining strings and line layout."""
+
+    result = list(source)
+    position = 0
+    in_string = False
+    while position < len(source):
+        character = source[position]
+        if in_string:
+            if character == '"':
+                backslashes = 0
+                index = position - 1
+                while index >= 0 and source[index] == "\\":
+                    backslashes += 1
+                    index -= 1
+                if backslashes % 2 == 0:
+                    in_string = False
+            position += 1
+            continue
+        if character == '"':
+            in_string = True
+            position += 1
+            continue
+        if source.startswith("//", position):
+            end = source.find("\n", position)
+            end = len(source) if end < 0 else end
+            for index in range(position, end):
+                result[index] = " "
+            position = end
+            continue
+        if source.startswith("/*", position):
+            end = source.find("*/", position + 2)
+            end = len(source) if end < 0 else end + 2
+            for index in range(position, end):
+                if result[index] != "\n":
+                    result[index] = " "
+            position = end
+            continue
+        position += 1
+    return "".join(result)
+
+
+def _top_level_statements(source: str) -> tuple[str, ...]:
+    cleaned = _without_comments(source)
+    cleaned = re.sub(
+        r"^\s*(?:use|include)\s*<[^>]+>\s*;?\s*$",
+        "",
+        cleaned,
+        flags=re.MULTILINE,
+    )
+    declaration = re.search(r"^\s*(?:module|function)\b", cleaned, re.MULTILINE)
+    prefix = cleaned if declaration is None else cleaned[:declaration.start()]
+    statements: list[str] = []
+    start = 0
+    in_string = False
+    vector_depth = 0
+    for position, character in enumerate(prefix):
+        if character == '"':
+            backslashes = 0
+            index = position - 1
+            while index >= 0 and prefix[index] == "\\":
+                backslashes += 1
+                index -= 1
+            if backslashes % 2 == 0:
+                in_string = not in_string
+        elif not in_string:
+            if character == "[":
+                vector_depth += 1
+            elif character == "]" and vector_depth:
+                vector_depth -= 1
+            elif character == ";" and vector_depth == 0:
+                statements.append(prefix[start:position])
+                start = position + 1
+    return tuple(statements)
+
+
+def parse_source_defaults(source: str) -> Mapping[str, object]:
+    """Parse safe top-level assignments before the first module/function."""
+
+    assignments: dict[str, object] = {}
+    for statement in _top_level_statements(source):
+        match = re.fullmatch(
+            r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*",
+            statement,
+            re.DOTALL,
+        )
+        if match is None:
+            continue
+        name, expression = match.groups()
+        try:
+            assignments[name] = _LiteralParser(expression).parse()
+        except ValueError:
+            continue
+    return MappingProxyType(assignments)
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -307,6 +497,7 @@ def load_model(model_id: str, reference: Path, repo_root: Path) -> CadModel:
             sets=MappingProxyType(sets),
             variables=MappingProxyType({}),
             metadata_snapshot=MappingProxyType({}),
+            source_defaults=parse_source_defaults(source),
             advisories=advisories,
         )
     if not reference_path.name.endswith(".cad.json"):
@@ -392,5 +583,6 @@ def load_model(model_id: str, reference: Path, repo_root: Path) -> CadModel:
         sets=MappingProxyType(sets),
         variables=_mapping(metadata, "variables", reference_path, "$.variables"),
         metadata_snapshot=MappingProxyType(metadata.copy()),
+        source_defaults=parse_source_defaults(source),
         advisories=tuple(advisories),
     )

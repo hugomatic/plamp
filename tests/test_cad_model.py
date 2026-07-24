@@ -208,6 +208,63 @@ if (set == "floor") floor_set();
         self.assertEqual(model.default_set, "floor")
         self.assertEqual(len(model.advisories), 2)
 
+    def test_parses_only_supported_top_level_literal_defaults(self):
+        scad = self.write("things/plain/plain.scad", r'''
+render_fn = 96; // [12:4:128]
+render_text = true;
+label = "normal";
+offset = [1, -2.5, [3e1, undef, false]];
+set = ""; // [floor]
+calculated = render_fn / 2;
+not_finite = 1e999;
+module floor_set() { hidden = 7; cube(1); }
+after_module = 42;
+''')
+
+        model = load_model("plain", scad, self.root)
+
+        self.assertEqual(model.source_defaults, {
+            "render_fn": 96,
+            "render_text": True,
+            "label": "normal",
+            "offset": [1, -2.5, [30.0, None, False]],
+            "set": "",
+        })
+        self.assertNotIn("calculated", model.source_defaults)
+        self.assertNotIn("not_finite", model.source_defaults)
+        self.assertNotIn("after_module", model.source_defaults)
+
+    def test_literal_defaults_ignore_comments_and_preserve_string_semicolons(self):
+        scad = self.write("things/plain/plain.scad", r'''
+// module fake() { }
+// commented = 10;
+/* function fake_too() = 1; blocked = 11; */
+label = "semi;colon and module word";
+slashes = "two\\slashes";
+set = ""; // [floor]
+module real() { cube(1); }
+''')
+
+        model = load_model("plain", scad, self.root)
+
+        self.assertEqual(model.source_defaults["label"], "semi;colon and module word")
+        self.assertEqual(model.source_defaults["slashes"], "two\\slashes")
+        self.assertNotIn("commented", model.source_defaults)
+        self.assertNotIn("blocked", model.source_defaults)
+
+    def test_literal_defaults_can_follow_scad_library_imports(self):
+        scad = self.write("things/plain/plain.scad", '''
+use <shared/fasteners.scad>
+include <shared/dimensions.scad>
+clearance = 0.2;
+set = ""; // [floor]
+module real() { cube(1); }
+''')
+
+        model = load_model("plain", scad, self.root)
+
+        self.assertEqual(model.source_defaults["clearance"], 0.2)
+
     def test_public_mappings_are_immutable(self):
         model = load_model("fixture", self.sidecar(sets={"floor": {}}), self.root)
         with self.assertRaises(TypeError):
