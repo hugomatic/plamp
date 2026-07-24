@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
 import io
+import os
 from pathlib import Path
 import shutil
 import stat
@@ -264,6 +265,44 @@ OPENSCAD_FONT_PATH:
         self.assertTrue(environment.dirty)
         self.assertIsNone(environment.cleanup_root)
 
+    def test_dirty_discovery_rejects_symlink_escape_and_directory_sources(self):
+        repo, source = self.init_repository()
+        outside = self.root / "outside.scad"
+        outside.write_text("cube(9);\n")
+        source.unlink()
+        source.symlink_to(outside)
+        with self.assertRaisesRegex(CadDependencyError, "symlink|inside"):
+            prepare_discovery_environment(
+                repo, source, dirty=True, revision_label="dirty-fit"
+            )
+        source.unlink()
+        source.mkdir()
+        with self.assertRaisesRegex(CadDependencyError, "regular file"):
+            prepare_discovery_environment(
+                repo, source, dirty=True, revision_label="dirty-fit"
+            )
+
+    def test_dirty_discovery_detects_source_replacement_during_validation(self):
+        repo, source = self.init_repository()
+        replacement = source.with_name("replacement.scad")
+        replacement.write_text("cube(8);\n")
+        real_open = os.open
+        swapped = False
+
+        def replace_before_open(path, flags, *args, **kwargs):
+            nonlocal swapped
+            if not swapped and Path(path) == source:
+                swapped = True
+                source.unlink()
+                source.mkdir()
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch("plamp.cad_dependencies.os.open", side_effect=replace_before_open):
+            with self.assertRaisesRegex(CadDependencyError, "changed|regular file"):
+                prepare_discovery_environment(
+                    repo, source, dirty=True, revision_label="dirty-fit"
+                )
+
     def test_historical_source_is_lexical_and_independent_of_current_symlinks(self):
         repo, source = self.init_repository()
         old = self.revision(repo)
@@ -430,7 +469,7 @@ OPENSCAD_FONT_PATH:
         cleanup_discovery_environment(dirty)
         self.assertTrue(repo.is_dir())
 
-    def test_cleanup_rejects_forged_mutated_and_replaced_roots_without_deleting(self):
+    def test_cleanup_rejects_forged_and_mutated_roots_without_deleting(self):
         repo, source = self.init_repository()
         arbitrary = self.root / "valuable"
         arbitrary.mkdir()
@@ -446,15 +485,37 @@ OPENSCAD_FONT_PATH:
         self.assertTrue(arbitrary.is_dir())
         self.assertTrue(archived.root.is_dir())
 
-        original = archived.root.with_name(archived.root.name + "-moved")
-        archived.root.rename(original)
-        archived.root.mkdir()
-        (archived.root / "replacement").write_text("keep")
-        with self.assertRaisesRegex(CadDependencyError, "replaced"):
+        archived.cleanup()
+
+    def test_cleanup_tracks_owned_inode_across_validation_deletion_swap(self):
+        repo, source = self.init_repository()
+        archived = prepare_discovery_environment(repo, source)
+        moved = archived.root.with_name(archived.root.name + "-moved")
+        from plamp import cad_dependencies
+
+        real_clear = cad_dependencies._clear_cleanup_descriptor
+        swapped = False
+
+        def swap_then_clear(descriptor):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                archived.root.rename(moved)
+                archived.root.mkdir()
+                (archived.root / "replacement").write_text("keep")
+            return real_clear(descriptor)
+
+        with patch(
+            "plamp.cad_dependencies._clear_cleanup_descriptor",
+            side_effect=swap_then_clear,
+        ):
             cleanup_discovery_environment(archived)
-        self.assertTrue((archived.root / "replacement").is_file())
+        self.assertEqual((archived.root / "replacement").read_text(), "keep")
+        self.assertFalse(moved.exists())
+        self.assertEqual(
+            list(archived.root.parent.glob(f".{archived.root.name}.*")), []
+        )
         shutil.rmtree(archived.root)
-        shutil.rmtree(original)
 
     def test_archive_applies_directory_modes_after_writing_children(self):
         import tarfile

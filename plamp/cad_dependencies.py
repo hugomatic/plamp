@@ -53,6 +53,9 @@ class _CleanupRecord:
     root: Path
     device: int
     inode: int
+    parent_fd: int
+    root_fd: int
+    finalizer: weakref.finalize | None = None
     cleaned: bool = False
 
 
@@ -222,6 +225,81 @@ def _archived_regular_file(root: Path, relative: Path, revision: str) -> Path:
     return root / relative
 
 
+def _dirty_regular_file(root: Path, relative: Path) -> Path:
+    """Open and validate a dirty source without permitting links or escapes."""
+
+    lexical = root / relative
+    try:
+        before = lexical.stat(follow_symlinks=False)
+    except FileNotFoundError as error:
+        raise CadDependencyError(f"CAD discovery source does not exist: {lexical}") from error
+    if stat.S_ISLNK(before.st_mode):
+        raise CadDependencyError(f"dirty CAD discovery source must not be a symlink: {lexical}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(lexical, flags)
+    except OSError as error:
+        raise CadDependencyError(f"dirty CAD discovery source changed during validation: {lexical}") from error
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise CadDependencyError(
+                f"dirty CAD discovery source must be a regular file: {lexical}"
+            )
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise CadDependencyError(
+                f"dirty CAD discovery source changed during validation: {lexical}"
+            )
+        resolved = lexical.resolve(strict=True)
+        after = lexical.stat(follow_symlinks=False)
+        if stat.S_ISLNK(after.st_mode) or (
+            after.st_dev, after.st_ino
+        ) != (opened.st_dev, opened.st_ino):
+            raise CadDependencyError(
+                f"dirty CAD discovery source changed during validation: {lexical}"
+            )
+        try:
+            resolved.relative_to(root)
+        except ValueError as error:
+            raise CadDependencyError(
+                f"dirty CAD discovery source must remain inside the repository: {lexical}"
+            ) from error
+        return resolved
+    finally:
+        os.close(descriptor)
+
+
+def _close_cleanup_descriptors(parent_fd: int, root_fd: int) -> None:
+    for descriptor in (root_fd, parent_fd):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def _clear_cleanup_descriptor(descriptor: int) -> None:
+    """Delete contents relative to the retained owned-root descriptor."""
+
+    flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0)
+    )
+    for name in os.listdir(descriptor):
+        details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISDIR(details.st_mode):
+            child = os.open(name, flags, dir_fd=descriptor)
+            try:
+                opened = os.fstat(child)
+                if (opened.st_dev, opened.st_ino) != (details.st_dev, details.st_ino):
+                    raise CadDependencyError(f"cleanup child changed during deletion: {name}")
+                _clear_cleanup_descriptor(child)
+            finally:
+                os.close(child)
+            os.rmdir(name, dir_fd=descriptor)
+        else:
+            os.unlink(name, dir_fd=descriptor)
+
+
 def prepare_discovery_environment(
     repo_root: str | os.PathLike[str],
     source_path: str | os.PathLike[str] | None = None,
@@ -240,9 +318,9 @@ def prepare_discovery_environment(
     if dirty:
         if revision_label is None or not revision_label.strip():
             raise ValueError("dirty CAD dependency discovery requires an explicit revision label")
-        source = root if relative_source is None else (root / relative_source).resolve()
-        if not source.exists():
-            raise CadDependencyError(f"CAD discovery source does not exist: {source}")
+        if relative_source is None:
+            raise CadDependencyError("dirty CAD dependency discovery requires a source file")
+        source = _dirty_regular_file(root, relative_source)
         return DiscoveryEnvironment(root, source, None, True, None)
 
     commit = _git_revision(root, revision)
@@ -265,12 +343,31 @@ def prepare_discovery_environment(
             cleanup if relative_source is None
             else _archived_regular_file(cleanup, relative_source, commit)
         )
-        root_stat = cleanup.stat()
-        cleanup_key = _CleanupKey()
-        with _CLEANUP_LOCK:
-            _CLEANUP_RECORDS[cleanup_key] = _CleanupRecord(
-                cleanup, root_stat.st_dev, root_stat.st_ino
+        parent_fd = os.open(
+            cleanup.parent,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            root_fd = os.open(
+                cleanup.name,
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0),
+                dir_fd=parent_fd,
             )
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        root_stat = os.fstat(root_fd)
+        cleanup_key = _CleanupKey()
+        record = _CleanupRecord(
+            cleanup, root_stat.st_dev, root_stat.st_ino, parent_fd, root_fd
+        )
+        record.finalizer = weakref.finalize(
+            cleanup_key, _close_cleanup_descriptors, parent_fd, root_fd
+        )
+        with _CLEANUP_LOCK:
+            _CLEANUP_RECORDS[cleanup_key] = record
         return DiscoveryEnvironment(
             cleanup, archived_source, commit, False, cleanup, cleanup_key
         )
@@ -295,15 +392,18 @@ def cleanup_discovery_environment(environment: DiscoveryEnvironment) -> None:
             return
         if environment.cleanup_root != record.root or environment.root != record.root:
             raise CadDependencyError("CAD discovery cleanup root does not match its owner")
-        try:
-            root_stat = record.root.stat(follow_symlinks=False)
-        except FileNotFoundError as error:
-            raise CadDependencyError("CAD discovery cleanup root was replaced or removed") from error
-        if not stat.S_ISDIR(root_stat.st_mode) or (
-            root_stat.st_dev, root_stat.st_ino
+        opened = os.fstat(record.root_fd)
+        if not stat.S_ISDIR(opened.st_mode) or (
+            opened.st_dev, opened.st_ino
         ) != (record.device, record.inode):
-            raise CadDependencyError("CAD discovery cleanup root was replaced")
-        shutil.rmtree(record.root)
+            raise CadDependencyError("CAD discovery cleanup descriptor lost ownership")
+        _clear_cleanup_descriptor(record.root_fd)
+        from plamp.cad_scaffold import _remove_owned_directory
+
+        if not _remove_owned_directory(record.root, (record.device, record.inode)):
+            raise CadDependencyError("owned CAD discovery cleanup root could not be removed safely")
+        if record.finalizer is not None:
+            record.finalizer()
         record.cleaned = True
 
 
