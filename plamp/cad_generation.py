@@ -1572,8 +1572,12 @@ def generate_plan(
                     prefix="plamp-cad-render-"
                 )
                 transaction_root = Path(stage_context.name)
+                info_environment = dict(base_environment)
+                # Caller search paths are discovery inputs, not evidence that
+                # their roots are OpenSCAD installation libraries.
+                info_environment.pop("OPENSCADPATH", None)
                 openscad_info = query_openscad_info(
-                    openscad, env=base_environment
+                    openscad, env=info_environment
                 )
                 snapshot = snapshots[render_job.model_id]
                 model = models[render_job.model_id]
@@ -1665,6 +1669,11 @@ def generate_plan(
                     pass
                 else:
                     with os.fdopen(failed_log_fd, "w", encoding="utf-8") as failed_log:
+                        if discovery_output:
+                            failed_log.write("OpenSCAD dependency discovery:\n")
+                            failed_log.write(discovery_output)
+                            if not discovery_output.endswith("\n"):
+                                failed_log.write("\n")
                         failed_log.write(f"dependency transaction failed: {_error_text(error)}\n")
                 _finalize_job_failure(
                     job, started_clock=started_clock, error=error, process=None,

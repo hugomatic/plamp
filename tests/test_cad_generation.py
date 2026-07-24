@@ -103,6 +103,10 @@ class CadGenerationTests(unittest.TestCase):
                 print("OpenSCAD Version: 2099.01")
                 print("User Library Path: " + os.environ["FAKE_USER_LIBRARY"])
                 print("OpenSCAD library path:")
+                if os.environ.get("FAKE_INFO_ECHO_OPENSCADPATH"):
+                    for item in os.environ.get("OPENSCADPATH", "").split(os.pathsep):
+                        if item:
+                            print(item)
                 print(os.environ["FAKE_INSTALL_LIBRARY"])
                 print()
                 raise SystemExit(0)
@@ -134,6 +138,8 @@ class CadGenerationTests(unittest.TestCase):
                     pathlib.Path(sys.argv[-1]).write_text("changed during render")
                 if not (final_render and os.environ.get("FAKE_SKIP_FINAL_D")):
                     rows = [sys.argv[-1]]
+                    if not final_render and os.environ.get("FAKE_DISCOVERY_DEP"):
+                        rows.append(os.environ["FAKE_DISCOVERY_DEP"])
                     if final_render and os.environ.get("FAKE_FINAL_DEP"):
                         rows.append(os.environ["FAKE_FINAL_DEP"])
                     dependency.write_text(str(output) + ": " + " ".join(rows) + "\\n")
@@ -183,6 +189,34 @@ class CadGenerationTests(unittest.TestCase):
         self.assertIsNone(job["artifact"])
         self.assertIn("outside staged dependency closure", job["errors"][-1])
         self.assertFalse(list((result.run_dir / "artifacts").glob("*.stl")))
+
+    def test_configured_openscadpath_is_not_an_implicit_installation_root(self):
+        host_root = self.root / "configured-host-library"
+        host_root.mkdir()
+        host_dependency = host_root / "undeclared.scad"
+        host_dependency.write_text("cube(77);")
+        result = self.generate(env=self.env(
+            OPENSCADPATH=str(host_root),
+            FAKE_INFO_ECHO_OPENSCADPATH="1",
+            FAKE_DISCOVERY_DEP=str(host_dependency),
+        ))
+        job = load_run(result.run_dir)["jobs"][0]
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("undeclared host CAD dependency", job["errors"][-1])
+        self.assertIsNone(job["artifact"])
+
+    def test_classification_failure_log_retains_discovery_output(self):
+        host_dependency = self.root / "undeclared-classification.scad"
+        host_dependency.write_text("cube(88);")
+        result = self.generate(env=self.env(
+            FAKE_DISCOVERY_DEP=str(host_dependency),
+        ))
+        job = load_run(result.run_dir)["jobs"][0]
+        log = (result.run_dir / str(job["log"])).read_text()
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("OpenSCAD dependency discovery:", log)
+        self.assertIn('ECHO: "ordinary"', log)
+        self.assertIn("dependency transaction failed:", log)
 
     def test_missing_second_makefile_and_staged_content_change_fail_closed(self):
         for variable, expected in (
