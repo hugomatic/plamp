@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from plamp.cad_cli import _catalog_rows, add_cad_parser, run_cad_command
+from plamp.cad_cli import add_cad_parser, run_cad_command
 from plamp.cad_generation import CadRunExistsError, generate_plan
 from plamp.cad_scaffold import (
     CadDestinationExistsError,
@@ -18,7 +18,6 @@ from plamp.cad_scaffold import (
     CadTemplate,
     CreatedModel,
 )
-from plamp.cad_system import load_system
 from plamp.cli import build_parser, main
 from plamp.context import RuntimeContext
 
@@ -542,18 +541,44 @@ class CadCliTests(unittest.TestCase):
         self.assertIn("revision v2.1", human)
         self.assertIn("license missing", human)
 
-    def test_library_rows_recheck_a_missing_source_without_omitting_the_row(self):
+    def test_libraries_command_retains_missing_and_non_directory_rows(self):
         manifest_path = self._clean_catalog()
-        system = load_system(manifest_path, self.root)
-        shutil.rmtree(self.root / "cad" / "lib")
-        rows = _catalog_rows("libraries", system, self.context)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["validation"], "missing")
-        self.assertEqual(rows[0]["status"], "invalid")
-        self.assertEqual(rows[0]["license"], None)
-        self.assertEqual(rows[0]["revision"], None)
-        self.assertEqual(rows[0]["diagnostics"][0]["json_path"],
-                         "$.libraries.fasteners.path")
+        manifest = json.loads(manifest_path.read_text())
+        manifest["libraries"] = {
+            "missing": {"path": "cad/absent", "description": "Missing library"},
+            "not-a-dir": {"path": "things/fixture/fixture.scad"},
+        }
+        manifest_path.write_text(json.dumps(manifest))
+
+        output, error, rc = self._run_main(
+            ["cad", "libraries", "--system", "alpha", "--json"]
+        )
+        self.assertEqual((rc, error), (0, ""))
+        rows = json.loads(output)
+        self.assertEqual([row["id"] for row in rows], ["missing", "not-a-dir"])
+        self.assertEqual([row["validation"] for row in rows], ["missing", "not_directory"])
+        for row in rows:
+            self.assertEqual(row["status"], "invalid")
+            self.assertIsNone(row["license"])
+            self.assertIsNone(row["revision"])
+            self.assertTrue(row["diagnostics"])
+            self.assertEqual(row["diagnostics"][0]["json_path"],
+                             f"$.libraries.{row['id']}.path")
+
+        human, error, rc = self._run_main(
+            ["cad", "libraries", "--system", "alpha"]
+        )
+        self.assertEqual((rc, error), (0, ""))
+        self.assertIn("library missing [invalid]", human)
+        self.assertIn("library not-a-dir [invalid]", human)
+        self.assertIn("Referenced path does not exist", human)
+        self.assertIn("Library path must be a directory", human)
+
+        _output, error, rc = self._run_main(
+            ["cad", "plan", "--system", "alpha", "--product", "printable"]
+        )
+        self.assertEqual(rc, 2)
+        self.assertIn("Referenced path does not exist", error)
 
     def test_zero_system_error_does_not_claim_multiple_systems(self):
         output, _error, rc = self._run_main(["cad", "models", "--json"])

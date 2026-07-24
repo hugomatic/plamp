@@ -74,6 +74,122 @@ class CadSystem:
     metadata_snapshot: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class CadLibraryInspection:
+    """One library declaration inspected without enabling operational use."""
+
+    name: str
+    description: str
+    path: Path | None
+    license: str | None
+    revision: str | None
+    validation: str
+    diagnostics: tuple[CadDiagnostic, ...] = ()
+
+
+def inspect_system_libraries(path: Path, repo_root: Path) -> tuple[CadLibraryInspection, ...]:
+    """Inspect library declarations independently of strict system loading.
+
+    This is intentionally a navigation-only API. ``load_system`` remains the
+    authority for plans and generation and rejects every unusable declaration.
+    """
+
+    path = Path(path).resolve()
+    repo_root = Path(repo_root).resolve()
+    metadata = _read_json(path)
+    raw_libraries = _mapping(metadata, "libraries", path, "$.libraries")
+    rows: list[CadLibraryInspection] = []
+    for name in sorted(raw_libraries):
+        declaration = raw_libraries[name]
+        json_path = f"$.libraries.{name}"
+        description = ""
+        license_name: str | None = None
+        revision: str | None = None
+        reference: str | None = None
+        diagnostics: list[CadDiagnostic] = []
+        if isinstance(declaration, str):
+            reference = declaration
+        elif isinstance(declaration, dict):
+            unknown = next((key for key in declaration if key not in _LIBRARY_KEYS), None)
+            if unknown is not None:
+                diagnostics.append(_diagnostic(
+                    path, f"Unknown metadata key {unknown!r}",
+                    json_path=f"{json_path}.{unknown}", value=unknown,
+                ))
+            raw_reference = declaration.get("path")
+            if isinstance(raw_reference, str):
+                reference = raw_reference
+            else:
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.path must be a string",
+                    json_path=f"{json_path}.path", value=raw_reference,
+                ))
+            raw_description = declaration.get("description", "")
+            if isinstance(raw_description, str):
+                description = raw_description
+            else:
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.description must be a string",
+                    json_path=f"{json_path}.description", value=raw_description,
+                ))
+            raw_license = declaration.get("license")
+            if raw_license is None or isinstance(raw_license, str):
+                license_name = raw_license
+            else:
+                diagnostics.append(_diagnostic(
+                    path, "Library license must be a string",
+                    json_path=f"{json_path}.license", value=raw_license,
+                ))
+            raw_revision = declaration.get("revision")
+            if raw_revision is None or isinstance(raw_revision, str):
+                revision = raw_revision
+            else:
+                diagnostics.append(_diagnostic(
+                    path, "Library revision must be a string",
+                    json_path=f"{json_path}.revision", value=raw_revision,
+                ))
+        else:
+            diagnostics.append(_diagnostic(
+                path, "Library declaration must be a string or JSON object",
+                json_path=json_path, value=declaration,
+            ))
+
+        resolved: Path | None = None
+        validation = "invalid_declaration"
+        if reference is not None:
+            raw_path = Path(reference)
+            resolved = (raw_path if raw_path.is_absolute() else repo_root / raw_path).resolve()
+            if not raw_path.is_absolute() and not _inside(resolved, repo_root):
+                validation = "unsafe_path"
+                diagnostics.append(_diagnostic(
+                    path, f"{json_path}.path must remain inside the repository",
+                    code="CAD109", kind="unsafe_path",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif not resolved.exists():
+                validation = "missing"
+                diagnostics.append(_diagnostic(
+                    path, f"Referenced path does not exist: {reference}",
+                    code="CAD121", kind="missing_path",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif not resolved.is_dir():
+                validation = "not_directory"
+                diagnostics.append(_diagnostic(
+                    path, "Library path must be a directory",
+                    json_path=f"{json_path}.path", value=reference,
+                ))
+            elif diagnostics:
+                validation = "invalid_declaration"
+            else:
+                validation = "valid"
+        rows.append(CadLibraryInspection(
+            name, description, resolved, license_name, revision,
+            validation, tuple(diagnostics),
+        ))
+    return tuple(rows)
+
+
 def _diagnostic(path: Path, message: str, *, json_path: str | None = None,
                 code: str = "CAD120", kind: str = "invalid_system_metadata",
                 value: object | None = None, choices: tuple[str, ...] = (),

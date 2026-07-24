@@ -27,6 +27,7 @@ from plamp.cad_system import (
     CadSystem,
     SystemCandidate,
     discover_systems,
+    inspect_system_libraries,
     load_system,
     select_system,
 )
@@ -200,6 +201,7 @@ def _dependencies(overrides: Mapping[str, CadFunction] | None) -> dict[str, CadF
         "discover_systems": discover_systems,
         "select_system": select_system,
         "load_system": load_system,
+        "inspect_system_libraries": inspect_system_libraries,
         "load_preferences": load_preferences,
         "discover_local_profiles": discover_local_profiles,
     }
@@ -275,13 +277,13 @@ def _choose_template(templates: tuple[object, ...], stdin: TextIO,
     return templates[choice - 1].name
 
 
-def _selected_system(
+def _selected_system_candidate(
     args: argparse.Namespace,
     context: RuntimeContext,
     stdin: TextIO,
     stdout: TextIO,
     deps: Mapping[str, CadFunction],
-) -> CadSystem:
+) -> tuple[SystemCandidate, str | None]:
     candidates = tuple(deps["discover_systems"](context.root))
     selector = getattr(args, "system", None)
     configured = None
@@ -313,6 +315,19 @@ def _selected_system(
         )
     else:
         candidate = _choose_system(candidates, stdin, stdout)
+    return candidate, configured
+
+
+def _selected_system(
+    args: argparse.Namespace,
+    context: RuntimeContext,
+    stdin: TextIO,
+    stdout: TextIO,
+    deps: Mapping[str, CadFunction],
+) -> CadSystem:
+    candidate, configured = _selected_system_candidate(
+        args, context, stdin, stdout, deps
+    )
     if candidate.status != "valid":
         if configured is not None:
             preferences_path = context.data_dir / "cad" / "preferences.json"
@@ -329,6 +344,27 @@ def _selected_system(
             raise CadMetadataError(candidate.diagnostics)
         raise ValueError(f"CAD system is invalid: {candidate.path}")
     return deps["load_system"](candidate.path, context.root)
+
+
+def _library_rows_from_candidate(
+    candidate: SystemCandidate,
+    context: RuntimeContext,
+    deps: Mapping[str, CadFunction],
+) -> list[dict[str, object]]:
+    rows = []
+    for item in deps["inspect_system_libraries"](candidate.path, context.root):
+        resolved = item.path
+        display_path = _relative(resolved, context.root) if resolved is not None else None
+        rows.append({
+            "kind": "library", "id": item.name, "system": candidate.name,
+            "description": _described(item.description),
+            "path": display_path, "source": display_path,
+            "license": item.license, "revision": item.revision,
+            "validation": item.validation,
+            "status": "valid" if item.validation == "valid" else "invalid",
+            "diagnostics": _diagnostics_value(item.diagnostics),
+        })
+    return rows
 
 
 def _read_catalog_choice(stdin: TextIO, prompt: str, stdout: TextIO) -> str:
@@ -435,6 +471,11 @@ def _emit_rows(rows: list[dict[str, object]], json_output: bool, stdout: TextIO)
                 f" - revision {revision or 'unspecified'}"
                 f" - {row.get('validation', 'unknown')}"
             )
+            diagnostics = row.get("diagnostics")
+            if isinstance(diagnostics, list) and diagnostics:
+                first = diagnostics[0]
+                if isinstance(first, dict) and first.get("message"):
+                    suffix += f": {first['message']}"
         stdout.write(
             f"{row['kind']} {row['id'] or '(default)'}{status} - "
             f"{row['description']} - {row['path']}{suffix}\n"
@@ -484,31 +525,6 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
             rows.append({"kind": "profile", "id": name, **base,
                          "description": "(no description)",
                          "path": _relative(profile.path, context.root)})
-    elif action == "libraries":
-        for name in sorted(system.libraries):
-            declaration = system.libraries[name]
-            raw = system.metadata_snapshot.get("libraries", {}).get(name, {})
-            description = str(raw.get("description", "")) if isinstance(raw, dict) else ""
-            resolved = declaration.path
-            validation = "valid" if resolved.is_dir() else "missing"
-            row_base = {
-                **base,
-                "status": "valid" if validation == "valid" else "invalid",
-                "diagnostics": ([] if validation == "valid" else [{
-                    "code": "CAD121", "kind": "missing_path",
-                    "message": f"Library path does not exist: {resolved}",
-                    "source": str(system.path), "line": None, "column": None,
-                    "json_path": f"$.libraries.{name}.path", "value": str(resolved),
-                    "choices": [], "suggestion": None, "fix": None,
-                }]),
-            }
-            rows.append({"kind": "library", "id": name, **row_base,
-                         "description": _described(description),
-                         "path": _relative(resolved, context.root),
-                         "source": _relative(resolved, context.root),
-                         "license": declaration.license,
-                         "revision": declaration.revision,
-                         "validation": validation})
     return rows
 
 
@@ -846,10 +862,16 @@ def run_cad_command(
                 and _interactive(stdin, args)
             ):
                 return _catalog_browser(context, stdin, stdout, deps)
-            system = _selected_system(args, context, stdin, stdout, deps)
-            rows = _catalog_rows(
-                args.action, system, context, getattr(args, "model", None)
-            )
+            if args.action == "libraries":
+                candidate, _configured = _selected_system_candidate(
+                    args, context, stdin, stdout, deps
+                )
+                rows = _library_rows_from_candidate(candidate, context, deps)
+            else:
+                system = _selected_system(args, context, stdin, stdout, deps)
+                rows = _catalog_rows(
+                    args.action, system, context, getattr(args, "model", None)
+                )
             _emit_rows(rows, args.json, stdout)
             return 0
 
