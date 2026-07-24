@@ -386,9 +386,6 @@ sub_panel_bonding_roof_h = sub_panel_h - sub_panel_base_h
     - sub_panel_bonding_nut_h;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
-sub_panel_bonding_blind_floor = 1;
-sub_panel_bonding_blind_depth = sub_panel_base_h
-    - sub_panel_bonding_blind_floor;
 top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
 bottom_stack_h = wall_t + 2 * corner_tab_t;
 bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
@@ -668,8 +665,6 @@ assert(service_region_left_x - dc_region_right_x == panel_region_gap,
     "service region must retain the 2 mm DC gap");
 assert(sub_panel_bonding_roof_h > 0,
     "panel bonding nut catcher needs a positive roof height");
-assert(sub_panel_bonding_blind_floor >= 1,
-    "panel bonding screw bores need 1 mm underside material");
 assert(sub_panel_bonding_throat_w > panel_nut_d * cos(30),
     "panel bonding nut entry must admit the calibrated M3 nut");
 assert(c13_screw_spacing / 2 + sub_panel_bonding_tower_d / 2
@@ -1190,9 +1185,9 @@ module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
 }
 
 module sub_panel_bonding_screw_negative(d) {
-    translate([0, 0, sub_panel_bonding_blind_floor])
+    translate([0, 0, -boolean_shim])
         cylinder(
-            h = sub_panel_h - sub_panel_bonding_blind_floor + boolean_shim,
+            h = sub_panel_h + 2 * boolean_shim,
             d = d
         );
 }
