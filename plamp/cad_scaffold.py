@@ -549,25 +549,26 @@ def _directory_identity(path: Path) -> tuple[int, int]:
     return details.st_dev, details.st_ino
 
 
-def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
-    """Remove only the directory inode published by this transaction."""
+def _exchange_paths(first: Path, second: Path) -> None:
+    """Atomically exchange two paths where the host kernel supports it."""
 
-    try:
-        if _directory_identity(path) != identity:
-            return False
-    except FileNotFoundError:
-        return False
-    quarantine = path.with_name(f".{path.name}.rollback-{secrets.token_hex(6)}")
-    try:
-        os.rename(path, quarantine)
-    except FileNotFoundError:
-        return False
-    if _directory_identity(quarantine) != identity:
-        if not path.exists() and not path.is_symlink():
-            os.rename(quarantine, path)
-        return False
+    if not sys.platform.startswith("linux"):
+        raise OSError(errno.ENOTSUP, "atomic rollback exchange requires Linux renameat2")
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(library, "renameat2", None)
+    if rename is None:
+        raise OSError(errno.ENOTSUP, "renameat2 is unavailable")
+    result = rename(-100, os.fsencode(first), -100, os.fsencode(second), 2)
+    if result != 0:
+        value = ctypes.get_errno()
+        raise OSError(value, os.strerror(value))
+
+
+def _clear_claimed_directory(path: Path, identity: tuple[int, int]) -> None:
+    if _directory_identity(path) != identity:
+        raise OSError(errno.ESTALE, f"rollback claim identity changed: {path}")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(quarantine, flags | getattr(os, "O_DIRECTORY", 0))
+    descriptor = os.open(path, flags | getattr(os, "O_DIRECTORY", 0))
     try:
         for name in os.listdir(descriptor):
             details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
@@ -576,8 +577,69 @@ def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
             os.unlink(name, dir_fd=descriptor)
     finally:
         os.close(descriptor)
-    os.rmdir(quarantine)
-    return True
+    os.rmdir(path)
+
+
+def _claim_and_remove(candidate: Path, identity: tuple[int, int]) -> bool:
+    placeholder = candidate.with_name(
+        f".{candidate.name}.rollback-{secrets.token_hex(6)}"
+    )
+    os.mkdir(placeholder)
+    exchanged = False
+    try:
+        _exchange_paths(candidate, placeholder)
+        exchanged = True
+        if _directory_identity(placeholder) != identity:
+            _exchange_paths(candidate, placeholder)
+            exchanged = False
+            return False
+        _clear_claimed_directory(placeholder, identity)
+        os.rmdir(candidate)
+        return True
+    finally:
+        if exchanged and placeholder.exists():
+            try:
+                _exchange_paths(candidate, placeholder)
+            except OSError:
+                pass
+        if placeholder.exists():
+            try:
+                os.rmdir(placeholder)
+            except OSError:
+                pass
+
+
+def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
+    """Atomically claim and remove only this transaction's published inode.
+
+    Linux uses ``renameat2(RENAME_EXCHANGE)``. Other kernels fail safely and
+    leave the owned directory in place rather than risk deleting another path.
+    """
+
+    try:
+        for candidate in (path,):
+            try:
+                if _directory_identity(candidate) != identity:
+                    continue
+                if _claim_and_remove(candidate, identity):
+                    return True
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+        for candidate in path.parent.iterdir():
+            if candidate == path or candidate.name.startswith("."):
+                continue
+            try:
+                if _directory_identity(candidate) == identity and _claim_and_remove(
+                    candidate, identity
+                ):
+                    return True
+            except (FileNotFoundError, NotADirectoryError):
+                continue
+    except OSError as error:
+        if error.errno == errno.ENOTSUP:
+            return False
+        raise
+    return False
 
 
 def create_model(repo_root: Path, system: CadSystem, model_id: str,

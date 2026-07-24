@@ -216,7 +216,33 @@ class CadScaffoldTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 create_model(self.root, self.system, "pump", "cad")
         self.assertEqual((destination / "sentinel").read_text(), "unrelated")
-        self.assertTrue(moved.is_dir())
+        self.assertFalse(moved.exists())
+        self.assertEqual(list((self.root / "things").glob(".*.rollback-*")), [])
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_atomic_rollback_claim_restores_swap_at_claim_boundary(self):
+        original = self.system_path.read_bytes()
+        destination = self.root / "things" / "pump"
+        moved = self.root / "things" / "owned-moved"
+        from plamp import cad_scaffold
+        real_rename = os.rename
+        real_exchange = cad_scaffold._exchange_paths
+        swapped = False
+        def race(source, target):
+            nonlocal swapped
+            if not swapped and Path(source) == destination:
+                swapped = True
+                real_rename(destination, moved)
+                destination.mkdir()
+                (destination / "sentinel").write_text("unrelated")
+            return real_exchange(source, target)
+        with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("fail")), \
+             mock.patch("plamp.cad_scaffold._exchange_paths", side_effect=race):
+            with self.assertRaises(OSError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertEqual((destination / "sentinel").read_text(), "unrelated")
+        self.assertFalse(moved.exists())
+        self.assertEqual(list((self.root / "things").glob(".*.rollback-*")), [])
         self.assertEqual(self.system_path.read_bytes(), original)
 
     def test_prospective_manifest_failure_prevents_publication(self):
