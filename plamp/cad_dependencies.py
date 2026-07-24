@@ -44,6 +44,31 @@ class DependencyRecord:
     asset: bool = False
 
 
+@dataclass(frozen=True)
+class CadLibrary:
+    name: str
+    path: Path
+    license: str | None = None
+    revision: str | None = None
+
+
+@dataclass(frozen=True)
+class DependencyClosure:
+    records: tuple[DependencyRecord, ...]
+    model_root: Path
+    repository_root: Path
+    source_path: Path
+    dirty: bool = False
+
+
+@dataclass(frozen=True)
+class StagedDependencies:
+    root: Path
+    records: tuple[DependencyRecord, ...]
+    model_source: Path
+    openscad_paths: tuple[Path, ...]
+
+
 class _CleanupKey:
     pass
 
@@ -704,16 +729,285 @@ def query_openscad_info(
     return parse_openscad_info(completed.stdout or "")
 
 
+def _open_regular_no_follow(path: Path) -> tuple[int, os.stat_result]:
+    absolute = path.absolute()
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    directory_flags = flags | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptors: list[int] = []
+    try:
+        current = os.open(absolute.anchor, directory_flags)
+        descriptors.append(current)
+        for component in absolute.parts[1:-1]:
+            current = os.open(component, directory_flags, dir_fd=current)
+            descriptors.append(current)
+        result = os.open(
+            absolute.name, flags | getattr(os, "O_NOFOLLOW", 0), dir_fd=current
+        )
+        details = os.fstat(result)
+        if not stat.S_ISREG(details.st_mode):
+            os.close(result)
+            raise CadDependencyError(f"cannot open non-file dependency {path}")
+        return result, details
+    except OSError as error:
+        raise CadDependencyError(f"cannot safely open dependency {path}: {error}") from error
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
 def content_hash(path: Path) -> str:
     """Return the SHA-256 digest of one regular file's exact bytes."""
 
     try:
-        if not path.is_file():
-            raise CadDependencyError(f"cannot hash non-file dependency {path}")
+        descriptor, _details = _open_regular_no_follow(path)
         digest = hashlib.sha256()
-        with path.open("rb") as source:
+        with os.fdopen(descriptor, "rb") as source:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
     except OSError as error:
         raise CadDependencyError(f"cannot hash dependency {path}: {error}") from error
+
+
+_ASSET_SUFFIXES = frozenset({".stl", ".svg", ".dxf", ".png"})
+_LIBRARY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def _relative_to(path: Path, root: Path) -> Path | None:
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        return None
+
+
+def _reject_link_components(path: Path) -> None:
+    """Reject links in an existing absolute path before canonicalizing it."""
+
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    try:
+        for component in absolute.parts[1:]:
+            current /= component
+            if stat.S_ISLNK(current.stat(follow_symlinks=False).st_mode):
+                raise CadDependencyError(f"unsafe symlink CAD dependency: {path}")
+    except FileNotFoundError as error:
+        raise CadDependencyError(f"CAD dependency does not exist: {path}") from error
+
+
+def _regular_files_without_links(root: Path) -> tuple[Path, ...]:
+    """Enumerate a portable folder snapshot while rejecting every link/special."""
+
+    rows: list[Path] = []
+    for directory, names, files in os.walk(root, followlinks=False):
+        directory_path = Path(directory)
+        for name in names:
+            candidate = directory_path / name
+            details = candidate.stat(follow_symlinks=False)
+            if stat.S_ISLNK(details.st_mode):
+                raise CadDependencyError(f"unsafe symlink in CAD model folder: {candidate}")
+            if not stat.S_ISDIR(details.st_mode):
+                raise CadDependencyError(f"unsafe special entry in CAD model folder: {candidate}")
+        for name in files:
+            candidate = directory_path / name
+            details = candidate.stat(follow_symlinks=False)
+            if stat.S_ISLNK(details.st_mode):
+                raise CadDependencyError(f"unsafe symlink in CAD model folder: {candidate}")
+            if not stat.S_ISREG(details.st_mode):
+                raise CadDependencyError(f"unsafe special entry in CAD model folder: {candidate}")
+            rows.append(candidate)
+    return tuple(sorted(rows, key=lambda item: item.relative_to(root).as_posix()))
+
+
+def classify_dependencies(
+    *,
+    dependencies: tuple[Path, ...],
+    model_root: Path,
+    repository_root: Path,
+    declared_libraries: Mapping[str, CadLibrary],
+    openscad_library_roots: tuple[Path, ...],
+    selected_revision: str | None,
+) -> DependencyClosure:
+    """Classify a discovered closure by its most-specific approved root."""
+
+    repository = repository_root.resolve(strict=True)
+    model = model_root.resolve(strict=True)
+    if _relative_to(model, repository) is None:
+        raise CadDependencyError("CAD model root must remain inside the repository")
+    libraries: list[tuple[str, CadLibrary, Path]] = []
+    for name, declaration in declared_libraries.items():
+        if name != declaration.name or _LIBRARY_NAME.fullmatch(name) is None:
+            raise CadDependencyError(f"unsafe or inconsistent CAD library name: {name!r}")
+        root = declaration.path.resolve(strict=True)
+        if not root.is_dir():
+            raise CadDependencyError(f"declared CAD library is not a directory: {root}")
+        libraries.append((name, declaration, root))
+    install_roots: list[Path] = []
+    for raw_root in openscad_library_roots:
+        root = raw_root.resolve(strict=True)
+        if not root.is_dir():
+            raise CadDependencyError(f"OpenSCAD library root is not a directory: {root}")
+        if root not in install_roots:
+            install_roots.append(root)
+
+    discovered_rows: list[Path] = []
+    for item in dependencies:
+        _reject_link_components(Path(item))
+        discovered_rows.append(Path(item).resolve(strict=True))
+    discovered = tuple(discovered_rows)
+    if not discovered:
+        raise CadDependencyError("OpenSCAD dependency closure is empty")
+    source_path = next((item for item in discovered if _relative_to(item, model) is not None), None)
+    if source_path is None:
+        raise CadDependencyError("dependency closure does not contain the selected model source")
+    ordered = list(discovered)
+    seen = set(ordered)
+    for item in _regular_files_without_links(model):
+        if item not in seen:
+            ordered.append(item)
+            seen.add(item)
+
+    records: list[DependencyRecord] = []
+    for source in ordered:
+        try:
+            details = source.stat(follow_symlinks=False)
+        except OSError as error:
+            raise CadDependencyError(f"cannot inspect CAD dependency {source}: {error}") from error
+        if not stat.S_ISREG(details.st_mode):
+            raise CadDependencyError(f"unsafe non-regular CAD dependency: {source}")
+
+        candidates: list[tuple[int, int, str, str, Path, str | None, str | None]] = []
+        relative = _relative_to(source, model)
+        if relative is not None:
+            candidates.append((len(model.parts), 0, "model-local", relative.as_posix(),
+                               Path("repository") / model.relative_to(repository) / relative,
+                               selected_revision, None))
+        for name, declaration, root in libraries:
+            relative = _relative_to(source, root)
+            if relative is not None:
+                candidates.append((len(root.parts), 1, "declared-shared",
+                                   f"{name}/{relative.as_posix()}",
+                                   Path("libraries") / name / relative,
+                                   declaration.revision, declaration.license))
+        relative = _relative_to(source, repository)
+        if relative is not None:
+            candidates.append((len(repository.parts), 2, "repository-local",
+                               relative.as_posix(), Path("repository") / relative,
+                               selected_revision, None))
+        for index, root in enumerate(install_roots, 1):
+            relative = _relative_to(source, root)
+            if relative is not None:
+                candidates.append((len(root.parts), 3, "built-in",
+                                   f"openscad-{index}/{relative.as_posix()}",
+                                   Path("libraries") / f"openscad-{index}" / relative,
+                                   None, None))
+        if not candidates:
+            raise CadDependencyError(
+                f"undeclared host CAD dependency {source}; declare its library in the system manifest"
+            )
+        _length, _priority, classification, logical, archive, revision, license_name = min(
+            candidates, key=lambda row: (-row[0], row[1])
+        )
+        records.append(DependencyRecord(
+            source_path=source, classification=classification,
+            logical_name=logical, archive_path=archive,
+            content_hash=content_hash(source), git_revision=revision,
+            license=license_name, asset=source.suffix.lower() in _ASSET_SUFFIXES,
+        ))
+    return DependencyClosure(
+        tuple(records), model, repository, source_path, selected_revision is None
+    )
+
+
+def _copy_verified(record: DependencyRecord, stage: Path, stage_fd: int) -> None:
+    destination = stage / record.archive_path
+    try:
+        destination.relative_to(stage)
+    except ValueError as error:
+        raise CadDependencyError(f"unsafe dependency archive path: {record.archive_path}") from error
+    directory_flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    )
+    parent_fd = os.dup(stage_fd)
+    try:
+        for component in record.archive_path.parts[:-1]:
+            try:
+                os.mkdir(component, 0o755, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+            next_fd = os.open(component, directory_flags, dir_fd=parent_fd)
+            os.close(parent_fd)
+            parent_fd = next_fd
+        source_fd, details = _open_regular_no_follow(record.source_path)
+        try:
+            digest = hashlib.sha256()
+            output_fd = os.open(
+                record.archive_path.name,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+                stat.S_IMODE(details.st_mode) & 0o777,
+                dir_fd=parent_fd,
+            )
+            with os.fdopen(os.dup(source_fd), "rb") as source, os.fdopen(output_fd, "r+b") as output:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    output.write(chunk)
+                output.flush()
+                output.seek(0)
+                copied = hashlib.sha256()
+                for chunk in iter(lambda: output.read(1024 * 1024), b""):
+                    copied.update(chunk)
+        finally:
+            os.close(source_fd)
+    except (OSError, FileExistsError) as error:
+        raise CadDependencyError(f"cannot stage CAD dependency {record.source_path}: {error}") from error
+    finally:
+        os.close(parent_fd)
+    if digest.hexdigest() != record.content_hash or copied.hexdigest() != record.content_hash:
+        raise CadDependencyError(f"CAD dependency changed while staging: {record.source_path}")
+
+
+def stage_dependency_closure(
+    closure: DependencyClosure, destination: str | os.PathLike[str]
+) -> StagedDependencies:
+    """Copy a classified closure to deterministic repository/library roots."""
+
+    stage = Path(destination).absolute()
+    if stage.exists() and (stage.is_symlink() or not stage.is_dir()):
+        raise CadDependencyError(f"unsafe CAD dependency staging root: {stage}")
+    stage.mkdir(parents=True, exist_ok=True)
+    try:
+        stage_fd = os.open(
+            stage,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+    except OSError as error:
+        raise CadDependencyError(f"cannot safely open CAD dependency staging root: {error}") from error
+    stage_identity = os.fstat(stage_fd)
+    archive_paths: set[Path] = set()
+    try:
+        for record in closure.records:
+            if record.archive_path in archive_paths:
+                raise CadDependencyError(f"duplicate dependency archive path: {record.archive_path}")
+            archive_paths.add(record.archive_path)
+            _copy_verified(record, stage, stage_fd)
+    finally:
+        os.close(stage_fd)
+    final_identity = stage.stat(follow_symlinks=False)
+    if stat.S_ISLNK(final_identity.st_mode) or (
+        final_identity.st_dev, final_identity.st_ino
+    ) != (stage_identity.st_dev, stage_identity.st_ino):
+        raise CadDependencyError("CAD dependency staging root changed while staging")
+    source_relative = closure.source_path.relative_to(closure.repository_root)
+    openscad_paths = [stage / "libraries"]
+    for record in closure.records:
+        if record.classification not in ("declared-shared", "built-in"):
+            continue
+        root = stage / Path(*record.archive_path.parts[:2])
+        if root not in openscad_paths:
+            openscad_paths.append(root)
+    return StagedDependencies(
+        stage, closure.records, stage / "repository" / source_relative,
+        tuple(openscad_paths),
+    )

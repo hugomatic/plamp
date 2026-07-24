@@ -5,6 +5,7 @@ import unittest
 
 from plamp.cad_manufacturing import DirectiveSource, merge_manufacturing
 from plamp.cad_model import CadMetadataError
+from plamp.cad_dependencies import CadLibrary
 from plamp.cad_system import discover_systems, load_system, select_system
 
 
@@ -251,6 +252,29 @@ class CadSystemTests(unittest.TestCase):
             with self.subTest(updates=updates):
                 with self.assertRaises(CadMetadataError):
                     load_system(self.system(**updates), self.root)
+
+    def test_loads_typed_library_declarations(self):
+        library = self.root / "vendor/BOSL2"
+        library.mkdir(parents=True)
+        system = load_system(self.system(libraries={
+            "BOSL2": {
+                "path": "vendor/BOSL2", "license": "BSD-2-Clause",
+                "revision": "v2.0", "description": "Mechanical library",
+            }
+        }), self.root)
+        self.assertEqual(
+            system.libraries["BOSL2"],
+            CadLibrary("BOSL2", library.resolve(), "BSD-2-Clause", "v2.0"),
+        )
+
+    def test_loads_declared_library_outside_repository(self):
+        library = self.root.parent / f"{self.root.name}-external-library"
+        library.mkdir()
+        self.addCleanup(library.rmdir)
+        system = load_system(self.system(libraries={
+            "external": {"path": str(library), "license": "MIT"}
+        }), self.root)
+        self.assertEqual(system.libraries["external"].path, library.resolve())
 
     def test_rejects_unknown_default_product(self):
         error = self.assert_invalid(default_product="missing")

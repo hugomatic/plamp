@@ -13,8 +13,10 @@ import unittest
 from unittest.mock import patch
 
 from plamp.cad_dependencies import (
+    CadLibrary,
     CadDependencyError,
     DependencyRecord,
+    classify_dependencies,
     DiscoveryEnvironment,
     cleanup_discovery_environment,
     content_hash,
@@ -23,6 +25,7 @@ from plamp.cad_dependencies import (
     prepare_discovery_environment,
     query_openscad_info,
     run_dependency_discovery,
+    stage_dependency_closure,
     _extract_git_archive,
 )
 from plamp.cad_generation import _command
@@ -209,6 +212,120 @@ OPENSCAD_FONT_PATH:
         )
         with self.assertRaises(FrozenInstanceError):
             info.version = "changed"  # type: ignore[misc]
+
+    def test_classifies_and_stages_complete_self_contained_closure(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        local = self.write_at(model / "local/helper.scad", "module helper() {}")
+        source = self.write_at(model / "box.scad", "include <local/helper.scad>")
+        unreferenced = self.write_at(model / "notes.txt", "portable model folder")
+        shared = self.write_at(repo / "shared/common.scad", "module common() {}")
+        bosl_root = self.root / "external/BOSL2"
+        bosl = self.write_at(bosl_root / "std.scad", "module screw() {}")
+        asset = self.write_at(bosl_root / "assets/logo.svg", "<svg/>")
+        install_root = self.root / "openscad/libraries"
+        mcad = self.write_at(install_root / "MCAD/units.scad", "mm = 1;")
+        closure = classify_dependencies(
+            dependencies=(source, local, shared, bosl, asset, mcad),
+            model_root=model,
+            repository_root=repo,
+            declared_libraries={
+                "BOSL2": CadLibrary("BOSL2", bosl_root, "BSD-2-Clause", "v2.0")
+            },
+            openscad_library_roots=(install_root,),
+            selected_revision="abc123",
+        )
+        self.assertIn(unreferenced, tuple(row.source_path for row in closure.records))
+        records = {row.source_path: row for row in closure.records}
+        self.assertEqual(records[local].classification, "model-local")
+        self.assertEqual(records[shared].classification, "repository-local")
+        self.assertEqual(records[bosl].classification, "declared-shared")
+        self.assertEqual(records[bosl].license, "BSD-2-Clause")
+        self.assertEqual(records[bosl].git_revision, "v2.0")
+        self.assertTrue(records[asset].asset)
+        self.assertEqual(records[mcad].classification, "built-in")
+        self.assertEqual(records[shared].git_revision, "abc123")
+
+        stage = self.root / "stage"
+        staged = stage_dependency_closure(closure, stage)
+        self.assertEqual(staged.model_source, stage / "repository/things/box/box.scad")
+        self.assertTrue((stage / "repository/things/box/local/helper.scad").is_file())
+        self.assertTrue((stage / "repository/things/box/notes.txt").is_file())
+        self.assertTrue((stage / "repository/shared/common.scad").is_file())
+        self.assertTrue((stage / "libraries/BOSL2/std.scad").is_file())
+        self.assertTrue((stage / "libraries/openscad-1/MCAD/units.scad").is_file())
+        self.assertEqual(staged.openscad_paths, (
+            stage / "libraries", stage / "libraries/BOSL2",
+            stage / "libraries/openscad-1",
+        ))
+
+    def test_longest_root_wins_and_equal_roots_use_documented_priority(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        dependency = self.write_at(model / "part.scad", "cube(1);")
+        nested = model / "vendor"
+        nested_file = self.write_at(nested / "lib.scad", "cube(2);")
+        closure = classify_dependencies(
+            dependencies=(dependency, nested_file), model_root=model,
+            repository_root=repo,
+            declared_libraries={"nested": CadLibrary("nested", nested)},
+            openscad_library_roots=(model,), selected_revision="rev",
+        )
+        records = {row.source_path: row for row in closure.records}
+        self.assertEqual(records[dependency].classification, "model-local")
+        self.assertEqual(records[nested_file].classification, "declared-shared")
+
+    def test_rejects_undeclared_user_or_absolute_dependency_and_symlinks(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        source = self.write_at(model / "box.scad", "cube(1);")
+        outside = self.write_at(self.root / "user-libraries/Secret/lib.scad", "cube(2);")
+        for dependency in (outside,):
+            with self.subTest(dependency=dependency), self.assertRaisesRegex(
+                CadDependencyError, "undeclared"
+            ):
+                classify_dependencies(
+                    dependencies=(source, dependency), model_root=model,
+                    repository_root=repo, declared_libraries={},
+                    openscad_library_roots=(), selected_revision="rev",
+                )
+        escaped = model / "escaped.scad"
+        escaped.symlink_to(outside)
+        with self.assertRaisesRegex(CadDependencyError, "symlink|unsafe"):
+            classify_dependencies(
+                dependencies=(source,), model_root=model,
+                repository_root=repo, declared_libraries={},
+                openscad_library_roots=(), selected_revision=None,
+            )
+        escaped.unlink()
+        external_link = self.root / "linked.scad"
+        external_link.symlink_to(outside)
+        with self.assertRaisesRegex(CadDependencyError, "symlink|unsafe"):
+            classify_dependencies(
+                dependencies=(source, external_link), model_root=model,
+                repository_root=repo,
+                declared_libraries={
+                    "Secret": CadLibrary("Secret", outside.parent.parent)
+                }, openscad_library_roots=(), selected_revision=None,
+            )
+
+    def test_stage_detects_source_replacement_and_hash_mismatch(self):
+        repo = self.root / "repo"
+        model = repo / "things/box"
+        source = self.write_at(model / "box.scad", "cube(1);")
+        closure = classify_dependencies(
+            dependencies=(source,), model_root=model, repository_root=repo,
+            declared_libraries={}, openscad_library_roots=(), selected_revision=None,
+        )
+        source.write_text("cube(99);")
+        with self.assertRaisesRegex(CadDependencyError, "changed|hash"):
+            stage_dependency_closure(closure, self.root / "changed-stage")
+
+    @staticmethod
+    def write_at(path: Path, content: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return path
 
     def init_repository(self) -> tuple[Path, Path]:
         repo = self.root / "repo"

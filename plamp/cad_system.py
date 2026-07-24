@@ -13,6 +13,7 @@ from types import MappingProxyType
 from plamp.cad_model import CadDiagnostic, CadMetadataError, CadModel, load_model
 from plamp.cad_manufacturing import DirectiveSource, validated_slicing
 from plamp.cad_profiles import CadProfile, load_system_profiles
+from plamp.cad_dependencies import CadLibrary
 
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -68,7 +69,7 @@ class CadSystem:
     models: Mapping[str, CadModel]
     products: Mapping[str, CadProduct]
     default_product: str | None
-    libraries: Mapping[str, object]
+    libraries: Mapping[str, CadLibrary]
     profiles: Mapping[str, CadProfile]
     metadata_snapshot: Mapping[str, object]
 
@@ -146,7 +147,9 @@ def _resolve_existing(reference: str, repo_root: Path, manifest: Path,
                       json_path: str, *, allow_absolute: bool = False) -> Path:
     raw = Path(reference)
     resolved = (raw if raw.is_absolute() else repo_root / raw).resolve()
-    if (raw.is_absolute() and not allow_absolute) or not _inside(resolved, repo_root):
+    if (raw.is_absolute() and not allow_absolute) or (
+        not raw.is_absolute() and not _inside(resolved, repo_root)
+    ):
         _fail(manifest, f"{json_path} must remain inside the repository",
               code="CAD109", kind="unsafe_path", json_path=json_path, value=reference)
     if not resolved.exists():
@@ -290,17 +293,30 @@ def load_system(reference: Path, repo_root: Path) -> CadSystem:
         _safe_name(library_name, path, f"$.libraries.{library_name}")
         if isinstance(declaration, str):
             library_path = declaration
+            license_name = None
+            revision = None
         elif isinstance(declaration, dict):
             _unknown_keys(declaration, _LIBRARY_KEYS, path, f"$.libraries.{library_name}")
             library_path = _string(declaration, "path", path, f"$.libraries.{library_name}.path")
+            license_name = declaration.get("license")
+            revision = declaration.get("revision")
+            if license_name is not None and not isinstance(license_name, str):
+                _fail(path, "Library license must be a string", json_path=f"$.libraries.{library_name}.license", value=license_name)
+            if revision is not None and not isinstance(revision, str):
+                _fail(path, "Library revision must be a string", json_path=f"$.libraries.{library_name}.revision", value=revision)
         else:
             _fail(path, "Library declaration must be a string or JSON object",
                   json_path=f"$.libraries.{library_name}", value=declaration)
-        _resolve_existing(
+        resolved_library = _resolve_existing(
             library_path, repo_root, path, f"$.libraries.{library_name}.path",
             allow_absolute=True,
         )
-        libraries[library_name] = declaration
+        if not resolved_library.is_dir():
+            _fail(path, "Library path must be a directory",
+                  json_path=f"$.libraries.{library_name}.path", value=library_path)
+        libraries[library_name] = CadLibrary(
+            library_name, resolved_library, license_name, revision
+        )
 
     raw_products = _mapping(metadata, "products", path, "$.products")
     products = {}

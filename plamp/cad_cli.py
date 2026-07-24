@@ -477,14 +477,9 @@ def _catalog_rows(action: str, system: CadSystem, context: RuntimeContext,
                          "path": _relative(profile.path, context.root)})
     elif action == "libraries":
         for name, declaration in system.libraries.items():
-            if isinstance(declaration, str):
-                path, description = declaration, ""
-            else:
-                path = str(declaration.get("path", ""))
-                description = str(declaration.get("description", ""))
-            resolved = Path(path)
-            if not resolved.is_absolute():
-                resolved = context.root / resolved
+            raw = system.metadata_snapshot.get("libraries", {}).get(name, {})
+            description = str(raw.get("description", "")) if isinstance(raw, dict) else ""
+            resolved = declaration.path
             rows.append({"kind": "library", "id": name, **base,
                          "description": _described(description),
                          "path": _relative(resolved, context.root)})
