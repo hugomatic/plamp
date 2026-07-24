@@ -351,6 +351,25 @@ class CadPlanningTests(unittest.TestCase):
                             plan.jobs[1].manufacturing_fingerprint)
         self.assertEqual(len({job.artifact_id for job in plan.jobs}), 2)
 
+    def test_variant_names_use_one_global_collision_namespace(self):
+        products = {
+            "inner": product("inner", [
+                item(model_id="box", set_name="floor", variant="a"),
+                item(model_id="box", set_name="top", variant="a"),
+            ]),
+            "complete": product("complete", [
+                item(product="inner"),
+                item(model_id="holder", set_name="standard", variant="a-2"),
+            ]),
+        }
+        plan = build_render_plan(
+            self.system(products=products), CadSelection(product="complete"),
+            {"box": "box", "holder": "holder"},
+        )
+        self.assertEqual(tuple(job.variant_name for job in plan.jobs),
+                         ("a", "a-2", "a-2-2"))
+        self.assertEqual(len({job.artifact_id for job in plan.jobs}), 3)
+
     def test_geometry_fingerprint_is_stable_sha256_and_changes_with_source(self):
         system = self.nested_system()
         first = build_render_plan(system, CadSelection(product="complete"),
@@ -370,6 +389,29 @@ class CadPlanningTests(unittest.TestCase):
             .encode()
         ).hexdigest()
         self.assertIn(expected_manifest_hash, json.dumps(plan_as_dict(first)))
+
+    def test_manufacturing_only_system_and_model_metadata_do_not_change_geometry(self):
+        base = self.nested_system()
+        first = build_render_plan(
+            base, CadSelection(product="complete"), {"box": "scad", "holder": "holder"}
+        ).jobs[0]
+        changed_model = replace(
+            base.models["box"],
+            metadata_snapshot={"sets": {"floor": {"slicing": {"ironing": "recommended"}}}},
+        )
+        changed = CadSystem(
+            base.name, "different description", base.path,
+            MappingProxyType({**base.models, "box": changed_model}),
+            base.products, base.default_product, base.libraries, base.profiles,
+            MappingProxyType({"description": "manufacturing-only edit", "profiles": ["x"]}),
+        )
+        second = build_render_plan(
+            changed, CadSelection(product="complete"),
+            {"box": "scad", "holder": "holder"},
+        ).jobs[0]
+        self.assertEqual(first.geometry_fingerprint, second.geometry_fingerprint)
+        self.assertNotEqual(first.manufacturing_fingerprint,
+                            second.manufacturing_fingerprint)
 
     def test_cycle_defense_and_json_shape(self):
         cyclic = self.system(products={

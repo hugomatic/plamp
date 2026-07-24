@@ -626,6 +626,30 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(manifest["models"]["fixture"]["commit"], self.commit)
         self.assertRegex(manifest["created_at"], r"Z$")
 
+    def test_snapshot_geometry_identity_ignores_sidecar_only_commits(self):
+        sidecar = self.scad.with_suffix(".cad.json")
+        sidecar.write_text('{"slicing":{"supports":"forbidden"}}\n')
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "sidecar one"], check=True)
+        first = prepare_source(self.repo, self.scad)
+        self.addCleanup(lambda: __import__("shutil").rmtree(first.cleanup_root, ignore_errors=True))
+
+        sidecar.write_text('{"slicing":{"supports":"recommended"}}\n')
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "sidecar two"], check=True)
+        second = prepare_source(self.repo, self.scad)
+        self.addCleanup(lambda: __import__("shutil").rmtree(second.cleanup_root, ignore_errors=True))
+
+        self.assertNotEqual(first.source_identity, second.source_identity)
+        self.assertEqual(first.geometry_identity, second.geometry_identity)
+
+        self.scad.write_text("cube(2);\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "geometry"], check=True)
+        third = prepare_source(self.repo, self.scad)
+        self.addCleanup(lambda: __import__("shutil").rmtree(third.cleanup_root, ignore_errors=True))
+        self.assertNotEqual(second.geometry_identity, third.geometry_identity)
+
     def test_manifest_preserves_resolved_profile_provenance(self):
         source_plan = plan("first")
         profiled = replace(
@@ -642,6 +666,14 @@ class CadGenerationTests(unittest.TestCase):
             "namespace": "local", "source": "local", "kind": "quality",
             "content_hash": "f" * 64, "path": "cad/profiles/draft.json",
         })
+
+    def test_multiple_collision_allocated_jobs_publish_distinct_artifacts(self):
+        source_plan = plan("a", "a-2", "a-2-2")
+        result = self.generate(source_plan)
+        manifest = load_run(result.run_dir)
+        artifact_names = [job["artifact"] for job in manifest["jobs"]]
+        self.assertEqual(len(set(artifact_names)), 3)
+        self.assertTrue(all((result.run_dir / name).is_file() for name in artifact_names))
 
     def test_exact_argv_uses_argument_list_and_effective_plan_values(self):
         result = self.generate()

@@ -324,7 +324,6 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
 
         geometry_payload = {
             "planning_schema_version": PLANNING_SCHEMA_VERSION,
-            "system_manifest_hash": manifest_hash,
             "source_identity": source_identities[candidate.model_id],
             "model_id": candidate.model_id,
             "set_name": candidate.set_name,
@@ -333,6 +332,8 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
         }
         geometry_fingerprint = _canonical_hash(geometry_payload)
         manufacturing_fingerprint = _canonical_hash({
+            "system_manifest_hash": manifest_hash,
+            "model_metadata_hash": _canonical_hash(model.metadata_snapshot),
             "profile_hashes": [profile.content_hash for profile in resolved_profiles],
             "policy": manufacturing.fingerprint,
         })
@@ -361,15 +362,19 @@ def build_render_plan(system: CadSystem, selection: CadSelection,
                 paths.append(candidate.path)
 
     jobs: list[RenderJob] = []
-    base_counts: dict[str, int] = {}
+    used_variant_names: set[str] = set()
     for identity in order:
         details = unique[identity]
         candidate = details["candidate"]
         assert isinstance(candidate, _Candidate)
         base = candidate.variant or candidate.set_name
         base = _ARTIFACT_COMPONENT.sub("-", base).strip("-.") or "set"
-        base_counts[base] = base_counts.get(base, 0) + 1
-        variant_name = base if base_counts[base] == 1 else f"{base}-{base_counts[base]}"
+        variant_name = base
+        suffix = 2
+        while variant_name in used_variant_names:
+            variant_name = f"{base}-{suffix}"
+            suffix += 1
+        used_variant_names.add(variant_name)
         jobs.append(RenderJob(
             artifact_id=f"{variant_name}--{str(details['geometry_fingerprint'])[:12]}",
             model_id=candidate.model_id, set_name=candidate.set_name,

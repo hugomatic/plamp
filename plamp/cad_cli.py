@@ -659,7 +659,10 @@ def _prepare_system_plan(
             )
         plan = deps["build_plan"](
             system, selected,
-            {name: snapshot.source_identity for name, snapshot in snapshots.items()},
+            {
+                name: snapshot.geometry_identity or snapshot.source_identity
+                for name, snapshot in snapshots.items()
+            },
             local_profiles=local_profiles, default_profile_ids=default_profile_ids,
             repo_root=context.root, data_dir=context.data_dir,
         )

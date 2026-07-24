@@ -37,6 +37,7 @@ class SourceSnapshot:
     revision_label: str
     dirty: bool
     cleanup_root: Path | None
+    geometry_identity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +178,22 @@ def _hash_tree(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _hash_geometry_tree(root: Path) -> str:
+    """Hash render inputs while excluding adjacent descriptive sidecars."""
+
+    digest = hashlib.sha256()
+    paths = sorted(
+        item for item in root.rglob("*")
+        if item.is_file() and not item.name.endswith(".cad.json")
+    )
+    for path in paths:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def _validate_snapshot_links(root: Path, *, context: str) -> None:
     boundary = root.resolve()
     for path in root.rglob("*"):
@@ -219,6 +236,7 @@ def prepare_source(
                 revision.strip(),
                 True,
                 cleanup,
+                _hash_geometry_tree(archived_part),
             )
         except BaseException:
             shutil.rmtree(cleanup, ignore_errors=True)
@@ -285,6 +303,7 @@ def prepare_source(
             revision_label,
             False,
             cleanup,
+            _hash_geometry_tree(cleanup / part_relative),
         )
     except BaseException:
         shutil.rmtree(cleanup, ignore_errors=True)
@@ -816,6 +835,10 @@ def generate_plan(
                     "commit": snapshots[name].full_commit,
                     "revision": snapshots[name].revision_label,
                     "content_hash": _hash_tree(archived_sources[name].parent),
+                    "geometry_hash": (
+                        snapshots[name].geometry_identity
+                        or snapshots[name].source_identity
+                    ),
                     "dirty": snapshots[name].dirty,
                 } for name in selected_model_ids
             },
