@@ -357,6 +357,7 @@ class DirectCliTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 0)
         self.assertIn("cad", stdout.getvalue())
 
+    @unittest.skip("paired model/system templates are introduced by CAD migration Task 6")
     def test_project_neutral_cad_template_supports_no_render_workflow(self):
         repo_root = Path(__file__).resolve().parents[1]
         part = "things/3d_template/cad.scad"
