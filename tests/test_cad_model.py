@@ -215,6 +215,41 @@ if (set == "floor") floor_set();
         with self.assertRaises(TypeError):
             model.sets["floor"].variables["new"] = 1
 
+    def test_repository_models_and_templates_have_ordered_described_sets(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        paths = (
+            ("plamp8", "things/plamp8/plamp8.cad.json"),
+            ("iharvest_cover", "things/iharvest_cover/iharvest_cover.cad.json"),
+            ("plamp_stand", "things/plamp_stand/plamp_stand.cad.json"),
+        )
+        for model_id, relative_path in paths:
+            with self.subTest(path=relative_path):
+                model = load_model(model_id, repo_root / relative_path, repo_root)
+                self.assertTrue(model.description.strip())
+                self.assertTrue(tuple(model.sets))
+                self.assertTrue(all(item.description.strip() for item in model.sets.values()))
+
+        template_paths = (
+            "things/3d_template/cad.cad.json",
+            "things/3d_template/scad/flat_plate.cad.json",
+            "things/3d_template/scad/positive_negative.cad.json",
+        )
+        for relative_path in template_paths:
+            with self.subTest(path=relative_path):
+                sidecar = repo_root / relative_path
+                metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+                scad = sidecar.with_name(sidecar.name.removesuffix(".cad.json") + ".scad")
+                default, choices = parse_set_declaration(
+                    scad.read_text(encoding="utf-8"),
+                    scad,
+                )
+                self.assertEqual(tuple(metadata["sets"]), choices)
+                self.assertEqual(default, "__PLAMP_PART__")
+                self.assertTrue(metadata["description"].strip())
+                self.assertTrue(
+                    all(item["description"].strip() for item in metadata["sets"].values())
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

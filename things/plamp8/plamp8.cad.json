@@ -1,0 +1,30 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "plamp8",
+  "source": "plamp8.scad",
+  "description": "Plamp8 controller enclosure",
+  "sets": {
+    "": {"description": "Normal OpenSCAD assembly output", "printable": false},
+    "floor": {"description": "Printable enclosure floor"},
+    "north_south_walls": {"description": "Printable north and south wall plate"},
+    "east_west_walls": {"description": "Printable east and west wall plate"},
+    "box": {"description": "Fused walls-and-floor printable box"},
+    "top_panel": {"description": "Printable top panel"},
+    "sub_panel": {"description": "Printable internal sub-panel"},
+    "north_wall": {"description": "Individual printable north wall"},
+    "south_wall": {"description": "Individual printable south wall"},
+    "west_wall": {"description": "Individual printable west wall"},
+    "east_wall": {"description": "Individual printable east wall"},
+    "relay_footprint": {"description": "Relay mounting footprint test"},
+    "psu_footprint": {"description": "Power-supply mounting footprint test"},
+    "converter_footprint": {"description": "DC converter mounting footprint test"},
+    "ac_duplex_panel": {"description": "AC duplex top-panel fit test"},
+    "dc_connector_panel": {"description": "DC connector top-panel fit test"},
+    "usb_c_panel": {"description": "USB-C top-panel fit test"},
+    "c13_panel": {"description": "C13 inlet top-panel fit test"},
+    "panel_corner_fastener_test": {"description": "Panel corner fastener fit test"},
+    "corner_coupon": {"description": "Printable enclosure corner coupon"},
+    "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly"},
+    "assembly": {"description": "Complete illustrated enclosure assembly", "printable": false}
+  }
+}

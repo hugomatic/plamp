@@ -1,0 +1,13 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "plamp_stand",
+  "source": "plamp_stand.scad",
+  "description": "Plamp display and instrument stand",
+  "sets": {
+    "": {"description": "Normal OpenSCAD assembly output", "printable": false},
+    "assembly": {"description": "Complete illustrated Plamp stand assembly", "printable": false},
+    "tripod": {"description": "Printable tripod mount"},
+    "camera_clip": {"description": "Printable camera clip"},
+    "plate": {"description": "Printable stand plate arrangement"}
+  }
+}

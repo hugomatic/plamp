@@ -1,17 +1,5 @@
 $fn = 128;
-view = "assembly"; // [assembly, plate]
-
-/* generate.json
-{
-  "default_preset": "all-views-default",
-  "presets": {
-    "all-views-default": {
-      "description": "Generate every declared iHarvest cover view",
-      "items": ["view:assembly", "view:plate"]
-    }
-  }
-}
-*/
+set = ""; // [assembly, plate]
 
 revision_string = "dev";
 
@@ -138,10 +126,10 @@ module assembly() {
     handle();
 }
 
-if (view == "plate") {
+if (set == "plate") {
     access_cover_flat();
 }
 
-if (view == "assembly") {
+if (set == "" || set == "assembly") {
     assembly();
 }

@@ -8,6 +8,21 @@ from plamp.cad_system import discover_systems, load_system, select_system
 
 
 class CadSystemTests(unittest.TestCase):
+    def test_repository_plamp_system_has_exact_models_and_products(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        system = load_system(repo_root / "cad" / "plamp.system.cad.json", repo_root)
+        self.assertEqual(tuple(system.models), ("plamp8", "iharvest_cover", "plamp_stand"))
+        self.assertEqual(
+            tuple(system.products),
+            (
+                "split-box", "fuse-box", "panels", "assembly",
+                "component-floorplans", "top-panel-fit", "corner-coupons",
+                "fit-and-function",
+            ),
+        )
+        self.assertEqual(system.default_product, "split-box")
+        self.assertTrue(all(product.description.strip() for product in system.products.values()))
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
