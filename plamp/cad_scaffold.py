@@ -553,31 +553,85 @@ def _exchange_paths(first: Path, second: Path) -> None:
     """Atomically exchange two paths where the host kernel supports it."""
 
     if not sys.platform.startswith("linux"):
-        raise OSError(errno.ENOTSUP, "atomic rollback exchange requires Linux renameat2")
+        raise _AtomicExchangeUnsupported("atomic rollback exchange requires Linux renameat2")
     library = ctypes.CDLL(None, use_errno=True)
     rename = getattr(library, "renameat2", None)
     if rename is None:
-        raise OSError(errno.ENOTSUP, "renameat2 is unavailable")
+        raise _AtomicExchangeUnsupported("renameat2 is unavailable")
     result = rename(-100, os.fsencode(first), -100, os.fsencode(second), 2)
     if result != 0:
         value = ctypes.get_errno()
+        if value in {errno.ENOSYS, errno.ENOTSUP, errno.EINVAL}:
+            raise _AtomicExchangeUnsupported(os.strerror(value))
         raise OSError(value, os.strerror(value))
 
 
+class _AtomicExchangeUnsupported(OSError):
+    pass
+
+
+def _clear_directory_descriptor(descriptor: int) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    for name in os.listdir(descriptor):
+        details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+        if stat.S_ISDIR(details.st_mode):
+            child = os.open(
+                name, flags | getattr(os, "O_DIRECTORY", 0), dir_fd=descriptor
+            )
+            try:
+                child_details = os.fstat(child)
+                if (child_details.st_dev, child_details.st_ino) != (
+                    details.st_dev, details.st_ino
+                ):
+                    raise OSError(errno.ESTALE, f"rollback child changed: {name}")
+                _clear_directory_descriptor(child)
+            finally:
+                os.close(child)
+            os.rmdir(name, dir_fd=descriptor)
+        else:
+            os.unlink(name, dir_fd=descriptor)
+
+
 def _clear_claimed_directory(path: Path, identity: tuple[int, int]) -> None:
-    if _directory_identity(path) != identity:
-        raise OSError(errno.ESTALE, f"rollback claim identity changed: {path}")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags | getattr(os, "O_DIRECTORY", 0))
     try:
-        for name in os.listdir(descriptor):
-            details = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
-            if not stat.S_ISREG(details.st_mode):
-                raise OSError(errno.EINVAL, f"unexpected staged model entry: {name}")
-            os.unlink(name, dir_fd=descriptor)
+        details = os.fstat(descriptor)
+        if (details.st_dev, details.st_ino) != identity:
+            raise OSError(errno.ESTALE, f"rollback claim identity changed: {path}")
+        _clear_directory_descriptor(descriptor)
     finally:
         os.close(descriptor)
-    os.rmdir(path)
+
+
+def _final_remove_claimed_directory(path: Path, identity: tuple[int, int]) -> bool:
+    placeholder = path.with_name(f".{path.name}.final-{secrets.token_hex(6)}")
+    os.mkdir(placeholder)
+    placeholder_identity = _directory_identity(placeholder)
+    exchanged = False
+    try:
+        _exchange_paths(path, placeholder)
+        exchanged = True
+        if _directory_identity(placeholder) != identity:
+            _exchange_paths(path, placeholder)
+            exchanged = False
+            return False
+        os.rmdir(placeholder)
+        exchanged = False
+        os.rmdir(path)
+        return True
+    finally:
+        if exchanged:
+            try:
+                _exchange_paths(path, placeholder)
+            except OSError:
+                pass
+        if placeholder.exists():
+            try:
+                if _directory_identity(placeholder) == placeholder_identity:
+                    os.rmdir(placeholder)
+            except OSError:
+                pass
 
 
 def _claim_and_remove(candidate: Path, identity: tuple[int, int]) -> bool:
@@ -585,6 +639,7 @@ def _claim_and_remove(candidate: Path, identity: tuple[int, int]) -> bool:
         f".{candidate.name}.rollback-{secrets.token_hex(6)}"
     )
     os.mkdir(placeholder)
+    placeholder_identity = _directory_identity(placeholder)
     exchanged = False
     try:
         _exchange_paths(candidate, placeholder)
@@ -594,8 +649,14 @@ def _claim_and_remove(candidate: Path, identity: tuple[int, int]) -> bool:
             exchanged = False
             return False
         _clear_claimed_directory(placeholder, identity)
-        os.rmdir(candidate)
-        return True
+        if _final_remove_claimed_directory(placeholder, identity):
+            os.rmdir(candidate)
+            exchanged = False
+            return True
+        if _directory_identity(candidate) == placeholder_identity:
+            _exchange_paths(candidate, placeholder)
+            exchanged = False
+        return False
     finally:
         if exchanged and placeholder.exists():
             try:
@@ -604,7 +665,8 @@ def _claim_and_remove(candidate: Path, identity: tuple[int, int]) -> bool:
                 pass
         if placeholder.exists():
             try:
-                os.rmdir(placeholder)
+                if _directory_identity(placeholder) == placeholder_identity:
+                    os.rmdir(placeholder)
             except OSError:
                 pass
 
@@ -635,10 +697,8 @@ def _remove_owned_directory(path: Path, identity: tuple[int, int]) -> bool:
                     return True
             except (FileNotFoundError, NotADirectoryError):
                 continue
-    except OSError as error:
-        if error.errno == errno.ENOTSUP:
-            return False
-        raise
+    except _AtomicExchangeUnsupported:
+        return False
     return False
 
 

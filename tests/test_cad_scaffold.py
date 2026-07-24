@@ -1,4 +1,5 @@
 import json
+import errno
 import os
 from pathlib import Path
 import shutil
@@ -243,6 +244,81 @@ class CadScaffoldTests(unittest.TestCase):
         self.assertEqual((destination / "sentinel").read_text(), "unrelated")
         self.assertFalse(moved.exists())
         self.assertEqual(list((self.root / "things").glob(".*.rollback-*")), [])
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_claimed_cleanup_verifies_open_descriptor_before_unlink(self):
+        from plamp import cad_scaffold
+        owned = self.root / "things" / "owned"
+        moved = self.root / "things" / "owned-moved"
+        replacement = self.root / "things" / "replacement"
+        owned.mkdir(); (owned / "owned-file").write_text("owned")
+        replacement.mkdir(); (replacement / "sentinel").write_text("unrelated")
+        identity = cad_scaffold._directory_identity(owned)
+        real_open = os.open
+        swapped = False
+        def race(path, flags, *args, **kwargs):
+            nonlocal swapped
+            if not swapped and Path(path) == owned:
+                swapped = True
+                owned.rename(moved)
+                replacement.rename(owned)
+            return real_open(path, flags, *args, **kwargs)
+        with mock.patch("plamp.cad_scaffold.os.open", side_effect=race):
+            with self.assertRaises(OSError):
+                cad_scaffold._clear_claimed_directory(owned, identity)
+        self.assertEqual((owned / "sentinel").read_text(), "unrelated")
+        self.assertEqual((moved / "owned-file").read_text(), "owned")
+
+    def test_final_removal_exchange_survives_post_cleanup_swap(self):
+        original = self.system_path.read_bytes()
+        destination = self.root / "things" / "pump"
+        moved = self.root / "things" / "owned-after-clean"
+        from plamp import cad_scaffold
+        real_finalize = cad_scaffold._clear_claimed_directory
+        swapped = False
+        def clean_then_swap(path, identity):
+            nonlocal swapped
+            result = real_finalize(path, identity)
+            if not swapped:
+                swapped = True
+                path.rename(moved)
+                path.mkdir()
+            return result
+        with mock.patch("plamp.cad_scaffold._replace_system_manifest", side_effect=OSError("fail")), \
+             mock.patch("plamp.cad_scaffold._clear_claimed_directory", side_effect=clean_then_swap):
+            with self.assertRaises(OSError):
+                create_model(self.root, self.system, "pump", "cad")
+        self.assertTrue(destination.is_dir())
+        self.assertFalse(moved.exists())
+        self.assertEqual(list((self.root / "things").glob(".*.rollback-*")), [])
+        self.assertEqual(self.system_path.read_bytes(), original)
+
+    def test_recursive_descriptor_cleanup_never_follows_symlinks(self):
+        from plamp import cad_scaffold
+        owned = self.root / "things" / "owned"
+        nested = owned / "nested"
+        outside = self.root / "outside"
+        nested.mkdir(parents=True); outside.mkdir()
+        (nested / "file").write_text("owned")
+        (outside / "sentinel").write_text("keep")
+        (nested / "outside-link").symlink_to(outside)
+        identity = cad_scaffold._directory_identity(owned)
+        self.assertTrue(cad_scaffold._remove_owned_directory(owned, identity))
+        self.assertFalse(owned.exists())
+        self.assertEqual((outside / "sentinel").read_text(), "keep")
+
+    def test_unsupported_atomic_exchange_does_not_mask_manifest_failure(self):
+        from plamp import cad_scaffold
+        original = self.system_path.read_bytes()
+        with mock.patch(
+            "plamp.cad_scaffold._replace_system_manifest",
+            side_effect=OSError(errno.EIO, "manifest failure"),
+        ), mock.patch(
+            "plamp.cad_scaffold._exchange_paths",
+            side_effect=cad_scaffold._AtomicExchangeUnsupported("unsupported"),
+        ):
+            with self.assertRaisesRegex(OSError, "manifest failure"):
+                create_model(self.root, self.system, "pump", "cad")
         self.assertEqual(self.system_path.read_bytes(), original)
 
     def test_prospective_manifest_failure_prevents_publication(self):
