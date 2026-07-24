@@ -32,15 +32,22 @@ def run(cmd, cwd, **kwargs):
 
 class ThingsCadScriptsTest(unittest.TestCase):
     def test_repository_assemblies_are_not_printable(self):
-        for model_id in ("plamp8", "iharvest_cover", "plamp_stand"):
+        assembly_sets = {
+            "plamp8": ("", "assembly", "wall_corner_fastener_assembly"),
+            "iharvest_cover": ("", "assembly"),
+            "plamp_stand": ("", "assembly"),
+        }
+        for model_id, set_names in assembly_sets.items():
             with self.subTest(model=model_id):
                 model = load_model(
                     model_id,
                     REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
                     REPO_ROOT,
                 )
-                self.assertFalse(model.sets[""].printable)
-                self.assertFalse(model.sets["assembly"].printable)
+                for set_name in set_names:
+                    with self.subTest(set=set_name):
+                        self.assertFalse(model.sets[set_name].printable)
+                        self.assertEqual(dict(model.sets[set_name].slicing), {})
 
     def test_plamp8_top_panel_recommends_ironing_without_supports(self):
         model = load_model(

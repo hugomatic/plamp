@@ -24,7 +24,7 @@
     "c13_panel": {"description": "C13 inlet top-panel fit test", "slicing": {"orientation": "as-exported"}},
     "panel_corner_fastener_test": {"description": "Panel corner fastener fit test", "slicing": {"orientation": "as-exported"}},
     "corner_coupon": {"description": "Printable enclosure corner coupon", "slicing": {"orientation": "as-exported"}},
-    "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly", "slicing": {"orientation": "as-exported"}},
+    "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly", "printable": false},
     "assembly": {"description": "Complete illustrated enclosure assembly", "printable": false}
   }
 }
