@@ -14,6 +14,9 @@ from plamp.cad_profiles import (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 class CadProfileTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -230,6 +233,18 @@ class CadProfileTests(unittest.TestCase):
         self.assertEqual(diagnostic.kind, "unknown_profile")
         self.assertIn("system:draft", diagnostic.choices)
         self.assertEqual(diagnostic.suggestion, "system:draft")
+
+    def test_repository_draft_profile_contains_only_portable_quality_guidance(self):
+        path = REPO_ROOT / "cad" / "profiles" / "draft.json"
+        profile = load_system_profiles({"draft": path})["draft"]
+        self.assertEqual(profile.qualified_id, "system:draft")
+        self.assertEqual(profile.kind, "quality")
+        self.assertEqual(dict(profile.cad), {
+            "render_fn": 24,
+            "render_text": False,
+        })
+        self.assertEqual(dict(profile.machine), {})
+        self.assertEqual(set(profile.slicing), {"notes"})
 
 
 if __name__ == "__main__":

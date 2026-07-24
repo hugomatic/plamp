@@ -6,6 +6,6 @@
   "sets": {
     "": {"description": "Normal OpenSCAD assembly output", "printable": false},
     "assembly": {"description": "Complete illustrated iHarvest cover assembly", "printable": false},
-    "plate": {"description": "Printable iHarvest access-cover plate"}
+    "plate": {"description": "Printable iHarvest access-cover plate", "slicing": {"orientation": "as-exported"}}
   }
 }

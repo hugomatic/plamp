@@ -8,7 +8,9 @@
     "plamp_stand": "things/plamp_stand/plamp_stand.cad.json"
   },
   "libraries": {},
-  "profiles": {},
+  "profiles": {
+    "draft": "cad/profiles/draft.json"
+  },
   "default_product": "split-box",
   "products": {
     "split-box": {

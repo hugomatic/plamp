@@ -135,6 +135,53 @@ model without `--set`; `--all-sets` deliberately expands named sets only.
 in this order: SCAD defaults → model → set → deepest product outward →
 product item → parent product → CLI global → CLI per-set.
 
+### Manufacturing profiles and advice
+
+List the system's versioned profiles and opt into one by short or qualified
+name. The committed `system:draft` profile changes OpenSCAD geometry quality
+only; it does not assume a printer, material, layer height, or calibration:
+
+```bash
+plamp cad profiles --system plamp
+plamp cad generate --system plamp --product fit-and-function --profile system:draft
+```
+
+Workstation-specific profiles belong in
+`$PLAMP_DATA_DIR/cad/profiles/<name>.json`, outside the repository. For
+example, start with a local profile whose values name your own slicer setup:
+
+```json
+{
+  "schema": "plamp-cad-profile/1",
+  "name": "my-printer",
+  "kind": "printer",
+  "cad": {},
+  "slicing": {
+    "notes": ["Apply the tested settings from my workstation slicer profile."]
+  },
+  "machine": {
+    "slicer_profile": "replace-with-my-local-profile-name"
+  }
+}
+```
+
+Defaults are also instance-local. Put them in
+`$PLAMP_DATA_DIR/cad/preferences.json`; they apply before profiles named on
+the command line:
+
+```json
+{
+  "schema": "plamp-cad-preferences/1",
+  "default_system": "plamp",
+  "default_profiles": {"plamp": ["local:my-printer"]}
+}
+```
+
+Use `--no-default-profiles` when a run must ignore those configured defaults.
+Every generated run's `readme.md` translates resolved slicing metadata into
+human-readable recommendations. Advice is deliberately non-executable: check
+it against the selected printer, material, and slicer before printing.
+
 Generate directly for normal work. `plamp cad plan` is an optional advanced
 command that expands the exact same selection and identities without invoking
 OpenSCAD. It is useful for inspecting a large product before committing Pi CPU

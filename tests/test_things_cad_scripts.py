@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from plamp.cad_model import load_model
+from plamp.cad_manufacturing import DirectiveSource, normalize_slicing
 from plamp.cad_system import load_system
 
 
@@ -30,6 +31,61 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_repository_assemblies_are_not_printable(self):
+        for model_id in ("plamp8", "iharvest_cover", "plamp_stand"):
+            with self.subTest(model=model_id):
+                model = load_model(
+                    model_id,
+                    REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
+                    REPO_ROOT,
+                )
+                self.assertFalse(model.sets[""].printable)
+                self.assertFalse(model.sets["assembly"].printable)
+
+    def test_plamp8_top_panel_recommends_ironing_without_supports(self):
+        model = load_model(
+            "plamp8", REPO_ROOT / "things" / "plamp8" / "plamp8.cad.json",
+            REPO_ROOT,
+        )
+        policy, _notes = normalize_slicing(
+            model.sets["top_panel"].slicing,
+            DirectiveSource("set:plamp8/top_panel"),
+        )
+        self.assertEqual(policy["ironing"].value, "recommended")
+        self.assertEqual(policy["supports"].value, "forbidden")
+
+    def test_repository_printable_sets_preserve_exported_orientation(self):
+        for model_id in ("plamp8", "iharvest_cover", "plamp_stand"):
+            model = load_model(
+                model_id,
+                REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
+                REPO_ROOT,
+            )
+            for set_name, cad_set in model.sets.items():
+                if not cad_set.printable:
+                    continue
+                with self.subTest(model=model_id, set=set_name):
+                    policy, _notes = normalize_slicing(
+                        cad_set.slicing,
+                        DirectiveSource(f"set:{model_id}/{set_name}"),
+                    )
+                    self.assertEqual(
+                        policy["orientation"].value, "as-exported"
+                    )
+
+    def test_host_tools_documents_profiles_defaults_and_readme_advice(self):
+        source = (REPO_ROOT / "docs" / "host-tools.md").read_text(encoding="utf-8")
+        for text in (
+            "plamp cad profiles",
+            "--profile system:draft",
+            "$PLAMP_DATA_DIR/cad/profiles",
+            "$PLAMP_DATA_DIR/cad/preferences.json",
+            "--no-default-profiles",
+            "readme.md",
+        ):
+            with self.subTest(text=text):
+                self.assertIn(text, source)
+
     def test_every_repository_scad_is_clean_or_a_library(self):
         roots = tuple(REPO_ROOT.glob("things/**/*.scad"))
         self.assertTrue(roots)
