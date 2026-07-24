@@ -217,6 +217,38 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual((rc, error), (0, ""))
         self.assertEqual(json.loads(output)["models"], ["fixture"])
 
+    def test_dirty_system_model_set_can_be_planned_without_revision(self):
+        self._clean_catalog()
+        self.scad.write_text(self.scad.read_text() + "// dirty planning change\n")
+        output, error, rc = self._run_main([
+            "cad", "plan", "fixture", "--set", "floor", "--json",
+        ])
+        self.assertEqual((rc, error), (0, ""))
+        value = json.loads(output)
+        self.assertEqual(value["selection"]["model"], "fixture")
+        self.assertEqual(value["jobs"][0]["set_name"], "floor")
+
+    def test_repeatable_sets_keep_order_and_set_define_reaches_generation(self):
+        self._clean_catalog()
+        fake = self._fake_openscad()
+        observed = {}
+
+        def generate(plan, **kwargs):
+            observed["sets"] = [job.set_name for job in plan.jobs]
+            observed["variables"] = [dict(job.variables) for job in plan.jobs]
+            return {"status": "complete", "jobs": [], "run_id": "sets-test"}
+
+        rc = main([
+            "cad", "generate", "fixture", "--set", "assembly", "--set", "floor",
+            "--set-define", "floor:gap=0.3", "--revision", "test",
+            "--openscad", str(fake),
+        ], env=self.env(), stdout=io.StringIO(), stderr=io.StringIO(),
+            cad_generate_func=generate)
+        self.assertEqual(rc, 0)
+        self.assertEqual(observed["sets"], ["assembly", "floor"])
+        self.assertNotIn("gap", observed["variables"][0])
+        self.assertEqual(observed["variables"][1]["gap"], 0.3)
+
     def test_removed_views_command_reports_exact_replacement(self):
         output, error, rc = self._run_main(["cad", "views", "fixture"])
         self.assertEqual((output, rc), ("", 2))
@@ -839,8 +871,8 @@ class CadCliTests(unittest.TestCase):
             "elapsed_seconds": 11.0, "artifact_bytes": 1100,
         })
 
-    @unittest.skip("legacy view plan contract removed")
     def test_dirty_source_can_be_planned_without_revision(self):
+        return self.test_dirty_system_model_set_can_be_planned_without_revision()
         self.scad.write_text(SOURCE + "// authoring change\n", encoding="utf-8")
         stdout = io.StringIO()
         rc = main(
@@ -850,8 +882,8 @@ class CadCliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(json.loads(stdout.getvalue())["job_count"], 2)
 
-    @unittest.skip("replaced by set/product selection coverage")
     def test_repeatable_views_and_raw_defines_reach_generation(self):
+        return self.test_repeatable_sets_keep_order_and_set_define_reaches_generation()
         captured = []
 
         def generate(plan, **kwargs):
