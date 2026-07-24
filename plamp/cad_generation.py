@@ -12,6 +12,7 @@ import platform
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -578,63 +579,185 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _safe_archived_artifact(run_dir: Path, relative: object) -> Path | None:
-    if not isinstance(relative, str):
-        return None
-    candidate = run_dir / relative
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+@dataclass
+class _VerifiedArtifact:
+    fd: int
+    size: int
+    checksum: str
+    source_path: Path
+    manifest: dict[str, object]
+    job: Mapping[str, object]
+
+    def close(self) -> None:
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+
+
+def _read_fd(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    offset = 0
+    while True:
+        chunk = os.pread(fd, 1024 * 1024, offset)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        offset += len(chunk)
+
+
+def _sha256_fd(fd: int) -> str:
+    digest = hashlib.sha256()
+    offset = 0
+    while True:
+        chunk = os.pread(fd, 1024 * 1024, offset)
+        if not chunk:
+            return digest.hexdigest()
+        digest.update(chunk)
+        offset += len(chunk)
+
+
+def _open_run_manifest(root_fd: int, run_name: str) -> tuple[int, dict[str, object]]:
+    run_fd = os.open(
+        run_name, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+        dir_fd=root_fd,
+    )
     try:
-        candidate.resolve(strict=True).relative_to(run_dir.resolve())
-    except (OSError, ValueError):
-        return None
-    return candidate if candidate.is_file() and candidate.stat().st_size > 0 else None
+        manifest_fd = os.open(
+            "manifest.json", os.O_RDONLY | _NOFOLLOW | _CLOEXEC,
+            dir_fd=run_fd,
+        )
+        try:
+            if not stat.S_ISREG(os.fstat(manifest_fd).st_mode):
+                raise ValueError("CAD run manifest is not a regular file")
+            value = json.loads(_read_fd(manifest_fd))
+        finally:
+            os.close(manifest_fd)
+        if not isinstance(value, dict) or value.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+            raise ValueError("unsupported CAD run manifest")
+        return run_fd, value
+    except BaseException:
+        os.close(run_fd)
+        raise
 
 
 def _find_geometry_artifact(
     archive_root: Path, *, model_id: str, model_geometry_hash: str,
     geometry_fingerprint: str, excluded: Path,
-) -> tuple[Path, dict[str, object], Mapping[str, object]] | None:
+) -> _VerifiedArtifact | None:
     """Find a verified successful artifact with identical render inputs."""
 
-    if not archive_root.is_dir():
-        return None
-    for manifest_path in sorted(archive_root.glob("*/manifest.json"), reverse=True):
-        run_dir = manifest_path.parent
-        if run_dir == excluded or run_dir.name.startswith("."):
-            continue
-        try:
-            manifest = load_run(manifest_path)
-        except (OSError, ValueError, json.JSONDecodeError):
-            continue
-        models = manifest.get("models")
-        jobs = manifest.get("jobs")
-        if not isinstance(models, Mapping) or not isinstance(jobs, list):
-            continue
-        model = models.get(model_id)
-        if not isinstance(model, Mapping) or model.get("geometry_hash") != model_geometry_hash:
-            continue
-        for job in jobs:
-            if not isinstance(job, Mapping) or (
-                job.get("model") != model_id
-                or job.get("geometry_fingerprint") != geometry_fingerprint
-                or job.get("status") != "complete"
-            ):
-                continue
-            artifact = _safe_archived_artifact(run_dir, job.get("artifact"))
-            if artifact is None:
-                continue
-            checksum = _file_sha256(artifact)
-            recorded = job.get("artifact_sha256")
-            if recorded is not None and recorded != checksum:
-                continue
-            return artifact, manifest, job
-    return None
-
-
-def _reuse_artifact(source: Path, target: Path) -> None:
     try:
-        os.link(source, target)
+        root_fd = os.open(
+            archive_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+        )
     except OSError:
-        shutil.copy2(source, target)
+        return None
+    try:
+        for run_name in sorted(os.listdir(root_fd), reverse=True):
+            if run_name == excluded.name or run_name.startswith("."):
+                continue
+            try:
+                run_fd, manifest = _open_run_manifest(root_fd, run_name)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            try:
+                models = manifest.get("models")
+                jobs = manifest.get("jobs")
+                if not isinstance(models, Mapping) or not isinstance(jobs, list):
+                    continue
+                model = models.get(model_id)
+                if (not isinstance(model, Mapping)
+                        or model.get("geometry_hash") != model_geometry_hash):
+                    continue
+                for job in jobs:
+                    if not isinstance(job, Mapping) or (
+                        job.get("model") != model_id
+                        or job.get("geometry_fingerprint") != geometry_fingerprint
+                        or job.get("status") != "complete"
+                    ):
+                        continue
+                    recorded = job.get("artifact_sha256")
+                    relative = job.get("artifact")
+                    if (not isinstance(recorded, str) or _SHA256.fullmatch(recorded) is None
+                            or not isinstance(relative, str)):
+                        continue
+                    parts = Path(relative).parts
+                    if (len(parts) != 2 or parts[0] != "artifacts"
+                            or parts[1] in {"", ".", ".."}):
+                        continue
+                    artifacts_fd = os.open(
+                        "artifacts", os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC,
+                        dir_fd=run_fd,
+                    )
+                    try:
+                        artifact_fd = os.open(
+                            parts[1], os.O_RDONLY | _NOFOLLOW | _CLOEXEC,
+                            dir_fd=artifacts_fd,
+                        )
+                    finally:
+                        os.close(artifacts_fd)
+                    try:
+                        details = os.fstat(artifact_fd)
+                        if not stat.S_ISREG(details.st_mode) or details.st_size <= 0:
+                            continue
+                        checksum = _sha256_fd(artifact_fd)
+                        if checksum != recorded:
+                            continue
+                        verified = _VerifiedArtifact(
+                            artifact_fd, details.st_size, checksum,
+                            archive_root / run_name / relative, manifest, job,
+                        )
+                        artifact_fd = -1
+                        return verified
+                    finally:
+                        if artifact_fd >= 0:
+                            os.close(artifact_fd)
+            except OSError:
+                continue
+            finally:
+                os.close(run_fd)
+        return None
+    finally:
+        os.close(root_fd)
+
+
+def _copy_verified_artifact(source: _VerifiedArtifact, target: Path) -> None:
+    """Atomically copy a verified open regular file into a fresh run."""
+
+    temporary = target.with_name(f".{target.name}.reuse.tmp")
+    fd = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _CLOEXEC,
+        0o644,
+    )
+    try:
+        offset = 0
+        digest = hashlib.sha256()
+        while offset < source.size:
+            chunk = os.pread(source.fd, min(1024 * 1024, source.size - offset), offset)
+            if not chunk:
+                raise OSError("verified artifact changed while being copied")
+            digest.update(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(fd, view)
+                view = view[written:]
+            offset += len(chunk)
+        if digest.hexdigest() != source.checksum:
+            raise OSError("verified artifact changed while being copied")
+        os.fsync(fd)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    finally:
+        os.close(fd)
+    os.replace(temporary, target)
 
 
 def _generation_identity(
@@ -661,12 +784,11 @@ def _generation_identity(
     }
 
 
-def _manufacturing_run_suffix(jobs: tuple[RenderJob, ...]) -> str:
+def _manufacturing_run_token(jobs: tuple[RenderJob, ...]) -> str:
     fingerprints = tuple(job.manufacturing_fingerprint for job in jobs)
     if len(fingerprints) == 1:
-        return fingerprints[0][:7]
-    digest = hashlib.sha256("\0".join(fingerprints).encode("ascii")).hexdigest()
-    return digest[:7]
+        return fingerprints[0]
+    return hashlib.sha256("\0".join(fingerprints).encode("ascii")).hexdigest()
 
 
 def _only_manufacturing_identity_differs(
@@ -681,6 +803,64 @@ def _only_manufacturing_identity_differs(
         and first.get("manufacturing_fingerprints")
         != second.get("manufacturing_fingerprints")
     )
+
+
+def _secure_existing_identity(
+    archive_root: Path, run_name: str,
+) -> dict[str, object] | None:
+    try:
+        root_fd = os.open(
+            archive_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+        )
+        try:
+            run_fd, manifest = _open_run_manifest(root_fd, run_name)
+            os.close(run_fd)
+        finally:
+            os.close(root_fd)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return _manifest_generation_identity(manifest)
+
+
+def _create_managed_run_directory(
+    archive_root: Path, base_run_id: str, plan: RenderPlan,
+    identity: Mapping[str, object],
+) -> tuple[str, Path]:
+    """Atomically allocate a deterministic unique managed run directory."""
+
+    archive_root.mkdir(parents=True, exist_ok=True)
+
+    def claim(name: str) -> Path | None:
+        candidate = archive_root / name
+        try:
+            candidate.mkdir()
+        except FileExistsError:
+            return None
+        return candidate
+
+    claimed = claim(base_run_id)
+    if claimed is not None:
+        return base_run_id, claimed
+
+    existing = _secure_existing_identity(archive_root, base_run_id)
+    if existing is not None and _only_manufacturing_identity_differs(existing, identity):
+        token = _manufacturing_run_token(plan.jobs)
+        for length in range(7, len(token) + 1):
+            name = f"{base_run_id}-mfg{token[:length]}"
+            claimed = claim(name)
+            if claimed is not None:
+                return name, claimed
+        stem = f"{base_run_id}-mfg{token}"
+    else:
+        stem = base_run_id
+
+    counter = 2
+    while True:
+        name = f"{stem}-{counter}"
+        claimed = claim(name)
+        if claimed is not None:
+            return name, claimed
+        counter += 1
 
 
 def _manifest_generation_identity(
@@ -730,23 +910,31 @@ def _find_duplicate_run(
     identity: Mapping[str, object],
     local_now: datetime,
 ) -> tuple[str, Path] | None:
-    if not part_root.is_dir():
+    try:
+        root_fd = os.open(
+            part_root, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC
+        )
+    except OSError:
         return None
-    for manifest_path in sorted(part_root.glob("*/manifest.json")):
-        if manifest_path.parent.name.startswith("."):
-            continue
-        try:
-            manifest = load_run(manifest_path)
-        except (OSError, ValueError, json.JSONDecodeError):
-            continue
-        run_id = manifest.get("run_id")
-        if (
-            isinstance(run_id, str)
-            and _created_local_date(manifest, local_now) == local_now.date()
-            and _manifest_generation_identity(manifest) == identity
-        ):
-            return run_id, manifest_path.parent.resolve()
-    return None
+    try:
+        for run_name in sorted(os.listdir(root_fd)):
+            if run_name.startswith("."):
+                continue
+            try:
+                run_fd, manifest = _open_run_manifest(root_fd, run_name)
+                os.close(run_fd)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            run_id = manifest.get("run_id")
+            if (
+                isinstance(run_id, str)
+                and _created_local_date(manifest, local_now) == local_now.date()
+                and _manifest_generation_identity(manifest) == identity
+            ):
+                return run_id, part_root / run_name
+        return None
+    finally:
+        os.close(root_fd)
 
 
 def _hidden_directory(parent: Path, prefix: str) -> Path:
@@ -883,25 +1071,21 @@ def generate_plan(
         openscad_version = version_result.stdout.strip()
         now = _utc_now()
         if regeneration_target is None:
-            run_id = _readable_run_id(
+            base_run_id = _readable_run_id(
                 local_now, archive_name, selector,
                 "-".join(dict.fromkeys(snapshots[name].revision_label for name in selected_model_ids))
             )
-            run_dir = Path(output).resolve() if output is not None else archive_part_root / run_id
-            if output is None and run_dir.is_dir():
+            if output is None:
+                run_id, run_dir = _create_managed_run_directory(
+                    archive_part_root, base_run_id, plan, generation_identity
+                )
+            else:
+                run_id = base_run_id
+                run_dir = Path(output).resolve()
                 try:
-                    existing_identity = _manifest_generation_identity(load_run(run_dir))
-                except (OSError, ValueError, json.JSONDecodeError):
-                    existing_identity = None
-                if (
-                    existing_identity is not None
-                    and _only_manufacturing_identity_differs(
-                        existing_identity, generation_identity
-                    )
-                ):
-                    run_id = f"{run_id}-mfg{_manufacturing_run_suffix(plan.jobs)}"
-                    run_dir = archive_part_root / run_id
-            run_dir.mkdir(parents=True, exist_ok=False)
+                    run_dir.mkdir(parents=True, exist_ok=False)
+                except FileExistsError as error:
+                    raise ValueError(f"CAD output directory already exists: {run_dir}") from error
         else:
             run_dir = _hidden_directory(
                 archive_part_root,
@@ -992,9 +1176,8 @@ def generate_plan(
                 excluded=run_dir,
             )
             if reusable is not None:
-                source_artifact, source_manifest, source_job = reusable
                 try:
-                    _reuse_artifact(source_artifact, final_artifact)
+                    _copy_verified_artifact(reusable, final_artifact)
                     (run_dir / str(job["log"])).touch()
                     finished = _utc_now()
                     job["status"] = "complete"
@@ -1007,9 +1190,9 @@ def generate_plan(
                     job["artifact_bytes"] = final_artifact.stat().st_size
                     job["artifact_sha256"] = _file_sha256(final_artifact)
                     job["reused_from"] = {
-                        "run_id": source_manifest.get("run_id"),
-                        "artifact_id": source_job.get("artifact_id"),
-                        "artifact": source_job.get("artifact"),
+                        "run_id": reusable.manifest.get("run_id"),
+                        "artifact_id": reusable.job.get("artifact_id"),
+                        "artifact": reusable.job.get("artifact"),
                     }
                     _write_manifest(run_dir, manifest)
                     _best_effort_readme(run_dir, manifest)
@@ -1022,6 +1205,8 @@ def generate_plan(
                         "Geometry reuse failed; rendering normally: "
                         f"{_error_text(error)}"
                     )
+                finally:
+                    reusable.close()
             command = _command(Path(openscad), temporary_artifact,
                                archived_sources[render_job.model_id],
                                snapshots[render_job.model_id].revision_label, render_job)

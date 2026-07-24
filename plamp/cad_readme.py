@@ -46,17 +46,34 @@ def render_run_readme(manifest: Mapping[str, object]) -> str:
     jobs_value = manifest.get("jobs", [])
     jobs = [job for job in jobs_value if isinstance(job, Mapping)] \
         if isinstance(jobs_value, list) else []
+    selection = manifest.get("selection")
+    if isinstance(selection, Mapping) and selection.get("product"):
+        selected = f"Product `{selection['product']}`"
+    elif isinstance(selection, Mapping):
+        model = selection.get("model") or "default models"
+        sets = selection.get("sets")
+        if isinstance(sets, list) and sets:
+            selected = f"Direct selection: model `{model}`, sets " + ", ".join(
+                f"`{name}`" for name in sets
+            )
+        elif selection.get("all_sets"):
+            selected = f"Direct selection: all sets from model `{model}`"
+        else:
+            selected = f"Direct selection: default set from model `{model}`"
+    else:
+        selected = "Selection unavailable"
     lines = [
         f"# CAD run {run_id}", "", f"Status: {manifest.get('status', 'unknown')}",
-        "", "## Artifacts", "",
-        "| Artifact | Model / set | Status | SHA-256 |",
-        "| --- | --- | --- | --- |",
+        "", f"Selected: {selected}", "", "## Artifacts", "",
+        "| Artifact | File | Model / set | Status | SHA-256 |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for job in jobs:
         set_name = job.get("set") or "(default)"
         checksum = job.get("artifact_sha256") or "—"
+        artifact = f"`{job['artifact']}`" if job.get("artifact") else "—"
         lines.append(
-            f"| {job.get('artifact_id')} | {job.get('model')} / {set_name} | "
+            f"| {job.get('artifact_id')} | {artifact} | {job.get('model')} / {set_name} | "
             f"{job.get('status')} | `{checksum}` |"
         )
 

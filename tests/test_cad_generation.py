@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import shutil
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -428,20 +429,17 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(load_run(explicit.run_dir)["run_id"], expected)
         self.assertEqual(explicit.run_dir, self.root / "chosen-run")
 
-    def test_distinct_same_minute_runs_fail_clearly(self):
+    def test_distinct_same_minute_runs_are_allocated_without_raw_collision(self):
         instant = datetime(
             2026, 7, 23, 22, 19,
             tzinfo=timezone(timedelta(hours=-10)),
         )
         with mock.patch("plamp.cad_generation._local_now", return_value=instant):
             first = self.generate(plan("first"))
-            with self.assertRaises(FileExistsError) as caught:
-                self.generate(distinct_plan("second"))
+            second = self.generate(distinct_plan("second"))
 
-        self.assertEqual(
-            Path(caught.exception.filename),
-            first.run_dir,
-        )
+        self.assertNotEqual(second.run_dir, first.run_dir)
+        self.assertTrue(second.run_dir.name.endswith("-2"))
 
     def test_same_day_duplicate_is_rejected_before_openscad(self):
         zone = timezone(timedelta(hours=-10))
@@ -741,6 +739,109 @@ class CadGenerationTests(unittest.TestCase):
             second = self.generate(changed_plan)
         self.assertNotEqual(first.run_dir, second.run_dir)
         self.assertTrue(second.run_dir.name.endswith("-mfgddddddd"))
+
+    def test_manufacturing_suffix_extends_when_short_prefix_is_occupied(self):
+        source_plan = plan("first")
+        first_changed = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        second_fingerprint = "d" * 7 + "e" * 57
+        second_changed = replace(source_plan, jobs=(replace(
+            source_plan.jobs[0], manufacturing_fingerprint=second_fingerprint,
+        ),))
+        instant = datetime(2026, 7, 23, 22, 19,
+                           tzinfo=timezone(timedelta(hours=-10)))
+        with mock.patch("plamp.cad_generation._local_now", return_value=instant):
+            self.generate(source_plan)
+            short = self.generate(first_changed)
+            extended = self.generate(second_changed)
+        self.assertTrue(short.run_dir.name.endswith("-mfgddddddd"), short.run_dir.name)
+        self.assertTrue(extended.run_dir.name.endswith("-mfgddddddde"), extended.run_dir.name)
+
+    def test_reuse_requires_valid_recorded_lowercase_checksum(self):
+        for checksum in (None, "bad", "A" * 64):
+            with self.subTest(checksum=checksum):
+                first = self.generate(plan("first"), output=self.root / f"seed-{checksum}")
+                manifest = load_run(first.run_dir)
+                manifest["jobs"][0]["artifact_sha256"] = checksum
+                first.manifest_path.write_text(json.dumps(manifest))
+                archive = self.data / "cad" / "prints" / "fixture-system" / first.run_dir.name
+                shutil.copytree(first.run_dir, archive)
+                self.argv_file.unlink(missing_ok=True)
+                changed = replace(plan("first"), jobs=(replace(
+                    plan("first").jobs[0], manufacturing_fingerprint=("d" if checksum is None else "e") * 64,
+                ),))
+                self.generate(changed, output=self.root / f"result-{checksum}")
+                self.assertTrue(self.argv_file.exists())
+                shutil.rmtree(archive)
+
+    def _assert_symlink_candidate_is_not_reused(self, component):
+        first = self.generate(plan("first"))
+        manifest = load_run(first.run_dir)
+        component(first, manifest)
+        self.argv_file.unlink(missing_ok=True)
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        self.generate(changed, output=self.root / "symlink-result")
+        self.assertTrue(self.argv_file.exists())
+
+    def test_reuse_rejects_symlinked_run(self):
+        def mutate(first, _manifest):
+            real = self.root / "real-run"
+            first.run_dir.rename(real)
+            first.run_dir.symlink_to(real, target_is_directory=True)
+        self._assert_symlink_candidate_is_not_reused(mutate)
+
+    def test_duplicate_lookup_ignores_symlinked_run(self):
+        first = self.generate(plan("first"))
+        real = self.root / "real-run"
+        first.run_dir.rename(real)
+        first.run_dir.symlink_to(real, target_is_directory=True)
+        second = self.generate(plan("first"))
+        self.assertNotEqual(second.run_dir, first.run_dir)
+        self.assertTrue(second.run_dir.name.endswith("-2"))
+
+    def test_reuse_rejects_symlinked_manifest(self):
+        def mutate(first, _manifest):
+            outside = self.root / "outside-manifest.json"
+            outside.write_bytes(first.manifest_path.read_bytes())
+            first.manifest_path.unlink()
+            first.manifest_path.symlink_to(outside)
+        self._assert_symlink_candidate_is_not_reused(mutate)
+
+    def test_reuse_rejects_symlinked_artifact(self):
+        def mutate(first, manifest):
+            artifact = first.run_dir / manifest["jobs"][0]["artifact"]
+            outside = self.root / "outside.stl"
+            outside.write_bytes(artifact.read_bytes())
+            artifact.unlink()
+            artifact.symlink_to(outside)
+        self._assert_symlink_candidate_is_not_reused(mutate)
+
+    def test_reuse_copies_verified_descriptor_not_swapped_path(self):
+        import plamp.cad_generation as generation
+        first = self.generate(plan("first"))
+        manifest = load_run(first.run_dir)
+        artifact = first.run_dir / manifest["jobs"][0]["artifact"]
+        original = artifact.read_bytes()
+        real_copy = generation._copy_verified_artifact
+
+        def swap_then_copy(candidate, target):
+            replacement = artifact.with_suffix(".replacement")
+            replacement.write_bytes(b"swapped")
+            os.replace(replacement, artifact)
+            return real_copy(candidate, target)
+
+        changed = replace(plan("first"), jobs=(replace(
+            plan("first").jobs[0], manufacturing_fingerprint="d" * 64,
+        ),))
+        with mock.patch("plamp.cad_generation._copy_verified_artifact",
+                        side_effect=swap_then_copy):
+            second = self.generate(changed, output=self.root / "race-result")
+        second_manifest = load_run(second.run_dir)
+        copied = second.run_dir / second_manifest["jobs"][0]["artifact"]
+        self.assertEqual(copied.read_bytes(), original)
 
     def test_geometry_reuse_rejects_failed_artifact(self):
         source_plan = plan("first")

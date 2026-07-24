@@ -8,6 +8,7 @@ class CadReadmeTests(unittest.TestCase):
         return {
             "run_id": "run-1",
             "status": "complete",
+            "selection": {"product": "ready-panels", "model": None, "sets": []},
             "jobs": [{
                 "artifact_id": "panel--abc",
                 "model": "box",
@@ -64,6 +65,8 @@ class CadReadmeTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
         self.assertLess(text.index("Artifacts"), text.index("Variable provenance"))
+        self.assertLess(text.index("Product `ready-panels`"), text.index("Artifacts"))
+        self.assertIn("`artifacts/panel--abc.stl`", text)
         self.assertLess(text.index("Inspect the tabs."), text.index("Remove the brim."))
         self.assertIn("Requirement from `set:panel`", text)
 
