@@ -1413,17 +1413,19 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for definition in (
             "sub_panel_bonding_tower_d=11;",
+            "panel_nut_clearance=0.1;",
             "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
             "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
             "sub_panel_bonding_roof_h=sub_panel_h-sub_panel_base_h-sub_panel_bonding_nut_h;",
-            "sub_panel_bonding_blind_floor=1;",
         ):
             self.assertIn(definition, compact)
 
         self.assertIn("d=sub_panel_bonding_tower_d", tower)
         self.assertIn("d1=sub_panel_bonding_nut_w", nut)
         self.assertIn("d2=panel_screw_d", nut)
-        self.assertIn("sub_panel_bonding_blind_floor", screw)
+        self.assertIn("translate([0,0,-boolean_shim])", screw)
+        self.assertIn("h=sub_panel_h+2*boolean_shim", screw)
+        self.assertNotIn("sub_panel_bonding_blind_floor", compact)
         self.assertIn("for(i=[0:3],side=[-1,1])", xt60_positive)
         self.assertEqual(
             xt60_positive.count("sub_panel_bonding_tower_positive();"), 1
