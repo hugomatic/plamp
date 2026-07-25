@@ -2,7 +2,7 @@ render_fn = 96;
 render_text = true;
 $fn = render_fn;
 
-set = ""; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, corner_coupon, wall_corner_fastener_assembly, assembly]
+set = ""; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, nut_catcher_adjustment_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
 
@@ -106,11 +106,13 @@ function screw_nut_trap_h(size) =
     size == "M4" ? 3.4 :
     2.8;
 
-function fixed_2(value) = str(
-    floor(value), ".",
-    floor(value * 10) % 10,
-    floor(value * 100) % 10
-);
+function fixed_2(value) =
+    let(scaled = round(value * 100))
+        str(
+            floor(scaled / 100), ".",
+            floor(scaled / 10) % 10,
+            scaled % 10
+        );
 
 panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
@@ -142,15 +144,22 @@ panel_corner_fastener_fit_label = str(
     "W", fixed_2(panel_nut_entry_w),
     " T", fixed_2(panel_nut_slot_h)
 );
+nut_catcher_test_orientations = ["up", "down", "sideways", "45"];
+nut_catcher_test_rows = [
+    ["up", "width_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
+    ["up", "thick_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
+    ["all", "roof_mode", "values", ["flat", "30deg"]]
+];
+nut_catcher_test_columns = 5;
+nut_catcher_test_coupon_w = 18;
+nut_catcher_test_coupon_d = 14;
+nut_catcher_test_coupon_h = 12;
+nut_catcher_test_gap = 4;
+nut_catcher_test_mark_font = 1.35;
+nut_catcher_test_mark_depth = 0.5;
+nut_catcher_test_roof_cover_t = 0.8;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
-corner_nut_slot_l = 2.7;
-corner_nut_entry_w = 6.1;
-corner_nut_throat_w = 5.8;
-corner_nut_entry_detent =
-    (corner_nut_entry_w - corner_nut_throat_w) / 2;
-corner_nut_entry_detent_l = 1.5;
-corner_nut_pocket_d = corner_nut_entry_w / cos(30);
 
 
 /* [components dimensions] */
@@ -305,11 +314,9 @@ corner_tab_boss_r = 5;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
-corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
+corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = 16;
-corner_nut_detent_angle = 30;
-corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -425,19 +432,6 @@ assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
-assert(abs(corner_nut_slot_l - 2.7) < 0.000001,
-    "corner nut slot length must match the measured fit");
-assert(abs(corner_nut_entry_w - 6.1) < 0.000001,
-    "corner nut entry width must match the measured fit");
-assert(abs(corner_nut_throat_w - 5.8) < 0.000001,
-    "corner nut throat width must match the measured fit");
-assert(abs(corner_nut_entry_detent_l - 1.5) < 0.000001,
-    "corner nut detent length must match the measured fit");
-assert(abs(corner_nut_entry_detent - 0.15) < 0.000001,
-    "corner nut detent must retain 0.15 mm per side");
-assert(abs(corner_nut_entry_w - 2 * corner_nut_entry_detent
-        - corner_nut_throat_w) < 0.000001,
-    "corner nut detents must reduce the entry to the throat width");
 echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
 echo(str("bottom M3x25 nut-face offset: ",
     corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
@@ -1125,55 +1119,78 @@ module sub_panel_c13_negative() {
     rect_cutout(c13_cutout_w, c13_cutout_h);
 }
 
-module side_loaded_panel_nut_floor_nibs_positive(
+module m3_nut_catcher_floor_nibs_positive(
     direction,
-    opening_edge_distance
+    opening_edge_distance,
+    nut_across_flats = m3_nut_across_flats,
+    width_clearance = panel_nut_width_clearance,
+    entry_detent = panel_nut_entry_detent,
+    entry_detent_l = panel_nut_entry_detent_l,
+    nib_height = panel_nut_floor_nib_h,
+    nib_length = panel_nut_floor_nib_l,
+    nib_width = panel_nut_floor_nib_w,
+    nib_angle = panel_nut_floor_nib_angle
 ) {
-    detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
+    slot_w = nut_across_flats + width_clearance;
+    detent_l = min(entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
-    throat_w = panel_nut_entry_w - 2 * panel_nut_entry_detent;
-    nib_inner_x = max(0, main_l - panel_nut_floor_nib_l);
+    throat_w = slot_w - 2 * entry_detent;
+    nib_inner_x = max(0, main_l - nib_length);
     nib_outer_x = main_l;
 
     for (side = [-1, 1])
         scale([direction, 1, 1])
             translate([
                 (nib_inner_x + nib_outer_x) / 2,
-                side * (throat_w - panel_nut_floor_nib_w) / 2,
+                side * (throat_w - nib_width) / 2,
                 0
             ])
-                rotate([0, 0, side * panel_nut_floor_nib_angle])
+                rotate([0, 0, side * nib_angle])
                     translate([
                         -(nib_inner_x + nib_outer_x) / 2,
-                        -side * (throat_w - panel_nut_floor_nib_w) / 2,
+                        -side * (throat_w - nib_width) / 2,
                         0
                     ])
                         rotate([90, 0, 0])
                             linear_extrude(
-                                height = panel_nut_floor_nib_w,
+                                height = nib_width,
                                 center = true
                             )
                                 polygon([
                                     [nib_outer_x, -boolean_shim],
                                     [nib_inner_x, -boolean_shim],
-                                    [nib_inner_x, panel_nut_floor_nib_h]
+                                    [nib_inner_x, nib_height]
                                 ]);
 }
 
-module side_loaded_panel_nut_pocket_negative(
+module m3_nut_catcher_negative(
+    nut_across_flats = m3_nut_across_flats,
+    nut_thickness = m3_nut_thickness,
+    width_clearance = panel_nut_width_clearance,
+    thick_clearance = panel_nut_thickness_clearance,
+    nib_height = panel_nut_floor_nib_h,
+    roof_mode = "30deg",
     direction = 1,
-    opening_edge_distance = panel_nut_entry_l
+    opening_edge_distance = panel_nut_entry_l,
+    entry_detent = panel_nut_entry_detent,
+    entry_detent_l = panel_nut_entry_detent_l
 ) {
-    slot_w = panel_nut_entry_w;
-    slot_h = panel_nut_slot_h;
-    detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
+    assert(roof_mode == "flat" || roof_mode == "30deg",
+        "nut catcher roof_mode must be flat or 30deg");
+    slot_w = nut_across_flats + width_clearance;
+    slot_h = nut_thickness + thick_clearance;
+    pocket_d = slot_w / cos(30);
+    detent_l = min(entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
-    throat_w = slot_w - 2 * panel_nut_entry_detent;
+    throat_w = slot_w - 2 * entry_detent;
+    roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
+    roof_l = opening_edge_distance + slot_w / 2;
+    roof_x = direction < 0 ? -opening_edge_distance : -slot_w / 2;
 
     difference() {
         union() {
             rotate([0, 0, 30])
-                cylinder(h = slot_h, d = panel_nut_pocket_d, $fn = 6);
+                cylinder(h = slot_h, d = pocket_d, $fn = 6);
 
             if (main_l > 0)
                 translate([
@@ -1189,42 +1206,38 @@ module side_loaded_panel_nut_pocket_negative(
                 0
             ])
                 cube([detent_l + boolean_shim, throat_w, slot_h]);
+
+            if (roof_mode == "30deg")
+                translate([roof_x, 0, slot_h])
+                    rotate([0, 90, 0])
+                        linear_extrude(height = roof_l)
+                            polygon([
+                                [boolean_shim, -slot_w / 2],
+                                [boolean_shim, slot_w / 2],
+                                [-roof_h, 0]
+                            ]);
         }
 
-        side_loaded_panel_nut_floor_nibs_positive(
+        m3_nut_catcher_floor_nibs_positive(
             direction,
-            opening_edge_distance
+            opening_edge_distance,
+            nut_across_flats,
+            width_clearance,
+            entry_detent,
+            entry_detent_l,
+            nib_height
         );
     }
-}
-
-module side_loaded_panel_nut_roof_negative(
-    direction = 1,
-    opening_edge_distance = panel_nut_entry_l
-) {
-    slot_w = panel_nut_entry_w;
-    slot_h = panel_nut_slot_h;
-    roof_h = panel_nut_roof_h;
-    roof_l = opening_edge_distance + slot_w / 2;
-    roof_x = direction < 0 ? -opening_edge_distance : -slot_w / 2;
-
-    translate([roof_x, 0, slot_h])
-        rotate([0, 90, 0])
-            linear_extrude(height = roof_l)
-                polygon([
-                    [boolean_shim, -slot_w / 2],
-                    [boolean_shim, slot_w / 2],
-                    // After rotate([0, 90, 0]), profile X maps to world -Z.
-                    [-roof_h, 0]
-                ]);
 }
 
 module side_loaded_panel_nut_trap_negative(
     direction = 1,
     opening_edge_distance = panel_nut_entry_l
 ) {
-    side_loaded_panel_nut_pocket_negative(direction, opening_edge_distance);
-    side_loaded_panel_nut_roof_negative(direction, opening_edge_distance);
+    m3_nut_catcher_negative(
+        direction = direction,
+        opening_edge_distance = opening_edge_distance
+    );
 }
 
 module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
@@ -2247,109 +2260,6 @@ module corner_nut_tab_positive(bearing_side = 1) {
     );
 }
 
-// Subtractive entry transition that leaves two small positive detents.
-// Their 30-degree faces guide the nut past the narrow retaining throat.
-module corner_nut_retention_detents(
-    nut_flat_w,
-    throat_w,
-    pocket_center_y,
-    detent_bottom_z
-) {
-    shim = 0.01;
-    entry_y = pocket_center_y - corner_nut_slot_l / 2;
-    ramp_start_z = detent_bottom_z - corner_nut_detent_ramp_h;
-
-    hull() {
-        translate([-nut_flat_w / 2, entry_y, ramp_start_z - shim])
-            cube([nut_flat_w, corner_nut_slot_l, shim]);
-        translate([-throat_w / 2, entry_y, detent_bottom_z])
-            cube([throat_w, corner_nut_slot_l, shim]);
-    }
-
-    translate([-throat_w / 2, entry_y, detent_bottom_z])
-        cube([
-            throat_w,
-            corner_nut_slot_l,
-            corner_tab_h - detent_bottom_z + 1
-        ]);
-}
-
-module box_nut_roof_negative(width, length, y0, z0) {
-    roof_h = width / 2 * tan(support_free_roof_angle);
-
-    hull() {
-        translate([
-            -width / 2,
-            y0 - boolean_shim,
-            z0 - length / 2
-        ])
-            cube([width, 2 * boolean_shim, length]);
-        translate([
-            -boolean_shim / 2,
-            y0 + roof_h,
-            z0 - length / 2
-        ])
-            cube([boolean_shim, boolean_shim, length]);
-    }
-}
-
-module corner_nut_entry_negative(
-    nut_flat_w,
-    throat_w,
-    pocket_center_y,
-    detent_bottom_z,
-    axis_z,
-    print_orientation = flat_wall_print_orientation
-) {
-    entry_h = detent_bottom_z - corner_nut_detent_ramp_h - axis_z;
-
-    translate([0, 0, axis_z])
-        rotate([0, corner_nut_entry_angle, 0])
-            translate([0, 0, -axis_z]) {
-                translate([
-                    -nut_flat_w / 2,
-                    pocket_center_y - corner_nut_slot_l / 2,
-                    axis_z
-                ])
-                    cube([
-                        nut_flat_w,
-                        corner_nut_slot_l,
-                        entry_h
-                    ]);
-
-                if (print_orientation == box_print_orientation)
-                    box_nut_roof_negative(
-                        nut_flat_w,
-                        entry_h,
-                        pocket_center_y + corner_nut_slot_l / 2,
-                        axis_z + entry_h / 2
-                    );
-
-                corner_nut_retention_detents(
-                    nut_flat_w,
-                    throat_w,
-                    pocket_center_y,
-                    detent_bottom_z
-                );
-            }
-}
-
-module box_m3_nut_pocket_negative(nut_w, pocket_center_y, axis_z) {
-    translate([
-        -nut_w / 2,
-        pocket_center_y - corner_nut_slot_l / 2,
-        axis_z - nut_w / 2
-    ])
-        cube([nut_w, corner_nut_slot_l, nut_w]);
-
-    box_nut_roof_negative(
-        nut_w,
-        nut_w,
-        pocket_center_y + corner_nut_slot_l / 2,
-        axis_z
-    );
-}
-
 module support_free_m3_nut_trap(
     bearing_side = 1,
     pocket_offset_y = 0,
@@ -2358,33 +2268,23 @@ module support_free_m3_nut_trap(
 ) {
     pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
         + pocket_offset_y;
-    detent_bottom_z = corner_tab_h - corner_nut_entry_detent_l;
-
-    if (print_orientation == box_print_orientation)
-        box_m3_nut_pocket_negative(
-            corner_nut_entry_w,
-            pocket_center_y,
-            axis_z
-        );
-    else
-        translate([0, pocket_center_y, axis_z])
-            rotate([0, 30, 0])
-                rotate([90, 0, 0])
-                    cylinder(
-                        h = corner_nut_slot_l,
-                        d = corner_nut_pocket_d,
-                        center = true,
-                        $fn = 6
-                    );
-
-    corner_nut_entry_negative(
-        corner_nut_entry_w,
-        corner_nut_throat_w,
-        pocket_center_y,
-        detent_bottom_z,
-        axis_z,
-        print_orientation
+    detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
+    entry_rise = detent_bottom_z - panel_nut_floor_nib_h - axis_z;
+    opening_edge_distance = max(
+        panel_nut_entry_detent_l,
+        entry_rise / sin(corner_nut_entry_angle)
     );
+    slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
+
+    translate([0, pocket_center_y - slot_h / 2, axis_z])
+        rotate([0, -corner_nut_entry_angle, 0])
+            rotate([-90, 0, 0])
+                m3_nut_catcher_negative(
+                    opening_edge_distance = opening_edge_distance,
+                    roof_mode = print_orientation == box_print_orientation
+                        ? "30deg"
+                        : "flat"
+                );
 }
 
 module corner_clearance_tab(print_orientation = flat_wall_print_orientation) {
@@ -3086,6 +2986,215 @@ module panel_corner_fastener_test() {
         panel_corner_fastener_sub_panel_coupon(test_w);
 }
 
+function nut_catcher_row_orientations(row) =
+    row[0] == "all" ? nut_catcher_test_orientations : [row[0]];
+
+function nut_catcher_row_count(row) =
+    len(nut_catcher_row_orientations(row)) * len(row[3]);
+
+function rows_before_count(rows, row_i, cursor = 0) =
+    cursor >= row_i
+        ? 0
+        : nut_catcher_row_count(rows[cursor])
+            + rows_before_count(rows, row_i, cursor + 1);
+
+function nut_catcher_candidate_value(parameter, mode, candidate) =
+    parameter == "width_clearance"
+        ? (mode == "offsets" ? panel_nut_width_clearance + candidate : candidate)
+        : parameter == "thick_clearance"
+            ? (mode == "offsets"
+                ? panel_nut_thickness_clearance + candidate
+                : candidate)
+            : candidate;
+
+function signed_fixed_2(value) = str(
+    value >= 0 ? "+" : "-",
+    fixed_2(abs(value))
+);
+
+function nut_catcher_orientation_short(orientation) =
+    orientation == "up" ? "U" :
+    orientation == "down" ? "D" :
+    orientation == "sideways" ? "S" :
+    "45";
+
+function nut_catcher_parameter_short(parameter) =
+    parameter == "width_clearance" ? "W" :
+    parameter == "thick_clearance" ? "T" :
+    "R";
+
+function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
+    str(
+        nut_catcher_orientation_short(orientation), " ",
+        nut_catcher_parameter_short(parameter),
+        parameter == "roof_mode"
+            ? (candidate == "flat" ? "F" : "30")
+            : mode == "offsets"
+                ? signed_fixed_2(candidate)
+                : fixed_2(candidate)
+    );
+
+module nut_catcher_orientation_transform(
+    orientation,
+    slot_w,
+    slot_h,
+    roof_mode
+) {
+    roof_h = roof_mode == "30deg"
+        ? slot_w / 2 * tan(panel_nut_roof_angle)
+        : 0;
+    roof_top_extent_45 = (slot_w / 2 + slot_h + roof_h) / sqrt(2);
+    origin_45_z = nut_catcher_test_coupon_h
+        - nut_catcher_test_roof_cover_t
+        - roof_top_extent_45;
+
+    assert(
+        orientation == "up"
+            || orientation == "down"
+            || orientation == "sideways"
+            || orientation == "45",
+        "nut catcher test orientation must be up, down, sideways, or 45"
+    );
+    assert(origin_45_z > 0, "45-degree catcher does not fit inside coupon");
+
+    if (orientation == "up")
+        translate([0, 0, 3])
+            children();
+    else if (orientation == "down")
+        translate([0, 0, nut_catcher_test_coupon_h - 3])
+            rotate([180, 0, 0])
+                children();
+    else if (orientation == "sideways")
+        translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
+            rotate([90, 0, 0])
+                children();
+    else if (orientation == "45")
+        translate([0, 0, origin_45_z])
+            rotate([-45, 0, 0])
+                children();
+}
+
+module nut_catcher_test_coupon(
+    orientation,
+    parameter,
+    mode,
+    candidate
+) {
+    width_clearance = parameter == "width_clearance"
+        ? nut_catcher_candidate_value(parameter, mode, candidate)
+        : panel_nut_width_clearance;
+    thick_clearance = parameter == "thick_clearance"
+        ? nut_catcher_candidate_value(parameter, mode, candidate)
+        : panel_nut_thickness_clearance;
+    roof_mode = parameter == "roof_mode" ? candidate : "30deg";
+    slot_w = m3_nut_across_flats + width_clearance;
+    slot_h = m3_nut_thickness + thick_clearance;
+    opening_edge_distance = nut_catcher_test_coupon_w / 2 + 1;
+    label = nut_catcher_candidate_label(
+        orientation,
+        parameter,
+        mode,
+        candidate
+    );
+
+    assert(m3_nut_across_flats + width_clearance > 0,
+        "jig adjusted nut width must remain positive");
+    assert(m3_nut_thickness + thick_clearance > 0,
+        "jig adjusted nut thickness must remain positive");
+    assert(
+        parameter == "roof_mode"
+            ? mode == "values"
+                && is_string(candidate)
+                && (candidate == "flat" || candidate == "30deg")
+            : is_num(candidate),
+        "jig row candidate does not match its parameter"
+    );
+
+    difference() {
+        translate([
+            -nut_catcher_test_coupon_w / 2,
+            -nut_catcher_test_coupon_d / 2,
+            0
+        ])
+            cube([
+                nut_catcher_test_coupon_w,
+                nut_catcher_test_coupon_d,
+                nut_catcher_test_coupon_h
+            ]);
+
+        nut_catcher_orientation_transform(
+            orientation,
+            slot_w,
+            slot_h,
+            roof_mode
+        )
+            union() {
+                m3_nut_catcher_negative(
+                    width_clearance = width_clearance,
+                    thick_clearance = thick_clearance,
+                    roof_mode = roof_mode,
+                    opening_edge_distance = opening_edge_distance
+                );
+                translate([0, 0, -nut_catcher_test_coupon_h])
+                    cylinder(
+                        h = 2 * nut_catcher_test_coupon_h,
+                        d = panel_screw_d
+                    );
+            }
+
+        translate([0, -5, 0])
+            write_text(
+                label,
+                nut_catcher_test_mark_font,
+                nut_catcher_test_coupon_h - nut_catcher_test_mark_depth
+            );
+        translate([0, 5, 0])
+            write_text(
+                revision_string,
+                nut_catcher_test_mark_font,
+                nut_catcher_test_coupon_h - nut_catcher_test_mark_depth
+            );
+    }
+}
+
+module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
+    for (row_i = [0 : len(rows) - 1]) {
+        row = rows[row_i];
+        orientations = nut_catcher_row_orientations(row);
+        candidates = row[3];
+        row_offset = rows_before_count(rows, row_i);
+
+        assert(row[1] == "width_clearance"
+                || row[1] == "thick_clearance"
+                || row[1] == "roof_mode",
+            "unknown nut catcher jig parameter");
+        assert(row[2] == "offsets" || row[2] == "values",
+            "nut catcher jig mode must be offsets or values");
+
+        for (
+            orientation_i = [0 : len(orientations) - 1],
+            candidate_i = [0 : len(candidates) - 1]
+        ) {
+            item_i = row_offset
+                + orientation_i * len(candidates)
+                + candidate_i;
+            translate([
+                (item_i % nut_catcher_test_columns)
+                    * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
+                floor(item_i / nut_catcher_test_columns)
+                    * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
+                0
+            ])
+                nut_catcher_test_coupon(
+                    orientations[orientation_i],
+                    row[1],
+                    row[2],
+                    candidates[candidate_i]
+                );
+        }
+    }
+}
+
 // ---------------- views ----------------
 
 module production_sub_panel_crop(
@@ -3391,6 +3500,8 @@ if (set == "relay_footprint") {
     c13_panel();
 } else if (set == "panel_corner_fastener_test") {
     panel_corner_fastener_test();
+} else if (set == "nut_catcher_adjustment_test") {
+    nut_catcher_adjustment_test();
 } else if (set == "corner_coupon") {
     corner_coupon();
 } else if (set == "wall_corner_fastener_assembly") {

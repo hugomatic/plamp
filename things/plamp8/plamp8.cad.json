@@ -23,6 +23,7 @@
     "usb_c_panel": {"description": "USB-C top-panel fit test", "slicing": {"orientation": "as-exported"}},
     "c13_panel": {"description": "C13 inlet top-panel fit test", "slicing": {"orientation": "as-exported"}},
     "panel_corner_fastener_test": {"description": "Panel corner fastener fit test", "slicing": {"orientation": "as-exported"}},
+    "nut_catcher_adjustment_test": {"description": "Parametric M3 nut-catcher adjustment jig", "slicing": {"orientation": "as-exported", "supports": "forbidden"}},
     "corner_coupon": {"description": "Printable enclosure corner coupon", "slicing": {"orientation": "as-exported"}},
     "wall_corner_fastener_assembly": {"description": "Wall corner fastener test assembly", "printable": false},
     "assembly": {"description": "Complete illustrated enclosure assembly", "printable": false}

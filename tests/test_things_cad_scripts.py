@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 import unittest
@@ -119,6 +120,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 "west_wall", "east_wall", "relay_footprint", "psu_footprint",
                 "converter_footprint", "ac_duplex_panel", "dc_connector_panel",
                 "usb_c_panel", "c13_panel", "panel_corner_fastener_test",
+                "nut_catcher_adjustment_test",
                 "corner_coupon", "wall_corner_fastener_assembly", "assembly",
             ),
             "iharvest_cover": ("", "assembly", "plate"),
@@ -167,70 +169,34 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source.index("sub_panel_socket_rim_relief_y0 ="),
         )
 
-    def test_plamp8_corner_nut_fit_uses_measured_independent_dimensions(self):
+    def test_plamp8_corner_nut_fit_uses_shared_measured_dimensions(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
 
         for definition in (
-            "corner_nut_slot_l=2.7;",
-            "corner_nut_entry_w=6.1;",
-            "corner_nut_throat_w=5.8;",
-            "corner_nut_entry_detent=(corner_nut_entry_w-corner_nut_throat_w)/2;",
-            "corner_nut_entry_detent_l=1.5;",
-            "corner_nut_pocket_d=corner_nut_entry_w/cos(30);",
+            "m3_nut_across_flats=5.46;",
+            "m3_nut_thickness=2.38;",
+            "panel_nut_width_clearance=0.14;",
+            "panel_nut_thickness_clearance=0.14;",
         ):
             with self.subTest(definition=definition):
                 self.assertIn(definition, compact)
 
-        for measured_assertion in (
-            "assert(abs(corner_nut_slot_l-2.7)<0.000001",
-            "assert(abs(corner_nut_entry_w-6.1)<0.000001",
-            "assert(abs(corner_nut_throat_w-5.8)<0.000001",
-            "assert(abs(corner_nut_entry_detent_l-1.5)<0.000001",
-            "assert(abs(corner_nut_entry_detent-0.15)<0.000001",
-            "assert(abs(corner_nut_entry_w-2*corner_nut_entry_detent-corner_nut_throat_w)<0.000001",
-        ):
-            with self.subTest(assertion=measured_assertion):
-                self.assertIn(measured_assertion, compact)
-
-        self.assertIn(
-            "corner_nut_detent_ramp_h=corner_nut_entry_detent*tan(corner_nut_detent_angle);",
-            compact,
-        )
+        self.assertNotIn("corner_nut_entry_w=", compact)
+        self.assertNotIn("corner_nut_pocket_d=", compact)
 
     def test_plamp8_corner_nut_fit_is_shared_by_flat_and_box_paths(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         nut_trap = compact_scad(scad_module_body(source, "support_free_m3_nut_trap"))
 
         self.assertIn(
-            "detent_bottom_z=corner_tab_h-corner_nut_entry_detent_l;",
+            "detent_bottom_z=corner_tab_h-panel_nut_entry_detent_l;",
             nut_trap,
         )
+        self.assertIn("m3_nut_catcher_negative(", nut_trap)
         self.assertIn(
-            "box_m3_nut_pocket_negative(corner_nut_entry_w,pocket_center_y,axis_z);",
+            'roof_mode=print_orientation==box_print_orientation?"30deg":"flat"',
             nut_trap,
-        )
-        self.assertIn(
-            "cylinder(h=corner_nut_slot_l,d=corner_nut_pocket_d,center=true,$fn=6);",
-            nut_trap,
-        )
-        self.assertIn(
-            "corner_nut_entry_negative(corner_nut_entry_w,corner_nut_throat_w,",
-            nut_trap,
-        )
-        self.assertNotIn("panel_nut_entry_detent", nut_trap)
-        self.assertNotIn("panel_nut_entry_detent_l", nut_trap)
-
-        box_pocket = compact_scad(
-            scad_module_body(source, "box_m3_nut_pocket_negative")
-        )
-        self.assertIn(
-            "cube([nut_w,corner_nut_slot_l,nut_w]);",
-            box_pocket,
-        )
-        self.assertIn(
-            "box_nut_roof_negative(nut_w,nut_w,",
-            box_pocket,
         )
 
     def test_plamp8_wall_contexts_are_proper_rotations(self):
@@ -522,14 +488,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
             bore_profile,
         )
         self.assertNotIn("sqrt(2)", bore_profile)
-        self.assertIn("corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;", source)
+        self.assertIn("corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
         self.assertIn("corner_nut_tab_extension = 16;", source)
-        self.assertIn("corner_nut_detent_angle = 30;", source)
-        self.assertIn(
-            "corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);",
-            source,
-        )
+        self.assertNotIn("corner_nut_detent_angle", source)
         self.assertIn(
             "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;",
             source,
@@ -580,11 +542,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             wall_tabs.count("corner_clearance_tab(print_orientation);"), 2
         )
         self.assertIn("module support_free_m3_nut_trap", source)
-        self.assertIn("module corner_nut_retention_detents", source)
-        nut_entry = source.split("module corner_nut_entry_negative", 1)[1].split(
-            "module ", 1
-        )[0]
-        self.assertIn("corner_nut_retention_detents(", nut_entry)
+        self.assertIn("module m3_nut_catcher_floor_nibs_positive", source)
+        self.assertNotIn("module corner_nut_retention_detents", source)
         self.assertIn("module corner_wall_coupon", source)
         self.assertIn("module corner_coupon", source)
         self.assertIn("module wall_corner_fastener_assembly", source)
@@ -816,8 +775,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('box_print_orientation = "box";', source)
         self.assertIn("corner_nut_entry_angle = 45;", source)
         self.assertIn("module corner_screw_bore(", source)
-        self.assertIn("module corner_nut_entry_negative(", source)
-        self.assertIn("rotate([0, corner_nut_entry_angle, 0])", source)
+        self.assertIn("module support_free_m3_nut_trap(", source)
+        self.assertIn("rotate([0, -corner_nut_entry_angle, 0])", source)
+        self.assertIn("m3_nut_catcher_negative(", source)
         self.assertIn("print_orientation == box_print_orientation", source)
 
         box_module = source.split("module box()", 1)[1].split(
@@ -1567,21 +1527,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
     def test_plamp8_side_loaded_nuts_share_floor_nibs_and_30_degree_roof(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
-        self.assertIn("module side_loaded_panel_nut_pocket_negative", source)
-        self.assertIn("module side_loaded_panel_nut_floor_nibs_positive", source)
-        self.assertIn("module side_loaded_panel_nut_roof_negative", source)
+        self.assertNotIn("module side_loaded_panel_nut_pocket_negative", source)
+        self.assertNotIn("module side_loaded_panel_nut_floor_nibs_positive", source)
+        self.assertNotIn("module side_loaded_panel_nut_roof_negative", source)
         self.assertIn("module side_loaded_panel_nut_trap_negative", source)
-        shared_pocket = compact_scad(
-            scad_module_body(source, "side_loaded_panel_nut_pocket_negative")
-        )
+        canonical = compact_scad(scad_module_body(source, "m3_nut_catcher_negative"))
         bonding_nut = compact_scad(
             scad_module_body(source, "sub_panel_bonding_nut_negative")
         )
         floor_nibs = compact_scad(
-            scad_module_body(source, "side_loaded_panel_nut_floor_nibs_positive")
-        )
-        roof = compact_scad(
-            scad_module_body(source, "side_loaded_panel_nut_roof_negative")
+            scad_module_body(source, "m3_nut_catcher_floor_nibs_positive")
         )
         shared_trap = compact_scad(
             scad_module_body(source, "side_loaded_panel_nut_trap_negative")
@@ -1601,30 +1556,24 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(definition, compact)
 
-        self.assertIn("difference(){", shared_pocket)
-        self.assertIn("side_loaded_panel_nut_floor_nibs_positive(", shared_pocket)
+        self.assertIn("difference(){", canonical)
+        self.assertIn("m3_nut_catcher_floor_nibs_positive(", canonical)
         self.assertIn("for(side=[-1,1])", floor_nibs)
         self.assertIn("linear_extrude(", floor_nibs)
         self.assertIn("polygon(", floor_nibs)
-        self.assertIn("rotate([0,0,side*panel_nut_floor_nib_angle])", floor_nibs)
-        self.assertIn("roof_h=panel_nut_roof_h", roof)
-        self.assertIn("linear_extrude(", roof)
-        self.assertIn("polygon(", roof)
-        self.assertIn("[-roof_h,0]", roof)
-        self.assertIn("side_loaded_panel_nut_pocket_negative(", shared_trap)
-        self.assertIn("side_loaded_panel_nut_roof_negative(", shared_trap)
+        self.assertIn("rotate([0,0,side*nib_angle])", floor_nibs)
+        self.assertIn("roof_h=slot_w/2*tan(panel_nut_roof_angle)", canonical)
+        self.assertIn("linear_extrude(", canonical)
+        self.assertIn("polygon(", canonical)
+        self.assertIn("[-roof_h,0]", canonical)
+        self.assertIn("m3_nut_catcher_negative(", shared_trap)
         self.assertIn("side_loaded_panel_nut_trap_negative(", bonding_nut)
         self.assertIn("side_loaded_panel_nut_trap_negative(", corner_nut)
 
     def test_plamp8_side_loaded_nut_fit_derives_from_measured_m3_nut(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
-        pocket = compact_scad(
-            scad_module_body(source, "side_loaded_panel_nut_pocket_negative")
-        )
-        roof = compact_scad(
-            scad_module_body(source, "side_loaded_panel_nut_roof_negative")
-        )
+        canonical = compact_scad(scad_module_body(source, "m3_nut_catcher_negative"))
         flipped = compact_scad(
             scad_module_body(source, "side_loaded_panel_nut_trap_flipped_z")
         )
@@ -1640,12 +1589,37 @@ class ThingsCadScriptsTest(unittest.TestCase):
         ):
             self.assertIn(definition, compact)
 
-        self.assertIn("slot_w=panel_nut_entry_w", pocket)
-        self.assertIn("d=panel_nut_pocket_d", pocket)
-        self.assertIn("slot_h=panel_nut_slot_h", pocket)
-        self.assertIn("slot_w=panel_nut_entry_w", roof)
-        self.assertIn("slot_h=panel_nut_slot_h", roof)
+        self.assertIn("slot_w=nut_across_flats+width_clearance", canonical)
+        self.assertIn("pocket_d=slot_w/cos(30)", canonical)
+        self.assertIn("slot_h=nut_thickness+thick_clearance", canonical)
         self.assertIn("slot_h=panel_nut_slot_h", flipped)
+
+    def test_plamp8_uses_one_parametric_m3_nut_catcher(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        self.assertIn("module m3_nut_catcher_negative(", source)
+        canonical = compact_scad(
+            scad_module_body(source, "m3_nut_catcher_negative")
+        )
+        panel = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_trap_negative")
+        )
+        wall = compact_scad(
+            scad_module_body(source, "support_free_m3_nut_trap")
+        )
+
+        for parameter in (
+            "nut_across_flats=m3_nut_across_flats",
+            "nut_thickness=m3_nut_thickness",
+            "width_clearance=panel_nut_width_clearance",
+            "thick_clearance=panel_nut_thickness_clearance",
+            "nib_height=panel_nut_floor_nib_h",
+            'roof_mode="30deg"',
+        ):
+            self.assertIn(parameter, canonical)
+        self.assertIn('assert(roof_mode=="flat"||roof_mode=="30deg"', canonical)
+        self.assertIn("m3_nut_catcher_floor_nibs_positive(", canonical)
+        self.assertIn("m3_nut_catcher_negative(", panel)
+        self.assertIn("m3_nut_catcher_negative(", wall)
 
     def test_plamp8_panel_corner_fastener_test_exports_two_flat_pieces(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1702,8 +1676,70 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'panel_corner_fastener_fit_label=str("W",fixed_2(panel_nut_entry_w),"T",fixed_2(panel_nut_slot_h));',
             compact,
         )
+        self.assertIn("scaled=round(value*100)", compact)
         self.assertIn("write_text(panel_corner_fastener_fit_label", top)
         self.assertIn("write_text(revision_string", sub_panel)
+
+    def test_plamp8_nut_catcher_adjustment_jig_expands_independent_rows(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module nut_catcher_adjustment_test(", source)
+        jig = compact_scad(
+            scad_module_body(source, "nut_catcher_adjustment_test")
+        )
+        coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+        transform = compact_scad(
+            scad_module_body(source, "nut_catcher_orientation_transform")
+        )
+
+        for orientation in ('"up"', '"down"', '"sideways"', '"45"'):
+            self.assertIn(orientation, compact)
+        self.assertIn(
+            '["up","width_clearance","offsets",[-0.2,-0.1,0,0.1,0.2]]',
+            compact,
+        )
+        self.assertIn(
+            '["up","thick_clearance","offsets",[-0.2,-0.1,0,0.1,0.2]]',
+            compact,
+        )
+        self.assertIn(
+            '["all","roof_mode","values",["flat","30deg"]]',
+            compact,
+        )
+        self.assertIn("rows_before_count(rows,row_i)", jig)
+        self.assertIn("m3_nut_catcher_negative(", coupon)
+        self.assertIn("nut_catcher_orientation_transform(orientation", coupon)
+        self.assertIn("write_text(label", coupon)
+        self.assertIn("write_text(revision_string", coupon)
+        self.assertIn("m3_nut_across_flats+width_clearance>0", coupon)
+        self.assertIn("m3_nut_thickness+thick_clearance>0", coupon)
+        self.assertNotIn("width_clearance>=0", coupon)
+        self.assertNotIn("thick_clearance>=0", coupon)
+        self.assertIn("roof_top_extent_45", transform)
+        self.assertIn("nut_catcher_test_roof_cover_t", transform)
+        self.assertIn("is_num(candidate)", coupon)
+        self.assertIn('candidate=="flat"||candidate=="30deg"', coupon)
+        self.assertIn('orientation=="up"', transform)
+        self.assertIn('orientation=="down"', transform)
+        self.assertIn('orientation=="sideways"', transform)
+        self.assertIn('orientation=="45"', transform)
+
+    def test_plamp8_exposes_nut_catcher_adjustment_test_set(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        metadata = json.loads(
+            (REPO_ROOT / "things" / "plamp8" / "plamp8.cad.json").read_text()
+        )
+
+        self.assertIn("nut_catcher_adjustment_test", metadata["sets"])
+        self.assertEqual(
+            metadata["sets"]["nut_catcher_adjustment_test"]["slicing"],
+            {"orientation": "as-exported", "supports": "forbidden"},
+        )
+        self.assertIn("nut_catcher_adjustment_test", source.splitlines()[4])
+        self.assertIn(
+            'else if (set == "nut_catcher_adjustment_test")',
+            source,
+        )
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1736,7 +1772,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module panel_corner_screw_lands", source)
         self.assertIn("module panel_corner_fastener_boss", source)
         self.assertIn("module side_loaded_panel_nut_trap", source)
-        self.assertIn("module side_loaded_panel_nut_roof_negative", source)
+        self.assertIn("module m3_nut_catcher_negative", source)
         self.assertIn("panel_nut_entry_detent", source)
         self.assertRegex(
             source,
