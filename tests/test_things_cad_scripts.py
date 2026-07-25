@@ -1596,6 +1596,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "panel_nut_floor_nib_h=0.2;",
             "panel_nut_floor_nib_l=1.2;",
             "panel_nut_floor_nib_w=1;",
+            "panel_nut_floor_nib_angle=30;",
             "panel_nut_roof_angle=30;",
         ):
             self.assertIn(definition, compact)
@@ -1605,6 +1606,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("for(side=[-1,1])", floor_nibs)
         self.assertIn("linear_extrude(", floor_nibs)
         self.assertIn("polygon(", floor_nibs)
+        self.assertIn("rotate([0,0,side*panel_nut_floor_nib_angle])", floor_nibs)
         self.assertIn("roof_h=slot_w/2*tan(panel_nut_roof_angle)", roof)
         self.assertIn("linear_extrude(", roof)
         self.assertIn("polygon(", roof)
