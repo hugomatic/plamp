@@ -1186,7 +1186,7 @@ module side_loaded_panel_nut_roof_negative(
                 polygon([
                     [boolean_shim, -slot_w / 2],
                     [boolean_shim, slot_w / 2],
-                    [-roof_h, 0]
+                    [roof_h, 0]
                 ]);
 }
 
