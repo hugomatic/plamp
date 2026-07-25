@@ -1610,9 +1610,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("roof_h=slot_w/2*tan(panel_nut_roof_angle)", roof)
         self.assertIn("linear_extrude(", roof)
         self.assertIn("polygon(", roof)
-        self.assertIn("-print_z_direction*roof_h", roof)
-        self.assertIn("nib_surface_z=print_z_direction>0?0:slot_h", floor_nibs)
-        self.assertIn("print_z_direction*panel_nut_floor_nib_h", floor_nibs)
+        self.assertIn("[-roof_h,0]", roof)
         self.assertIn("side_loaded_panel_nut_pocket_negative(", shared_trap)
         self.assertIn("side_loaded_panel_nut_roof_negative(", shared_trap)
         self.assertIn("side_loaded_panel_nut_trap_negative(", bonding_nut)
@@ -1640,9 +1638,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("rotate([180,0,0])", sub_panel)
         self.assertIn("panel_corner_fastener_boss(1);", sub_panel)
         self.assertIn(
-            "side_loaded_panel_nut_trap(1,print_z_direction=-1)",
+            "side_loaded_panel_nut_trap_flipped_z(1)",
             sub_panel,
         )
+        flipped = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_trap_flipped_z")
+        )
+        self.assertIn("translate([0,0,slot_h])", flipped)
+        self.assertIn("mirror([0,0,1])", flipped)
+        self.assertIn("side_loaded_panel_nut_trap(direction);", flipped)
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
