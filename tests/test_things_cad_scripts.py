@@ -1536,8 +1536,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         for definition in (
             "sub_panel_bonding_tower_d=11;",
-            "sub_panel_bonding_nut_w=panel_nut_d+panel_nut_clearance;",
-            "sub_panel_bonding_nut_h=panel_nut_h+panel_nut_clearance;",
+            "sub_panel_bonding_nut_w=panel_nut_entry_w;",
+            "sub_panel_bonding_nut_h=panel_nut_slot_h;",
         ):
             self.assertIn(definition, compact)
 
@@ -1591,8 +1591,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         for definition in (
-            "panel_nut_d=6.1;",
-            "panel_nut_clearance=0.1;",
+            "panel_nut_entry_w=m3_nut_across_flats+panel_nut_width_clearance;",
+            "panel_nut_slot_h=m3_nut_thickness+panel_nut_thickness_clearance;",
             "panel_nut_floor_nib_h=0.2;",
             "panel_nut_floor_nib_l=1.2;",
             "panel_nut_floor_nib_w=1;",
@@ -1615,6 +1615,37 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("side_loaded_panel_nut_roof_negative(", shared_trap)
         self.assertIn("side_loaded_panel_nut_trap_negative(", bonding_nut)
         self.assertIn("side_loaded_panel_nut_trap_negative(", corner_nut)
+
+    def test_plamp8_side_loaded_nut_fit_derives_from_measured_m3_nut(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        pocket = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_pocket_negative")
+        )
+        roof = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_roof_negative")
+        )
+        flipped = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_trap_flipped_z")
+        )
+
+        for definition in (
+            "m3_nut_across_flats=5.46;",
+            "m3_nut_thickness=2.38;",
+            "panel_nut_width_clearance=0.14;",
+            "panel_nut_thickness_clearance=0.14;",
+            "panel_nut_entry_w=m3_nut_across_flats+panel_nut_width_clearance;",
+            "panel_nut_pocket_d=panel_nut_entry_w/cos(30);",
+            "panel_nut_slot_h=m3_nut_thickness+panel_nut_thickness_clearance;",
+        ):
+            self.assertIn(definition, compact)
+
+        self.assertIn("slot_w=panel_nut_entry_w", pocket)
+        self.assertIn("d=panel_nut_pocket_d", pocket)
+        self.assertIn("slot_h=panel_nut_slot_h", pocket)
+        self.assertIn("slot_w=panel_nut_entry_w", roof)
+        self.assertIn("slot_h=panel_nut_slot_h", roof)
+        self.assertIn("slot_h=panel_nut_slot_h", flipped)
 
     def test_plamp8_panel_corner_fastener_test_exports_two_flat_pieces(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1656,6 +1687,23 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("translate([0,0,slot_h])", flipped)
         self.assertIn("mirror([0,0,1])", flipped)
         self.assertIn("side_loaded_panel_nut_trap(direction);", flipped)
+
+    def test_plamp8_panel_corner_fastener_test_marks_fit_and_revision(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        top = compact_scad(
+            scad_module_body(source, "panel_corner_fastener_top_coupon")
+        )
+        sub_panel = compact_scad(
+            scad_module_body(source, "panel_corner_fastener_sub_panel_coupon")
+        )
+
+        self.assertIn(
+            'panel_corner_fastener_fit_label=str("W",fixed_2(panel_nut_entry_w),"T",fixed_2(panel_nut_slot_h));',
+            compact,
+        )
+        self.assertIn("write_text(panel_corner_fastener_fit_label", top)
+        self.assertIn("write_text(revision_string", sub_panel)
 
     def test_plamp8_usb_com_fit_dimensions_and_panel_cutouts(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

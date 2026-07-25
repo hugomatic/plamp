@@ -106,26 +106,42 @@ function screw_nut_trap_h(size) =
     size == "M4" ? 3.4 :
     2.8;
 
+function fixed_2(value) = str(
+    floor(value), ".",
+    floor(value * 10) % 10,
+    floor(value * 100) % 10
+);
+
 panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
 panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
 panel_screw_land_d = 9.5;
-panel_nut_d = 6.1;
-panel_nut_h = screw_nut_trap_h(panel_screw_size);
-panel_nut_clearance = 0.1;
+m3_nut_across_flats = 5.46;
+m3_nut_thickness = 2.38;
+panel_nut_width_clearance = 0.14;
+panel_nut_thickness_clearance = 0.14;
+panel_nut_entry_w = m3_nut_across_flats + panel_nut_width_clearance;
+panel_nut_pocket_d = panel_nut_entry_w / cos(30);
+panel_nut_slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
 panel_nut_entry_l = 12;
-panel_nut_entry_detent = 0.35;
+panel_nut_entry_detent = (panel_nut_entry_w - 5.5) / 2;
 panel_nut_entry_detent_l = 1.5;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
 panel_nut_floor_nib_angle = 30;
 panel_nut_roof_angle = 30;
-panel_nut_roof_h = (panel_nut_d + panel_nut_clearance) / 2
-    * tan(panel_nut_roof_angle);
+panel_nut_roof_h = panel_nut_entry_w / 2 * tan(panel_nut_roof_angle);
 panel_fastener_boss_d = 11;
 panel_corner_fastener_test_gap = 5;
 panel_corner_coupon_roof_cover_t = 0.5;
+panel_corner_fastener_mark_font = 2;
+panel_corner_fastener_mark_depth = 0.6;
+panel_corner_fastener_mark_y = -5.5;
+panel_corner_fastener_fit_label = str(
+    "W", fixed_2(panel_nut_entry_w),
+    " T", fixed_2(panel_nut_slot_h)
+);
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 corner_nut_slot_l = 2.7;
@@ -386,8 +402,8 @@ sub_panel_usb_support_rib_gap = 1;
 sub_panel_revision_clearance = 1;
 sub_panel_revision_font = 4;
 sub_panel_bonding_tower_d = 11;
-sub_panel_bonding_nut_w = panel_nut_d + panel_nut_clearance;
-sub_panel_bonding_nut_h = panel_nut_h + panel_nut_clearance;
+sub_panel_bonding_nut_w = panel_nut_entry_w;
+sub_panel_bonding_nut_h = panel_nut_slot_h;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
 top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
@@ -674,7 +690,7 @@ assert(sub_panel_base_h + sub_panel_bonding_nut_h
         + sub_panel_bonding_nut_w / 2 * tan(panel_nut_roof_angle)
         <= sub_panel_h,
     "panel bonding nut catcher roof must remain inside the sub-panel");
-assert(sub_panel_bonding_throat_w > panel_nut_d * cos(30),
+assert(sub_panel_bonding_throat_w > m3_nut_across_flats,
     "panel bonding nut entry must admit the calibrated M3 nut");
 assert(c13_screw_spacing / 2 + sub_panel_bonding_tower_d / 2
         <= c13_group_w / 2,
@@ -1115,8 +1131,7 @@ module side_loaded_panel_nut_floor_nibs_positive(
 ) {
     detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
-    throat_w = panel_nut_d + panel_nut_clearance
-        - 2 * panel_nut_entry_detent;
+    throat_w = panel_nut_entry_w - 2 * panel_nut_entry_detent;
     nib_inner_x = max(0, main_l - panel_nut_floor_nib_l);
     nib_outer_x = main_l;
 
@@ -1149,8 +1164,8 @@ module side_loaded_panel_nut_pocket_negative(
     direction = 1,
     opening_edge_distance = panel_nut_entry_l
 ) {
-    slot_w = panel_nut_d + panel_nut_clearance;
-    slot_h = panel_nut_h + panel_nut_clearance;
+    slot_w = panel_nut_entry_w;
+    slot_h = panel_nut_slot_h;
     detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
     throat_w = slot_w - 2 * panel_nut_entry_detent;
@@ -1158,7 +1173,7 @@ module side_loaded_panel_nut_pocket_negative(
     difference() {
         union() {
             rotate([0, 0, 30])
-                cylinder(h = slot_h, d = slot_w, $fn = 6);
+                cylinder(h = slot_h, d = panel_nut_pocket_d, $fn = 6);
 
             if (main_l > 0)
                 translate([
@@ -1187,8 +1202,8 @@ module side_loaded_panel_nut_roof_negative(
     direction = 1,
     opening_edge_distance = panel_nut_entry_l
 ) {
-    slot_w = panel_nut_d + panel_nut_clearance;
-    slot_h = panel_nut_h + panel_nut_clearance;
+    slot_w = panel_nut_entry_w;
+    slot_h = panel_nut_slot_h;
     roof_h = panel_nut_roof_h;
     roof_l = opening_edge_distance + slot_w / 2;
     roof_x = direction < 0 ? -opening_edge_distance : -slot_w / 2;
@@ -2140,7 +2155,7 @@ module side_loaded_panel_nut_trap(direction = 1) {
 }
 
 module side_loaded_panel_nut_trap_flipped_z(direction = 1) {
-    slot_h = panel_nut_h + panel_nut_clearance;
+    slot_h = panel_nut_slot_h;
 
     translate([0, 0, slot_h])
         mirror([0, 0, 1])
@@ -3023,6 +3038,12 @@ module panel_corner_fastener_top_coupon(test_w = 18) {
         translate([-test_w / 2, -test_w / 2, 0])
             cube([test_w, test_w, plate_t]);
         panel_corner_screw_hole(include_countersink = true);
+        translate([0, panel_corner_fastener_mark_y, 0])
+            write_text(
+                panel_corner_fastener_fit_label,
+                panel_corner_fastener_mark_font,
+                plate_t - panel_corner_fastener_mark_depth
+            );
     }
 }
 
@@ -3047,6 +3068,13 @@ module panel_corner_fastener_sub_panel_coupon(test_w = 18) {
             translate([0, 0, panel_nut_trap_z])
                 // Pre-flip the complete trap with the complete coupon.
                 side_loaded_panel_nut_trap_flipped_z(1);
+            translate([0, panel_corner_fastener_mark_y, 0])
+                write_text(
+                    revision_string,
+                    panel_corner_fastener_mark_font,
+                    sub_panel_bottom_z
+                        - (write_t - panel_corner_fastener_mark_depth)
+                );
         }
 }
 
