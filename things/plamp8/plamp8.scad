@@ -1105,7 +1105,8 @@ module sub_panel_c13_negative() {
 
 module side_loaded_panel_nut_floor_nibs_positive(
     direction,
-    opening_edge_distance
+    opening_edge_distance,
+    print_z_direction = 1
 ) {
     detent_l = min(panel_nut_entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
@@ -1113,36 +1114,41 @@ module side_loaded_panel_nut_floor_nibs_positive(
         - 2 * panel_nut_entry_detent;
     nib_inner_x = max(0, main_l - panel_nut_floor_nib_l);
     nib_outer_x = main_l;
+    slot_h = panel_nut_h + panel_nut_clearance;
+    nib_surface_z = print_z_direction > 0 ? 0 : slot_h;
+    nib_base_z = nib_surface_z - print_z_direction * boolean_shim;
+    nib_tip_z = nib_surface_z
+        + print_z_direction * panel_nut_floor_nib_h;
 
     for (side = [-1, 1])
         scale([direction, 1, 1])
             translate([
                 (nib_inner_x + nib_outer_x) / 2,
                 side * (throat_w - panel_nut_floor_nib_w) / 2,
-                panel_nut_floor_nib_h / 2
+                0
             ])
                 rotate([0, 0, side * panel_nut_floor_nib_angle])
                     translate([
                         -(nib_inner_x + nib_outer_x) / 2,
                         -side * (throat_w - panel_nut_floor_nib_w) / 2,
-                        -panel_nut_floor_nib_h / 2
+                        0
                     ])
-                        translate([0, 0, 0])
-                            rotate([90, 0, 0])
-                                linear_extrude(
-                                    height = panel_nut_floor_nib_w,
-                                    center = true
-                                )
-                                    polygon([
-                                        [nib_outer_x, -boolean_shim],
-                                        [nib_inner_x, -boolean_shim],
-                                        [nib_inner_x, panel_nut_floor_nib_h]
-                                    ]);
+                        rotate([90, 0, 0])
+                            linear_extrude(
+                                height = panel_nut_floor_nib_w,
+                                center = true
+                            )
+                                polygon([
+                                    [nib_outer_x, nib_base_z],
+                                    [nib_inner_x, nib_base_z],
+                                    [nib_inner_x, nib_tip_z]
+                                ]);
 }
 
 module side_loaded_panel_nut_pocket_negative(
     direction = 1,
-    opening_edge_distance = panel_nut_entry_l
+    opening_edge_distance = panel_nut_entry_l,
+    print_z_direction = 1
 ) {
     slot_w = panel_nut_d + panel_nut_clearance;
     slot_h = panel_nut_h + panel_nut_clearance;
@@ -1173,14 +1179,16 @@ module side_loaded_panel_nut_pocket_negative(
 
         side_loaded_panel_nut_floor_nibs_positive(
             direction,
-            opening_edge_distance
+            opening_edge_distance,
+            print_z_direction
         );
     }
 }
 
 module side_loaded_panel_nut_roof_negative(
     direction = 1,
-    opening_edge_distance = panel_nut_entry_l
+    opening_edge_distance = panel_nut_entry_l,
+    print_z_direction = 1
 ) {
     slot_w = panel_nut_d + panel_nut_clearance;
     slot_h = panel_nut_h + panel_nut_clearance;
@@ -1194,17 +1202,26 @@ module side_loaded_panel_nut_roof_negative(
                 polygon([
                     [boolean_shim, -slot_w / 2],
                     [boolean_shim, slot_w / 2],
-                    // After rotate([0, 90, 0]), negative profile X is world +Z.
-                    [-roof_h, 0]
+                    // After rotate([0, 90, 0]), profile X maps to world -Z.
+                    [-print_z_direction * roof_h, 0]
                 ]);
 }
 
 module side_loaded_panel_nut_trap_negative(
     direction = 1,
-    opening_edge_distance = panel_nut_entry_l
+    opening_edge_distance = panel_nut_entry_l,
+    print_z_direction = 1
 ) {
-    side_loaded_panel_nut_pocket_negative(direction, opening_edge_distance);
-    side_loaded_panel_nut_roof_negative(direction, opening_edge_distance);
+    side_loaded_panel_nut_pocket_negative(
+        direction,
+        opening_edge_distance,
+        print_z_direction
+    );
+    side_loaded_panel_nut_roof_negative(
+        direction,
+        opening_edge_distance,
+        print_z_direction
+    );
 }
 
 module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
@@ -2125,8 +2142,12 @@ module panel_corner_fastener_boss(direction = 1) {
     }
 }
 
-module side_loaded_panel_nut_trap(direction = 1) {
-    side_loaded_panel_nut_trap_negative(direction, panel_nut_entry_l);
+module side_loaded_panel_nut_trap(direction = 1, print_z_direction = 1) {
+    side_loaded_panel_nut_trap_negative(
+        direction,
+        panel_nut_entry_l,
+        print_z_direction
+    );
 }
 
 // Wall-local printable coordinates:
@@ -3021,7 +3042,8 @@ module panel_corner_fastener_sub_panel_coupon(test_w = 18) {
             translate([0, 0, panel_fastener_boss_bottom_z - 1])
                 cylinder(h = -panel_fastener_boss_bottom_z + 2, d = panel_screw_d);
             translate([0, 0, panel_nut_trap_z])
-                side_loaded_panel_nut_trap(1);
+                // Pre-flip the roof and floor nibs with the complete coupon.
+                side_loaded_panel_nut_trap(1, print_z_direction = -1);
         }
 }
 
