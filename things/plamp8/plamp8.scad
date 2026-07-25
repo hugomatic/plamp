@@ -119,6 +119,7 @@ panel_nut_entry_detent_l = 1.5;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
+panel_nut_floor_nib_angle = 30;
 panel_nut_roof_angle = 30;
 panel_fastener_boss_d = 11;
 panel_corner_fastener_test_gap = 5;
@@ -1116,20 +1117,27 @@ module side_loaded_panel_nut_floor_nibs_positive(
     for (side = [-1, 1])
         scale([direction, 1, 1])
             translate([
-                0,
+                (nib_inner_x + nib_outer_x) / 2,
                 side * (throat_w - panel_nut_floor_nib_w) / 2,
-                0
+                panel_nut_floor_nib_h / 2
             ])
-                rotate([90, 0, 0])
-                    linear_extrude(
-                        height = panel_nut_floor_nib_w,
-                        center = true
-                    )
-                        polygon([
-                            [nib_outer_x, -boolean_shim],
-                            [nib_inner_x, -boolean_shim],
-                            [nib_inner_x, panel_nut_floor_nib_h]
-                        ]);
+                rotate([0, 0, side * panel_nut_floor_nib_angle])
+                    translate([
+                        -(nib_inner_x + nib_outer_x) / 2,
+                        -side * (throat_w - panel_nut_floor_nib_w) / 2,
+                        -panel_nut_floor_nib_h / 2
+                    ])
+                        translate([0, 0, 0])
+                            rotate([90, 0, 0])
+                                linear_extrude(
+                                    height = panel_nut_floor_nib_w,
+                                    center = true
+                                )
+                                    polygon([
+                                        [nib_outer_x, -boolean_shim],
+                                        [nib_inner_x, -boolean_shim],
+                                        [nib_inner_x, panel_nut_floor_nib_h]
+                                    ]);
 }
 
 module side_loaded_panel_nut_pocket_negative(
