@@ -1194,7 +1194,8 @@ module side_loaded_panel_nut_roof_negative(
                 polygon([
                     [boolean_shim, -slot_w / 2],
                     [boolean_shim, slot_w / 2],
-                    [roof_h, 0]
+                    // After rotate([0, 90, 0]), negative profile X is world +Z.
+                    [-roof_h, 0]
                 ]);
 }
 
