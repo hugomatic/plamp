@@ -121,8 +121,11 @@ panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
 panel_nut_floor_nib_angle = 30;
 panel_nut_roof_angle = 30;
+panel_nut_roof_h = (panel_nut_d + panel_nut_clearance) / 2
+    * tan(panel_nut_roof_angle);
 panel_fastener_boss_d = 11;
 panel_corner_fastener_test_gap = 5;
+panel_corner_coupon_roof_cover_t = 0.5;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 corner_nut_slot_l = 2.7;
@@ -601,6 +604,9 @@ sub_panel_bottom_z = -(plate_t + sub_panel_h);
 panel_nut_trap_z = -panel_screw_length + panel_screw_tip_protrusion;
 panel_fastener_boss_bottom_z = panel_nut_trap_z - 0.5;
 panel_fastener_boss_h = sub_panel_bottom_z - panel_fastener_boss_bottom_z;
+panel_corner_coupon_boss_bottom_z = panel_nut_trap_z
+    - panel_nut_roof_h
+    - panel_corner_coupon_roof_cover_t;
 
 content_left_x = left_ac_x + outlet_group_x - outlet_group_w / 2;
 content_right_x = outlet_right_x;
@@ -1183,7 +1189,7 @@ module side_loaded_panel_nut_roof_negative(
 ) {
     slot_w = panel_nut_d + panel_nut_clearance;
     slot_h = panel_nut_h + panel_nut_clearance;
-    roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
+    roof_h = panel_nut_roof_h;
     roof_l = opening_edge_distance + slot_w / 2;
     roof_x = direction < 0 ? -opening_edge_distance : -slot_w / 2;
 
@@ -2111,16 +2117,21 @@ module panel_corner_screw_holes(include_countersink = false) {
             panel_corner_screw_hole(include_countersink);
 }
 
-module panel_corner_fastener_boss(direction = 1) {
+module panel_corner_fastener_boss(
+    direction = 1,
+    bottom_z = panel_fastener_boss_bottom_z
+) {
+    boss_h = sub_panel_bottom_z - bottom_z;
+
     union() {
-        translate([0, 0, panel_fastener_boss_bottom_z])
-            cylinder(h = panel_fastener_boss_h, d = panel_fastener_boss_d);
+        translate([0, 0, bottom_z])
+            cylinder(h = boss_h, d = panel_fastener_boss_d);
         translate([
             direction < 0 ? -panel_nut_entry_l : 0,
             -panel_fastener_boss_d / 2,
-            panel_fastener_boss_bottom_z
+            bottom_z
         ])
-            cube([panel_nut_entry_l, panel_fastener_boss_d, panel_fastener_boss_h]);
+            cube([panel_nut_entry_l, panel_fastener_boss_d, boss_h]);
     }
 }
 
@@ -3022,11 +3033,17 @@ module panel_corner_fastener_sub_panel_coupon(test_w = 18) {
             union() {
                 translate([-test_w / 2, -test_w / 2, sub_panel_bottom_z])
                     cube([test_w, test_w, sub_panel_h]);
-                panel_corner_fastener_boss(1);
+                panel_corner_fastener_boss(
+                    1,
+                    panel_corner_coupon_boss_bottom_z
+                );
             }
 
-            translate([0, 0, panel_fastener_boss_bottom_z - 1])
-                cylinder(h = -panel_fastener_boss_bottom_z + 2, d = panel_screw_d);
+            translate([0, 0, panel_corner_coupon_boss_bottom_z - 1])
+                cylinder(
+                    h = -panel_corner_coupon_boss_bottom_z + 2,
+                    d = panel_screw_d
+                );
             translate([0, 0, panel_nut_trap_z])
                 // Pre-flip the complete trap with the complete coupon.
                 side_loaded_panel_nut_trap_flipped_z(1);

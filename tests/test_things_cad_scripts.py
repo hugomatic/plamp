@@ -1607,7 +1607,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("linear_extrude(", floor_nibs)
         self.assertIn("polygon(", floor_nibs)
         self.assertIn("rotate([0,0,side*panel_nut_floor_nib_angle])", floor_nibs)
-        self.assertIn("roof_h=slot_w/2*tan(panel_nut_roof_angle)", roof)
+        self.assertIn("roof_h=panel_nut_roof_h", roof)
         self.assertIn("linear_extrude(", roof)
         self.assertIn("polygon(", roof)
         self.assertIn("[-roof_h,0]", roof)
@@ -1630,13 +1630,22 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         self.assertIn("panel_corner_fastener_test_gap=5;", compact)
+        self.assertIn("panel_corner_coupon_roof_cover_t=0.5;", compact)
+        self.assertIn(
+            "panel_corner_coupon_boss_bottom_z=panel_nut_trap_z-panel_nut_roof_h-panel_corner_coupon_roof_cover_t;",
+            compact,
+        )
         self.assertIn("panel_corner_fastener_top_coupon(test_w);", test)
         self.assertIn("panel_corner_fastener_sub_panel_coupon(test_w);", test)
         self.assertIn("test_w+panel_corner_fastener_test_gap", test)
         self.assertNotIn("union(){", test)
         self.assertIn("cube([test_w,test_w,plate_t])", top)
         self.assertIn("rotate([180,0,0])", sub_panel)
-        self.assertIn("panel_corner_fastener_boss(1);", sub_panel)
+        self.assertIn(
+            "panel_corner_fastener_boss(1,panel_corner_coupon_boss_bottom_z);",
+            sub_panel,
+        )
+        self.assertIn("panel_corner_coupon_boss_bottom_z-1", sub_panel)
         self.assertIn(
             "side_loaded_panel_nut_trap_flipped_z(1)",
             sub_panel,
