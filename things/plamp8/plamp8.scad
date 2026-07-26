@@ -332,6 +332,7 @@ coupon_assembly_clearance = 0.05;
 coupon_plate_column_x = 100;
 wall_rib_w = 3;
 wall_rib_h = 2;
+south_middle_rib_x_adjust = -2.5;
 box_half_hex_rib_h = wall_rib_w * sqrt(3) / 4;
 wall_vent_joint_clearance = 1;
 floor_locator_l = 16;
@@ -2288,6 +2289,7 @@ module support_free_m3_nut_trap(
         rotate([0, -corner_nut_entry_angle, 0])
             rotate([-90, 0, 0])
                 m3_nut_catcher_negative(
+                    direction = -1,
                     opening_edge_distance = opening_edge_distance,
                     roof_mode = print_orientation == box_print_orientation
                         ? "30deg"
@@ -2548,14 +2550,15 @@ module wall_stiffening_ribs(
     h,
     vent_mode = "none",
     vent_side = "right",
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    middle_rib_x_adjust = 0
 ) {
     assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
         "half-wall vent_side must be left or right");
     rib_xs = vent_mode == "half"
         ? (vent_side == "left"
-            ? [length / 2 - vent_hole_spacing / 2, 3 * length / 4]
-            : [length / 4, length / 2 + vent_hole_spacing / 2])
+            ? [length / 2 - vent_hole_spacing / 2 + middle_rib_x_adjust, 3 * length / 4]
+            : [length / 4, length / 2 + vent_hole_spacing / 2 + middle_rib_x_adjust])
         : (vent_mode == "full"
             ? [vent_wall_margin + vent_hole_spacing / 2, full_vent_center_rib_x(length), length - 21]
             : [length / 3, 2 * length / 3]);
@@ -2657,7 +2660,8 @@ module flat_wall(
     h = wall_z_height,
     coarse_vents = false,
     mitre_overlap = 0,
-    print_orientation = flat_wall_print_orientation
+    print_orientation = flat_wall_print_orientation,
+    middle_rib_x_adjust = 0
 ) {
     assert(vent_mode != "half" || vent_side == "left" || vent_side == "right",
         "half-wall vent_side must be left or right");
@@ -2670,7 +2674,8 @@ module flat_wall(
                 h,
                 vent_mode,
                 vent_side,
-                print_orientation
+                print_orientation,
+                middle_rib_x_adjust
             );
         }
         floor_locator_notches(length);
@@ -2790,7 +2795,8 @@ module south_wall(
         vent_side = "left",
         coarse_vents = coarse_vents,
         mitre_overlap = mitre_overlap,
-        print_orientation = print_orientation
+        print_orientation = print_orientation,
+        middle_rib_x_adjust = south_middle_rib_x_adjust
     );
 }
 

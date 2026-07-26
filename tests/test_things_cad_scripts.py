@@ -296,7 +296,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         flat_wall = compact_scad(scad_module_body(source, "flat_wall"))
         self.assertIn(
-            "wall_stiffening_ribs(length,h,vent_mode,vent_side,print_orientation);",
+            "wall_stiffening_ribs(length,h,vent_mode,vent_side,print_orientation,middle_rib_x_adjust);",
             flat_wall,
         )
         self.assertIn(
@@ -327,10 +327,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )[0]
         self.assertIn('vent_side == "left"', ribs)
         self.assertIn(
-            "[length / 2 - vent_hole_spacing / 2, 3 * length / 4]", ribs
+            "[length / 2 - vent_hole_spacing / 2 + middle_rib_x_adjust, 3 * length / 4]", ribs
         )
         self.assertIn(
-            "[length / 4, length / 2 + vent_hole_spacing / 2]", ribs
+            "[length / 4, length / 2 + vent_hole_spacing / 2 + middle_rib_x_adjust]", ribs
         )
 
         revision = source.split("module wall_revision_negative(", 1)[1].split(
@@ -780,12 +780,27 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("m3_nut_catcher_negative(", source)
         self.assertIn("print_orientation == box_print_orientation", source)
 
+        corner_adapter = source.split("module support_free_m3_nut_trap(", 1)[1].split(
+            "module corner_clearance_tab", 1
+        )[0]
+        self.assertIn("direction = -1", corner_adapter)
+
         box_module = source.split("module box()", 1)[1].split(
             "module assembly()", 1
         )[0]
         self.assertEqual(
             box_module.count("print_orientation = box_print_orientation"), 4
         )
+
+    def test_plamp8_south_middle_rib_has_wall_specific_negative_x_adjustment(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        self.assertIn("south_middle_rib_x_adjust=-2.5;", compact)
+        self.assertIn("middle_rib_x_adjust=0", compact)
+        self.assertIn("length/2-vent_hole_spacing/2+middle_rib_x_adjust", compact)
+        south = compact_scad(scad_module_body(source, "south_wall"))
+        self.assertIn("middle_rib_x_adjust=south_middle_rib_x_adjust", south)
 
     def test_plamp8_preview_separates_panels_only_in_preview(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
