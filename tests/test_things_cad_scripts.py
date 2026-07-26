@@ -783,7 +783,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         corner_adapter = source.split("module support_free_m3_nut_trap(", 1)[1].split(
             "module corner_clearance_tab", 1
         )[0]
-        self.assertIn("direction = -1", corner_adapter)
+        # The 45-degree entry must travel toward local +X: after the -45-degree
+        # Y rotation that is also upward, so the shaft breaks through the top
+        # edge of the corner spine instead of disappearing below the print face.
+        self.assertIn("direction = 1", corner_adapter)
 
         box_module = source.split("module box()", 1)[1].split(
             "module assembly()", 1

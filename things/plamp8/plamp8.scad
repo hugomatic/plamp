@@ -2289,7 +2289,7 @@ module support_free_m3_nut_trap(
         rotate([0, -corner_nut_entry_angle, 0])
             rotate([-90, 0, 0])
                 m3_nut_catcher_negative(
-                    direction = -1,
+                    direction = 1,
                     opening_edge_distance = opening_edge_distance,
                     roof_mode = print_orientation == box_print_orientation
                         ? "30deg"
