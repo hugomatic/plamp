@@ -15,6 +15,12 @@ def static_text(name: str) -> str:
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_timer_dashboard_names_pico_schedulers_by_role(self):
+        html = static_timer_dashboard()
+
+        self.assertIn("Pico Scheduler", html)
+        self.assertNotIn("pico board", html.lower())
+
     def test_controller_static_client_uses_rest_and_sse_without_injected_state(self):
         html = static_text("controller.html")
         script = static_text("controller.js")

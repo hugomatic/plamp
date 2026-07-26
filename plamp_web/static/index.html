@@ -924,7 +924,7 @@
         timerStatus.textContent = "No timers configured.";
         return;
       }
-      timerStatus.textContent = `${timerRoles.length} pico board${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
+      timerStatus.textContent = `${timerRoles.length} Pico Scheduler${timerRoles.length === 1 ? "" : "s"}: ${timerRoles.join(", ")}`;
       for (const role of timerRoles) {
         const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);
         timerEventSources.set(role, source);
