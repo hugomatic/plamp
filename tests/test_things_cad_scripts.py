@@ -1621,6 +1621,45 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("m3_nut_catcher_negative(", panel)
         self.assertIn("m3_nut_catcher_negative(", wall)
 
+    def test_plamp8_nut_catcher_nibs_retain_at_seated_screw_axis(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        nibs = compact_scad(
+            scad_module_body(source, "m3_nut_catcher_floor_nibs_positive")
+        )
+
+        self.assertIn("seated_nut_center_x=0", nibs)
+        self.assertIn(
+            "nib_outer_x=seated_nut_center_x+slot_w/2", nibs
+        )
+        self.assertIn("nib_inner_x=nib_outer_x+nib_length", nibs)
+        self.assertNotIn("main_l-nib_length", nibs)
+
+    def test_plamp8_jig_45_roof_is_always_flat(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+
+        self.assertIn(
+            'functionnut_catcher_effective_roof_mode(orientation,requested)='
+            'orientation=="45"?"flat":requested;',
+            compact,
+        )
+        self.assertIn(
+            "roof_mode=nut_catcher_effective_roof_mode(orientation,requested_roof_mode)",
+            coupon,
+        )
+
+    def test_plamp8_sideways_flat_roof_uses_teardrop_screw_hole(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        self.assertIn("module nut_catcher_test_screw_negative(", source)
+        screw = compact_scad(
+            scad_module_body(source, "nut_catcher_test_screw_negative")
+        )
+
+        self.assertIn('orientation=="sideways"&&roof_mode=="flat"', screw)
+        self.assertIn("teardrop_hole_3d(", screw)
+        self.assertIn("d=panel_screw_d", screw)
+
     def test_plamp8_panel_corner_fastener_test_exports_two_flat_pieces(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)

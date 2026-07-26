@@ -1132,11 +1132,10 @@ module m3_nut_catcher_floor_nibs_positive(
     nib_angle = panel_nut_floor_nib_angle
 ) {
     slot_w = nut_across_flats + width_clearance;
-    detent_l = min(entry_detent_l, opening_edge_distance);
-    main_l = opening_edge_distance - detent_l;
     throat_w = slot_w - 2 * entry_detent;
-    nib_inner_x = max(0, main_l - nib_length);
-    nib_outer_x = main_l;
+    seated_nut_center_x = 0;
+    nib_outer_x = seated_nut_center_x + slot_w / 2;
+    nib_inner_x = nib_outer_x + nib_length;
 
     for (side = [-1, 1])
         scale([direction, 1, 1])
@@ -3007,6 +3006,9 @@ function nut_catcher_candidate_value(parameter, mode, candidate) =
                 : candidate)
             : candidate;
 
+function nut_catcher_effective_roof_mode(orientation, requested) =
+    orientation == "45" ? "flat" : requested;
+
 function signed_fixed_2(value) = str(
     value >= 0 ? "+" : "-",
     fixed_2(abs(value))
@@ -3074,6 +3076,26 @@ module nut_catcher_orientation_transform(
                 children();
 }
 
+module teardrop_hole_3d(d, h) {
+    radius = d / 2;
+
+    linear_extrude(height = h)
+        hull() {
+            circle(d = d);
+            translate([0, radius * sqrt(2)])
+                square([boolean_shim, boolean_shim], center = true);
+        }
+}
+
+module nut_catcher_test_screw_negative(orientation, roof_mode, height) {
+    if (orientation == "sideways" && roof_mode == "flat")
+        translate([0, 0, -height])
+            teardrop_hole_3d(d = panel_screw_d, h = 2 * height);
+    else
+        translate([0, 0, -height])
+            cylinder(h = 2 * height, d = panel_screw_d);
+}
+
 module nut_catcher_test_coupon(
     orientation,
     parameter,
@@ -3086,7 +3108,11 @@ module nut_catcher_test_coupon(
     thick_clearance = parameter == "thick_clearance"
         ? nut_catcher_candidate_value(parameter, mode, candidate)
         : panel_nut_thickness_clearance;
-    roof_mode = parameter == "roof_mode" ? candidate : "30deg";
+    requested_roof_mode = parameter == "roof_mode" ? candidate : "30deg";
+    roof_mode = nut_catcher_effective_roof_mode(
+        orientation,
+        requested_roof_mode
+    );
     slot_w = m3_nut_across_flats + width_clearance;
     slot_h = m3_nut_thickness + thick_clearance;
     opening_edge_distance = nut_catcher_test_coupon_w / 2 + 1;
@@ -3135,11 +3161,11 @@ module nut_catcher_test_coupon(
                     roof_mode = roof_mode,
                     opening_edge_distance = opening_edge_distance
                 );
-                translate([0, 0, -nut_catcher_test_coupon_h])
-                    cylinder(
-                        h = 2 * nut_catcher_test_coupon_h,
-                        d = panel_screw_d
-                    );
+                nut_catcher_test_screw_negative(
+                    orientation,
+                    roof_mode,
+                    nut_catcher_test_coupon_h
+                );
             }
 
         translate([0, -5, 0])
