@@ -1745,7 +1745,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             '["all","roof_mode","values",["flat","30deg"]]',
             compact,
         )
-        self.assertIn("rows_before_count(rows,row_i)", jig)
+        self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
         self.assertIn("m3_nut_catcher_negative(", coupon)
         self.assertIn("nut_catcher_orientation_transform(orientation", coupon)
         self.assertIn("write_text(label", coupon)
@@ -1762,6 +1762,69 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('orientation=="down"', transform)
         self.assertIn('orientation=="sideways"', transform)
         self.assertIn('orientation=="45"', transform)
+
+    def test_plamp8_nut_jig_loads_every_coupon_from_negative_y(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        transform = compact_scad(
+            scad_module_body(source, "nut_catcher_orientation_transform")
+        )
+        coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+
+        self.assertIn("rotate([0,0,-90])", transform)
+        self.assertIn(
+            "opening_edge_distance=nut_catcher_test_coupon_d/2+1", coupon
+        )
+
+    def test_plamp8_nut_jig_connects_each_row_and_compacts_coupons(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module nut_catcher_test_row(", source)
+        row = compact_scad(scad_module_body(source, "nut_catcher_test_row"))
+        jig = compact_scad(
+            scad_module_body(source, "nut_catcher_adjustment_test")
+        )
+
+        for definition in (
+            "nut_catcher_test_coupon_w=16;",
+            "nut_catcher_test_coupon_d=12;",
+            "nut_catcher_test_coupon_h=10;",
+            "nut_catcher_test_gap=3;",
+            "nut_catcher_test_mark_y=3.8;",
+        ):
+            self.assertIn(definition, compact)
+        self.assertIn("items=nut_catcher_row_items(row)", row)
+        self.assertIn("item_i*nut_catcher_test_coupon_w", row)
+        self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
+        self.assertIn(
+            "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", jig
+        )
+        self.assertIn(
+            '!(orientation=="45"&&parameter=="roof_mode"&&candidate=="30deg")',
+            compact,
+        )
+
+    def test_plamp8_nut_jig_echoes_label_legend(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        jig = compact_scad(
+            scad_module_body(source, "nut_catcher_adjustment_test")
+        )
+        label = compact_scad(
+            source.split("function nut_catcher_candidate_label", 1)[1].split(
+                "module ", 1
+            )[0]
+        )
+
+        self.assertIn(
+            'echo("Nutcatcherlegend:U=up,D=down,S=sideways,45=diagonal,'
+            'W=widthclearance,T=thicknessclearance,RF=flatroof,'
+            'R30=30-degreeroof")',
+            jig,
+        )
+        self.assertIn(
+            'parameter=="roof_mode"?str(nut_catcher_orientation_short(orientation),'
+            '"",candidate=="flat"?"RF":"R30")',
+            label,
+        )
 
     def test_plamp8_exposes_nut_catcher_adjustment_test_set(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

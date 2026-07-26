@@ -150,13 +150,13 @@ nut_catcher_test_rows = [
     ["up", "thick_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
     ["all", "roof_mode", "values", ["flat", "30deg"]]
 ];
-nut_catcher_test_columns = 5;
-nut_catcher_test_coupon_w = 18;
-nut_catcher_test_coupon_d = 14;
-nut_catcher_test_coupon_h = 12;
-nut_catcher_test_gap = 4;
+nut_catcher_test_coupon_w = 16;
+nut_catcher_test_coupon_d = 12;
+nut_catcher_test_coupon_h = 10;
+nut_catcher_test_gap = 3;
 nut_catcher_test_mark_font = 1.35;
 nut_catcher_test_mark_depth = 0.5;
+nut_catcher_test_mark_y = 3.8;
 nut_catcher_test_roof_cover_t = 0.8;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
@@ -2988,14 +2988,22 @@ module panel_corner_fastener_test() {
 function nut_catcher_row_orientations(row) =
     row[0] == "all" ? nut_catcher_test_orientations : [row[0]];
 
-function nut_catcher_row_count(row) =
-    len(nut_catcher_row_orientations(row)) * len(row[3]);
+function nut_catcher_candidate_allowed(orientation, parameter, candidate) =
+    !(
+        orientation == "45"
+            && parameter == "roof_mode"
+            && candidate == "30deg"
+    );
 
-function rows_before_count(rows, row_i, cursor = 0) =
-    cursor >= row_i
-        ? 0
-        : nut_catcher_row_count(rows[cursor])
-            + rows_before_count(rows, row_i, cursor + 1);
+function nut_catcher_row_items(row) = [
+    for (orientation = nut_catcher_row_orientations(row))
+        for (candidate = row[3])
+            if (nut_catcher_candidate_allowed(orientation, row[1], candidate))
+                [orientation, candidate]
+];
+
+function nut_catcher_row_count(row) =
+    len(nut_catcher_row_items(row));
 
 function nut_catcher_candidate_value(parameter, mode, candidate) =
     parameter == "width_clearance"
@@ -3026,15 +3034,18 @@ function nut_catcher_parameter_short(parameter) =
     "R";
 
 function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
-    str(
-        nut_catcher_orientation_short(orientation), " ",
-        nut_catcher_parameter_short(parameter),
-        parameter == "roof_mode"
-            ? (candidate == "flat" ? "F" : "30")
-            : mode == "offsets"
+    parameter == "roof_mode"
+        ? str(
+            nut_catcher_orientation_short(orientation), " ",
+            candidate == "flat" ? "RF" : "R30"
+        )
+        : str(
+            nut_catcher_orientation_short(orientation), " ",
+            nut_catcher_parameter_short(parameter),
+            mode == "offsets"
                 ? signed_fixed_2(candidate)
                 : fixed_2(candidate)
-    );
+        );
 
 module nut_catcher_orientation_transform(
     orientation,
@@ -3059,21 +3070,25 @@ module nut_catcher_orientation_transform(
     );
     assert(origin_45_z > 0, "45-degree catcher does not fit inside coupon");
 
-    if (orientation == "up")
-        translate([0, 0, 3])
-            children();
-    else if (orientation == "down")
-        translate([0, 0, nut_catcher_test_coupon_h - 3])
-            rotate([180, 0, 0])
+    // Canonical insertion runs along +X. The outer rotation makes every
+    // exported coupon load from its -Y edge.
+    rotate([0, 0, -90]) {
+        if (orientation == "up")
+            translate([0, 0, 3])
                 children();
-    else if (orientation == "sideways")
-        translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
-            rotate([90, 0, 0])
-                children();
-    else if (orientation == "45")
-        translate([0, 0, origin_45_z])
-            rotate([-45, 0, 0])
-                children();
+        else if (orientation == "down")
+            translate([0, 0, nut_catcher_test_coupon_h - 3])
+                rotate([180, 0, 0])
+                    children();
+        else if (orientation == "sideways")
+            translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
+                rotate([90, 0, 0])
+                    children();
+        else if (orientation == "45")
+            translate([0, 0, origin_45_z])
+                rotate([-45, 0, 0])
+                    children();
+    }
 }
 
 module teardrop_hole_3d(d, h) {
@@ -3115,7 +3130,7 @@ module nut_catcher_test_coupon(
     );
     slot_w = m3_nut_across_flats + width_clearance;
     slot_h = m3_nut_thickness + thick_clearance;
-    opening_edge_distance = nut_catcher_test_coupon_w / 2 + 1;
+    opening_edge_distance = nut_catcher_test_coupon_d / 2 + 1;
     label = nut_catcher_candidate_label(
         orientation,
         parameter,
@@ -3168,13 +3183,13 @@ module nut_catcher_test_coupon(
                 );
             }
 
-        translate([0, -5, 0])
+        translate([0, -nut_catcher_test_mark_y, 0])
             write_text(
                 label,
                 nut_catcher_test_mark_font,
                 nut_catcher_test_coupon_h - nut_catcher_test_mark_depth
             );
-        translate([0, 5, 0])
+        translate([0, nut_catcher_test_mark_y, 0])
             write_text(
                 revision_string,
                 nut_catcher_test_mark_font,
@@ -3183,42 +3198,37 @@ module nut_catcher_test_coupon(
     }
 }
 
+module nut_catcher_test_row(row, row_i) {
+    items = nut_catcher_row_items(row);
+
+    assert(row[1] == "width_clearance"
+            || row[1] == "thick_clearance"
+            || row[1] == "roof_mode",
+        "unknown nut catcher jig parameter");
+    assert(row[2] == "offsets" || row[2] == "values",
+        "nut catcher jig mode must be offsets or values");
+    assert(len(items) > 0, str("nut catcher jig row ", row_i, " is empty"));
+
+    for (item_i = [0 : len(items) - 1])
+        translate([item_i * nut_catcher_test_coupon_w, 0, 0])
+            nut_catcher_test_coupon(
+                items[item_i][0],
+                row[1],
+                row[2],
+                items[item_i][1]
+            );
+}
+
 module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
-    for (row_i = [0 : len(rows) - 1]) {
-        row = rows[row_i];
-        orientations = nut_catcher_row_orientations(row);
-        candidates = row[3];
-        row_offset = rows_before_count(rows, row_i);
+    echo("Nut catcher legend: U=up, D=down, S=sideways, 45=diagonal, W=width clearance, T=thickness clearance, RF=flat roof, R30=30-degree roof");
 
-        assert(row[1] == "width_clearance"
-                || row[1] == "thick_clearance"
-                || row[1] == "roof_mode",
-            "unknown nut catcher jig parameter");
-        assert(row[2] == "offsets" || row[2] == "values",
-            "nut catcher jig mode must be offsets or values");
-
-        for (
-            orientation_i = [0 : len(orientations) - 1],
-            candidate_i = [0 : len(candidates) - 1]
-        ) {
-            item_i = row_offset
-                + orientation_i * len(candidates)
-                + candidate_i;
-            translate([
-                (item_i % nut_catcher_test_columns)
-                    * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
-                floor(item_i / nut_catcher_test_columns)
-                    * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
-                0
-            ])
-                nut_catcher_test_coupon(
-                    orientations[orientation_i],
-                    row[1],
-                    row[2],
-                    candidates[candidate_i]
-                );
-        }
-    }
+    for (row_i = [0 : len(rows) - 1])
+        translate([
+            0,
+            row_i * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
+            0
+        ])
+            nut_catcher_test_row(rows[row_i], row_i);
 }
 
 // ---------------- views ----------------
