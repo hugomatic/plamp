@@ -176,7 +176,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for definition in (
             "m3_nut_across_flats=5.46;",
             "m3_nut_thickness=2.38;",
-            "panel_nut_width_clearance=0.14;",
+            "panel_nut_width_clearance=0.24;",
             "panel_nut_thickness_clearance=0.14;",
         ):
             with self.subTest(definition=definition):
@@ -1581,7 +1581,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for definition in (
             "m3_nut_across_flats=5.46;",
             "m3_nut_thickness=2.38;",
-            "panel_nut_width_clearance=0.14;",
+            "panel_nut_width_clearance=0.24;",
             "panel_nut_thickness_clearance=0.14;",
             "panel_nut_entry_w=m3_nut_across_flats+panel_nut_width_clearance;",
             "panel_nut_pocket_d=panel_nut_entry_w/cos(30);",
@@ -1734,7 +1734,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for orientation in ('"up"', '"down"', '"sideways"', '"45"'):
             self.assertIn(orientation, compact)
         self.assertIn(
-            '["up","width_clearance","offsets",[-0.2,-0.1,0,0.1,0.2]]',
+            '["up","width_clearance","offsets",[-0.1,-0.05,0,0.05,0.1]]',
             compact,
         )
         self.assertIn(
@@ -1825,6 +1825,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             '"",candidate=="flat"?"RF":"R30")',
             label,
         )
+        self.assertIn("functionfixed_3(value)", compact_scad(source))
+        self.assertIn("signed_fixed_3(candidate)", label)
 
     def test_plamp8_exposes_nut_catcher_adjustment_test_set(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

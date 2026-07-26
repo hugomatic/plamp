@@ -114,13 +114,22 @@ function fixed_2(value) =
             scaled % 10
         );
 
+function fixed_3(value) =
+    let(scaled = round(value * 1000))
+        str(
+            floor(scaled / 1000), ".",
+            floor(scaled / 100) % 10,
+            floor(scaled / 10) % 10,
+            scaled % 10
+        );
+
 panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
 panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
 panel_screw_land_d = 9.5;
 m3_nut_across_flats = 5.46;
 m3_nut_thickness = 2.38;
-panel_nut_width_clearance = 0.14;
+panel_nut_width_clearance = 0.24;
 panel_nut_thickness_clearance = 0.14;
 panel_nut_entry_w = m3_nut_across_flats + panel_nut_width_clearance;
 panel_nut_pocket_d = panel_nut_entry_w / cos(30);
@@ -146,7 +155,7 @@ panel_corner_fastener_fit_label = str(
 );
 nut_catcher_test_orientations = ["up", "down", "sideways", "45"];
 nut_catcher_test_rows = [
-    ["up", "width_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
+    ["up", "width_clearance", "offsets", [-0.1, -0.05, 0, 0.05, 0.1]],
     ["up", "thick_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
     ["all", "roof_mode", "values", ["flat", "30deg"]]
 ];
@@ -3017,9 +3026,9 @@ function nut_catcher_candidate_value(parameter, mode, candidate) =
 function nut_catcher_effective_roof_mode(orientation, requested) =
     orientation == "45" ? "flat" : requested;
 
-function signed_fixed_2(value) = str(
+function signed_fixed_3(value) = str(
     value >= 0 ? "+" : "-",
-    fixed_2(abs(value))
+    fixed_3(abs(value))
 );
 
 function nut_catcher_orientation_short(orientation) =
@@ -3043,7 +3052,7 @@ function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
             nut_catcher_orientation_short(orientation), " ",
             nut_catcher_parameter_short(parameter),
             mode == "offsets"
-                ? signed_fixed_2(candidate)
+                ? signed_fixed_3(candidate)
                 : fixed_2(candidate)
         );
 
