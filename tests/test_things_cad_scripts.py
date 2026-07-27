@@ -239,6 +239,22 @@ class ThingsCadScriptsTest(unittest.TestCase):
             nibs,
         )
 
+    def test_plamp8_nut_catcher_jig_orientations(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        transform = compact_scad(
+            scad_module_body(source, "nut_catcher_orientation_transform")
+        )
+
+        self.assertIn(
+            "rotate([0,-corner_nut_entry_angle,0])rotate([-90,0,0])",
+            transform,
+        )
+        sideways = transform.split('elseif(orientation=="sideways")', 1)[1].split(
+            'elseif(orientation=="45")', 1
+        )[0]
+        self.assertIn("rotate([90,0,0])", sideways)
+        self.assertNotIn("rotate([0,0,-90])", sideways)
+
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         expected_matrices = {

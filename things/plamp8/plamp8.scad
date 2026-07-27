@@ -3095,25 +3095,27 @@ module nut_catcher_orientation_transform(
     );
     assert(origin_45_z > 0, "45-degree catcher does not fit inside coupon");
 
-    // Canonical insertion runs along +X. The outer rotation makes every
-    // exported coupon load from its -Y edge.
-    rotate([0, 0, -90]) {
-        if (orientation == "up")
+    if (orientation == "up")
+        // Canonical insertion runs along +X; rotate it to the coupon -Y edge.
+        rotate([0, 0, -90])
             translate([0, 0, 3])
                 children();
-        else if (orientation == "down")
+    else if (orientation == "down")
+        rotate([0, 0, -90])
             translate([0, 0, nut_catcher_test_coupon_h - 3])
                 rotate([180, 0, 0])
                     children();
-        else if (orientation == "sideways")
-            translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
-                rotate([90, 0, 0])
+    else if (orientation == "sideways")
+        // Keep the screw shaft along -Y so adjacent coupons remain usable.
+        translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
+            rotate([90, 0, 0])
+                children();
+    else if (orientation == "45")
+        // Match the support-free north-wall corner catcher exactly.
+        translate([0, -slot_h / 2, origin_45_z])
+            rotate([0, -corner_nut_entry_angle, 0])
+                rotate([-90, 0, 0])
                     children();
-        else if (orientation == "45")
-            translate([0, 0, origin_45_z])
-                rotate([-45, 0, 0])
-                    children();
-    }
 }
 
 module teardrop_hole_3d(d, h) {
