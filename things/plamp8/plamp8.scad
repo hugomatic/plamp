@@ -320,6 +320,7 @@ corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
 corner_tab_boss_r = 5;
+corner_tab_boss_top_z = wall_t + panel_screw_inset + corner_tab_boss_r;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
@@ -2245,7 +2246,7 @@ module corner_tab_boss_positive(length, center_y = 0) {
             cube([
                 corner_tab_effective_w,
                 length,
-                wall_t + panel_screw_inset + corner_tab_boss_r
+                corner_tab_boss_top_z
             ]);
     }
 }
@@ -2277,10 +2278,9 @@ module support_free_m3_nut_trap(
 ) {
     pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
         + pocket_offset_y;
-    // Carry the 45-degree entry deliberately through the broad interior +Z
-    // face.  Targeting a corner +/-X face rotates the opening by 90 degrees.
-    opening_edge_distance =
-        (corner_tab_h + boolean_shim - axis_z) / sin(corner_nut_entry_angle);
+    // The entry starts at the cylindrical boss axis.  Any radial 45-degree
+    // path reaches the curved surface after one boss radius.
+    opening_edge_distance = corner_tab_boss_r + boolean_shim;
     slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
 
     translate([0, pocket_center_y - slot_h / 2, axis_z])
