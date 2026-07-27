@@ -127,8 +127,22 @@ panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
 panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
 panel_screw_land_d = 9.5;
-m3_nut_across_flats = 5.46;
-m3_nut_thickness = 2.38;
+// [id, across-flats, thickness].  M3 is calibrated from the current fit
+// coupon; M5 is the nominal starting point to calibrate with the same jig.
+nut_profiles = [
+    ["M3", 5.46, 2.38],
+    ["M5", 8.00, 4.00]
+];
+
+function nut_profile_index(id, i = 0) =
+    assert(i < len(nut_profiles), str("unknown nut profile: ", id))
+        nut_profiles[i][0] == id ? i : nut_profile_index(id, i + 1);
+function nut_profile(id) = nut_profiles[nut_profile_index(id)];
+function nut_profile_across_flats(id) = nut_profile(id)[1];
+function nut_profile_thickness(id) = nut_profile(id)[2];
+
+m3_nut_across_flats = nut_profile_across_flats("M3");
+m3_nut_thickness = nut_profile_thickness("M3");
 panel_nut_width_clearance = 0.24;
 panel_nut_thickness_clearance = 0.14;
 panel_nut_entry_w = m3_nut_across_flats + panel_nut_width_clearance;
@@ -153,7 +167,7 @@ panel_corner_fastener_fit_label = str(
     "W", fixed_2(panel_nut_entry_w),
     " T", fixed_2(panel_nut_slot_h)
 );
-nut_catcher_test_orientations = ["up", "down", "sideways", "45"];
+nut_catcher_test_orientations = ["up", "sideways", "45"];
 nut_catcher_test_rows = [
     ["up", "width_clearance", "offsets", [-0.1, -0.05, 0, 0.05, 0.1]],
     ["up", "thick_clearance", "offsets", [-0.2, -0.1, 0, 0.1, 0.2]],
@@ -3017,7 +3031,7 @@ function nut_catcher_candidate_allowed(orientation, parameter, candidate) =
     !(
         parameter == "roof_mode"
             && candidate == "30deg"
-            && (orientation == "45" || orientation == "down")
+            && orientation == "45"
     );
 
 function nut_catcher_row_items(row) = [
@@ -3042,9 +3056,9 @@ function nut_catcher_candidate_value(parameter, mode, candidate) =
 function nut_catcher_effective_roof_mode(orientation, requested) =
     orientation == "45" ? "flat" : requested;
 
-function signed_fixed_3(value) = str(
+function signed_fixed_2(value) = str(
     value >= 0 ? "+" : "-",
-    fixed_3(abs(value))
+    fixed_2(abs(value))
 );
 
 function nut_catcher_orientation_short(orientation) =
@@ -3068,7 +3082,7 @@ function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
             nut_catcher_orientation_short(orientation), " ",
             nut_catcher_parameter_short(parameter),
             mode == "offsets"
-                ? signed_fixed_3(candidate)
+                ? signed_fixed_2(candidate)
                 : fixed_2(candidate)
         );
 
@@ -3131,12 +3145,35 @@ module teardrop_hole_3d(d, h) {
 }
 
 module nut_catcher_test_screw_negative(orientation, roof_mode, height) {
-    if (orientation == "sideways" && roof_mode == "flat")
+    if (orientation == "sideways")
         translate([0, 0, -height])
             teardrop_hole_3d(d = panel_screw_d, h = 2 * height);
     else
         translate([0, 0, -height])
             cylinder(h = 2 * height, d = panel_screw_d);
+}
+
+// This cutter is only used for the sideways coupon.  The normal catcher roof
+// follows the screw-bore axis, which would put it on a side face here.  This
+// instead creates a symmetric 30-degree gable over the print-top tunnel face.
+// Its ridge follows the insertion tunnel, so the two roof slopes are equally
+// printable and do not widen the tunnel to one side.
+module nut_catcher_sideways_print_roof_negative(
+    slot_w,
+    slot_h,
+    opening_edge_distance
+) {
+    roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
+    roof_l = opening_edge_distance + slot_w / 2;
+
+    translate([0, slot_w / 2, slot_h / 2])
+        rotate([0, 90, 0])
+            linear_extrude(height = roof_l)
+            polygon([
+                [-slot_h / 2, 0],
+                [slot_h / 2, 0],
+                [0, roof_h]
+            ]);
 }
 
 module nut_catcher_test_coupon(
@@ -3156,6 +3193,7 @@ module nut_catcher_test_coupon(
         orientation,
         requested_roof_mode
     );
+    catcher_roof_mode = orientation == "sideways" ? "flat" : roof_mode;
     slot_w = m3_nut_across_flats + width_clearance;
     slot_h = m3_nut_thickness + thick_clearance;
     opening_edge_distance = nut_catcher_test_coupon_d / 2 + 1;
@@ -3201,9 +3239,15 @@ module nut_catcher_test_coupon(
                 m3_nut_catcher_negative(
                     width_clearance = width_clearance,
                     thick_clearance = thick_clearance,
-                    roof_mode = roof_mode,
+                    roof_mode = catcher_roof_mode,
                     opening_edge_distance = opening_edge_distance
                 );
+                if (orientation == "sideways" && roof_mode == "30deg")
+                    nut_catcher_sideways_print_roof_negative(
+                        slot_w,
+                        slot_h,
+                        opening_edge_distance
+                    );
                 nut_catcher_test_screw_negative(
                     orientation,
                     roof_mode,
@@ -3256,7 +3300,8 @@ module nut_catcher_test_row(row, row_i) {
 }
 
 module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
-    echo("Nut catcher legend: U=up, D=down, S=sideways, 45=diagonal, W=width clearance, T=thickness clearance, RF=flat roof, R30=30-degree roof");
+    echo("Nut catcher features: screw bore; nut pocket; insertion tunnel; tunnel mouth; entry throat (narrowed by retention nibs); tunnel floor; tunnel roof; print roof; countersink absent");
+    echo("Nut catcher legend: U=bore up, S=side bore, 45=north-wall diagonal, W=width clearance, T=thickness clearance, RF=flat print roof, R30=30-degree print roof");
 
     for (row_i = [0 : len(rows) - 1])
         translate([
