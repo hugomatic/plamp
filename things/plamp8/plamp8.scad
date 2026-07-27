@@ -2277,12 +2277,10 @@ module support_free_m3_nut_trap(
 ) {
     pocket_center_y = -bearing_side * corner_nut_shoulder_t / 2
         + pocket_offset_y;
-    detent_bottom_z = corner_tab_h - panel_nut_entry_detent_l;
-    entry_rise = detent_bottom_z - panel_nut_floor_nib_h - axis_z;
-    opening_edge_distance = max(
-        panel_nut_entry_detent_l,
-        entry_rise / sin(corner_nut_entry_angle)
-    );
+    // Carry the 45-degree entry deliberately through the broad interior +Z
+    // face.  Targeting a corner +/-X face rotates the opening by 90 degrees.
+    opening_edge_distance =
+        (corner_tab_h + boolean_shim - axis_z) / sin(corner_nut_entry_angle);
     slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
 
     translate([0, pocket_center_y - slot_h / 2, axis_z])

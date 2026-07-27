@@ -190,7 +190,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         nut_trap = compact_scad(scad_module_body(source, "support_free_m3_nut_trap"))
 
         self.assertIn(
-            "detent_bottom_z=corner_tab_h-panel_nut_entry_detent_l;",
+            "opening_edge_distance=(corner_tab_h+boolean_shim-axis_z)/sin(corner_nut_entry_angle);",
             nut_trap,
         )
         self.assertIn("m3_nut_catcher_negative(", nut_trap)
@@ -787,6 +787,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         # Y rotation that is also upward, so the shaft breaks through the top
         # edge of the corner spine instead of disappearing below the print face.
         self.assertIn("direction = 1", corner_adapter)
+        self.assertIn(
+            "(corner_tab_h + boolean_shim - axis_z) / sin(corner_nut_entry_angle)",
+            corner_adapter,
+        )
 
         box_module = source.split("module box()", 1)[1].split(
             "module assembly()", 1
