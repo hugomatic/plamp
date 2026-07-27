@@ -1167,9 +1167,9 @@ module m3_nut_catcher_floor_nibs_positive(
                                 center = true
                             )
                                 polygon([
-                                    [nib_outer_x, -boolean_shim],
                                     [nib_inner_x, -boolean_shim],
-                                    [nib_inner_x, nib_height]
+                                    [nib_outer_x, -boolean_shim],
+                                    [nib_outer_x, nib_height]
                                 ]);
 }
 
@@ -1199,8 +1199,7 @@ module m3_nut_catcher_negative(
 
     difference() {
         union() {
-            rotate([0, 0, 30])
-                cylinder(h = slot_h, d = pocket_d, $fn = 6);
+            cylinder(h = slot_h, d = pocket_d, $fn = 6);
 
             if (main_l > 0)
                 translate([

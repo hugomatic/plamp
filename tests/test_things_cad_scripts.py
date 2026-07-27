@@ -199,6 +199,23 @@ class ThingsCadScriptsTest(unittest.TestCase):
             nut_trap,
         )
 
+    def test_plamp8_shared_nut_catcher_is_point_first_and_ramped(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        catcher = compact_scad(scad_module_body(source, "m3_nut_catcher_negative"))
+        nibs = compact_scad(
+            scad_module_body(source, "m3_nut_catcher_floor_nibs_positive")
+        )
+
+        self.assertIn("cylinder(h=slot_h,d=pocket_d,$fn=6);", catcher)
+        self.assertNotIn(
+            "rotate([0,0,30])cylinder(h=slot_h,d=pocket_d,$fn=6);",
+            catcher,
+        )
+        self.assertIn(
+            "polygon([[nib_inner_x,-boolean_shim],[nib_outer_x,-boolean_shim],[nib_outer_x,nib_height]])",
+            nibs,
+        )
+
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         expected_matrices = {
