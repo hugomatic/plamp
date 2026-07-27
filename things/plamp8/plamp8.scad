@@ -3056,9 +3056,9 @@ function nut_catcher_candidate_value(parameter, mode, candidate) =
 function nut_catcher_effective_roof_mode(orientation, requested) =
     orientation == "45" ? "flat" : requested;
 
-function signed_fixed_3(value) = str(
+function signed_fixed_2(value) = str(
     value >= 0 ? "+" : "-",
-    fixed_3(abs(value))
+    fixed_2(abs(value))
 );
 
 function nut_catcher_orientation_short(orientation) =
@@ -3082,7 +3082,7 @@ function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
             nut_catcher_orientation_short(orientation), " ",
             nut_catcher_parameter_short(parameter),
             mode == "offsets"
-                ? signed_fixed_3(candidate)
+                ? signed_fixed_2(candidate)
                 : fixed_2(candidate)
         );
 

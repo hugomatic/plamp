@@ -1946,8 +1946,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             '"",candidate=="flat"?"RF":"R30")',
             label,
         )
-        self.assertIn("functionfixed_3(value)", compact_scad(source))
-        self.assertIn("signed_fixed_3(candidate)", label)
+        self.assertIn("functionsigned_fixed_2(value)", compact_scad(source))
+        self.assertIn("signed_fixed_2(candidate)", label)
 
     def test_plamp8_exposes_nut_catcher_adjustment_test_set(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
