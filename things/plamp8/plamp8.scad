@@ -270,7 +270,7 @@ c13_screw_spacing = 40;
 // Calibrated from footprint test print: printed PSU diagonal was 138.00 mm
 // against the original 134 x 36 mm footprint diagonal.
 psu_w = 134.73;
-psu_d = 36.2;
+psu_d = 35.2;
 psu_h = 23;
 psu_mount_hole_d = screw_clearance_d(psu_screw_size);
 psu_mount_x_inset = 8.25;
@@ -286,7 +286,7 @@ converter_h = 14;
 converter_fit_clearance = 0.75;
 converter_retaining_w = converter_w + 2 * converter_fit_clearance;
 converter_retaining_d = converter_d + 2 * converter_fit_clearance;
-converter_mount_spacing = 50;
+converter_mount_spacing = 54.75;
 converter_mount_hole_d = screw_clearance_d(converter_screw_size);
 converter_mount_chamfer_d = screw_chamfer_d(converter_screw_size);
 
