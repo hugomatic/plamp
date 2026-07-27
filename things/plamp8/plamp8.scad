@@ -302,7 +302,7 @@ relay_countersink_d = screw_chamfer_d(relay_screw_size);
 retaining_corner_l = 5;
 retaining_corner_t = 4;
 retaining_corner_h = 10;
-psu_side_guide_l = 10;
+psu_side_guide_l = 50;
 psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
