@@ -1918,7 +1918,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("item_i*nut_catcher_test_coupon_w", row)
         self.assertIn('row[0]=="all"?', row)
         self.assertIn("(item_i%3)*(nut_catcher_test_coupon_w+nut_catcher_test_gap)", row)
-        self.assertIn("floor(item_i/3)*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", row)
+        self.assertIn("floor(item_i/3)*(nut_catcher_test_coupon_d+nut_catcher_test_row_gap)", row)
         self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
         self.assertIn(
             "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_row_gap)", jig

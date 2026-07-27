@@ -3287,7 +3287,7 @@ module nut_catcher_test_row(row, row_i) {
             row[0] == "all"
                 ? [
                     (item_i % 3) * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
-                    floor(item_i / 3) * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
+                    floor(item_i / 3) * (nut_catcher_test_coupon_d + nut_catcher_test_row_gap),
                     0
                 ]
                 : [item_i * nut_catcher_test_coupon_w, 0, 0]
