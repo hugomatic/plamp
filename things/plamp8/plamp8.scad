@@ -344,6 +344,7 @@ floor_locator_clearance = 0.25;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
+component_mount_tube_d = 9;
 component_airflow_post_spacing = 14;
 component_airflow_post_hole_clearance = 8;
 floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
@@ -2001,7 +2002,10 @@ module component_airflow_posts_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_psu_rot_z])
+        {
             psu_airflow_posts();
+            component_mount_tubes(psu_mount_points());
+        }
 
     translate([
         box_inner_x + top_panel_w / 2 + internal_converter_x,
@@ -2009,7 +2013,10 @@ module component_airflow_posts_in_box() {
         -box_h + wall_t
     ])
         rotate([0, 0, internal_converter_rot_z])
+        {
             converter_airflow_posts();
+            component_mount_tubes(converter_mount_points());
+        }
 }
 
 module component_airflow_posts_except(w, d, excludes) {
@@ -2041,6 +2048,12 @@ function converter_mount_points() = [
     [0, -converter_mount_spacing / 2],
     [0, converter_mount_spacing / 2]
 ];
+
+module component_mount_tubes(points) {
+    for (p = points)
+        translate([p[0], p[1], 0])
+            cylinder(h = component_raise_h, d = component_mount_tube_d);
+}
 
 module psu_airflow_posts() {
     component_airflow_posts_except(psu_w, psu_d, psu_mount_points());
@@ -3414,7 +3427,10 @@ module psu_footprint() {
             footprint_base(psu_view_w, psu_view_d);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_psu_rot_z])
+                {
                     psu_airflow_posts();
+                    component_mount_tubes(psu_mount_points());
+                }
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_psu_rot_z])
                     psu_retaining_corners();
@@ -3431,7 +3447,10 @@ module converter_footprint() {
             footprint_base(converter_w, converter_d);
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
+                {
                     converter_airflow_posts();
+                    component_mount_tubes(converter_mount_points());
+                }
             translate([0, 0, wall_t])
                 rotate([0, 0, internal_converter_rot_z])
                     retaining_corners(converter_retaining_w, converter_retaining_d);

@@ -185,6 +185,29 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("corner_nut_entry_w=", compact)
         self.assertNotIn("corner_nut_pocket_d=", compact)
 
+    def test_plamp8_psu_and_converter_mounts_use_shared_guide_tubes(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("module component_mount_tubes(", source)
+        tubes = compact_scad(scad_module_body(source, "component_mount_tubes"))
+
+        self.assertIn("component_mount_tube_d=9;", compact)
+        self.assertIn("for(p=points)", tubes)
+        self.assertIn(
+            "cylinder(h=component_raise_h,d=component_mount_tube_d);", tubes
+        )
+
+        in_box = compact_scad(scad_module_body(source, "component_airflow_posts_in_box"))
+        self.assertIn("component_mount_tubes(psu_mount_points());", in_box)
+        self.assertIn("component_mount_tubes(converter_mount_points());", in_box)
+
+        psu = compact_scad(scad_module_body(source, "psu_footprint"))
+        converter = compact_scad(scad_module_body(source, "converter_footprint"))
+        self.assertIn("component_mount_tubes(psu_mount_points());", psu)
+        self.assertIn("component_mount_tubes(converter_mount_points());", converter)
+        self.assertIn("psu_mount_holes(0);", psu)
+        self.assertIn("converter_mount_holes(0);", converter)
+
     def test_plamp8_corner_nut_fit_is_shared_by_flat_and_box_paths(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         nut_trap = compact_scad(scad_module_body(source, "support_free_m3_nut_trap"))
