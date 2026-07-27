@@ -163,7 +163,7 @@ nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
 nut_catcher_test_gap = 3;
-nut_catcher_test_mark_font = 1.35;
+nut_catcher_test_mark_font = 1.7;
 nut_catcher_test_mark_depth = 0.5;
 nut_catcher_test_mark_y = 3.8;
 nut_catcher_test_roof_cover_t = 0.8;
@@ -3015,9 +3015,9 @@ function nut_catcher_row_orientations(row) =
 
 function nut_catcher_candidate_allowed(orientation, parameter, candidate) =
     !(
-        orientation == "45"
-            && parameter == "roof_mode"
+        parameter == "roof_mode"
             && candidate == "30deg"
+            && (orientation == "45" || orientation == "down")
     );
 
 function nut_catcher_row_items(row) = [
@@ -3106,10 +3106,11 @@ module nut_catcher_orientation_transform(
                 rotate([180, 0, 0])
                     children();
     else if (orientation == "sideways")
-        // Keep the screw shaft along -Y so adjacent coupons remain usable.
-        translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
-            rotate([90, 0, 0])
-                children();
+        // Keep the nut-entry tunnel at the coupon -Y edge.
+        rotate([0, 0, -90])
+            translate([0, slot_h / 2, nut_catcher_test_coupon_h / 2])
+                rotate([90, 0, 0])
+                    children();
     else if (orientation == "45")
         // Match the support-free north-wall corner catcher exactly.
         translate([0, -slot_h / 2, origin_45_z])
@@ -3237,7 +3238,15 @@ module nut_catcher_test_row(row, row_i) {
     assert(len(items) > 0, str("nut catcher jig row ", row_i, " is empty"));
 
     for (item_i = [0 : len(items) - 1])
-        translate([item_i * nut_catcher_test_coupon_w, 0, 0])
+        translate(
+            row[0] == "all"
+                ? [
+                    (item_i % 3) * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
+                    floor(item_i / 3) * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
+                    0
+                ]
+                : [item_i * nut_catcher_test_coupon_w, 0, 0]
+        )
             nut_catcher_test_coupon(
                 items[item_i][0],
                 row[1],

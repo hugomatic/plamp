@@ -253,7 +253,19 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'elseif(orientation=="45")', 1
         )[0]
         self.assertIn("rotate([90,0,0])", sideways)
-        self.assertNotIn("rotate([0,0,-90])", sideways)
+        self.assertIn("rotate([0,0,-90])", sideways)
+
+        compact = compact_scad(source)
+        self.assertIn("nut_catcher_test_mark_font=1.7;", compact)
+        self.assertIn(
+            '(orientation=="45"||orientation=="down")',
+            compact,
+        )
+
+        row = compact_scad(scad_module_body(source, "nut_catcher_test_row"))
+        self.assertIn("row[0]==\"all\"", row)
+        self.assertIn("item_i%3", row)
+        self.assertIn("floor(item_i/3)", row)
 
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1853,7 +1865,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "opening_edge_distance=nut_catcher_test_coupon_d/2+1", coupon
         )
 
-    def test_plamp8_nut_jig_connects_each_row_and_compacts_coupons(self):
+    def test_plamp8_nut_jig_keeps_roof_coupons_independent(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
         self.assertIn("module nut_catcher_test_row(", source)
@@ -1872,12 +1884,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn(definition, compact)
         self.assertIn("items=nut_catcher_row_items(row)", row)
         self.assertIn("item_i*nut_catcher_test_coupon_w", row)
+        self.assertIn('row[0]=="all"?', row)
+        self.assertIn("(item_i%3)*(nut_catcher_test_coupon_w+nut_catcher_test_gap)", row)
+        self.assertIn("floor(item_i/3)*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", row)
         self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
         self.assertIn(
             "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", jig
         )
         self.assertIn(
-            '!(orientation=="45"&&parameter=="roof_mode"&&candidate=="30deg")',
+            '(orientation=="45"||orientation=="down")',
             compact,
         )
 
