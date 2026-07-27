@@ -1910,7 +1910,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "nut_catcher_test_coupon_d=12;",
             "nut_catcher_test_coupon_h=10;",
             "nut_catcher_test_gap=3;",
-            "nut_catcher_test_row_gap=6;",
+            "nut_catcher_test_row_gap=20;",
             "nut_catcher_test_mark_y=3.8;",
         ):
             self.assertIn(definition, compact)
