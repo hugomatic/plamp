@@ -177,6 +177,7 @@ nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
 nut_catcher_test_gap = 3;
+nut_catcher_test_row_gap = 6;
 nut_catcher_test_mark_font = 1.7;
 nut_catcher_test_mark_depth = 0.5;
 nut_catcher_test_mark_y = 3.8;
@@ -3163,10 +3164,10 @@ module nut_catcher_sideways_print_roof_negative(
     slot_h,
     opening_edge_distance
 ) {
-    roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
+    roof_h = slot_h / 2 * tan(panel_nut_roof_angle);
     roof_l = opening_edge_distance + slot_w / 2;
 
-    translate([0, slot_w / 2, slot_h / 2])
+    translate([0, slot_w / 2 - boolean_shim, slot_h / 2])
         rotate([0, 90, 0])
             linear_extrude(height = roof_l)
             polygon([
@@ -3306,7 +3307,7 @@ module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
     for (row_i = [0 : len(rows) - 1])
         translate([
             0,
-            row_i * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
+            row_i * (nut_catcher_test_coupon_d + nut_catcher_test_row_gap),
             0
         ])
             nut_catcher_test_row(rows[row_i], row_i);

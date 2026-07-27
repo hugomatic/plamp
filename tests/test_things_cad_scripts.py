@@ -291,6 +291,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             scad_module_body(source, "nut_catcher_sideways_print_roof_negative")
         )
         self.assertIn("rotate([0,90,0])", roof)
+        self.assertIn("roof_h=slot_h/2*tan(panel_nut_roof_angle)", roof)
+        self.assertIn("translate([0,slot_w/2-boolean_shim,slot_h/2])", roof)
         self.assertIn("[-slot_h/2,0]", roof)
         self.assertIn("[slot_h/2,0]", roof)
         self.assertIn("[0,roof_h]", roof)
@@ -1908,6 +1910,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "nut_catcher_test_coupon_d=12;",
             "nut_catcher_test_coupon_h=10;",
             "nut_catcher_test_gap=3;",
+            "nut_catcher_test_row_gap=6;",
             "nut_catcher_test_mark_y=3.8;",
         ):
             self.assertIn(definition, compact)
@@ -1918,7 +1921,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("floor(item_i/3)*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", row)
         self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
         self.assertIn(
-            "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", jig
+            "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_row_gap)", jig
         )
         self.assertIn(
             'nut_catcher_test_orientations=["up","sideways","45"];',
