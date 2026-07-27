@@ -174,8 +174,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         compact = compact_scad(source)
 
         for definition in (
-            "m3_nut_across_flats=5.46;",
-            "m3_nut_thickness=2.38;",
+            'm3_nut_across_flats=nut_profile_across_flats("M3");',
+            'm3_nut_thickness=nut_profile_thickness("M3");',
             "panel_nut_width_clearance=0.24;",
             "panel_nut_thickness_clearance=0.14;",
         ):
@@ -207,6 +207,17 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("component_mount_tubes(converter_mount_points());", converter)
         self.assertIn("psu_mount_holes(0);", psu)
         self.assertIn("converter_mount_holes(0);", converter)
+
+    def test_plamp8_nut_profiles_drive_the_current_m3_catcher(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+
+        self.assertIn('nut_profiles=[["M3",5.46,2.38],["M5",8.00,4.00]];', compact)
+        self.assertIn("functionnut_profile_index(", compact)
+        self.assertIn("functionnut_profile_across_flats(", compact)
+        self.assertIn("functionnut_profile_thickness(", compact)
+        self.assertIn('m3_nut_across_flats=nut_profile_across_flats("M3");', compact)
+        self.assertIn('m3_nut_thickness=nut_profile_thickness("M3");', compact)
 
     def test_plamp8_corner_nut_fit_is_shared_by_flat_and_box_paths(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1679,8 +1690,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         for definition in (
-            "m3_nut_across_flats=5.46;",
-            "m3_nut_thickness=2.38;",
+            'm3_nut_across_flats=nut_profile_across_flats("M3");',
+            'm3_nut_thickness=nut_profile_thickness("M3");',
             "panel_nut_width_clearance=0.24;",
             "panel_nut_thickness_clearance=0.14;",
             "panel_nut_entry_w=m3_nut_across_flats+panel_nut_width_clearance;",

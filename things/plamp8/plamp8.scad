@@ -127,8 +127,22 @@ panel_screw_d = screw_clearance_d(panel_screw_size);
 panel_screw_countersink_d = screw_chamfer_d(panel_screw_size);
 panel_screw_countersink_h = (panel_screw_countersink_d - panel_screw_d) / 2;
 panel_screw_land_d = 9.5;
-m3_nut_across_flats = 5.46;
-m3_nut_thickness = 2.38;
+// [id, across-flats, thickness].  M3 is calibrated from the current fit
+// coupon; M5 is the nominal starting point to calibrate with the same jig.
+nut_profiles = [
+    ["M3", 5.46, 2.38],
+    ["M5", 8.00, 4.00]
+];
+
+function nut_profile_index(id, i = 0) =
+    assert(i < len(nut_profiles), str("unknown nut profile: ", id))
+        nut_profiles[i][0] == id ? i : nut_profile_index(id, i + 1);
+function nut_profile(id) = nut_profiles[nut_profile_index(id)];
+function nut_profile_across_flats(id) = nut_profile(id)[1];
+function nut_profile_thickness(id) = nut_profile(id)[2];
+
+m3_nut_across_flats = nut_profile_across_flats("M3");
+m3_nut_thickness = nut_profile_thickness("M3");
 panel_nut_width_clearance = 0.24;
 panel_nut_thickness_clearance = 0.14;
 panel_nut_entry_w = m3_nut_across_flats + panel_nut_width_clearance;
