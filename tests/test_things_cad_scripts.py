@@ -255,10 +255,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("rotate([90,0,0])", sideways)
         self.assertIn("rotate([0,0,-90])", sideways)
 
+        screw = compact_scad(
+            scad_module_body(source, "nut_catcher_test_screw_negative")
+        )
+        self.assertIn('orientation=="sideways"', screw)
+        self.assertNotIn('roof_mode=="flat"', screw)
+
         compact = compact_scad(source)
         self.assertIn("nut_catcher_test_mark_font=1.7;", compact)
         self.assertIn(
-            '(orientation=="45"||orientation=="down")',
+            'nut_catcher_test_orientations=["up","sideways","45"];',
             compact,
         )
 
@@ -266,6 +272,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("row[0]==\"all\"", row)
         self.assertIn("item_i%3", row)
         self.assertIn("floor(item_i/3)", row)
+
+        coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+        self.assertIn("module nut_catcher_sideways_print_roof_negative(", source)
+        self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', coupon)
 
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1739,14 +1749,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
             coupon,
         )
 
-    def test_plamp8_sideways_flat_roof_uses_teardrop_screw_hole(self):
+    def test_plamp8_sideways_roofs_use_teardrop_screw_holes(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         self.assertIn("module nut_catcher_test_screw_negative(", source)
         screw = compact_scad(
             scad_module_body(source, "nut_catcher_test_screw_negative")
         )
 
-        self.assertIn('orientation=="sideways"&&roof_mode=="flat"', screw)
+        self.assertIn('orientation=="sideways"', screw)
+        self.assertNotIn('roof_mode=="flat"', screw)
         self.assertIn("teardrop_hole_3d(", screw)
         self.assertIn("d=panel_screw_d", screw)
 
@@ -1892,7 +1903,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "row_i*(nut_catcher_test_coupon_d+nut_catcher_test_gap)", jig
         )
         self.assertIn(
-            '(orientation=="45"||orientation=="down")',
+            'nut_catcher_test_orientations=["up","sideways","45"];',
             compact,
         )
 
@@ -1908,9 +1919,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         self.assertIn(
-            'echo("Nutcatcherlegend:U=up,D=down,S=sideways,45=diagonal,'
-            'W=widthclearance,T=thicknessclearance,RF=flatroof,'
-            'R30=30-degreeroof")',
+            'echo("Nutcatcherfeatures:screwbore;nutpocket;insertiontunnel;'
+            'tunnelmouth;entrythroat(narrowedbyretentionnibs);tunnelfloor;'
+            'tunnelroof;printroof;countersinkabsent")',
+            jig,
+        )
+        self.assertIn(
+            'echo("Nutcatcherlegend:U=boreup,S=sidebore,45=north-walldiagonal,'
+            'W=widthclearance,T=thicknessclearance,RF=flatprintroof,'
+            'R30=30-degreeprintroof")',
             jig,
         )
         self.assertIn(
