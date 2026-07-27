@@ -3162,12 +3162,16 @@ module nut_catcher_test_screw_negative(orientation, roof_mode, height) {
 module nut_catcher_sideways_print_roof_negative(
     slot_w,
     slot_h,
-    opening_edge_distance
+    opening_edge_distance,
+    entry_detent = panel_nut_entry_detent
 ) {
+    // The roof must start at the narrowed entry throat, not at the full tunnel
+    // width.  Starting it at slot_w/2 left a thin flat shelf below the gable.
+    throat_w = slot_w - 2 * entry_detent;
     roof_h = slot_h / 2 * tan(panel_nut_roof_angle);
     roof_l = opening_edge_distance + slot_w / 2;
 
-    translate([0, slot_w / 2 - boolean_shim, slot_h / 2])
+    translate([0, throat_w / 2 - boolean_shim, slot_h / 2])
         rotate([0, 90, 0])
             linear_extrude(height = roof_l)
             polygon([
