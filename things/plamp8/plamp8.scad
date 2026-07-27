@@ -3155,7 +3155,9 @@ module nut_catcher_test_screw_negative(orientation, roof_mode, height) {
 
 // This cutter is only used for the sideways coupon.  The normal catcher roof
 // follows the screw-bore axis, which would put it on a side face here.  This
-// instead creates a 30-degree bridge over the print-top face of the tunnel.
+// instead creates a symmetric 30-degree gable over the print-top tunnel face.
+// Its ridge follows the insertion tunnel, so the two roof slopes are equally
+// printable and do not widen the tunnel to one side.
 module nut_catcher_sideways_print_roof_negative(
     slot_w,
     slot_h,
@@ -3164,12 +3166,13 @@ module nut_catcher_sideways_print_roof_negative(
     roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
     roof_l = opening_edge_distance + slot_w / 2;
 
-    translate([-slot_w / 2, slot_w / 2, 0])
-        linear_extrude(height = slot_h)
+    translate([0, slot_w / 2, slot_h / 2])
+        rotate([0, 90, 0])
+            linear_extrude(height = roof_l)
             polygon([
-                [0, 0],
-                [roof_l, 0],
-                [roof_l, roof_h]
+                [-slot_h / 2, 0],
+                [slot_h / 2, 0],
+                [0, roof_h]
             ]);
 }
 

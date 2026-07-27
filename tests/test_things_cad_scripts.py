@@ -287,6 +287,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
         self.assertIn("module nut_catcher_sideways_print_roof_negative(", source)
         self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', coupon)
+        roof = compact_scad(
+            scad_module_body(source, "nut_catcher_sideways_print_roof_negative")
+        )
+        self.assertIn("rotate([0,90,0])", roof)
+        self.assertIn("[-slot_h/2,0]", roof)
+        self.assertIn("[slot_h/2,0]", roof)
+        self.assertIn("[0,roof_h]", roof)
 
     def test_plamp8_wall_contexts_are_proper_rotations(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
