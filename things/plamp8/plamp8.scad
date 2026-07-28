@@ -3122,7 +3122,9 @@ function nut_catcher_parameter_short(parameter) =
     "R";
 
 function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
-    parameter == "roof_mode"
+    orientation == "45"
+        ? str("45 M", fixed_2(corner_nut_entry_mouth_w))
+        : parameter == "roof_mode"
         ? str(
             nut_catcher_orientation_short(orientation), " ",
             candidate == "flat" ? "RF" : "R30"
@@ -3305,7 +3307,10 @@ module nut_catcher_test_coupon(
                     width_clearance = width_clearance,
                     thick_clearance = thick_clearance,
                     roof_mode = catcher_roof_mode,
-                    opening_edge_distance = opening_edge_distance
+                    opening_edge_distance = opening_edge_distance,
+                    entry_mouth_w = orientation == "45"
+                        ? corner_nut_entry_mouth_w
+                        : undef
                 );
                 if (orientation == "sideways" && roof_mode == "30deg")
                     nut_catcher_sideways_print_roof_negative(

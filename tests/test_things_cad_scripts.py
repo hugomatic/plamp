@@ -1964,6 +1964,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
         self.assertIn("nut_catcher_adjustment_matrix();", jig)
         self.assertIn("m3_nut_catcher_negative(", coupon)
+        self.assertIn(
+            'entry_mouth_w=orientation=="45"?corner_nut_entry_mouth_w:undef',
+            coupon,
+        )
         self.assertIn("nut_catcher_orientation_transform(orientation", coupon)
         self.assertIn("write_text(label", coupon)
         self.assertIn("write_text(revision_string", coupon)
@@ -1979,6 +1983,17 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn('orientation=="down"', transform)
         self.assertIn('orientation=="sideways"', transform)
         self.assertIn('orientation=="45"', transform)
+
+    def test_plamp8_nut_catcher_jig_marks_the_real_diagonal_entry_mouth(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        label = compact_scad(
+            source.split("function nut_catcher_candidate_label", 1)[1].split(
+                "module nut_catcher_orientation_transform", 1
+            )[0]
+        )
+
+        self.assertIn('orientation=="45"', label)
+        self.assertIn('str("45M",fixed_2(corner_nut_entry_mouth_w))', label)
 
     def test_plamp8_nut_jig_loads_every_coupon_from_negative_y(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
