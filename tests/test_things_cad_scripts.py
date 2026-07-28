@@ -37,6 +37,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "plamp8": ("", "assembly", "wall_corner_fastener_assembly"),
             "iharvest_cover": ("", "assembly"),
             "plamp_stand": ("", "assembly"),
+            "peristaltic_pump_stand": ("assembly",),
         }
         for model_id, set_names in assembly_sets.items():
             with self.subTest(model=model_id):
@@ -63,7 +64,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertEqual(policy["supports"].value, "forbidden")
 
     def test_repository_printable_sets_preserve_exported_orientation(self):
-        for model_id in ("plamp8", "iharvest_cover", "plamp_stand"):
+        for model_id in (
+            "plamp8", "iharvest_cover", "plamp_stand",
+            "peristaltic_pump_stand",
+        ):
             model = load_model(
                 model_id,
                 REPO_ROOT / "things" / model_id / f"{model_id}.cad.json",
@@ -106,7 +110,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
     def test_plamp_system_catalog_has_migrated_products(self):
         system = load_system(REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT)
         self.assertEqual(
-            tuple(system.models), ("plamp8", "iharvest_cover", "plamp_stand")
+            tuple(system.models), (
+                "plamp8", "iharvest_cover", "plamp_stand",
+                "peristaltic_pump_stand",
+            )
         )
         self.assertEqual(system.default_product, "split-box")
         self.assertIn("fit-and-function", system.products)
@@ -125,6 +132,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             ),
             "iharvest_cover": ("", "assembly", "plate"),
             "plamp_stand": ("", "assembly", "tripod", "camera_clip", "plate"),
+            "peristaltic_pump_stand": ("plate", "legs", "assembly"),
         }
         for model_id, set_names in expected.items():
             with self.subTest(model=model_id):
@@ -136,6 +144,35 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 self.assertEqual(tuple(model.sets), set_names)
                 self.assertTrue(model.description.strip())
                 self.assertTrue(all(item.description.strip() for item in model.sets.values()))
+
+    def test_peristaltic_pump_stand_catalog_and_parameters(self):
+        source = (
+            REPO_ROOT / "things" / "peristaltic_pump_stand" /
+            "peristaltic_pump_stand.scad"
+        ).read_text()
+        compact = compact_scad(source)
+
+        for value in (
+            "pump_count=2;", "pump_spacing=62;", "motor_hole_d=29;",
+            "motor_screw_spacing=48.5;", "motor_clearance_h=55;",
+            "mount_hole_d=5.5;",
+        ):
+            with self.subTest(value=value):
+                self.assertIn(value, compact)
+
+        for set_name in ("plate", "legs", "assembly"):
+            with self.subTest(set_name=set_name):
+                self.assertIn(f'set=="{set_name}"', compact)
+
+        model = load_model(
+            "peristaltic_pump_stand",
+            REPO_ROOT / "things" / "peristaltic_pump_stand" /
+            "peristaltic_pump_stand.cad.json",
+            REPO_ROOT,
+        )
+        self.assertTrue(model.sets["plate"].printable)
+        self.assertTrue(model.sets["legs"].printable)
+        self.assertFalse(model.sets["assembly"].printable)
 
     def test_plamp8_connector_fit_views_use_panel_names(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

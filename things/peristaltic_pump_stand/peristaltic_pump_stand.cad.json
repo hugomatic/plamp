@@ -1,0 +1,20 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "peristaltic_pump_stand",
+  "source": "peristaltic_pump_stand.scad",
+  "description": "Parametric table-standing holder for peristaltic pumps",
+  "sets": {
+    "plate": {
+      "description": "Printable motor mounting plate",
+      "slicing": {"orientation": "as-exported"}
+    },
+    "legs": {
+      "description": "Printable pair of end-panel legs",
+      "slicing": {"orientation": "as-exported"}
+    },
+    "assembly": {
+      "description": "Illustrated plate and end-panel stand assembly",
+      "printable": false
+    }
+  }
+}

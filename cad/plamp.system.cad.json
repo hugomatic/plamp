@@ -5,7 +5,8 @@
   "models": {
     "plamp8": "things/plamp8/plamp8.cad.json",
     "iharvest_cover": "things/iharvest_cover/iharvest_cover.cad.json",
-    "plamp_stand": "things/plamp_stand/plamp_stand.cad.json"
+    "plamp_stand": "things/plamp_stand/plamp_stand.cad.json",
+    "peristaltic_pump_stand": "things/peristaltic_pump_stand/peristaltic_pump_stand.cad.json"
   },
   "libraries": {},
   "profiles": {
