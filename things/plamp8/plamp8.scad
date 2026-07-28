@@ -191,7 +191,8 @@ nut_catcher_test_matrix_grid_pitch = 1;
 nut_catcher_test_matrix_grid_line_w = 0.3;
 nut_catcher_test_matrix_grid_depth = 0.3;
 nut_catcher_test_matrix_coupon_w = 9;
-nut_catcher_test_matrix_coupon_h = 8.5;
+nut_catcher_test_matrix_coupon_h = 7.5;
+nut_catcher_test_matrix_top_coupon_extra_h = 1;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 
@@ -3381,7 +3382,12 @@ module nut_catcher_test_row(row, row_i) {
             );
 }
 
-module nut_catcher_test_coupon_matrix(width_offset, thick_offset, top_grid = false) {
+module nut_catcher_test_coupon_matrix(
+    width_offset,
+    thick_offset,
+    top_grid = false,
+    coupon_h = nut_catcher_test_matrix_coupon_h
+) {
     nut_catcher_test_coupon(
         "up",
         "matrix",
@@ -3392,7 +3398,7 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset, top_grid = fal
         show_marks = false,
         top_grid = top_grid,
         coupon_w = nut_catcher_test_matrix_coupon_w,
-        coupon_h = nut_catcher_test_matrix_coupon_h
+        coupon_h = coupon_h
     );
 }
 
@@ -3471,7 +3477,14 @@ module nut_catcher_adjustment_matrix() {
                     top_grid = thick_offset
                         == nut_catcher_test_thick_offsets[
                             len(nut_catcher_test_thick_offsets) - 1
+                        ],
+                    coupon_h = thick_offset
+                        == nut_catcher_test_thick_offsets[
+                            len(nut_catcher_test_thick_offsets) - 1
                         ]
+                        ? nut_catcher_test_matrix_coupon_h
+                            + nut_catcher_test_matrix_top_coupon_extra_h
+                        : nut_catcher_test_matrix_coupon_h
                 );
 }
 
