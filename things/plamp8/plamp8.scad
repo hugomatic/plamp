@@ -3224,6 +3224,7 @@ module nut_catcher_test_coupon(
     width_offset = 0,
     thick_offset = 0,
     show_marks = true,
+    top_grid = false,
     coupon_w = nut_catcher_test_coupon_w,
     coupon_h = nut_catcher_test_coupon_h
 ) {
@@ -3317,6 +3318,37 @@ module nut_catcher_test_coupon(
                     coupon_h - nut_catcher_test_mark_depth
                 );
         }
+
+        if (top_grid) {
+            // The physical scale belongs on the top face of the upper matrix
+            // row, not on its text plate.  The holes naturally interrupt it.
+            for (x = [-coupon_w / 2 : nut_catcher_test_matrix_grid_pitch : coupon_w / 2])
+                translate([
+                    x - nut_catcher_test_matrix_grid_line_w / 2,
+                    -nut_catcher_test_coupon_d / 2,
+                    coupon_h - nut_catcher_test_matrix_grid_depth
+                ])
+                    cube([
+                        nut_catcher_test_matrix_grid_line_w,
+                        nut_catcher_test_coupon_d,
+                        nut_catcher_test_matrix_grid_depth + boolean_shim
+                    ]);
+            for (y = [
+                -nut_catcher_test_coupon_d / 2
+                    : nut_catcher_test_matrix_grid_pitch
+                    : nut_catcher_test_coupon_d / 2
+            ])
+                translate([
+                    -coupon_w / 2,
+                    y - nut_catcher_test_matrix_grid_line_w / 2,
+                    coupon_h - nut_catcher_test_matrix_grid_depth
+                ])
+                    cube([
+                        coupon_w,
+                        nut_catcher_test_matrix_grid_line_w,
+                        nut_catcher_test_matrix_grid_depth + boolean_shim
+                    ]);
+        }
     }
 }
 
@@ -3349,7 +3381,7 @@ module nut_catcher_test_row(row, row_i) {
             );
 }
 
-module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
+module nut_catcher_test_coupon_matrix(width_offset, thick_offset, top_grid = false) {
     nut_catcher_test_coupon(
         "up",
         "matrix",
@@ -3358,6 +3390,7 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
         width_offset = width_offset,
         thick_offset = thick_offset,
         show_marks = false,
+        top_grid = top_grid,
         coupon_w = nut_catcher_test_matrix_coupon_w,
         coupon_h = nut_catcher_test_matrix_coupon_h
     );
@@ -3367,48 +3400,16 @@ module nut_catcher_test_matrix_base(matrix_w) {
     // The inscription plate is also the print base.  It extends behind the
     // XZ catcher matrix, leaving the negative-Y insertion mouths unobstructed.
     difference() {
-        union() {
-            translate([
-                -matrix_w / 2,
-                -nut_catcher_test_coupon_d / 2,
-                0
-            ])
-                cube([
-                    matrix_w,
-                    nut_catcher_test_coupon_d + nut_catcher_test_matrix_header_d,
-                    nut_catcher_test_matrix_header_h
-                ]);
-            // A raised 1 mm scale grid lives only on the inscription wing.
-            // The text below is cut through it to keep every character clear.
-            for (x = [
-                -matrix_w / 2 : nut_catcher_test_matrix_grid_pitch : matrix_w / 2
-            ])
-                translate([
-                    x - nut_catcher_test_matrix_grid_line_w / 2,
-                    nut_catcher_test_coupon_d / 2,
-                    nut_catcher_test_matrix_header_h
-                ])
-                    cube([
-                        nut_catcher_test_matrix_grid_line_w,
-                        nut_catcher_test_matrix_header_d,
-                        nut_catcher_test_matrix_grid_depth
-                    ]);
-            for (y = [
-                nut_catcher_test_coupon_d / 2
-                    : nut_catcher_test_matrix_grid_pitch
-                    : nut_catcher_test_coupon_d / 2 + nut_catcher_test_matrix_header_d
-            ])
-                translate([
-                    -matrix_w / 2,
-                    y - nut_catcher_test_matrix_grid_line_w / 2,
-                    nut_catcher_test_matrix_header_h
-                ])
-                    cube([
-                        matrix_w,
-                        nut_catcher_test_matrix_grid_line_w,
-                        nut_catcher_test_matrix_grid_depth
-                    ]);
-        }
+        translate([
+            -matrix_w / 2,
+            -nut_catcher_test_coupon_d / 2,
+            0
+        ])
+            cube([
+                matrix_w,
+                nut_catcher_test_coupon_d + nut_catcher_test_matrix_header_d,
+                nut_catcher_test_matrix_header_h
+            ]);
         translate([
             0,
             nut_catcher_test_coupon_d / 2
@@ -3464,7 +3465,14 @@ module nut_catcher_adjustment_matrix() {
                     + search(thick_offset, nut_catcher_test_thick_offsets)[0]
                         * nut_catcher_test_matrix_coupon_h
             ])
-                nut_catcher_test_coupon_matrix(width_offset, thick_offset);
+                nut_catcher_test_coupon_matrix(
+                    width_offset,
+                    thick_offset,
+                    top_grid = thick_offset
+                        == nut_catcher_test_thick_offsets[
+                            len(nut_catcher_test_thick_offsets) - 1
+                        ]
+                );
 }
 
 module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {

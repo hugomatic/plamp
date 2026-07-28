@@ -301,10 +301,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("nut_catcher_test_matrix_width_label", base)
         self.assertIn("nut_catcher_test_matrix_thick_label", base)
         self.assertIn("nut_catcher_test_coupon_d+nut_catcher_test_matrix_header_d", base)
-        self.assertIn("nut_catcher_test_matrix_grid_pitch", base)
-        self.assertIn("nut_catcher_test_matrix_grid_line_w", base)
 
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+        self.assertIn("if(top_grid)", coupon)
+        self.assertIn("coupon_h-nut_catcher_test_matrix_grid_depth", coupon)
         self.assertIn("module nut_catcher_sideways_print_roof_negative(", source)
         self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', coupon)
         roof = compact_scad(
