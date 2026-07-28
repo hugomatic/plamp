@@ -269,8 +269,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         screw = compact_scad(
             scad_module_body(source, "nut_catcher_test_screw_negative")
         )
-        self.assertIn('orientation=="sideways"', screw)
-        self.assertNotIn('roof_mode=="flat"', screw)
+        self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', screw)
+        self.assertIn("else", screw)
 
         compact = compact_scad(source)
         self.assertIn("nut_catcher_test_mark_font=1.7;", compact)
@@ -290,7 +290,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("for(width_offset=nut_catcher_test_width_offsets)", matrix)
         self.assertIn("for(thick_offset=nut_catcher_test_thick_offsets)", matrix)
         self.assertIn("nut_catcher_test_coupon_matrix(", matrix)
-        self.assertIn("nut_catcher_test_matrix_base(matrix_w)", matrix)
+        self.assertIn("nut_catcher_test_matrix_base(matrix_w,", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_h", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_w", matrix)
 
@@ -300,7 +300,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("revision_string", base)
         self.assertIn("nut_catcher_test_matrix_width_label", base)
         self.assertIn("nut_catcher_test_matrix_thick_label", base)
-        self.assertIn("nut_catcher_test_coupon_d+nut_catcher_test_matrix_header_d", base)
+        self.assertIn("matrix_d+nut_catcher_test_matrix_header_d", base)
 
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
         self.assertIn("if(top_grid)", coupon)
@@ -1916,7 +1916,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("rotate([0,0,-90])", transform)
         self.assertIn(
-            "opening_edge_distance=nut_catcher_test_coupon_d/2+1", coupon
+            "opening_edge_distance=coupon_d/2+1", coupon
         )
 
     def test_plamp8_nut_jig_keeps_roof_coupons_independent(self):
