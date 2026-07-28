@@ -850,7 +850,10 @@ class CadGenerationTests(unittest.TestCase):
             "artifact": old_job["artifact"],
         })
         self.assertIn("Enable ironing", (second.run_dir / "readme.md").read_text())
-        self.assertEqual((second.run_dir / new_job["log"]).read_text(), "")
+        self.assertEqual(
+            (second.run_dir / new_job["log"]).read_text(),
+            "\n====== fixture-system cad: set name: first ======\n\n",
+        )
 
     def test_same_minute_manufacturing_change_gets_distinct_run_identity(self):
         source_plan = plan("first")

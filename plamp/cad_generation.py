@@ -1499,6 +1499,12 @@ def generate_plan(
 
         failed = False
         for render_job, job in zip(plan.jobs, jobs):
+            set_banner = (
+                f"\n====== {plan.system_name} cad: set name: "
+                f"{render_job.set_name} ======\n\n"
+            )
+            out.write(set_banner)
+            out.flush()
             started = _utc_now()
             started_clock = time.monotonic()
             job["status"] = "running"
@@ -1533,6 +1539,7 @@ def generate_plan(
                         log_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
                         0o644, dir_fd=logs_fd,
                     )
+                    os.write(empty_log_fd, set_banner.encode("utf-8"))
                     os.close(empty_log_fd)
                     finished = _utc_now()
                     job["status"] = "complete"
@@ -1743,6 +1750,8 @@ def generate_plan(
                     0o644, dir_fd=logs_fd,
                 )
                 with os.fdopen(log_fd, "w", encoding="utf-8") as log:
+                    log.write(set_banner)
+                    log.flush()
                     verify_destination()
                     if discovery_output:
                         log.write("OpenSCAD dependency discovery:\n")
