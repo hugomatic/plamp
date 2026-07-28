@@ -23,11 +23,14 @@ leg_t = 4;
 leg_tab_d = 10;
 leg_slot_clearance = 0.25;
 leg_print_gap = 10;
+mount_ear_wall = 3;
+mount_ear_outboard_gap = 3;
 
 plate_w = (pump_count - 1) * pump_spacing + motor_screw_spacing
     + 2 * plate_end_margin;
 leg_x = plate_w / 2 - leg_t / 2;
-mount_hole_y = plate_d / 2 - 8;
+mount_ear_r = mount_hole_d / 2 + mount_ear_wall;
+mount_ear_x = leg_x + leg_t / 2 + mount_ear_outboard_gap;
 
 // Each station is collinear along X: M3, motor opening, M3.
 module pump_station_negative(index) {
@@ -54,17 +57,26 @@ module leg_slot_negative(x) {
         ]);
 }
 
-module plate() {
-    difference() {
+module plate_positive() {
+    union() {
         translate([-plate_w / 2, -plate_d / 2, 0])
             cube([plate_w, plate_d, plate_t]);
 
+        // These ears place the table-mounting holes outside the end legs.
+        for (x = [-mount_ear_x, mount_ear_x])
+            translate([x, 0, 0])
+                cylinder(d = 2 * mount_ear_r, h = plate_t);
+    }
+}
+
+module plate() {
+    difference() {
+        plate_positive();
+
         for (index = [0:pump_count - 1]) pump_station_negative(index);
 
-        // Provisional M5 table-mounting holes, one near each plate end.
-        for (x = [-plate_w / 2 + plate_end_margin / 2,
-                  plate_w / 2 - plate_end_margin / 2])
-            translate([x, mount_hole_y, -boolean_overlap])
+        for (x = [-mount_ear_x, mount_ear_x])
+            translate([x, 0, -boolean_overlap])
                 cylinder(d = mount_hole_d, h = plate_t + 2 * boolean_overlap);
 
         for (x = [-leg_x, leg_x]) leg_slot_negative(x);

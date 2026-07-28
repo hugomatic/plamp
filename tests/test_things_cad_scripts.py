@@ -189,6 +189,23 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("cylinder(d=mount_hole_d", plate)
         self.assertIn("motor_clearance_h", legs)
 
+    def test_peristaltic_pump_stand_mounting_holes_use_external_ears(self):
+        source = (
+            REPO_ROOT / "things" / "peristaltic_pump_stand" /
+            "peristaltic_pump_stand.scad"
+        ).read_text()
+        compact = compact_scad(source)
+        plate = compact_scad(scad_module_body(source, "plate"))
+        positive = compact_scad(scad_module_body(source, "plate_positive"))
+
+        self.assertIn("mount_ear_r=mount_hole_d/2+mount_ear_wall;", compact)
+        self.assertIn("mount_ear_x=leg_x+leg_t/2+mount_ear_outboard_gap;", compact)
+        self.assertIn("plate_positive();", plate)
+        self.assertIn("for(x=[-mount_ear_x,mount_ear_x])", plate)
+        self.assertIn("translate([x,0,-boolean_overlap])", plate)
+        self.assertIn("for(x=[-mount_ear_x,mount_ear_x])", positive)
+        self.assertIn("cylinder(d=2*mount_ear_r", positive)
+
     def test_peristaltic_pump_stand_readme_documents_generation(self):
         readme = (
             REPO_ROOT / "things" / "peristaltic_pump_stand" / "README.md"

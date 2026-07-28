@@ -22,7 +22,8 @@ plamp cad generate peristaltic_pump_stand --set plate \
 
 The 29 mm motor opening and 48.5 mm M3 spacing are initial measurements.
 Print a short plate fit check before committing to a long production plate.
-The two 5.5 mm end holes are provisional M5 table-mounting holes.
+The two 5.5 mm M5 table-mounting holes sit in round ears, centred on the
+plate centreline just outside the end-panel legs.
 
 For a visual check only:
 
