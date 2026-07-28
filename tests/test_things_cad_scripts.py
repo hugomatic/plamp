@@ -291,7 +291,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("for(thick_offset=nut_catcher_test_thick_offsets)", matrix)
         self.assertIn("nut_catcher_test_coupon_matrix(", matrix)
         self.assertIn("nut_catcher_test_matrix_base(matrix_w)", matrix)
-        self.assertIn("*nut_catcher_test_coupon_h", matrix)
+        self.assertIn("*nut_catcher_test_matrix_coupon_h", matrix)
 
         base = compact_scad(
             scad_module_body(source, "nut_catcher_test_matrix_base")

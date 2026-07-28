@@ -187,6 +187,7 @@ nut_catcher_test_matrix_header_d = 12;
 nut_catcher_test_matrix_header_h = 2;
 nut_catcher_test_matrix_revision_font = 3;
 nut_catcher_test_matrix_label_font = 1.65;
+nut_catcher_test_matrix_coupon_h = 8;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 
@@ -3117,13 +3118,14 @@ module nut_catcher_orientation_transform(
     orientation,
     slot_w,
     slot_h,
-    roof_mode
+    roof_mode,
+    coupon_h = nut_catcher_test_coupon_h
 ) {
     roof_h = roof_mode == "30deg"
         ? slot_w / 2 * tan(panel_nut_roof_angle)
         : 0;
     roof_top_extent_45 = (slot_w / 2 + slot_h + roof_h) / sqrt(2);
-    origin_45_z = nut_catcher_test_coupon_h
+    origin_45_z = coupon_h
         - nut_catcher_test_roof_cover_t
         - roof_top_extent_45;
 
@@ -3143,7 +3145,7 @@ module nut_catcher_orientation_transform(
                 children();
     else if (orientation == "down")
         rotate([0, 0, -90])
-            translate([0, 0, nut_catcher_test_coupon_h - 3])
+            translate([0, 0, coupon_h - 3])
                 rotate([180, 0, 0])
                     children();
     else if (orientation == "sideways")
@@ -3214,7 +3216,8 @@ module nut_catcher_test_coupon(
     candidate,
     width_offset = 0,
     thick_offset = 0,
-    show_marks = true
+    show_marks = true,
+    coupon_h = nut_catcher_test_coupon_h
 ) {
     width_clearance = parameter == "width_clearance"
         ? nut_catcher_candidate_value(parameter, mode, candidate)
@@ -3262,14 +3265,15 @@ module nut_catcher_test_coupon(
             cube([
                 nut_catcher_test_coupon_w,
                 nut_catcher_test_coupon_d,
-                nut_catcher_test_coupon_h
+                coupon_h
             ]);
 
         nut_catcher_orientation_transform(
             orientation,
             slot_w,
             slot_h,
-            roof_mode
+            roof_mode,
+            coupon_h
         )
             union() {
                 m3_nut_catcher_negative(
@@ -3287,7 +3291,7 @@ module nut_catcher_test_coupon(
                 nut_catcher_test_screw_negative(
                     orientation,
                     roof_mode,
-                    nut_catcher_test_coupon_h
+                    coupon_h
                 );
             }
 
@@ -3296,13 +3300,13 @@ module nut_catcher_test_coupon(
                 write_text(
                     label,
                     nut_catcher_test_mark_font,
-                    nut_catcher_test_coupon_h - nut_catcher_test_mark_depth
+                    coupon_h - nut_catcher_test_mark_depth
                 );
             translate([0, nut_catcher_test_mark_y, 0])
                 write_text(
                     revision_string,
                     nut_catcher_test_mark_font,
-                    nut_catcher_test_coupon_h - nut_catcher_test_mark_depth
+                    coupon_h - nut_catcher_test_mark_depth
                 );
         }
     }
@@ -3345,17 +3349,18 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
         0,
         width_offset = width_offset,
         thick_offset = thick_offset,
-        show_marks = false
+        show_marks = false,
+        coupon_h = nut_catcher_test_matrix_coupon_h
     );
 }
 
 module nut_catcher_test_matrix_base(matrix_w) {
-    // The inscription plate is also the print base.  It extends behind the
-    // XZ catcher matrix, leaving its negative-Y insertion mouths unobstructed.
+    // The inscription plate is also the print base.  It extends forward of
+    // the XZ catcher matrix; the mouths begin above this 2 mm base layer.
     difference() {
         translate([
             -matrix_w / 2,
-            -nut_catcher_test_coupon_d / 2,
+            -nut_catcher_test_coupon_d / 2 - nut_catcher_test_matrix_header_d,
             0
         ])
             cube([
@@ -3365,8 +3370,8 @@ module nut_catcher_test_matrix_base(matrix_w) {
             ]);
         translate([
             0,
-            nut_catcher_test_coupon_d / 2
-                + nut_catcher_test_matrix_header_d / 2 + 2.5,
+            -nut_catcher_test_coupon_d / 2
+                - nut_catcher_test_matrix_header_d / 2 + 2.5,
             0
         ])
             write_text(
@@ -3377,8 +3382,8 @@ module nut_catcher_test_matrix_base(matrix_w) {
             );
         translate([
             0,
-            nut_catcher_test_coupon_d / 2
-                + nut_catcher_test_matrix_header_d / 2 - 2.5,
+            -nut_catcher_test_coupon_d / 2
+                - nut_catcher_test_matrix_header_d / 2 - 2.5,
             0
         ])
             write_text(
@@ -3403,7 +3408,7 @@ module nut_catcher_adjustment_matrix() {
                 0,
                 nut_catcher_test_matrix_header_h
                     + search(thick_offset, nut_catcher_test_thick_offsets)[0]
-                        * nut_catcher_test_coupon_h
+                        * nut_catcher_test_matrix_coupon_h
             ])
                 nut_catcher_test_coupon_matrix(width_offset, thick_offset);
 }
