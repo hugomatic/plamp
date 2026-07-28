@@ -174,6 +174,30 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertTrue(model.sets["legs"].printable)
         self.assertFalse(model.sets["assembly"].printable)
 
+    def test_peristaltic_pump_stand_builds_repeated_motor_plate_and_legs(self):
+        source = (
+            REPO_ROOT / "things" / "peristaltic_pump_stand" /
+            "peristaltic_pump_stand.scad"
+        ).read_text()
+        plate = compact_scad(scad_module_body(source, "plate"))
+        station = compact_scad(scad_module_body(source, "pump_station_negative"))
+        legs = compact_scad(scad_module_body(source, "leg_pair"))
+
+        self.assertIn("for(index=[0:pump_count-1])", plate)
+        self.assertIn("cylinder(d=motor_hole_d", station)
+        self.assertIn("motor_screw_spacing/2", station)
+        self.assertIn("cylinder(d=mount_hole_d", plate)
+        self.assertIn("motor_clearance_h", legs)
+
+    def test_peristaltic_pump_stand_readme_documents_generation(self):
+        readme = (
+            REPO_ROOT / "things" / "peristaltic_pump_stand" / "README.md"
+        ).read_text()
+        self.assertIn(
+            "plamp cad generate peristaltic_pump_stand --set plate", readme
+        )
+        self.assertIn("pump_spacing", readme)
+
     def test_plamp8_connector_fit_views_use_panel_names(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
