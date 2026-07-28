@@ -237,8 +237,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for definition in (
             'm3_nut_across_flats=nut_profile_across_flats("M3");',
             'm3_nut_thickness=nut_profile_thickness("M3");',
-            "panel_nut_width_clearance=0.24;",
-            "panel_nut_thickness_clearance=0.14;",
+            "panel_nut_width_clearance=0.19;",
+            "panel_nut_thickness_clearance=0.04;",
+            "corner_nut_entry_mouth_w=6.1;",
         ):
             with self.subTest(definition=definition):
                 self.assertIn(definition, compact)
@@ -289,6 +290,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             nut_trap,
         )
         self.assertIn("m3_nut_catcher_negative(", nut_trap)
+        self.assertIn("entry_mouth_w=corner_nut_entry_mouth_w", nut_trap)
         self.assertIn(
             'roof_mode=print_orientation==box_print_orientation?"30deg":"flat"',
             nut_trap,
@@ -1783,8 +1785,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for definition in (
             'm3_nut_across_flats=nut_profile_across_flats("M3");',
             'm3_nut_thickness=nut_profile_thickness("M3");',
-            "panel_nut_width_clearance=0.24;",
-            "panel_nut_thickness_clearance=0.14;",
+            "panel_nut_width_clearance=0.19;",
+            "panel_nut_thickness_clearance=0.04;",
+            "corner_nut_entry_mouth_w=6.1;",
             "panel_nut_entry_w=m3_nut_across_flats+panel_nut_width_clearance;",
             "panel_nut_pocket_d=panel_nut_entry_w/cos(30);",
             "panel_nut_slot_h=m3_nut_thickness+panel_nut_thickness_clearance;",
@@ -1794,6 +1797,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("slot_w=nut_across_flats+width_clearance", canonical)
         self.assertIn("pocket_d=slot_w/cos(30)", canonical)
         self.assertIn("slot_h=nut_thickness+thick_clearance", canonical)
+        self.assertIn("entry_mouth_w=undef", canonical)
+        self.assertIn(
+            "effective_entry_mouth_w=is_undef(entry_mouth_w)?slot_w-2*entry_detent:entry_mouth_w",
+            canonical,
+        )
+        self.assertIn(
+            "cube([detent_l+boolean_shim,effective_entry_mouth_w,slot_h])",
+            canonical,
+        )
         self.assertIn("slot_h=panel_nut_slot_h", flipped)
 
     def test_plamp8_uses_one_parametric_m3_nut_catcher(self):

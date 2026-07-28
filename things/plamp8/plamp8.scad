@@ -143,14 +143,17 @@ function nut_profile_thickness(id) = nut_profile(id)[2];
 
 m3_nut_across_flats = nut_profile_across_flats("M3");
 m3_nut_thickness = nut_profile_thickness("M3");
-panel_nut_width_clearance = 0.24;
-panel_nut_thickness_clearance = 0.14;
+// Calibrated from the W-0.05 / T-0.10 matrix cell.
+panel_nut_width_clearance = 0.19;
+panel_nut_thickness_clearance = 0.04;
 panel_nut_entry_w = m3_nut_across_flats + panel_nut_width_clearance;
 panel_nut_pocket_d = panel_nut_entry_w / cos(30);
 panel_nut_slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
 panel_nut_entry_l = 12;
 panel_nut_entry_detent = (panel_nut_entry_w - 5.5) / 2;
 panel_nut_entry_detent_l = 1.5;
+// The diagonal wall tunnel needs clearance for this nut's 6 mm insertion span.
+corner_nut_entry_mouth_w = 6.1;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
@@ -1212,7 +1215,8 @@ module m3_nut_catcher_negative(
     direction = 1,
     opening_edge_distance = panel_nut_entry_l,
     entry_detent = panel_nut_entry_detent,
-    entry_detent_l = panel_nut_entry_detent_l
+    entry_detent_l = panel_nut_entry_detent_l,
+    entry_mouth_w = undef
 ) {
     assert(roof_mode == "flat" || roof_mode == "30deg",
         "nut catcher roof_mode must be flat or 30deg");
@@ -1221,7 +1225,9 @@ module m3_nut_catcher_negative(
     pocket_d = slot_w / cos(30);
     detent_l = min(entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
-    throat_w = slot_w - 2 * entry_detent;
+    effective_entry_mouth_w = is_undef(entry_mouth_w)
+        ? slot_w - 2 * entry_detent
+        : entry_mouth_w;
     roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
     roof_l = opening_edge_distance + slot_w / 2;
     roof_x = direction < 0 ? -opening_edge_distance : -slot_w / 2;
@@ -1240,10 +1246,14 @@ module m3_nut_catcher_negative(
 
             translate([
                 direction > 0 ? main_l : -opening_edge_distance,
-                -throat_w / 2,
-                0
-            ])
-                cube([detent_l + boolean_shim, throat_w, slot_h]);
+                    -effective_entry_mouth_w / 2,
+                    0
+                ])
+                    cube([
+                        detent_l + boolean_shim,
+                        effective_entry_mouth_w,
+                        slot_h
+                    ]);
 
             if (roof_mode == "30deg")
                 translate([roof_x, 0, slot_h])
@@ -2329,6 +2339,7 @@ module support_free_m3_nut_trap(
                 m3_nut_catcher_negative(
                     direction = 1,
                     opening_edge_distance = opening_edge_distance,
+                    entry_mouth_w = corner_nut_entry_mouth_w,
                     roof_mode = print_orientation == box_print_orientation
                         ? "30deg"
                         : "flat"
