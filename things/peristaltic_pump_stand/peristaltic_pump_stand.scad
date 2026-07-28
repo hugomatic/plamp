@@ -23,8 +23,9 @@ leg_t = 4;
 leg_tab_d = 10;
 leg_slot_clearance = 0.25;
 leg_print_gap = 10;
-mount_ear_wall = 3;
-mount_ear_outboard_gap = 3;
+// Keep the M5 bore clear of the leg tab slot while the ear bridges around it.
+mount_ear_wall = 5.5;
+mount_ear_outboard_gap = 5;
 
 plate_w = (pump_count - 1) * pump_spacing + motor_screw_spacing
     + 2 * plate_end_margin;
