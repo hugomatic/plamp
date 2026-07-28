@@ -190,8 +190,8 @@ nut_catcher_test_matrix_label_font = 1.25;
 nut_catcher_test_matrix_grid_pitch = 1;
 nut_catcher_test_matrix_grid_line_w = 0.3;
 nut_catcher_test_matrix_grid_depth = 0.3;
-nut_catcher_test_matrix_coupon_w = 10;
-nut_catcher_test_matrix_coupon_h = 8.5;
+nut_catcher_test_matrix_coupon_w = 9;
+nut_catcher_test_matrix_coupon_h = 7.5;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 

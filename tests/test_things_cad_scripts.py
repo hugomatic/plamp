@@ -1883,7 +1883,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'nut_catcher_test_thick_offsets=[-0.1,-0.05,-0.025,0,0.025,0.05,0.1];',
             compact,
         )
-        self.assertIn("nut_catcher_test_matrix_coupon_w=10;", compact)
+        self.assertIn("nut_catcher_test_matrix_coupon_w=9;", compact)
         self.assertIn(
             '["all","roof_mode","values",["flat","30deg"]]',
             compact,
