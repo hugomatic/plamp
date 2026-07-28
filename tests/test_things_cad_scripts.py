@@ -199,9 +199,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         positive = compact_scad(scad_module_body(source, "plate_positive"))
 
         self.assertIn("mount_ear_r=mount_hole_d/2+mount_ear_wall;", compact)
-        self.assertIn("mount_ear_x=leg_x+leg_t/2+mount_ear_outboard_gap;", compact)
+        self.assertIn("leg_inset=4;", compact)
+        self.assertIn("leg_x=plate_w/2-leg_t/2-leg_inset;", compact)
+        self.assertIn("mount_ear_x=plate_w/2;", compact)
         self.assertIn("mount_ear_wall=13.75;", compact)
-        self.assertIn("mount_ear_outboard_gap=7;", compact)
         self.assertIn("plate_positive();", plate)
         self.assertIn("for(x=[-mount_ear_x,mount_ear_x])", plate)
         self.assertIn("translate([x,0,-boolean_overlap])", plate)

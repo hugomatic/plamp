@@ -26,13 +26,14 @@ leg_print_gap = 10;
 // Keep the M5 bore clear of the leg tab slot while the ear bridges around it.
 // 33 mm outside diameter: twice the preceding 16.5 mm fit-test ear.
 mount_ear_wall = 13.75;
-mount_ear_outboard_gap = 7;
+leg_inset = 4;
 
 plate_w = (pump_count - 1) * pump_spacing + motor_screw_spacing
     + 2 * plate_end_margin;
-leg_x = plate_w / 2 - leg_t / 2;
+leg_x = plate_w / 2 - leg_t / 2 - leg_inset;
 mount_ear_r = mount_hole_d / 2 + mount_ear_wall;
-mount_ear_x = leg_x + leg_t / 2 + mount_ear_outboard_gap;
+// Centre on the plate end: the exterior profile is a true semicircular ear.
+mount_ear_x = plate_w / 2;
 
 // Each station is collinear along X: M3, motor opening, M3.
 module pump_station_negative(index) {
