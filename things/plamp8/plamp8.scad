@@ -183,12 +183,12 @@ nut_catcher_test_mark_font = 1.7;
 nut_catcher_test_mark_depth = 0.5;
 nut_catcher_test_mark_y = 3.8;
 nut_catcher_test_roof_cover_t = 0.8;
-nut_catcher_test_matrix_header_d = 12;
+nut_catcher_test_matrix_header_d = 16;
 nut_catcher_test_matrix_header_h = 2;
 nut_catcher_test_matrix_revision_font = 3;
 nut_catcher_test_matrix_label_font = 1.25;
-nut_catcher_test_matrix_coupon_w = 12;
-nut_catcher_test_matrix_coupon_h = 7.5;
+nut_catcher_test_matrix_coupon_w = 10;
+nut_catcher_test_matrix_coupon_h = 8.5;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 
@@ -3085,9 +3085,12 @@ function nut_catcher_offset_series_label(values, i = 0) =
         nut_catcher_offset_series_label(values, i + 1)
     );
 
-function nut_catcher_test_matrix_label() = str(
-    "U ", nut_catcher_offset_series_label(nut_catcher_test_width_offsets),
-    " X T ", nut_catcher_offset_series_label(nut_catcher_test_thick_offsets)
+function nut_catcher_test_matrix_width_label() = str(
+    "W ", nut_catcher_offset_series_label(nut_catcher_test_width_offsets)
+);
+
+function nut_catcher_test_matrix_thick_label() = str(
+    "T ", nut_catcher_offset_series_label(nut_catcher_test_thick_offsets)
 );
 
 function nut_catcher_orientation_short(orientation) =
@@ -3358,12 +3361,12 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
 }
 
 module nut_catcher_test_matrix_base(matrix_w) {
-    // The inscription plate is also the print base.  It extends forward of
-    // the XZ catcher matrix; the mouths begin above this 2 mm base layer.
+    // The inscription plate is also the print base.  It extends behind the
+    // XZ catcher matrix, leaving the negative-Y insertion mouths unobstructed.
     difference() {
         translate([
             -matrix_w / 2,
-            -nut_catcher_test_coupon_d / 2 - nut_catcher_test_matrix_header_d,
+            -nut_catcher_test_coupon_d / 2,
             0
         ])
             cube([
@@ -3373,8 +3376,8 @@ module nut_catcher_test_matrix_base(matrix_w) {
             ]);
         translate([
             0,
-            -nut_catcher_test_coupon_d / 2
-                - nut_catcher_test_matrix_header_d / 2 + 2.5,
+            nut_catcher_test_coupon_d / 2
+                + nut_catcher_test_matrix_header_d / 2 + 4.5,
             0
         ])
             write_text(
@@ -3385,12 +3388,24 @@ module nut_catcher_test_matrix_base(matrix_w) {
             );
         translate([
             0,
-            -nut_catcher_test_coupon_d / 2
-                - nut_catcher_test_matrix_header_d / 2 - 2.5,
+            nut_catcher_test_coupon_d / 2
+                + nut_catcher_test_matrix_header_d / 2,
             0
         ])
             write_text(
-                nut_catcher_test_matrix_label(),
+                nut_catcher_test_matrix_width_label(),
+                nut_catcher_test_matrix_label_font,
+                nut_catcher_test_matrix_header_h
+                    - nut_catcher_test_mark_depth
+            );
+        translate([
+            0,
+            nut_catcher_test_coupon_d / 2
+                + nut_catcher_test_matrix_header_d / 2 - 4,
+            0
+        ])
+            write_text(
+                nut_catcher_test_matrix_thick_label(),
                 nut_catcher_test_matrix_label_font,
                 nut_catcher_test_matrix_header_h
                     - nut_catcher_test_mark_depth
