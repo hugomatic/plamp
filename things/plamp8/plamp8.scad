@@ -171,11 +171,9 @@ nut_catcher_test_orientations = ["up", "sideways", "45"];
 nut_catcher_test_rows = [
     ["all", "roof_mode", "values", ["flat", "30deg"]]
 ];
-// The 5x5 center is deliberately fine.  The four edge samples on each axis
-// catch a larger error without turning this into an 81-coupon print.
-nut_catcher_test_width_offsets = [-0.05, -0.025, 0, 0.025, 0.05];
-nut_catcher_test_thick_offsets = [-0.05, -0.025, 0, 0.025, 0.05];
-nut_catcher_test_edge_offsets = [-0.1, -0.075, 0.075, 0.1];
+// Five values make a compact 5x5 fixture: coarse limits and a fine center.
+nut_catcher_test_width_offsets = [-0.1, -0.025, 0, 0.025, 0.1];
+nut_catcher_test_thick_offsets = [-0.1, -0.025, 0, 0.025, 0.1];
 nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
@@ -3086,20 +3084,8 @@ function nut_catcher_offset_series_label(values, i = 0) =
     );
 
 function nut_catcher_test_matrix_label() = str(
-    "U ", nut_catcher_offset_series_label(
-        concat(
-            [-0.1, -0.075],
-            nut_catcher_test_width_offsets,
-            [0.075, 0.1]
-        )
-    ),
-    " X T ", nut_catcher_offset_series_label(
-        concat(
-            [-0.1, -0.075],
-            nut_catcher_test_thick_offsets,
-            [0.075, 0.1]
-        )
-    )
+    "U ", nut_catcher_offset_series_label(nut_catcher_test_width_offsets),
+    " X T ", nut_catcher_offset_series_label(nut_catcher_test_thick_offsets)
 );
 
 function nut_catcher_orientation_short(orientation) =
@@ -3363,84 +3349,63 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
     );
 }
 
-module nut_catcher_test_matrix_heading(matrix_w, matrix_h) {
-    translate([matrix_w / 2, matrix_h + nut_catcher_test_gap
-            + nut_catcher_test_matrix_header_d / 2, 0])
-        difference() {
-            translate([
-                -matrix_w / 2,
-                -nut_catcher_test_matrix_header_d / 2,
-                0
-            ])
-                cube([
-                    matrix_w,
-                    nut_catcher_test_matrix_header_d,
-                    nut_catcher_test_matrix_header_h
-                ]);
-            translate([0, 2.5, 0])
-                write_text(
-                    revision_string,
-                    nut_catcher_test_matrix_revision_font,
-                    nut_catcher_test_matrix_header_h
-                        - nut_catcher_test_mark_depth
-                );
-            translate([0, -2.5, 0])
-                write_text(
-                    nut_catcher_test_matrix_label(),
-                    nut_catcher_test_matrix_label_font,
-                    nut_catcher_test_matrix_header_h
-                        - nut_catcher_test_mark_depth
-                );
-        }
+module nut_catcher_test_matrix_base(matrix_w) {
+    // The inscription plate is also the print base.  It extends behind the
+    // XZ catcher matrix, leaving its negative-Y insertion mouths unobstructed.
+    difference() {
+        translate([
+            -matrix_w / 2,
+            -nut_catcher_test_coupon_d / 2,
+            0
+        ])
+            cube([
+                matrix_w,
+                nut_catcher_test_coupon_d + nut_catcher_test_matrix_header_d,
+                nut_catcher_test_matrix_header_h
+            ]);
+        translate([
+            0,
+            nut_catcher_test_coupon_d / 2
+                + nut_catcher_test_matrix_header_d / 2 + 2.5,
+            0
+        ])
+            write_text(
+                revision_string,
+                nut_catcher_test_matrix_revision_font,
+                nut_catcher_test_matrix_header_h
+                    - nut_catcher_test_mark_depth
+            );
+        translate([
+            0,
+            nut_catcher_test_coupon_d / 2
+                + nut_catcher_test_matrix_header_d / 2 - 2.5,
+            0
+        ])
+            write_text(
+                nut_catcher_test_matrix_label(),
+                nut_catcher_test_matrix_label_font,
+                nut_catcher_test_matrix_header_h
+                    - nut_catcher_test_mark_depth
+            );
+    }
 }
 
 module nut_catcher_adjustment_matrix() {
-    edge_strip_w = 2 * len(nut_catcher_test_edge_offsets)
-        * nut_catcher_test_coupon_w
-        + (2 * len(nut_catcher_test_edge_offsets) - 1) * nut_catcher_test_gap;
-    center_matrix_w = len(nut_catcher_test_width_offsets)
-        * nut_catcher_test_coupon_w
-        + (len(nut_catcher_test_width_offsets) - 1) * nut_catcher_test_gap;
-    center_matrix_h = len(nut_catcher_test_thick_offsets)
-        * nut_catcher_test_coupon_d
-        + (len(nut_catcher_test_thick_offsets) - 1) * nut_catcher_test_gap;
-    matrix_w = edge_strip_w;
-    matrix_h = nut_catcher_test_coupon_d + nut_catcher_test_gap + center_matrix_h;
+    matrix_w = len(nut_catcher_test_width_offsets) * nut_catcher_test_coupon_w;
 
-    // Coarse edge values are single-axis samples: their companion axis stays
-    // calibrated at zero.  Their labels make the strip unambiguous in hand.
-    for (edge_i = [0 : len(nut_catcher_test_edge_offsets) - 1]) {
-        translate([edge_i * (nut_catcher_test_coupon_w + nut_catcher_test_gap), 0, 0])
-            nut_catcher_test_coupon(
-                "up", "width_clearance", "offsets",
-                nut_catcher_test_edge_offsets[edge_i]
-            );
-        translate([
-            (edge_i + len(nut_catcher_test_edge_offsets))
-                * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
-            0,
-            0
-        ])
-            nut_catcher_test_coupon(
-                "up", "thick_clearance", "offsets",
-                nut_catcher_test_edge_offsets[edge_i]
-            );
-    }
+    nut_catcher_test_matrix_base(matrix_w);
 
     for (width_offset = nut_catcher_test_width_offsets)
         for (thick_offset = nut_catcher_test_thick_offsets)
             translate([
-                (edge_strip_w - center_matrix_w) / 2
-                    + search(width_offset, nut_catcher_test_width_offsets)[0]
-                        * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
-                nut_catcher_test_coupon_d + nut_catcher_test_gap
+                (search(width_offset, nut_catcher_test_width_offsets)[0] + 0.5)
+                    * nut_catcher_test_coupon_w - matrix_w / 2,
+                0,
+                nut_catcher_test_matrix_header_h
                     + search(thick_offset, nut_catcher_test_thick_offsets)[0]
-                    * (nut_catcher_test_coupon_d + nut_catcher_test_gap),
-                0
+                        * nut_catcher_test_coupon_h
             ])
                 nut_catcher_test_coupon_matrix(width_offset, thick_offset);
-
-    nut_catcher_test_matrix_heading(matrix_w, matrix_h);
 }
 
 module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
