@@ -284,6 +284,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("item_i%3", row)
         self.assertIn("floor(item_i/3)", row)
 
+        matrix = compact_scad(
+            scad_module_body(source, "nut_catcher_adjustment_matrix")
+        )
+        self.assertIn("for(width_offset=nut_catcher_test_width_offsets)", matrix)
+        self.assertIn("for(thick_offset=nut_catcher_test_thick_offsets)", matrix)
+        self.assertIn("nut_catcher_test_coupon_matrix(", matrix)
+        self.assertIn("nut_catcher_test_matrix_heading", matrix)
+
+        heading = compact_scad(
+            scad_module_body(source, "nut_catcher_test_matrix_heading")
+        )
+        self.assertIn("revision_string", heading)
+        self.assertIn("nut_catcher_test_matrix_label", heading)
+
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
         self.assertIn("module nut_catcher_sideways_print_roof_negative(", source)
         self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', coupon)
@@ -1856,11 +1870,15 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for orientation in ('"up"', '"down"', '"sideways"', '"45"'):
             self.assertIn(orientation, compact)
         self.assertIn(
-            '["up","width_clearance","offsets",[-0.1,-0.05,0,0.05,0.1]]',
+            'nut_catcher_test_width_offsets=[-0.05,-0.025,0,0.025,0.05];',
             compact,
         )
         self.assertIn(
-            '["up","thick_clearance","offsets",[-0.2,-0.1,0,0.1,0.2]]',
+            'nut_catcher_test_thick_offsets=[-0.05,-0.025,0,0.025,0.05];',
+            compact,
+        )
+        self.assertIn(
+            'nut_catcher_test_edge_offsets=[-0.1,-0.075,0.075,0.1];',
             compact,
         )
         self.assertIn(
@@ -1868,6 +1886,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             compact,
         )
         self.assertIn("nut_catcher_test_row(rows[row_i],row_i)", jig)
+        self.assertIn("nut_catcher_adjustment_matrix();", jig)
         self.assertIn("m3_nut_catcher_negative(", coupon)
         self.assertIn("nut_catcher_orientation_transform(orientation", coupon)
         self.assertIn("write_text(label", coupon)
