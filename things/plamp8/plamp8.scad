@@ -187,6 +187,9 @@ nut_catcher_test_matrix_header_d = 16;
 nut_catcher_test_matrix_header_h = 2;
 nut_catcher_test_matrix_revision_font = 3;
 nut_catcher_test_matrix_label_font = 1.25;
+nut_catcher_test_matrix_grid_pitch = 1;
+nut_catcher_test_matrix_grid_line_w = 0.3;
+nut_catcher_test_matrix_grid_depth = 0.3;
 nut_catcher_test_matrix_coupon_w = 10;
 nut_catcher_test_matrix_coupon_h = 8.5;
 corner_screw_d = screw_clearance_d(corner_screw_size);
@@ -3364,16 +3367,48 @@ module nut_catcher_test_matrix_base(matrix_w) {
     // The inscription plate is also the print base.  It extends behind the
     // XZ catcher matrix, leaving the negative-Y insertion mouths unobstructed.
     difference() {
-        translate([
-            -matrix_w / 2,
-            -nut_catcher_test_coupon_d / 2,
-            0
-        ])
-            cube([
-                matrix_w,
-                nut_catcher_test_coupon_d + nut_catcher_test_matrix_header_d,
-                nut_catcher_test_matrix_header_h
-            ]);
+        union() {
+            translate([
+                -matrix_w / 2,
+                -nut_catcher_test_coupon_d / 2,
+                0
+            ])
+                cube([
+                    matrix_w,
+                    nut_catcher_test_coupon_d + nut_catcher_test_matrix_header_d,
+                    nut_catcher_test_matrix_header_h
+                ]);
+            // A raised 1 mm scale grid lives only on the inscription wing.
+            // The text below is cut through it to keep every character clear.
+            for (x = [
+                -matrix_w / 2 : nut_catcher_test_matrix_grid_pitch : matrix_w / 2
+            ])
+                translate([
+                    x - nut_catcher_test_matrix_grid_line_w / 2,
+                    nut_catcher_test_coupon_d / 2,
+                    nut_catcher_test_matrix_header_h
+                ])
+                    cube([
+                        nut_catcher_test_matrix_grid_line_w,
+                        nut_catcher_test_matrix_header_d,
+                        nut_catcher_test_matrix_grid_depth
+                    ]);
+            for (y = [
+                nut_catcher_test_coupon_d / 2
+                    : nut_catcher_test_matrix_grid_pitch
+                    : nut_catcher_test_coupon_d / 2 + nut_catcher_test_matrix_header_d
+            ])
+                translate([
+                    -matrix_w / 2,
+                    y - nut_catcher_test_matrix_grid_line_w / 2,
+                    nut_catcher_test_matrix_header_h
+                ])
+                    cube([
+                        matrix_w,
+                        nut_catcher_test_matrix_grid_line_w,
+                        nut_catcher_test_matrix_grid_depth
+                    ]);
+        }
         translate([
             0,
             nut_catcher_test_coupon_d / 2
@@ -3384,7 +3419,7 @@ module nut_catcher_test_matrix_base(matrix_w) {
                 revision_string,
                 nut_catcher_test_matrix_revision_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_mark_depth
+                    - nut_catcher_test_matrix_grid_depth
             );
         translate([
             0,
@@ -3396,7 +3431,7 @@ module nut_catcher_test_matrix_base(matrix_w) {
                 nut_catcher_test_matrix_width_label(),
                 nut_catcher_test_matrix_label_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_mark_depth
+                    - nut_catcher_test_matrix_grid_depth
             );
         translate([
             0,
@@ -3408,7 +3443,7 @@ module nut_catcher_test_matrix_base(matrix_w) {
                 nut_catcher_test_matrix_thick_label(),
                 nut_catcher_test_matrix_label_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_mark_depth
+                    - nut_catcher_test_matrix_grid_depth
             );
     }
 }
