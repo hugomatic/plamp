@@ -292,6 +292,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("nut_catcher_test_coupon_matrix(", matrix)
         self.assertIn("nut_catcher_test_matrix_base(matrix_w)", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_h", matrix)
+        self.assertIn("*nut_catcher_test_matrix_coupon_w", matrix)
 
         base = compact_scad(
             scad_module_body(source, "nut_catcher_test_matrix_base")
@@ -1872,13 +1873,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for orientation in ('"up"', '"down"', '"sideways"', '"45"'):
             self.assertIn(orientation, compact)
         self.assertIn(
-            'nut_catcher_test_width_offsets=[-0.1,-0.025,0,0.025,0.1];',
+            'nut_catcher_test_width_offsets=[-0.1,-0.05,-0.025,0,0.025,0.05,0.1];',
             compact,
         )
         self.assertIn(
-            'nut_catcher_test_thick_offsets=[-0.1,-0.025,0,0.025,0.1];',
+            'nut_catcher_test_thick_offsets=[-0.1,-0.05,-0.025,0,0.025,0.05,0.1];',
             compact,
         )
+        self.assertIn("nut_catcher_test_matrix_coupon_w=12;", compact)
         self.assertIn(
             '["all","roof_mode","values",["flat","30deg"]]',
             compact,

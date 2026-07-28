@@ -171,9 +171,9 @@ nut_catcher_test_orientations = ["up", "sideways", "45"];
 nut_catcher_test_rows = [
     ["all", "roof_mode", "values", ["flat", "30deg"]]
 ];
-// Five values make a compact 5x5 fixture: coarse limits and a fine center.
-nut_catcher_test_width_offsets = [-0.1, -0.025, 0, 0.025, 0.1];
-nut_catcher_test_thick_offsets = [-0.1, -0.025, 0, 0.025, 0.1];
+// Seven values retain coarse limits while resolving the fit around zero.
+nut_catcher_test_width_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
+nut_catcher_test_thick_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
 nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
@@ -186,8 +186,9 @@ nut_catcher_test_roof_cover_t = 0.8;
 nut_catcher_test_matrix_header_d = 12;
 nut_catcher_test_matrix_header_h = 2;
 nut_catcher_test_matrix_revision_font = 3;
-nut_catcher_test_matrix_label_font = 1.65;
-nut_catcher_test_matrix_coupon_h = 8;
+nut_catcher_test_matrix_label_font = 1.25;
+nut_catcher_test_matrix_coupon_w = 12;
+nut_catcher_test_matrix_coupon_h = 7.5;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 
@@ -3217,6 +3218,7 @@ module nut_catcher_test_coupon(
     width_offset = 0,
     thick_offset = 0,
     show_marks = true,
+    coupon_w = nut_catcher_test_coupon_w,
     coupon_h = nut_catcher_test_coupon_h
 ) {
     width_clearance = parameter == "width_clearance"
@@ -3258,12 +3260,12 @@ module nut_catcher_test_coupon(
 
     difference() {
         translate([
-            -nut_catcher_test_coupon_w / 2,
+            -coupon_w / 2,
             -nut_catcher_test_coupon_d / 2,
             0
         ])
             cube([
-                nut_catcher_test_coupon_w,
+                coupon_w,
                 nut_catcher_test_coupon_d,
                 coupon_h
             ]);
@@ -3350,6 +3352,7 @@ module nut_catcher_test_coupon_matrix(width_offset, thick_offset) {
         width_offset = width_offset,
         thick_offset = thick_offset,
         show_marks = false,
+        coupon_w = nut_catcher_test_matrix_coupon_w,
         coupon_h = nut_catcher_test_matrix_coupon_h
     );
 }
@@ -3396,7 +3399,8 @@ module nut_catcher_test_matrix_base(matrix_w) {
 }
 
 module nut_catcher_adjustment_matrix() {
-    matrix_w = len(nut_catcher_test_width_offsets) * nut_catcher_test_coupon_w;
+    matrix_w = len(nut_catcher_test_width_offsets)
+        * nut_catcher_test_matrix_coupon_w;
 
     nut_catcher_test_matrix_base(matrix_w);
 
@@ -3404,7 +3408,7 @@ module nut_catcher_adjustment_matrix() {
         for (thick_offset = nut_catcher_test_thick_offsets)
             translate([
                 (search(width_offset, nut_catcher_test_width_offsets)[0] + 0.5)
-                    * nut_catcher_test_coupon_w - matrix_w / 2,
+                    * nut_catcher_test_matrix_coupon_w - matrix_w / 2,
                 0,
                 nut_catcher_test_matrix_header_h
                     + search(thick_offset, nut_catcher_test_thick_offsets)[0]
