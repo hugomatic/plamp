@@ -811,7 +811,7 @@ revision_string = "revision";
 dc_devices = ["PH Up", "PH Down", "Agitator", "Nutrients"];
 dc_details = ["CH1 GP21 12V DC", "CH2 GP20 12V DC", "CH3 GP19 12V DC", "CH4 GP18 12V DC"];
 
-ac_devices = ["Pump", "Lights", "Fan", "Aux"];
+ac_devices = ["Pump", "Lights 1", "Fan", "Lights 2"];
 ac_details = ["CH5 GP17 110V AC", "CH7 GP15 110V AC", "CH6 GP16 110V AC", "CH8 GP14 110V AC"];
 
 
