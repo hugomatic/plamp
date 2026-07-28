@@ -200,8 +200,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("mount_ear_r=mount_hole_d/2+mount_ear_wall;", compact)
         self.assertIn("mount_ear_x=leg_x+leg_t/2+mount_ear_outboard_gap;", compact)
-        self.assertIn("mount_ear_wall=5.5;", compact)
-        self.assertIn("mount_ear_outboard_gap=5;", compact)
+        self.assertIn("mount_ear_wall=13.75;", compact)
+        self.assertIn("mount_ear_outboard_gap=7;", compact)
         self.assertIn("plate_positive();", plate)
         self.assertIn("for(x=[-mount_ear_x,mount_ear_x])", plate)
         self.assertIn("translate([x,0,-boolean_overlap])", plate)

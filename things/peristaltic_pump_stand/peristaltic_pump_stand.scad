@@ -24,8 +24,9 @@ leg_tab_d = 10;
 leg_slot_clearance = 0.25;
 leg_print_gap = 10;
 // Keep the M5 bore clear of the leg tab slot while the ear bridges around it.
-mount_ear_wall = 5.5;
-mount_ear_outboard_gap = 5;
+// 33 mm outside diameter: twice the preceding 16.5 mm fit-test ear.
+mount_ear_wall = 13.75;
+mount_ear_outboard_gap = 7;
 
 plate_w = (pump_count - 1) * pump_spacing + motor_screw_spacing
     + 2 * plate_end_margin;
