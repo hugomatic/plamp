@@ -140,6 +140,13 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<script src="/static/app.js"></script>', dashboard)
         self.assertNotIn("function renderMainNav", dashboard)
 
+    def test_shared_response_json_includes_api_error_detail(self):
+        shell = static_text("app.js")
+
+        self.assertIn("const payload = await response.json().catch(() => null);", shell)
+        self.assertIn("const detail = payload?.detail;", shell)
+        self.assertIn("throw new Error(`${label}: ${detail}`);", shell)
+
     def test_timer_dashboard_static_file_bootstraps_only_through_rest(self):
         path = Path("plamp_web/static/index.html")
         self.assertTrue(path.is_file())

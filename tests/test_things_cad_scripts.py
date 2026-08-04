@@ -370,8 +370,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
     def test_plamp8_flat_wall_corner_stack_contract(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
-        self.assertIn("wall_z_height = 83;", source)
+        self.assertIn("wall_z_height = 128;", source)
         self.assertIn("corner_tab_t = 6;", source)
+        self.assertIn("corner_clearance_tab_l = 10;", source)
+        self.assertIn("corner_tab_positive(corner_clearance_tab_l);", source)
+        self.assertIn("corner_clearance_tab_l + 0.2", source)
         self.assertIn("corner_screw_length = 25;", source)
         self.assertIn("corner_long_screw_length = 30;", source)
         self.assertNotIn("top_corner_screw_length", source)

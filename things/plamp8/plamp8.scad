@@ -103,7 +103,7 @@ feature_power_screw_mounts = true;
 
 /* [dimensions] */
 
-wall_z_height = 83;
+wall_z_height = 128;
 plate_t = 3;
 connector_panel_rim = 3;
 connector_panel_pair_gap = 10;
@@ -340,6 +340,8 @@ corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
 corner_tab_boss_r = 5;
+// East/west clearance guides run farther along the corner screw for strength.
+corner_clearance_tab_l = 10;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
@@ -2218,8 +2220,8 @@ module corner_tab_boss_positive(length, center_y = 0) {
     }
 }
 
-module corner_tab_positive() {
-    corner_tab_boss_positive(corner_tab_t);
+module corner_tab_positive(length = corner_tab_t) {
+    corner_tab_boss_positive(length);
 }
 
 module corner_nut_tab_positive(bearing_side = 1) {
@@ -2379,9 +2381,9 @@ module support_free_m3_nut_trap(
 
 module corner_clearance_tab(print_orientation = flat_wall_print_orientation) {
     difference() {
-        corner_tab_positive();
+        corner_tab_positive(corner_clearance_tab_l);
         corner_screw_bore(
-            corner_tab_t + 0.2,
+            corner_clearance_tab_l + 0.2,
             corner_screw_d,
             print_orientation
         );

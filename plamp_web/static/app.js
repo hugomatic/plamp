@@ -4,7 +4,13 @@
   let controllersPromise;
 
   async function responseJson(response, label) {
-    if (!response.ok) throw new Error(`${label}: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const detail = payload?.detail;
+      if (typeof detail === "string") throw new Error(`${label}: ${detail}`);
+      if (typeof detail?.message === "string") throw new Error(`${label}: ${detail.message}`);
+      throw new Error(`${label}: ${response.status} ${response.statusText}`);
+    }
     return response.json();
   }
 
