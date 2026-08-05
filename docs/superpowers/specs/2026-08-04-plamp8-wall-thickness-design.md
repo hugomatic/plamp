@@ -12,6 +12,8 @@ For the 30 mm corner screw, the 3 mm floor leaves 27 mm of vertical support. The
 
 At the lower corner, the east/west boss starts at the top of the 3 mm floor and ends at 16.5 mm; the north/south boss then runs from 16.5 mm to 30 mm. Neither boss enters the floor.
 
+The shared 30 mm screw uses its own lower nut-catcher offset so the catcher stays fully inside the upper end of the north/south 13.5 mm boss; the existing 25 mm floor-stack offset remains unchanged.
+
 ## Verification
 
 Validate the part metadata, plan the affected floor/wall/panel views, and generate the wall and assembly views. Confirm that the floor and panel plan variables remain unchanged and that the rendered wall solids are 4 mm thick.

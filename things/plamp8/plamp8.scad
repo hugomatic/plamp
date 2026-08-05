@@ -353,6 +353,7 @@ corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
+bottom_shared_nut_offset = corner_wall_boss_h - corner_tab_t;
 corner_nut_detent_angle = 30;
 corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
@@ -2407,7 +2408,7 @@ module corner_nut_tab_negatives(
         + corner_nut_tab_extension;
     corner_nut_tab_bore_center_y = -bearing_side
         * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
-    nut_offset_y = bearing_side < 0 ? bottom_corner_nut_offset : 0;
+    nut_offset_y = bearing_side < 0 ? bottom_shared_nut_offset : 0;
 
     translate([0, corner_nut_tab_bore_center_y, 0])
         corner_screw_bore(
