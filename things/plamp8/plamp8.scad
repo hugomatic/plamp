@@ -2435,8 +2435,10 @@ module corner_nut_tab(
 function top_clearance_tab_center_y(h) =
     h + sub_panel_bottom_z - corner_tab_t / 2;
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
-function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
-function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
+// Share the lower 30 mm screw above the floor without crossing into it:
+// clearance boss spans 3..16.5 mm and nut-owner boss spans 16.5..30 mm.
+function bottom_clearance_tab_center_y() = wall_t + corner_wall_boss_h / 2;
+function bottom_nut_tab_center_y() = wall_t + corner_wall_boss_h + corner_tab_t / 2;
 function corner_spine_y0() = bottom_nut_tab_center_y() - corner_tab_t / 2;
 function corner_spine_y1(h) = top_nut_tab_center_y(h) + corner_tab_t / 2;
 
