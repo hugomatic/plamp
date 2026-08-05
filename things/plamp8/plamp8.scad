@@ -343,8 +343,9 @@ corner_axis_inset = wall_t + panel_screw_inset;
 corner_fit_clearance = 0.25;
 corner_tab_t = 6;
 corner_tab_w = 12;
-corner_tab_h = 11;
 corner_tab_boss_r = 6;
+// Keep the nut-entry and retention tunnel one millimetre below the boss crown.
+corner_tab_h = wall_t + panel_screw_inset + corner_tab_boss_r - 1;
 corner_wall_boss_h = (corner_long_screw_length - wall_t) / 2;
 corner_clearance_tab_l = corner_wall_boss_h;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
