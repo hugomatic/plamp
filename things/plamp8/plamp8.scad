@@ -326,11 +326,12 @@ psu_side_guide_l = 10;
 psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
-// The 3 mm interior wall face preserves the floor, locator, and panel interfaces.
-// Add the extra material on the exterior (the build-plate side of flat wall prints).
+wall_thickness = 5; // [3:0.5:100]
 wall_t = 3;
-wall_outer_t = 2;
-wall_total_t = wall_t + wall_outer_t;
+wall_outer_t = wall_thickness - wall_t;
+wall_total_t = wall_thickness;
+assert(wall_thickness >= wall_t,
+    "wall_thickness must be at least the 3 mm floor and panel interface thickness");
 flat_wall_print_orientation = "flat_wall";
 box_print_orientation = "box";
 corner_nut_entry_angle = 45;

@@ -2,11 +2,11 @@
 
 ## Goal
 
-Increase the separate Plamp8 enclosure walls by 2 mm on their exterior faces without changing the floor or either panel.
+Set the separate Plamp8 enclosure wall thickness with one adjustable 5 mm default without changing the floor or either panel.
 
 ## Approach
 
-Keep the existing 3 mm interior wall face, floor, inner opening, and panel geometry. Extend each wall solid by 2 mm from its exterior face (the build-plate side of flat wall prints), including its 45° mitres and vent cutouts. Floor thickness, floor fastener geometry, locator interfaces, panel thickness, panel dimensions, and panel fasteners retain their current values.
+`wall_thickness` is the single adjustable wall value, with a 5 mm default. Floor thickness, floor fastener geometry, locator interfaces, panel thickness, panel dimensions, and panel fasteners retain their current values. The wall bodies, 45° mitres, and vent cutouts expand outward as `wall_thickness` increases.
 
 ## Verification
 
