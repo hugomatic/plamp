@@ -326,7 +326,11 @@ psu_side_guide_l = 10;
 psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
+// The 3 mm interior wall face preserves the floor, locator, and panel interfaces.
+// Add the extra material on the exterior (the build-plate side of flat wall prints).
 wall_t = 3;
+wall_outer_t = 2;
+wall_total_t = wall_t + wall_outer_t;
 flat_wall_print_orientation = "flat_wall";
 box_print_orientation = "box";
 corner_nut_entry_angle = 45;
@@ -2476,24 +2480,25 @@ module wall_mitre_negative(length, h = wall_z_height, mitre_overlap = 0) {
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [-0.1 - mitre_overlap, -0.1],
+                    [-wall_outer_t - 0.1 - mitre_overlap, -wall_outer_t - 0.1],
                     [wall_t + 0.1 - mitre_overlap, wall_t + 0.1],
-                    [-0.1 - mitre_overlap, wall_t + 0.1]
+                    [-wall_outer_t - 0.1 - mitre_overlap, wall_t + 0.1]
                 ]);
 
     translate([0, h + 0.1, 0])
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [length + 0.1 + mitre_overlap, -0.1],
-                    [length + 0.1 + mitre_overlap, wall_t + 0.1],
+                    [length + wall_outer_t + 0.1 + mitre_overlap, -wall_outer_t - 0.1],
+                    [length + wall_outer_t + 0.1 + mitre_overlap, wall_t + 0.1],
                     [length - wall_t - 0.1 + mitre_overlap, wall_t + 0.1]
                 ]);
 }
 
 module wall_body_positive(length, h = wall_z_height, mitre_overlap = 0) {
     difference() {
-        cube([length, h, wall_t]);
+        translate([-wall_outer_t, 0, -wall_outer_t])
+            cube([length + 2 * wall_outer_t, h, wall_total_t]);
         wall_mitre_negative(length, h, mitre_overlap);
     }
 }
@@ -2522,10 +2527,10 @@ module wall_revision_negative(
 }
 
 module wall_vent_negative(x, y, coarse_vents = false) {
-    translate([x, y, -0.1])
+    translate([x, y, -wall_outer_t - 0.1])
         rotate([0, 0, coarse_vents ? 30 : 0])
             cylinder(
-                h = wall_t + max(wall_rib_h, box_half_hex_rib_h) + 0.2,
+                h = wall_total_t + max(wall_rib_h, box_half_hex_rib_h) + 0.2,
                 d = vent_hole_d,
                 $fn = coarse_vents ? 6 : render_fn
             );
