@@ -13,6 +13,7 @@
 - Floor and panel dimensions remain unchanged.
 - The 2 mm addition is on the exterior/build-plate side of flat wall prints.
 - The interior width and depth remain unchanged.
+- The 30 mm corner-screw support above the 3 mm floor is split equally: 13.5 mm per adjacent wall boss.
 
 ---
 

@@ -344,15 +344,15 @@ corner_fit_clearance = 0.25;
 corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
-corner_tab_boss_r = 5;
-// East/west clearance guides run farther along the corner screw for strength.
-corner_clearance_tab_l = 10;
+corner_tab_boss_r = 6;
+corner_wall_boss_h = (corner_long_screw_length - wall_t) / 2;
+corner_clearance_tab_l = corner_wall_boss_h;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
 corner_nut_shoulder_t = corner_tab_t - corner_nut_slot_l;
 corner_nut_retainer_t = 0.8;
-corner_nut_tab_extension = 16;
+corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
 corner_nut_detent_angle = 30;
 corner_nut_detent_ramp_h = corner_nut_entry_detent * tan(corner_nut_detent_angle);
 corner_coupon_wall_l = 36;
@@ -461,8 +461,9 @@ bottom_stack_h = wall_t + 2 * corner_tab_t;
 bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
 top_long_screw_enclosure_h =
     top_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
-bottom_long_screw_enclosure_h =
-    bottom_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
+// The 30 mm lower corner screw is supported jointly by the two wall bosses:
+// 3 mm floor plus 13.5 mm from each adjacent wall.
+bottom_long_screw_enclosure_h = wall_t + 2 * corner_wall_boss_h;
 assert(top_stack_h == corner_screw_length,
     "M3x25 top screw must end flush with the nut's far face");
 assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length,
@@ -471,10 +472,12 @@ assert(bottom_corner_nut_offset >= 0, "bottom corner nut offset must not be nega
 assert(corner_long_screw_length <= top_long_screw_enclosure_h,
     "M3x30 top screw must remain enclosed");
 assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
-    "M3x30 bottom screw must remain enclosed");
+    "M3x30 bottom screw must remain enclosed by the shared wall bosses");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
+assert(corner_nut_tab_extension >= 0,
+    "corner wall boss must be long enough for the nut tab and retainer");
 assert(abs(corner_nut_slot_l - 2.7) < 0.000001,
     "corner nut slot length must match the measured fit");
 assert(abs(corner_nut_entry_w - 6.1) < 0.000001,
