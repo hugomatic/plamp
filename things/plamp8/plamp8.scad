@@ -2412,6 +2412,14 @@ module corner_nut_spine(h, print_orientation = flat_wall_print_orientation) {
 
     difference() {
         corner_tab_boss_positive(spine_l, spine_y0 + spine_l / 2);
+        // A continuous shaft accepts any corner screw long enough to span
+        // the assembled wall stack; nut catchers open sideways from it.
+        translate([0, spine_y0 + spine_l / 2, 0])
+            corner_screw_bore(
+                spine_l + 0.2,
+                corner_screw_d,
+                print_orientation
+            );
         translate([0, top_nut_tab_center_y(h), 0])
             corner_nut_tab_negatives(
                 bearing_side = 1,
