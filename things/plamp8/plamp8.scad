@@ -337,7 +337,12 @@ psu_side_guide_l = 50;
 psu_side_guide_t = retaining_corner_t;
 psu_side_guide_h = retaining_corner_h;
 
+wall_thickness = 5; // [3:0.5:100]
 wall_t = 3;
+wall_outer_t = wall_thickness - wall_t;
+wall_total_t = wall_thickness;
+assert(wall_thickness >= wall_t,
+    "wall_thickness must be at least the 3 mm floor and panel interface thickness");
 flat_wall_print_orientation = "flat_wall";
 box_print_orientation = "box";
 corner_nut_entry_angle = 45;
@@ -350,16 +355,17 @@ corner_fit_clearance = 0.25;
 corner_tab_t = 6;
 corner_tab_w = 12;
 corner_tab_h = 11;
-corner_tab_boss_r = 5;
+corner_tab_boss_r = 6;
 corner_tab_boss_top_z = wall_t + panel_screw_inset + corner_tab_boss_r;
-// East/west clearance guides run farther along the corner screw for strength.
-corner_clearance_tab_l = 10;
+corner_wall_boss_h = (corner_long_screw_length - wall_t) / 2;
+corner_clearance_tab_l = corner_wall_boss_h;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
 corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;
 corner_nut_retainer_t = 0.8;
-corner_nut_tab_extension = 16;
+corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
+bottom_shared_nut_offset = corner_wall_boss_h - corner_tab_t;
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -463,8 +469,7 @@ bottom_stack_h = wall_t + 2 * corner_tab_t;
 bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
 top_long_screw_enclosure_h =
     top_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
-bottom_long_screw_enclosure_h =
-    bottom_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
+bottom_long_screw_enclosure_h = wall_t + 2 * corner_wall_boss_h;
 assert(top_stack_h == corner_screw_length,
     "M3x25 top screw must end flush with the nut's far face");
 assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length,
@@ -473,7 +478,7 @@ assert(bottom_corner_nut_offset >= 0, "bottom corner nut offset must not be nega
 assert(corner_long_screw_length <= top_long_screw_enclosure_h,
     "M3x30 top screw must remain enclosed");
 assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
-    "M3x30 bottom screw must remain enclosed");
+    "M3x30 bottom screw must remain enclosed by the shared wall bosses");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
@@ -2368,7 +2373,7 @@ module corner_nut_tab_negatives(
         + corner_nut_tab_extension;
     corner_nut_tab_bore_center_y = -bearing_side
         * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
-    nut_offset_y = bearing_side < 0 ? bottom_corner_nut_offset : 0;
+    nut_offset_y = bearing_side < 0 ? bottom_shared_nut_offset : 0;
 
     translate([0, corner_nut_tab_bore_center_y, 0])
         corner_screw_bore(
@@ -2396,8 +2401,8 @@ module corner_nut_tab(
 function top_clearance_tab_center_y(h) =
     h + sub_panel_bottom_z - corner_tab_t / 2;
 function top_nut_tab_center_y(h) = top_clearance_tab_center_y(h) - corner_tab_t;
-function bottom_clearance_tab_center_y() = wall_t + corner_tab_t / 2;
-function bottom_nut_tab_center_y() = bottom_clearance_tab_center_y() + corner_tab_t;
+function bottom_clearance_tab_center_y() = wall_t + corner_wall_boss_h / 2;
+function bottom_nut_tab_center_y() = wall_t + corner_wall_boss_h + corner_tab_t / 2;
 function corner_spine_y0() = bottom_nut_tab_center_y() - corner_tab_t / 2;
 function corner_spine_y1(h) = top_nut_tab_center_y(h) + corner_tab_t / 2;
 
@@ -2445,24 +2450,25 @@ module wall_mitre_negative(length, h = wall_z_height, mitre_overlap = 0) {
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [-0.1 - mitre_overlap, -0.1],
+                    [-wall_outer_t - 0.1 - mitre_overlap, -wall_outer_t - 0.1],
                     [wall_t + 0.1 - mitre_overlap, wall_t + 0.1],
-                    [-0.1 - mitre_overlap, wall_t + 0.1]
+                    [-wall_outer_t - 0.1 - mitre_overlap, wall_t + 0.1]
                 ]);
 
     translate([0, h + 0.1, 0])
         rotate([90, 0, 0])
             linear_extrude(height = h + 0.2)
                 polygon([
-                    [length + 0.1 + mitre_overlap, -0.1],
-                    [length + 0.1 + mitre_overlap, wall_t + 0.1],
+                    [length + wall_outer_t + 0.1 + mitre_overlap, -wall_outer_t - 0.1],
+                    [length + wall_outer_t + 0.1 + mitre_overlap, wall_t + 0.1],
                     [length - wall_t - 0.1 + mitre_overlap, wall_t + 0.1]
                 ]);
 }
 
 module wall_body_positive(length, h = wall_z_height, mitre_overlap = 0) {
     difference() {
-        cube([length, h, wall_t]);
+        translate([-wall_outer_t, 0, -wall_outer_t])
+            cube([length + 2 * wall_outer_t, h, wall_total_t]);
         wall_mitre_negative(length, h, mitre_overlap);
     }
 }
@@ -2491,10 +2497,10 @@ module wall_revision_negative(
 }
 
 module wall_vent_negative(x, y, coarse_vents = false) {
-    translate([x, y, -0.1])
+    translate([x, y, -wall_outer_t - 0.1])
         rotate([0, 0, coarse_vents ? 30 : 0])
             cylinder(
-                h = wall_t + max(wall_rib_h, box_half_hex_rib_h) + 0.2,
+                h = wall_total_t + max(wall_rib_h, box_half_hex_rib_h) + 0.2,
                 d = vent_hole_d,
                 $fn = coarse_vents ? 6 : render_fn
             );
