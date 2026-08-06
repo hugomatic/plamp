@@ -14,6 +14,10 @@ The nut-entry and retention tunnel height derives from the boss radius, retainin
 
 At the lower corner, the east/west boss starts at the top of the 3 mm floor and ends at 16.5 mm; the north/south boss then runs from 16.5 mm to 30 mm. Neither boss enters the floor.
 
+At the upper corner, the east/west boss starts at the sub-panel support plane
+and extends downward 13.5 mm. The north/south nut-owner boss ends at that same
+plane and extends farther downward; the two bosses meet but do not overlap.
+
 The shared 30 mm screw uses its own lower nut-catcher offset so the catcher stays fully inside the upper end of the north/south 13.5 mm boss; the existing 25 mm floor-stack offset remains unchanged.
 
 ## Verification

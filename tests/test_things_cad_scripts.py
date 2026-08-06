@@ -665,7 +665,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("wall_z_height = 128;", source)
         self.assertIn("corner_tab_t = 6;", source)
-        self.assertIn("corner_clearance_tab_l = 10;", source)
+        self.assertIn("corner_clearance_tab_l = corner_wall_boss_h;", source)
         self.assertIn("corner_tab_positive(corner_clearance_tab_l);", source)
         self.assertIn("corner_clearance_tab_l + 0.2", source)
         self.assertIn("corner_screw_length = 25;", source)
@@ -695,7 +695,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("sqrt(2)", bore_profile)
         self.assertIn("corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;", source)
         self.assertIn("corner_nut_retainer_t = 0.8;", source)
-        self.assertIn("corner_nut_tab_extension = 16;", source)
+        self.assertIn(
+            "corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;",
+            source,
+        )
         self.assertNotIn("corner_nut_detent_angle", source)
         self.assertIn(
             "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;",
@@ -717,7 +720,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module corner_tab_positive", source)
         self.assertIn("module corner_nut_tab_positive", source)
         self.assertIn("module corner_tab_boss_positive", source)
-        self.assertIn("corner_tab_boss_r = 5;", source)
+        self.assertIn("corner_tab_boss_r = 6;", source)
         self.assertIn("module corner_clearance_tab", source)
         self.assertIn(
             "corner_nut_tab_length = corner_tab_t\n"
@@ -795,7 +798,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("assert(corner_long_screw_length <= top_long_screw_enclosure_h", source)
         self.assertIn("assert(corner_long_screw_length <= bottom_long_screw_enclosure_h", source)
         self.assertIn(
-            "h + sub_panel_bottom_z - corner_tab_t / 2;", source
+            "h + sub_panel_bottom_z - corner_wall_boss_h / 2;", source
         )
         fastener_assembly = source.split(
             "module wall_corner_fastener_assembly", 1
@@ -1176,6 +1179,24 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("assert(sub_panel_bottom_z == -(plate_t + sub_panel_h)", source)
         self.assertIn("assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h)", source)
         self.assertIn("assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y()", source)
+
+    def test_plamp8_top_wall_bosses_meet_without_overlap(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+
+        self.assertIn(
+            "function top_nut_tab_center_y(h) =\n"
+            "    top_clearance_tab_center_y(h)\n"
+            "    - corner_wall_boss_h / 2\n"
+            "    - corner_tab_t / 2;",
+            source,
+        )
+        self.assertIn(
+            "assert(abs(top_nut_tab_center_y(box_h) + corner_tab_t / 2\n"
+            "    - (top_clearance_tab_center_y(box_h) - corner_wall_boss_h / 2))\n"
+            "    <= boolean_shim,\n"
+            '    "top wall bosses must meet without overlap");',
+            source,
+        )
 
     def test_plamp8_floor_marks_component_orientation(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
