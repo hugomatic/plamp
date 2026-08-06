@@ -18,7 +18,8 @@ At the upper corner, the east/west boss starts at the sub-panel support plane
 and extends downward 13.5 mm. The north/south nut-owner boss ends at that same
 plane and extends farther downward; the two bosses meet but do not overlap.
 The captured nut sits at the upper end of the north/south boss, allowing an
-M3x30 screw to pass through the full nut with about 1.08 mm of tip beyond it.
+M3x30 screw to pass through the full nut. A 0.8 mm roof above the nut remains
+visible to the slicer; the screw retains about 0.28 mm of tip beyond the nut.
 
 The shared 30 mm screw uses its own lower nut-catcher offset so the catcher stays fully inside the upper end of the north/south 13.5 mm boss; the existing 25 mm floor-stack offset remains unchanged.
 

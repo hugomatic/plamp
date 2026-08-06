@@ -366,7 +366,10 @@ corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
 bottom_shared_nut_offset = corner_wall_boss_h - corner_tab_t;
-top_shared_nut_offset = corner_nut_shoulder_t;
+// Preserve a slicer-visible roof above the top nut pocket while keeping the
+// M3x30 screw long enough to cross the complete nut.
+top_nut_roof_t = corner_nut_retainer_t;
+top_shared_nut_offset = corner_nut_shoulder_t - top_nut_roof_t;
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -465,7 +468,8 @@ sub_panel_bonding_nut_w = panel_nut_entry_w;
 sub_panel_bonding_nut_h = panel_nut_slot_h;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
-top_nut_near_face_depth = plate_t + sub_panel_h + corner_wall_boss_h;
+top_nut_near_face_depth = plate_t + sub_panel_h
+    + corner_wall_boss_h + top_nut_roof_t;
 top_nut_far_face_depth = top_nut_near_face_depth + panel_nut_slot_h;
 bottom_nut_far_face_depth = wall_t + 2 * corner_wall_boss_h;
 bottom_nut_near_face_depth = bottom_nut_far_face_depth - panel_nut_slot_h;
@@ -473,6 +477,8 @@ assert(corner_long_screw_length >= top_nut_far_face_depth,
     "M3x30 top screw must pass through the captured nut");
 assert(corner_long_screw_length >= bottom_nut_far_face_depth,
     "M3x30 bottom screw must pass through the captured nut");
+assert(top_nut_roof_t >= 0.8,
+    "top nut catcher needs at least 0.8 mm printable roof");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");

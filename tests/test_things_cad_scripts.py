@@ -1179,7 +1179,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
             '    "top wall bosses must meet without overlap");',
             source,
         )
-        self.assertIn("top_shared_nut_offset = corner_nut_shoulder_t;", source)
+        self.assertIn("top_nut_roof_t = corner_nut_retainer_t;", source)
+        self.assertIn(
+            "top_shared_nut_offset = corner_nut_shoulder_t - top_nut_roof_t;",
+            source,
+        )
         self.assertIn(
             "nut_offset_y = bearing_side < 0\n"
             "        ? bottom_shared_nut_offset\n"
@@ -1187,7 +1191,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "top_nut_near_face_depth = plate_t + sub_panel_h + corner_wall_boss_h;",
+            "top_nut_near_face_depth = plate_t + sub_panel_h\n"
+            "    + corner_wall_boss_h + top_nut_roof_t;",
             source,
         )
         self.assertIn(
@@ -1197,6 +1202,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn(
             "assert(corner_long_screw_length >= top_nut_far_face_depth,\n"
             '    "M3x30 top screw must pass through the captured nut");',
+            source,
+        )
+        self.assertIn(
+            "assert(top_nut_roof_t >= 0.8,\n"
+            '    "top nut catcher needs at least 0.8 mm printable roof");',
             source,
         )
 
