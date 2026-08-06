@@ -359,6 +359,7 @@ corner_tab_boss_r = 6;
 corner_tab_boss_top_z = wall_t + panel_screw_inset + corner_tab_boss_r;
 corner_wall_boss_h = (corner_long_screw_length - wall_t) / 2;
 corner_clearance_tab_l = corner_wall_boss_h;
+top_clearance_tab_l = (corner_wall_boss_h + corner_tab_t) / 2;
 corner_tab_outer_x = wall_t + corner_fit_clearance - corner_axis_inset;
 corner_tab_inner_x = corner_tab_w / 2;
 corner_tab_effective_w = corner_tab_inner_x - corner_tab_outer_x;
@@ -366,10 +367,10 @@ corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
 bottom_shared_nut_offset = corner_wall_boss_h - corner_tab_t;
-// Preserve a slicer-visible roof above the top nut pocket while keeping the
-// M3x30 screw long enough to cross the complete nut.
-top_nut_roof_t = corner_nut_retainer_t;
-top_shared_nut_offset = corner_nut_shoulder_t - top_nut_roof_t;
+// Preserve the already-printed north/south nut position and its full bearing
+// shoulder; only the east/west top clearance boss is shortened to meet it.
+top_nut_roof_t = corner_nut_shoulder_t;
+top_shared_nut_offset = 0;
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -469,7 +470,7 @@ sub_panel_bonding_nut_h = panel_nut_slot_h;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
 top_nut_near_face_depth = plate_t + sub_panel_h
-    + corner_wall_boss_h + top_nut_roof_t;
+    + top_clearance_tab_l + top_nut_roof_t;
 top_nut_far_face_depth = top_nut_near_face_depth + panel_nut_slot_h;
 bottom_nut_far_face_depth = wall_t + 2 * corner_wall_boss_h;
 bottom_nut_near_face_depth = bottom_nut_far_face_depth - panel_nut_slot_h;
@@ -477,8 +478,8 @@ assert(corner_long_screw_length >= top_nut_far_face_depth,
     "M3x30 top screw must pass through the captured nut");
 assert(corner_long_screw_length >= bottom_nut_far_face_depth,
     "M3x30 bottom screw must pass through the captured nut");
-assert(top_nut_roof_t >= 0.8,
-    "top nut catcher needs at least 0.8 mm printable roof");
+assert(top_nut_roof_t >= 3,
+    "top nut catcher needs at least 3 mm structural roof");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
@@ -2356,11 +2357,14 @@ module support_free_m3_nut_trap(
                 );
 }
 
-module corner_clearance_tab(print_orientation = flat_wall_print_orientation) {
+module corner_clearance_tab(
+    length = corner_clearance_tab_l,
+    print_orientation = flat_wall_print_orientation
+) {
     difference() {
-        corner_tab_positive(corner_clearance_tab_l);
+        corner_tab_positive(length);
         corner_screw_bore(
-            corner_clearance_tab_l + 0.2,
+            length + 0.2,
             corner_screw_d,
             print_orientation
         );
@@ -2404,10 +2408,10 @@ module corner_nut_tab(
 }
 
 function top_clearance_tab_center_y(h) =
-    h + sub_panel_bottom_z - corner_wall_boss_h / 2;
+    h + sub_panel_bottom_z - top_clearance_tab_l / 2;
 function top_nut_tab_center_y(h) =
     top_clearance_tab_center_y(h)
-    - corner_wall_boss_h / 2
+    - top_clearance_tab_l / 2
     - corner_tab_t / 2;
 function bottom_clearance_tab_center_y() = wall_t + corner_wall_boss_h / 2;
 function bottom_nut_tab_center_y() = wall_t + corner_wall_boss_h + corner_tab_t / 2;
@@ -2446,7 +2450,7 @@ assert(sub_panel_bottom_z == -(plate_t + sub_panel_h),
 assert(top_nut_tab_center_y(box_h) < top_clearance_tab_center_y(box_h),
     "top nut tab must remain below the clearance tab");
 assert(abs(top_nut_tab_center_y(box_h) + corner_tab_t / 2
-    - (top_clearance_tab_center_y(box_h) - corner_wall_boss_h / 2))
+    - (top_clearance_tab_center_y(box_h) - top_clearance_tab_l / 2))
     <= boolean_shim,
     "top wall bosses must meet without overlap");
 assert(bottom_clearance_tab_center_y() < bottom_nut_tab_center_y(),
@@ -2721,9 +2725,9 @@ module wall_corner_tabs(
                     corner_nut_spine(h, print_orientation);
             else {
                 translate([corner_axis_inset, top_clearance_tab_center_y(h), 0])
-                    corner_clearance_tab(print_orientation);
+                    corner_clearance_tab(top_clearance_tab_l, print_orientation);
                 translate([corner_axis_inset, bottom_clearance_tab_center_y(), 0])
-                    corner_clearance_tab(print_orientation);
+                    corner_clearance_tab(corner_clearance_tab_l, print_orientation);
             }
         }
 }
@@ -2926,7 +2930,9 @@ module corner_wall_coupon(nut_owner = false, top = true) {
                 if (nut_owner)
                     corner_nut_tab(bearing_side);
                 else
-                    corner_clearance_tab();
+                    corner_clearance_tab(
+                        top ? top_clearance_tab_l : corner_clearance_tab_l
+                    );
         }
     }
 }

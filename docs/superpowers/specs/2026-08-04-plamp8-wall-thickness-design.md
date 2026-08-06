@@ -14,12 +14,12 @@ The nut-entry and retention tunnel height derives from the boss radius, retainin
 
 At the lower corner, the east/west boss starts at the top of the 3 mm floor and ends at 16.5 mm; the north/south boss then runs from 16.5 mm to 30 mm. Neither boss enters the floor.
 
-At the upper corner, the east/west boss starts at the sub-panel support plane
-and extends downward 13.5 mm. The north/south nut-owner boss ends at that same
-plane and extends farther downward; the two bosses meet but do not overlap.
-The captured nut sits at the upper end of the north/south boss, allowing an
-M3x30 screw to pass through the full nut. A 0.8 mm roof above the nut remains
-visible to the slicer; the screw retains about 0.28 mm of tip beyond the nut.
+At the upper corner, the existing north/south nut-owner geometry remains
+unchanged. Its nut has a 3.58 mm structural roof. The east/west clearance boss
+starts at the sub-panel support plane and extends downward 9.75 mm, ending
+exactly where the north/south boss begins. An M3x30 screw passes through the
+full nut with about 1.25 mm of tip beyond it. This arrangement allows existing
+north/south walls to be reused; only east/west walls need reprinting.
 
 The shared 30 mm screw uses its own lower nut-catcher offset so the catcher stays fully inside the upper end of the north/south 13.5 mm boss; the existing 25 mm floor-stack offset remains unchanged.
 

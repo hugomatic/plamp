@@ -666,8 +666,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("wall_z_height = 128;", source)
         self.assertIn("corner_tab_t = 6;", source)
         self.assertIn("corner_clearance_tab_l = corner_wall_boss_h;", source)
-        self.assertIn("corner_tab_positive(corner_clearance_tab_l);", source)
-        self.assertIn("corner_clearance_tab_l + 0.2", source)
+        self.assertIn(
+            "top_clearance_tab_l = (corner_wall_boss_h + corner_tab_t) / 2;",
+            source,
+        )
+        self.assertIn("corner_tab_positive(length);", source)
+        self.assertIn("length + 0.2", source)
         self.assertIn("corner_screw_length = 25;", source)
         self.assertIn("corner_long_screw_length = 30;", source)
         self.assertNotIn("top_corner_screw_length", source)
@@ -736,8 +740,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )[0]
         self.assertIn("if (nut_owner)", wall_tabs)
         self.assertIn("corner_nut_spine(h, print_orientation);", wall_tabs)
-        self.assertEqual(
-            wall_tabs.count("corner_clearance_tab(print_orientation);"), 2
+        self.assertIn(
+            "corner_clearance_tab(top_clearance_tab_l, print_orientation);",
+            wall_tabs,
+        )
+        self.assertIn(
+            "corner_clearance_tab(corner_clearance_tab_l, print_orientation);",
+            wall_tabs,
         )
         self.assertIn("module support_free_m3_nut_trap", source)
         self.assertIn("module m3_nut_catcher_floor_nibs_positive", source)
@@ -780,7 +789,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn("assert(corner_long_screw_length >= bottom_nut_far_face_depth", source)
         self.assertIn(
-            "h + sub_panel_bottom_z - corner_wall_boss_h / 2;", source
+            "h + sub_panel_bottom_z - top_clearance_tab_l / 2;", source
         )
         fastener_assembly = source.split(
             "module wall_corner_fastener_assembly", 1
@@ -1168,22 +1177,19 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn(
             "function top_nut_tab_center_y(h) =\n"
             "    top_clearance_tab_center_y(h)\n"
-            "    - corner_wall_boss_h / 2\n"
+            "    - top_clearance_tab_l / 2\n"
             "    - corner_tab_t / 2;",
             source,
         )
         self.assertIn(
             "assert(abs(top_nut_tab_center_y(box_h) + corner_tab_t / 2\n"
-            "    - (top_clearance_tab_center_y(box_h) - corner_wall_boss_h / 2))\n"
+            "    - (top_clearance_tab_center_y(box_h) - top_clearance_tab_l / 2))\n"
             "    <= boolean_shim,\n"
             '    "top wall bosses must meet without overlap");',
             source,
         )
-        self.assertIn("top_nut_roof_t = corner_nut_retainer_t;", source)
-        self.assertIn(
-            "top_shared_nut_offset = corner_nut_shoulder_t - top_nut_roof_t;",
-            source,
-        )
+        self.assertIn("top_nut_roof_t = corner_nut_shoulder_t;", source)
+        self.assertIn("top_shared_nut_offset = 0;", source)
         self.assertIn(
             "nut_offset_y = bearing_side < 0\n"
             "        ? bottom_shared_nut_offset\n"
@@ -1192,7 +1198,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertIn(
             "top_nut_near_face_depth = plate_t + sub_panel_h\n"
-            "    + corner_wall_boss_h + top_nut_roof_t;",
+            "    + top_clearance_tab_l + top_nut_roof_t;",
             source,
         )
         self.assertIn(
@@ -1205,10 +1211,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "assert(top_nut_roof_t >= 0.8,\n"
-            '    "top nut catcher needs at least 0.8 mm printable roof");',
+            "assert(top_nut_roof_t >= 3,\n"
+            '    "top nut catcher needs at least 3 mm structural roof");',
             source,
         )
+        self.assertIn("corner_clearance_tab(top_clearance_tab_l", source)
+        self.assertIn("corner_clearance_tab(corner_clearance_tab_l", source)
 
     def test_plamp8_floor_marks_component_orientation(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
