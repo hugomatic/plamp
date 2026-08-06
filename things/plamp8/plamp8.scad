@@ -366,6 +366,7 @@ corner_nut_shoulder_t = corner_tab_t - panel_nut_slot_h;
 corner_nut_retainer_t = 0.8;
 corner_nut_tab_extension = corner_wall_boss_h - corner_tab_t - corner_nut_retainer_t;
 bottom_shared_nut_offset = corner_wall_boss_h - corner_tab_t;
+top_shared_nut_offset = corner_nut_shoulder_t;
 corner_coupon_wall_l = 36;
 corner_coupon_wall_h = 32;
 coupon_assembly_clearance = 0.05;
@@ -464,29 +465,25 @@ sub_panel_bonding_nut_w = panel_nut_entry_w;
 sub_panel_bonding_nut_h = panel_nut_slot_h;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
-top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;
-bottom_stack_h = wall_t + 2 * corner_tab_t;
-bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;
-top_long_screw_enclosure_h =
-    top_stack_h + corner_nut_retainer_t + corner_nut_tab_extension;
-bottom_long_screw_enclosure_h = wall_t + 2 * corner_wall_boss_h;
-assert(top_stack_h == corner_screw_length,
-    "M3x25 top screw must end flush with the nut's far face");
-assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length,
-    "M3x25 bottom screw must end flush with the nut's far face");
-assert(bottom_corner_nut_offset >= 0, "bottom corner nut offset must not be negative");
-assert(corner_long_screw_length <= top_long_screw_enclosure_h,
-    "M3x30 top screw must remain enclosed");
-assert(corner_long_screw_length <= bottom_long_screw_enclosure_h,
-    "M3x30 bottom screw must remain enclosed by the shared wall bosses");
+top_nut_near_face_depth = plate_t + sub_panel_h + corner_wall_boss_h;
+top_nut_far_face_depth = top_nut_near_face_depth + panel_nut_slot_h;
+bottom_nut_far_face_depth = wall_t + 2 * corner_wall_boss_h;
+bottom_nut_near_face_depth = bottom_nut_far_face_depth - panel_nut_slot_h;
+assert(corner_long_screw_length >= top_nut_far_face_depth,
+    "M3x30 top screw must pass through the captured nut");
+assert(corner_long_screw_length >= bottom_nut_far_face_depth,
+    "M3x30 bottom screw must pass through the captured nut");
 assert(wall_z_height >= 2 * corner_tab_h + 10,
     "wall_z_height is too short for separated top and bottom joint zones");
 assert(corner_nut_shoulder_t >= 0.8, "corner nut needs at least 0.8 mm axial bearing shoulder");
-echo(str("top M3x25 nut-face offset: ", corner_screw_length - top_stack_h, " mm"));
-echo(str("bottom M3x25 nut-face offset: ",
-    corner_screw_length - bottom_stack_h - bottom_corner_nut_offset, " mm"));
-echo(str("M3x30 extra enclosed travel: ",
-    corner_long_screw_length - corner_screw_length, " mm"));
+echo(str("top M3x30 thread engagement: ",
+    corner_long_screw_length - top_nut_near_face_depth, " mm"));
+echo(str("top M3x30 tip beyond nut: ",
+    corner_long_screw_length - top_nut_far_face_depth, " mm"));
+echo(str("bottom M3x30 thread engagement: ",
+    corner_long_screw_length - bottom_nut_near_face_depth, " mm"));
+echo(str("bottom M3x30 tip beyond nut: ",
+    corner_long_screw_length - bottom_nut_far_face_depth, " mm"));
 
 
 outlet_right_x = right_ac_x + outlet_group_x + outlet_group_w / 2;
@@ -2373,7 +2370,9 @@ module corner_nut_tab_negatives(
         + corner_nut_tab_extension;
     corner_nut_tab_bore_center_y = -bearing_side
         * (corner_nut_retainer_t + corner_nut_tab_extension) / 2;
-    nut_offset_y = bearing_side < 0 ? bottom_shared_nut_offset : 0;
+    nut_offset_y = bearing_side < 0
+        ? bottom_shared_nut_offset
+        : top_shared_nut_offset;
 
     translate([0, corner_nut_tab_bore_center_y, 0])
         corner_screw_bore(
@@ -2995,9 +2994,9 @@ module wall_corner_fastener_assembly() {
 }
 
 module corner_coupon() {
-    echo(str("corner screws: 8x M3x", corner_screw_length));
-    echo(str("top stack: ", top_stack_h, " mm"));
-    echo(str("bottom stack: ", bottom_stack_h, " mm"));
+    echo(str("corner screws: 8x M3x", corner_long_screw_length));
+    echo(str("top nut near face: ", top_nut_near_face_depth, " mm"));
+    echo(str("bottom nut near face: ", bottom_nut_near_face_depth, " mm"));
     echo(str("nut bearing shoulder: ", corner_nut_shoulder_t, " mm"));
 
     // Four actual wall snippets in their exterior-face-down print orientation.

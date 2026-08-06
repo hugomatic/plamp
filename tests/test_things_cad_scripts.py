@@ -672,7 +672,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("corner_long_screw_length = 30;", source)
         self.assertNotIn("top_corner_screw_length", source)
         self.assertNotIn("bottom_corner_screw_length", source)
-        self.assertIn("bottom_corner_nut_offset", source)
+        self.assertIn("bottom_shared_nut_offset", source)
         self.assertIn('corner_screw_size = "M3";', source)
         self.assertIn('floor_screw_size = "M3";', source)
         self.assertIn(
@@ -700,18 +700,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
             source,
         )
         self.assertNotIn("corner_nut_detent_angle", source)
-        self.assertIn(
-            "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;",
-            source,
-        )
-        self.assertIn(
-            "bottom_stack_h = wall_t + 2 * corner_tab_t;",
-            source,
-        )
-        self.assertIn(
-            "bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;",
-            source,
-        )
+        self.assertIn("top_nut_near_face_depth", source)
+        self.assertIn("bottom_nut_near_face_depth", source)
         self.assertIn("module support_free_horizontal_bore", source)
         self.assertNotIn("module corner_tab_gusset", source)
         self.assertNotIn("module clearance_tab_inward_gusset", source)
@@ -781,22 +771,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_h = 10;", source)
         self.assertIn("corner_screw_length = 25;", source)
         self.assertIn("corner_long_screw_length = 30;", source)
-        self.assertIn(
-            "top_stack_h = plate_t + sub_panel_h + 2 * corner_tab_t;", source
-        )
-        self.assertIn("bottom_stack_h = wall_t + 2 * corner_tab_t;", source)
-        self.assertIn(
-            "bottom_corner_nut_offset = corner_screw_length - bottom_stack_h;",
-            source,
-        )
+        self.assertIn("top_nut_near_face_depth", source)
+        self.assertIn("bottom_nut_near_face_depth", source)
         self.assertNotIn("corner_screw_tip_allowance", source)
-        self.assertIn("assert(top_stack_h == corner_screw_length", source)
         self.assertIn(
-            "assert(bottom_stack_h + bottom_corner_nut_offset == corner_screw_length",
+            "assert(corner_long_screw_length >= top_nut_far_face_depth",
             source,
         )
-        self.assertIn("assert(corner_long_screw_length <= top_long_screw_enclosure_h", source)
-        self.assertIn("assert(corner_long_screw_length <= bottom_long_screw_enclosure_h", source)
+        self.assertIn("assert(corner_long_screw_length >= bottom_nut_far_face_depth", source)
         self.assertIn(
             "h + sub_panel_bottom_z - corner_wall_boss_h / 2;", source
         )
@@ -1195,6 +1177,26 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "    - (top_clearance_tab_center_y(box_h) - corner_wall_boss_h / 2))\n"
             "    <= boolean_shim,\n"
             '    "top wall bosses must meet without overlap");',
+            source,
+        )
+        self.assertIn("top_shared_nut_offset = corner_nut_shoulder_t;", source)
+        self.assertIn(
+            "nut_offset_y = bearing_side < 0\n"
+            "        ? bottom_shared_nut_offset\n"
+            "        : top_shared_nut_offset;",
+            source,
+        )
+        self.assertIn(
+            "top_nut_near_face_depth = plate_t + sub_panel_h + corner_wall_boss_h;",
+            source,
+        )
+        self.assertIn(
+            "top_nut_far_face_depth = top_nut_near_face_depth + panel_nut_slot_h;",
+            source,
+        )
+        self.assertIn(
+            "assert(corner_long_screw_length >= top_nut_far_face_depth,\n"
+            '    "M3x30 top screw must pass through the captured nut");',
             source,
         )
 
