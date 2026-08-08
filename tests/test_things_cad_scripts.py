@@ -316,6 +316,47 @@ class ThingsCadScriptsTest(unittest.TestCase):
             nut_trap,
         )
 
+    def test_plamp8_corner_nut_entry_uses_roomy_tunnel_and_snug_pocket(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        catcher = compact_scad(
+            scad_module_body(source, "m3_nut_catcher_negative")
+        )
+        corner = compact_scad(
+            scad_module_body(source, "support_free_m3_nut_trap")
+        )
+        coupon = compact_scad(
+            scad_module_body(source, "nut_catcher_test_coupon")
+        )
+        panel = compact_scad(
+            scad_module_body(source, "side_loaded_panel_nut_trap_negative")
+        )
+
+        self.assertIn("corner_nut_tunnel_w=corner_nut_entry_mouth_w;", compact)
+        self.assertIn("corner_nut_tunnel_h=m3_nut_thickness+0.14;", compact)
+        self.assertIn("entry_tunnel_w=undef", catcher)
+        self.assertIn("entry_tunnel_h=undef", catcher)
+        self.assertIn(
+            "effective_tunnel_w=is_undef(entry_tunnel_w)?slot_w:entry_tunnel_w",
+            catcher,
+        )
+        self.assertIn(
+            "effective_tunnel_h=is_undef(entry_tunnel_h)?slot_h:entry_tunnel_h",
+            catcher,
+        )
+        self.assertIn("entry_tunnel_w=corner_nut_tunnel_w", corner)
+        self.assertIn("entry_tunnel_h=corner_nut_tunnel_h", corner)
+        self.assertIn(
+            'entry_tunnel_w=orientation=="45"?corner_nut_tunnel_w:undef',
+            coupon,
+        )
+        self.assertIn(
+            'entry_tunnel_h=orientation=="45"?corner_nut_tunnel_h:undef',
+            coupon,
+        )
+        self.assertNotIn("entry_tunnel_w=corner_nut_tunnel_w", panel)
+        self.assertNotIn("entry_tunnel_h=corner_nut_tunnel_h", panel)
+
     def test_plamp8_shared_nut_catcher_is_point_first_and_ramped(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         catcher = compact_scad(scad_module_body(source, "m3_nut_catcher_negative"))
@@ -1830,10 +1871,17 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("linear_extrude(", floor_nibs)
         self.assertIn("polygon(", floor_nibs)
         self.assertIn("rotate([0,0,side*nib_angle])", floor_nibs)
-        self.assertIn("roof_h=slot_w/2*tan(panel_nut_roof_angle)", canonical)
+        self.assertIn(
+            "pocket_roof_h=slot_w/2*tan(panel_nut_roof_angle)", canonical
+        )
+        self.assertIn(
+            "tunnel_roof_h=effective_tunnel_w/2*tan(panel_nut_roof_angle)",
+            canonical,
+        )
         self.assertIn("linear_extrude(", canonical)
         self.assertIn("polygon(", canonical)
-        self.assertIn("[-roof_h,0]", canonical)
+        self.assertIn("[-pocket_roof_h,0]", canonical)
+        self.assertIn("[-tunnel_roof_h,0]", canonical)
         self.assertIn("m3_nut_catcher_negative(", shared_trap)
         self.assertIn("side_loaded_panel_nut_trap_negative(", bonding_nut)
         self.assertIn("side_loaded_panel_nut_trap_negative(", corner_nut)
@@ -1867,7 +1915,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             canonical,
         )
         self.assertIn(
-            "cube([detent_l+boolean_shim,effective_entry_mouth_w,slot_h])",
+            "cube([detent_l+boolean_shim,effective_entry_mouth_w,effective_tunnel_h])",
             canonical,
         )
         self.assertIn("slot_h=panel_nut_slot_h", flipped)
