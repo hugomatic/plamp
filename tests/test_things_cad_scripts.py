@@ -333,7 +333,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         self.assertIn("corner_nut_tunnel_w=corner_nut_entry_mouth_w;", compact)
-        self.assertIn("corner_nut_tunnel_h=m3_nut_thickness+0.14;", compact)
+        self.assertIn("corner_nut_thickness_clearance=0.14;", compact)
+        self.assertIn(
+            "corner_nut_tunnel_h=m3_nut_thickness+corner_nut_thickness_clearance;",
+            compact,
+        )
         self.assertIn("entry_tunnel_w=undef", catcher)
         self.assertIn("entry_tunnel_h=undef", catcher)
         self.assertIn(
@@ -344,8 +348,21 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "effective_tunnel_h=is_undef(entry_tunnel_h)?slot_h:entry_tunnel_h",
             catcher,
         )
+        self.assertIn("if(nib_height>0)m3_nut_catcher_floor_nibs_positive(", catcher)
         self.assertIn("entry_tunnel_w=corner_nut_tunnel_w", corner)
         self.assertIn("entry_tunnel_h=corner_nut_tunnel_h", corner)
+        self.assertIn(
+            "thick_clearance=corner_nut_thickness_clearance", corner
+        )
+        self.assertIn("nib_height=0", corner)
+        self.assertIn(
+            'effective_thick_clearance=orientation=="45"?corner_nut_thickness_clearance:thick_clearance',
+            coupon,
+        )
+        self.assertIn("thick_clearance=effective_thick_clearance", coupon)
+        self.assertIn(
+            'nib_height=orientation=="45"?0:panel_nut_floor_nib_h', coupon
+        )
         self.assertIn(
             'entry_tunnel_w=orientation=="45"?corner_nut_tunnel_w:undef',
             coupon,
@@ -356,6 +373,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertNotIn("entry_tunnel_w=corner_nut_tunnel_w", panel)
         self.assertNotIn("entry_tunnel_h=corner_nut_tunnel_h", panel)
+        self.assertNotIn("thick_clearance=corner_nut_thickness_clearance", panel)
+        self.assertNotIn("nib_height=0", panel)
 
     def test_plamp8_shared_nut_catcher_is_point_first_and_ramped(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

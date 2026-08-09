@@ -155,7 +155,8 @@ panel_nut_entry_detent_l = 1.5;
 // The diagonal wall tunnel needs clearance for this nut's 6 mm insertion span.
 corner_nut_entry_mouth_w = 6.1;
 corner_nut_tunnel_w = corner_nut_entry_mouth_w;
-corner_nut_tunnel_h = m3_nut_thickness + 0.14;
+corner_nut_thickness_clearance = 0.14;
+corner_nut_tunnel_h = m3_nut_thickness + corner_nut_thickness_clearance;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
@@ -1297,15 +1298,16 @@ module m3_nut_catcher_negative(
             }
         }
 
-        m3_nut_catcher_floor_nibs_positive(
-            direction,
-            opening_edge_distance,
-            nut_across_flats,
-            width_clearance,
-            entry_detent,
-            entry_detent_l,
-            nib_height
-        );
+        if (nib_height > 0)
+            m3_nut_catcher_floor_nibs_positive(
+                direction,
+                opening_edge_distance,
+                nut_across_flats,
+                width_clearance,
+                entry_detent,
+                entry_detent_l,
+                nib_height
+            );
     }
 }
 
@@ -2362,12 +2364,14 @@ module support_free_m3_nut_trap(
     // The entry starts at the cylindrical boss axis.  Any radial 45-degree
     // path reaches the curved surface after one boss radius.
     opening_edge_distance = corner_tab_boss_r + boolean_shim;
-    slot_h = m3_nut_thickness + panel_nut_thickness_clearance;
+    slot_h = m3_nut_thickness + corner_nut_thickness_clearance;
 
     translate([0, pocket_center_y - slot_h / 2, axis_z])
         rotate([0, -corner_nut_entry_angle, 0])
             rotate([-90, 0, 0])
                 m3_nut_catcher_negative(
+                    thick_clearance = corner_nut_thickness_clearance,
+                    nib_height = 0,
                     direction = 1,
                     opening_edge_distance = opening_edge_distance,
                     entry_mouth_w = corner_nut_entry_mouth_w,
@@ -3308,6 +3312,9 @@ module nut_catcher_test_coupon(
     thick_clearance = parameter == "thick_clearance"
         ? nut_catcher_candidate_value(parameter, mode, candidate)
         : panel_nut_thickness_clearance + thick_offset;
+    effective_thick_clearance = orientation == "45"
+        ? corner_nut_thickness_clearance
+        : thick_clearance;
     requested_roof_mode = parameter == "roof_mode" ? candidate : "30deg";
     roof_mode = nut_catcher_effective_roof_mode(
         orientation,
@@ -3315,7 +3322,7 @@ module nut_catcher_test_coupon(
     );
     catcher_roof_mode = orientation == "sideways" ? "flat" : roof_mode;
     slot_w = m3_nut_across_flats + width_clearance;
-    slot_h = m3_nut_thickness + thick_clearance;
+    slot_h = m3_nut_thickness + effective_thick_clearance;
     opening_edge_distance = coupon_d / 2 + 1;
     label = nut_catcher_candidate_label(
         orientation,
@@ -3361,7 +3368,10 @@ module nut_catcher_test_coupon(
             union() {
                 m3_nut_catcher_negative(
                     width_clearance = width_clearance,
-                    thick_clearance = thick_clearance,
+                    thick_clearance = effective_thick_clearance,
+                    nib_height = orientation == "45"
+                        ? 0
+                        : panel_nut_floor_nib_h,
                     roof_mode = catcher_roof_mode,
                     opening_edge_distance = opening_edge_distance,
                     entry_mouth_w = orientation == "45"
