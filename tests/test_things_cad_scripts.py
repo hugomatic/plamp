@@ -334,12 +334,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("corner_nut_tunnel_w=corner_nut_entry_mouth_w;", compact)
         self.assertIn("corner_nut_thickness_clearance=0.14;", compact)
+        self.assertIn("corner_nut_drop=0.4;", compact)
         self.assertIn(
             "corner_nut_tunnel_h=m3_nut_thickness+corner_nut_thickness_clearance;",
             compact,
         )
         self.assertIn("entry_tunnel_w=undef", catcher)
         self.assertIn("entry_tunnel_h=undef", catcher)
+        self.assertIn("entry_tunnel_z_offset=0", catcher)
         self.assertIn(
             "effective_tunnel_w=is_undef(entry_tunnel_w)?slot_w:entry_tunnel_w",
             catcher,
@@ -348,9 +350,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "effective_tunnel_h=is_undef(entry_tunnel_h)?slot_h:entry_tunnel_h",
             catcher,
         )
+        self.assertIn(
+            "-effective_tunnel_w/2,entry_tunnel_z_offset])", catcher
+        )
+        self.assertIn(
+            "-effective_entry_mouth_w/2,entry_tunnel_z_offset])", catcher
+        )
+        self.assertIn(
+            "translate([tunnel_roof_x,0,entry_tunnel_z_offset+effective_tunnel_h])",
+            catcher,
+        )
         self.assertIn("if(nib_height>0)m3_nut_catcher_floor_nibs_positive(", catcher)
         self.assertIn("entry_tunnel_w=corner_nut_tunnel_w", corner)
         self.assertIn("entry_tunnel_h=corner_nut_tunnel_h", corner)
+        self.assertIn("entry_tunnel_z_offset=corner_nut_drop", corner)
         self.assertIn(
             "thick_clearance=corner_nut_thickness_clearance", corner
         )
@@ -371,8 +384,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'entry_tunnel_h=orientation=="45"?corner_nut_tunnel_h:undef',
             coupon,
         )
+        self.assertIn(
+            'entry_tunnel_z_offset=orientation=="45"?corner_nut_drop:0',
+            coupon,
+        )
         self.assertNotIn("entry_tunnel_w=corner_nut_tunnel_w", panel)
         self.assertNotIn("entry_tunnel_h=corner_nut_tunnel_h", panel)
+        self.assertNotIn("entry_tunnel_z_offset=corner_nut_drop", panel)
         self.assertNotIn("thick_clearance=corner_nut_thickness_clearance", panel)
         self.assertNotIn("nib_height=0", panel)
 
