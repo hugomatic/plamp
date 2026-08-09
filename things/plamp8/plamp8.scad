@@ -157,7 +157,7 @@ corner_nut_entry_mouth_w = 6.1;
 corner_nut_tunnel_w = corner_nut_entry_mouth_w;
 corner_nut_thickness_clearance = 0.14;
 corner_nut_tunnel_h = m3_nut_thickness + corner_nut_thickness_clearance;
-corner_nut_drop = 0.4;
+nut_drop_fraction = 1 / 6;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
@@ -1234,7 +1234,7 @@ module m3_nut_catcher_negative(
     entry_mouth_w = undef,
     entry_tunnel_w = undef,
     entry_tunnel_h = undef,
-    entry_tunnel_z_offset = 0
+    drop_fraction = nut_drop_fraction
 ) {
     assert(roof_mode == "flat" || roof_mode == "30deg",
         "nut catcher roof_mode must be flat or 30deg");
@@ -1248,6 +1248,7 @@ module m3_nut_catcher_negative(
         : entry_mouth_w;
     effective_tunnel_w = is_undef(entry_tunnel_w) ? slot_w : entry_tunnel_w;
     effective_tunnel_h = is_undef(entry_tunnel_h) ? slot_h : entry_tunnel_h;
+    nut_drop = nut_thickness * drop_fraction;
     pocket_roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
     tunnel_roof_h = effective_tunnel_w / 2 * tan(panel_nut_roof_angle);
     tunnel_roof_x = direction < 0 ? -opening_edge_distance : 0;
@@ -1260,7 +1261,7 @@ module m3_nut_catcher_negative(
                 translate([
                     direction > 0 ? 0 : -main_l,
                     -effective_tunnel_w / 2,
-                    entry_tunnel_z_offset
+                    nut_drop
                 ])
                     cube([
                         main_l + boolean_shim,
@@ -1271,7 +1272,7 @@ module m3_nut_catcher_negative(
             translate([
                 direction > 0 ? main_l : -opening_edge_distance,
                     -effective_entry_mouth_w / 2,
-                    entry_tunnel_z_offset
+                    nut_drop
                 ])
                     cube([
                         detent_l + boolean_shim,
@@ -1292,7 +1293,7 @@ module m3_nut_catcher_negative(
                 translate([
                     tunnel_roof_x,
                     0,
-                    entry_tunnel_z_offset + effective_tunnel_h
+                    nut_drop + effective_tunnel_h
                 ])
                     rotate([0, 90, 0])
                         linear_extrude(height = opening_edge_distance)
@@ -2383,7 +2384,6 @@ module support_free_m3_nut_trap(
                     entry_mouth_w = corner_nut_entry_mouth_w,
                     entry_tunnel_w = corner_nut_tunnel_w,
                     entry_tunnel_h = corner_nut_tunnel_h,
-                    entry_tunnel_z_offset = corner_nut_drop,
                     roof_mode = print_orientation == box_print_orientation
                         ? "30deg"
                         : "flat"
@@ -3389,10 +3389,7 @@ module nut_catcher_test_coupon(
                         : undef,
                     entry_tunnel_h = orientation == "45"
                         ? corner_nut_tunnel_h
-                        : undef,
-                    entry_tunnel_z_offset = orientation == "45"
-                        ? corner_nut_drop
-                        : 0
+                        : undef
                 );
                 if (orientation == "sideways" && roof_mode == "30deg")
                     nut_catcher_sideways_print_roof_negative(
