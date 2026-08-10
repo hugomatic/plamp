@@ -319,3 +319,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails against the flat-ended full-length rectangular tunnel from Task 6.
 - [ ] Join the mouth-to-axis straight tunnel to the raised hex; retain the second, lower hex as the drop seat.
 - [ ] Run the complete Things CAD suite, push source, and inspect `S RF` in a committed diagnostic render.
+
+### Task 9: Keep the raised hex support-free under the 30-degree roof
+
+- [ ] Require the hex-pocket roof to begin at `nut_drop + effective_tunnel_h`.
+- [ ] Verify the test fails while the roof still begins at the lower seat height, `slot_h`.
+- [ ] Move only the shared pocket-roof elevation; preserve the tunnel roof, drop, and both hex profiles.
+- [ ] Run the complete Things CAD suite, push source, and slice the committed matrix without supports.

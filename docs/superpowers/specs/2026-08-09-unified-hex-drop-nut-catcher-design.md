@@ -22,7 +22,7 @@ All production callers orient the module so the pocket is below the tunnel in th
 
 ## Printable Roofs
 
-The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the pointy support-free roofs over the hex pocket and tunnel where required by print orientation. `roof_mode = "flat"` leaves those additions out. Roof selection does not change the pocket, tunnel, or drop calculation.
+The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the pointy support-free roofs over the hex pocket and tunnel where required by print orientation. The hex-pocket roof begins at the top of the raised entry hex, `nut_drop + effective_tunnel_h`; beginning it at the lower seat height lets the raised hex cut through the slopes and recreate a flat, floating ceiling. `roof_mode = "flat"` leaves those additions out. Roof selection does not change the pocket, tunnel, or drop calculation.
 
 The sideways diagnostic coupon uses a test-only gable because its printable roof faces a different direction after rotation. That gable must share the tunnel's local floor elevation, `nut_thickness * nut_drop_fraction`; otherwise changing the drop displaces the roof along the sideways tunnel. Its cross-section and 30-degree slopes remain unchanged.
 
