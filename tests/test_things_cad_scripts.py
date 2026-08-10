@@ -334,7 +334,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("corner_nut_tunnel_w=corner_nut_entry_mouth_w;", compact)
         self.assertIn("corner_nut_thickness_clearance=0.14;", compact)
-        self.assertIn("nut_drop_fraction=1/6;", compact)
+        self.assertIn("nut_drop_fraction=1/4;", compact)
         self.assertNotIn("corner_nut_drop", compact)
         self.assertIn(
             "corner_nut_tunnel_h=m3_nut_thickness+corner_nut_thickness_clearance;",

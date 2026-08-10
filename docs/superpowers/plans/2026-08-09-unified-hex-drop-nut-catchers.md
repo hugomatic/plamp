@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Default `nut_drop_fraction` is `1 / 6`.
+- Default `nut_drop_fraction` is `1 / 4`.
 - Calculate drop from nominal nut thickness, never tunnel clearance.
 - Apply the proportional drop to every production catcher.
 - Retain `"flat"` and `"30deg"` roof modes in the shared module.
@@ -27,14 +27,14 @@
 
 **Interfaces:**
 - Consumes: `m3_nut_thickness`, caller-supplied `nut_thickness`, and the existing `roof_mode`, tunnel-width, tunnel-height, clearance, nib, direction, and opening-distance parameters.
-- Produces: global `nut_drop_fraction = 1 / 6`; module parameter `drop_fraction = nut_drop_fraction`; local `nut_drop = nut_thickness * drop_fraction`; one shared catcher negative used by corner, panel, sub-panel, and coupon callers.
+- Produces: global `nut_drop_fraction = 1 / 4`; module parameter `drop_fraction = nut_drop_fraction`; local `nut_drop = nut_thickness * drop_fraction`; one shared catcher negative used by corner, panel, sub-panel, and coupon callers.
 
 - [ ] **Step 1: Write the failing structural test**
 
 Update the Plamp8 catcher test to require these source-level contracts:
 
 ```python
-self.assertIn("nut_drop_fraction=1/6;", compact)
+self.assertIn("nut_drop_fraction=1/4;", compact)
 self.assertNotIn("corner_nut_drop", compact)
 self.assertIn("drop_fraction=nut_drop_fraction", catcher)
 self.assertIn("nut_drop=nut_thickness*drop_fraction", catcher)
@@ -67,7 +67,7 @@ Expected: `FAIL` because `nut_drop_fraction`, `drop_fraction`, and the derived `
 In `things/plamp8/plamp8.scad`, replace the corner-only absolute parameter with:
 
 ```scad
-nut_drop_fraction = 1 / 6;
+nut_drop_fraction = 1 / 4;
 ```
 
 Change the shared module parameter and derived value to:

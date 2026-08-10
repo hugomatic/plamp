@@ -14,7 +14,7 @@ The drop is proportional to nominal nut thickness:
 nut_drop = nut_thickness * nut_drop_fraction;
 ```
 
-`nut_drop_fraction` is one globally adjustable parameter and defaults to `1 / 6`. Tunnel clearance does not affect the drop. The tunnel is positioned one `nut_drop` above the pocket floor in the module's local coordinates.
+`nut_drop_fraction` is one globally adjustable parameter and defaults to `1 / 4`. For the 2.38 mm M3 nut profile, this produces a 0.595 mm drop that spans two complete shelf layers with a 0.20 mm slicer profile. Tunnel clearance does not affect the drop. The tunnel is positioned one `nut_drop` above the pocket floor in the module's local coordinates.
 
 All production callers orient the module so the pocket is below the tunnel in the final assembled orientation. Corner, top-panel, and sub-panel catchers may retain different tunnel widths or thickness clearances, but they do not define separate pocket or drop geometry.
 
