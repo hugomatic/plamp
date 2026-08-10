@@ -22,10 +22,16 @@ All production callers orient the module so the pocket is below the tunnel in th
 
 The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the pointy support-free roofs over the hex pocket and tunnel where required by print orientation. `roof_mode = "flat"` leaves those additions out. Roof selection does not change the pocket, tunnel, or drop calculation.
 
+## 45-Degree Test Coupon
+
+The 45-degree diagnostic coupon must expose enough of the straight diagonal tunnel to make its shape visible in a slicer. Only this coupon grows: its width increases from 16 mm to 20 mm and its height from 10 mm to 14 mm. The hex pocket remains at its existing datum, while the test-only tunnel cutter extends by 2.5 mm so the longer enclosed tunnel still exits through the coupon top.
+
+Normal orientation coupons and the clearance matrix retain their existing dimensions. The larger diagnostic coupon does not change any production catcher geometry.
+
 ## Cleanup
 
 Remove the corner-only absolute drop and the public tunnel-Z-offset parameter. No production catcher may bypass the proportional drop. Orientation helpers may transform the shared module but must not construct alternate catcher geometry.
 
 ## Verification
 
-Automated tests will confirm that the shared module computes the drop from nut thickness, every production catcher uses it, and pointy-roof selection remains available. OpenSCAD generation will verify the nut-catcher adjustment coupon and affected Plamp8 printable sets without warnings or invalid meshes.
+Automated tests will confirm that the shared module computes the drop from nut thickness, every production catcher uses it, pointy-roof selection remains available, and only the 45-degree diagnostic coupon receives the larger envelope and longer test tunnel. OpenSCAD generation will verify the nut-catcher adjustment coupon and affected Plamp8 printable sets without warnings or invalid meshes.
