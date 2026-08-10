@@ -3458,13 +3458,13 @@ module nut_catcher_test_coupon(
                 write_text(
                     label,
                     nut_catcher_test_mark_font,
-                    coupon_h - nut_catcher_test_mark_depth
+                    effective_coupon_h - nut_catcher_test_mark_depth
                 );
             translate([0, nut_catcher_test_mark_y, 0])
                 write_text(
                     revision_string,
                     nut_catcher_test_mark_font,
-                    coupon_h - nut_catcher_test_mark_depth
+                    effective_coupon_h - nut_catcher_test_mark_depth
                 );
         }
 

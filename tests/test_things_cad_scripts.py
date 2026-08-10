@@ -524,6 +524,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "effective_coupon_h)",
             coupon,
         )
+        self.assertIn(
+            "write_text(label,nut_catcher_test_mark_font,"
+            "effective_coupon_h-nut_catcher_test_mark_depth)",
+            coupon,
+        )
+        self.assertIn(
+            "write_text(revision_string,nut_catcher_test_mark_font,"
+            "effective_coupon_h-nut_catcher_test_mark_depth)",
+            coupon,
+        )
 
         base = compact_scad(
             scad_module_body(source, "nut_catcher_test_matrix_base")
