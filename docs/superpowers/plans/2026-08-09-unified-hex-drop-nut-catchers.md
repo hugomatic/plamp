@@ -16,6 +16,7 @@
 - Retain `"flat"` and `"30deg"` roof modes in the shared module.
 - Preserve family-specific tunnel width and thickness clearances.
 - Preserve screw axes and hex-pocket locations.
+- Default the clearance matrix to `[-0.1, 0, 0.1]` mm on each axis for a 3×3 test.
 
 ---
 
@@ -279,3 +280,14 @@ xvfb-run -a bin/plamp cad generate plamp8 --set nut_catcher_adjustment_test --de
 ```
 
 Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or errors, and visual confirmation that a broad rectangular tunnel—not a slit—exits the 45-degree coupon top.
+
+### Task 4: Reduce the default clearance matrix to 3×3
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+- [ ] Require both default offset arrays to equal `[-0.1, 0, 0.1]`.
+- [ ] Verify the test fails against the seven-value defaults.
+- [ ] Change only the two default arrays; retain CLI adjustability and the existing matrix generator.
+- [ ] Run the complete Things CAD suite, push source, then plan and render the committed diagnostic set.

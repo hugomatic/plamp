@@ -39,6 +39,8 @@ This replaces the guessed 2.5 mm extension, which produced only a minuscule slit
 
 Normal orientation coupons and the clearance matrix retain their existing dimensions. The larger diagnostic coupon does not change any production catcher geometry.
 
+The clearance matrix defaults to three width values and three thickness values: `[-0.1, 0, 0.1]` mm. This produces a compact 3×3 matrix at 0.1 mm intervals while keeping both dimensions independently adjustable from the command line.
+
 ## Cleanup
 
 Remove the corner-only absolute drop and the public tunnel-Z-offset parameter. No production catcher may bypass the proportional drop. Orientation helpers may transform the shared module but must not construct alternate catcher geometry.
