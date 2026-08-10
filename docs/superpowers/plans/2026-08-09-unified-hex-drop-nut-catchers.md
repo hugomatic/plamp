@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Default `nut_drop_fraction` is `1 / 4`.
+- Default `nut_drop_fraction` is `1 / 2`.
 - Calculate drop from nominal nut thickness, never tunnel clearance.
 - Apply the proportional drop to every production catcher.
 - Retain `"flat"` and `"30deg"` roof modes in the shared module.
@@ -27,14 +27,14 @@
 
 **Interfaces:**
 - Consumes: `m3_nut_thickness`, caller-supplied `nut_thickness`, and the existing `roof_mode`, tunnel-width, tunnel-height, clearance, nib, direction, and opening-distance parameters.
-- Produces: global `nut_drop_fraction = 1 / 4`; module parameter `drop_fraction = nut_drop_fraction`; local `nut_drop = nut_thickness * drop_fraction`; one shared catcher negative used by corner, panel, sub-panel, and coupon callers.
+- Produces: global `nut_drop_fraction = 1 / 2`; module parameter `drop_fraction = nut_drop_fraction`; local `nut_drop = nut_thickness * drop_fraction`; one shared catcher negative used by corner, panel, sub-panel, and coupon callers.
 
 - [ ] **Step 1: Write the failing structural test**
 
 Update the Plamp8 catcher test to require these source-level contracts:
 
 ```python
-self.assertIn("nut_drop_fraction=1/4;", compact)
+self.assertIn("nut_drop_fraction=1/2;", compact)
 self.assertNotIn("corner_nut_drop", compact)
 self.assertIn("drop_fraction=nut_drop_fraction", catcher)
 self.assertIn("nut_drop=nut_thickness*drop_fraction", catcher)
@@ -67,7 +67,7 @@ Expected: `FAIL` because `nut_drop_fraction`, `drop_fraction`, and the derived `
 In `things/plamp8/plamp8.scad`, replace the corner-only absolute parameter with:
 
 ```scad
-nut_drop_fraction = 1 / 4;
+nut_drop_fraction = 1 / 2;
 ```
 
 Change the shared module parameter and derived value to:
@@ -166,7 +166,7 @@ git rev-parse origin/main
 
 Expected: status is clean and both revisions are identical.
 
-### Task 3: Enlarge only the 45-degree diagnostic coupon
+### Task 3: Expose the complete straight tunnel in the 45-degree diagnostic coupon
 
 **Files:**
 - Modify: `tests/test_things_cad_scripts.py`
@@ -174,7 +174,7 @@ Expected: status is clean and both revisions are identical.
 
 **Interfaces:**
 - Consumes: `nut_catcher_test_coupon()`, its base `coupon_w` and `coupon_h`, and the existing 45-degree orientation transform.
-- Produces: test-only parameters `nut_catcher_test_45_extra_w = 4`, `nut_catcher_test_45_extra_h = 4`, and `nut_catcher_test_45_tunnel_extra_l = 2.5`; a 20 mm wide by 14 mm high 45-degree coupon with its pocket datum unchanged and its tunnel still open through the top.
+- Produces: test-only parameters `nut_catcher_test_45_extra_w = 12` and `nut_catcher_test_45_extra_h = 4`; a 28 mm wide by 14 mm high 45-degree coupon with its pocket datum unchanged; a tunnel length derived from the coupon top and the complete 6.1 mm tunnel cross-section; and row spacing that keeps the wider coupon separate.
 
 - [ ] **Step 1: Write the failing structural test**
 
@@ -186,9 +186,9 @@ def test_plamp8_45_nut_coupon_has_extended_tunnel_envelope(self):
     compact = compact_scad(source)
     coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
 
-    self.assertIn("nut_catcher_test_45_extra_w=4;", compact)
+    self.assertIn("nut_catcher_test_45_extra_w=12;", compact)
     self.assertIn("nut_catcher_test_45_extra_h=4;", compact)
-    self.assertIn("nut_catcher_test_45_tunnel_extra_l=2.5;", compact)
+    self.assertNotIn("nut_catcher_test_45_tunnel_extra_l", compact)
     self.assertIn(
         'effective_coupon_w=coupon_w+(orientation=="45"?nut_catcher_test_45_extra_w:0);',
         coupon,
@@ -198,7 +198,7 @@ def test_plamp8_45_nut_coupon_has_extended_tunnel_envelope(self):
         coupon,
     )
     self.assertIn(
-        'opening_edge_distance=coupon_d/2+1+(orientation=="45"?nut_catcher_test_45_tunnel_extra_l:0);',
+        'opening_edge_distance=orientation=="45"?nut_catcher_test_45_opening_edge_distance(',
         coupon,
     )
     self.assertIn("-effective_coupon_w/2", coupon)
@@ -221,19 +221,18 @@ Run:
 python -m unittest tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_45_nut_coupon_has_extended_tunnel_envelope -v
 ```
 
-Expected: `FAIL` because the three 45-degree coupon extension parameters do not exist.
+Expected: `FAIL` because the 45-degree tunnel still uses a fixed, insufficient extension.
 
 - [ ] **Step 3: Implement the test-only envelope extension**
 
-Add the parameters next to the existing coupon dimensions:
+Use these test-only envelope parameters:
 
 ```scad
-nut_catcher_test_45_extra_w = 4;
+nut_catcher_test_45_extra_w = 12;
 nut_catcher_test_45_extra_h = 4;
-nut_catcher_test_45_tunnel_extra_l = 2.5;
 ```
 
-In `nut_catcher_test_coupon()`, derive:
+Extract the existing 45-degree catcher origin calculation into a function shared by the transform and coupon. In `nut_catcher_test_coupon()`, derive the 45-degree opening distance from the complete tunnel cross-section:
 
 ```scad
 effective_coupon_w = coupon_w
@@ -241,10 +240,12 @@ effective_coupon_w = coupon_w
 effective_coupon_h = coupon_h
     + (orientation == "45" ? nut_catcher_test_45_extra_h : 0);
 opening_edge_distance = coupon_d / 2 + 1
-    + (orientation == "45" ? nut_catcher_test_45_tunnel_extra_l : 0);
+    // For 45 degrees, replace this base value with:
+    // (effective_coupon_h - origin_45_z) * sqrt(2)
+    //     + corner_nut_tunnel_w / 2 + boolean_shim;
 ```
 
-Build the coupon cube using `effective_coupon_w` and `effective_coupon_h`. Continue passing the base `coupon_h` to `nut_catcher_orientation_transform()` so the pocket datum does not move, and pass `effective_coupon_h` to `nut_catcher_test_screw_negative()` so its bore crosses the taller coupon.
+Build the coupon cube using `effective_coupon_w` and `effective_coupon_h`. Continue passing the base `coupon_h` to `nut_catcher_orientation_transform()` so the pocket datum does not move, and pass `effective_coupon_h` to `nut_catcher_test_screw_negative()` so its bore crosses the taller coupon. Shift only the 45-degree item in the all-orientations row by `nut_catcher_test_45_extra_w / 2`, preserving the standard gap from its neighbor.
 
 - [ ] **Step 4: Run focused and complete tests and verify GREEN**
 
@@ -277,4 +278,4 @@ bin/plamp cad plan plamp8 --set nut_catcher_adjustment_test --define 'nut_catche
 xvfb-run -a bin/plamp cad generate plamp8 --set nut_catcher_adjustment_test --define 'nut_catcher_test_width_offsets=[0]' --define 'nut_catcher_test_thick_offsets=[0]' --preview --revision "$(git rev-parse --short HEAD)" --output /tmp/plamp8-large-45-coupon
 ```
 
-Expected: one complete job, a non-empty simple STL, and no OpenSCAD warnings or errors.
+Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or errors, and visual confirmation that a broad rectangular tunnel—not a slit—exits the 45-degree coupon top.

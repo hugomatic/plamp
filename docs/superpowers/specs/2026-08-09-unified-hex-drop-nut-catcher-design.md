@@ -14,7 +14,7 @@ The drop is proportional to nominal nut thickness:
 nut_drop = nut_thickness * nut_drop_fraction;
 ```
 
-`nut_drop_fraction` is one globally adjustable parameter and defaults to `1 / 4`. For the 2.38 mm M3 nut profile, this produces a 0.595 mm drop that spans two complete shelf layers with a 0.20 mm slicer profile. Tunnel clearance does not affect the drop. The tunnel is positioned one `nut_drop` above the pocket floor in the module's local coordinates.
+`nut_drop_fraction` is one globally adjustable parameter and defaults to `1 / 2`. For the 2.38 mm M3 nut profile, this produces a 1.19 mm drop that is clearly visible and spans five complete shelf layers with a 0.20 mm slicer profile. Tunnel clearance does not affect the drop. The tunnel is positioned one `nut_drop` above the pocket floor in the module's local coordinates.
 
 All production callers orient the module so the pocket is below the tunnel in the final assembled orientation. Corner, top-panel, and sub-panel catchers may retain different tunnel widths or thickness clearances, but they do not define separate pocket or drop geometry.
 
@@ -24,7 +24,18 @@ The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the 
 
 ## 45-Degree Test Coupon
 
-The 45-degree diagnostic coupon must expose enough of the straight diagonal tunnel to make its shape visible in a slicer. Only this coupon grows: its width increases from 16 mm to 20 mm and its height from 10 mm to 14 mm. The hex pocket remains at its existing datum, while the test-only tunnel cutter extends by 2.5 mm so the longer enclosed tunnel still exits through the coupon top.
+The 45-degree diagnostic coupon must expose the complete cross-section of its straight diagonal tunnel through the top, not merely let one corner of the cutter graze the surface. Only this coupon grows: its width increases from 16 mm to 28 mm and its height from 10 mm to 14 mm. The hex pocket remains at its existing datum.
+
+The tunnel length is derived from the actual coupon top, the unchanged 45-degree catcher origin, and half the 6.1 mm tunnel width:
+
+```scad
+opening_edge_distance =
+    (effective_coupon_h - origin_45_z) * sqrt(2)
+    + corner_nut_tunnel_w / 2
+    + boolean_shim;
+```
+
+This replaces the guessed 2.5 mm extension, which produced only a minuscule slit. In the all-orientations row, the wider 45-degree coupon shifts by half its added width so it retains the normal gap from its neighbor.
 
 Normal orientation coupons and the clearance matrix retain their existing dimensions. The larger diagnostic coupon does not change any production catcher geometry.
 
@@ -34,4 +45,4 @@ Remove the corner-only absolute drop and the public tunnel-Z-offset parameter. N
 
 ## Verification
 
-Automated tests will confirm that the shared module computes the drop from nut thickness, every production catcher uses it, pointy-roof selection remains available, and only the 45-degree diagnostic coupon receives the larger envelope and longer test tunnel. OpenSCAD generation will verify the nut-catcher adjustment coupon and affected Plamp8 printable sets without warnings or invalid meshes.
+Automated tests will confirm that the shared module computes the half-thickness drop, every production catcher uses it, pointy-roof selection remains available, and only the 45-degree diagnostic coupon receives the larger envelope and geometry-derived straight tunnel. OpenSCAD generation and visual inspection will verify that the complete tunnel cross-section exits the coupon top without warnings or invalid meshes.
