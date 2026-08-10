@@ -30,6 +30,8 @@ The sideways diagnostic coupon uses a test-only gable because its printable roof
 
 The 45-degree diagnostic coupon must expose the complete cross-section of its straight diagonal tunnel through the top, not merely let one corner of the cutter graze the surface. Only this coupon grows: its width increases from 16 mm to 28 mm and its height from 10 mm to 14 mm. The hex pocket remains at its existing datum.
 
+Its label and revision engraving use the effective 14 mm coupon height. They must remain shallow cuts in the actual top face; using the original 10 mm height buries the text inside the coupon and can produce an STL that slicers cannot process.
+
 The tunnel length is derived from the actual coupon top, the unchanged 45-degree catcher origin, and half the 6.1 mm tunnel width:
 
 ```scad

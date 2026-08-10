@@ -305,3 +305,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails against the center-stopping tunnel.
 - [ ] Extend only the main rectangular tunnel by `pocket_d / 2` behind the screw axis; preserve the mouth, detents, screw axis, and lower hex seat.
 - [ ] Verify both `S RF` and `S R30` in the committed diagnostic render.
+
+### Task 7: Keep the 45-degree engraving on its actual top face
+
+- [ ] Require both coupon engravings to use `effective_coupon_h`.
+- [ ] Verify the test fails while the enlarged coupon still engraves at the original 10 mm height.
+- [ ] Move only the label and revision cutters to the effective top surface.
+- [ ] Push source, generate with text enabled, and verify the complete STL is slicer-safe.
