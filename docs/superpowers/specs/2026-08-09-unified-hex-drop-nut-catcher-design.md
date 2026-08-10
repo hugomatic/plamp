@@ -8,6 +8,8 @@ Every Plamp8 nut catcher uses one geometry-producing module: a rectangular inser
 
 `m3_nut_catcher_negative()` remains the single source of catcher geometry. It creates the hex-cylinder pocket, tunnel, mouth, and optional support-free roofs.
 
+The rectangular insertion tunnel runs continuously from the exterior mouth, across the screw axis, to the far point of the hex pocket. Stopping it at the screw axis leaves the leading half of a raised nut obstructed in flat-roof orientations. The lower hex pocket remains beneath this full-length tunnel to provide the drop and anti-rotation seat.
+
 The drop is proportional to nominal nut thickness:
 
 ```scad

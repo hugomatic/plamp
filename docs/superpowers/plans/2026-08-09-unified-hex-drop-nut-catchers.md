@@ -298,3 +298,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails while the roof remains at local Z zero.
 - [ ] Offset the test-only gable by `m3_nut_thickness * nut_drop_fraction` and leave its angle and cross-section unchanged.
 - [ ] Run the complete Things CAD suite, push source, and visually inspect a committed `S R30` render.
+
+### Task 6: Carry the straight tunnel through the full hex pocket
+
+- [ ] Require the shared tunnel to extend from the mouth to the far point of the hex pocket rather than stopping at the screw axis.
+- [ ] Verify the test fails against the center-stopping tunnel.
+- [ ] Extend only the main rectangular tunnel by `pocket_d / 2` behind the screw axis; preserve the mouth, detents, screw axis, and lower hex seat.
+- [ ] Verify both `S RF` and `S R30` in the committed diagnostic render.
