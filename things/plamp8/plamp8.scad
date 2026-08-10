@@ -196,14 +196,33 @@ nut_catcher_test_matrix_header_d = 14;
 nut_catcher_test_matrix_header_h = 2;
 nut_catcher_test_matrix_revision_font = 3;
 nut_catcher_test_matrix_label_font = 1.25;
-nut_catcher_test_matrix_grid_pitch = 1;
-nut_catcher_test_matrix_grid_line_w = 0.3;
-nut_catcher_test_matrix_grid_depth = 0.3;
+nut_catcher_test_matrix_label_depth = 0.3;
 nut_catcher_test_matrix_coupon_w = 9;
 nut_catcher_test_matrix_coupon_h = 7.5;
-nut_catcher_test_matrix_top_coupon_extra_h = 1;
+nut_catcher_test_matrix_roof_cover_t = 1;
 nut_catcher_test_matrix_coupon_d = 11;
 nut_catcher_test_matrix_coupon_y = -0.5;
+nut_catcher_test_up_origin_z = 3;
+
+function nut_catcher_test_matrix_roof_apex_z(
+    width_offset,
+    thick_offset
+) =
+    nut_catcher_test_up_origin_z
+    + m3_nut_thickness * nut_drop_fraction
+    + m3_nut_thickness + panel_nut_thickness_clearance + thick_offset
+    + (m3_nut_across_flats + panel_nut_width_clearance + width_offset)
+        / 2 * tan(panel_nut_roof_angle);
+
+function nut_catcher_test_matrix_top_coupon_h() =
+    max([
+        for (width_offset = nut_catcher_test_width_offsets)
+            for (thick_offset = nut_catcher_test_thick_offsets)
+                nut_catcher_test_matrix_roof_apex_z(
+                    width_offset,
+                    thick_offset
+                )
+    ]) + nut_catcher_test_matrix_roof_cover_t;
 corner_screw_d = screw_clearance_d(corner_screw_size);
 corner_screw_head_d = screw_chamfer_d(corner_screw_size);
 
@@ -3273,7 +3292,7 @@ module nut_catcher_orientation_transform(
     if (orientation == "up")
         // Canonical insertion runs along +X; rotate it to the coupon -Y edge.
         rotate([0, 0, -90])
-            translate([0, 0, 3])
+            translate([0, 0, nut_catcher_test_up_origin_z])
                 children();
     else if (orientation == "down")
         rotate([0, 0, -90])
@@ -3354,7 +3373,6 @@ module nut_catcher_test_coupon(
     width_offset = 0,
     thick_offset = 0,
     show_marks = true,
-    top_grid = false,
     coupon_w = nut_catcher_test_coupon_w,
     coupon_d = nut_catcher_test_coupon_d,
     coupon_y = 0,
@@ -3478,36 +3496,6 @@ module nut_catcher_test_coupon(
                 );
         }
 
-        if (top_grid) {
-            // The physical scale belongs on the top face of the upper matrix
-            // row, not on its text plate.  The holes naturally interrupt it.
-            for (x = [-coupon_w / 2 : nut_catcher_test_matrix_grid_pitch : coupon_w / 2])
-                translate([
-                    x - nut_catcher_test_matrix_grid_line_w / 2,
-                    coupon_y - coupon_d / 2,
-                    coupon_h - nut_catcher_test_matrix_grid_depth
-                ])
-                    cube([
-                        nut_catcher_test_matrix_grid_line_w,
-                        coupon_d,
-                        nut_catcher_test_matrix_grid_depth + boolean_shim
-                    ]);
-            for (y = [
-                coupon_y - coupon_d / 2
-                    : nut_catcher_test_matrix_grid_pitch
-                    : coupon_y + coupon_d / 2
-            ])
-                translate([
-                    -coupon_w / 2,
-                    y - nut_catcher_test_matrix_grid_line_w / 2,
-                    coupon_h - nut_catcher_test_matrix_grid_depth
-                ])
-                    cube([
-                        coupon_w,
-                        nut_catcher_test_matrix_grid_line_w,
-                        nut_catcher_test_matrix_grid_depth + boolean_shim
-                    ]);
-        }
     }
 }
 
@@ -3546,7 +3534,6 @@ module nut_catcher_test_row(row, row_i) {
 module nut_catcher_test_coupon_matrix(
     width_offset,
     thick_offset,
-    top_grid = false,
     coupon_h = nut_catcher_test_matrix_coupon_h
 ) {
     nut_catcher_test_coupon(
@@ -3557,7 +3544,6 @@ module nut_catcher_test_coupon_matrix(
         width_offset = width_offset,
         thick_offset = thick_offset,
         show_marks = false,
-        top_grid = top_grid,
         coupon_w = nut_catcher_test_matrix_coupon_w,
         coupon_d = nut_catcher_test_matrix_coupon_d,
         coupon_y = nut_catcher_test_matrix_coupon_y,
@@ -3608,7 +3594,7 @@ module nut_catcher_test_matrix_base(matrix_w, matrix_d, matrix_y) {
                 revision_string,
                 nut_catcher_test_matrix_revision_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_matrix_grid_depth
+                    - nut_catcher_test_matrix_label_depth
             );
         translate([
             0,
@@ -3620,7 +3606,7 @@ module nut_catcher_test_matrix_base(matrix_w, matrix_d, matrix_y) {
                 nut_catcher_test_matrix_width_label(),
                 nut_catcher_test_matrix_label_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_matrix_grid_depth
+                    - nut_catcher_test_matrix_label_depth
             );
         translate([
             0,
@@ -3632,7 +3618,7 @@ module nut_catcher_test_matrix_base(matrix_w, matrix_d, matrix_y) {
                 nut_catcher_test_matrix_thick_label(),
                 nut_catcher_test_matrix_label_font,
                 nut_catcher_test_matrix_header_h
-                    - nut_catcher_test_matrix_grid_depth
+                    - nut_catcher_test_matrix_label_depth
             );
     }
 }
@@ -3662,16 +3648,11 @@ module nut_catcher_adjustment_matrix() {
                         nut_catcher_test_coupon_matrix(
                             width_offset,
                             thick_offset,
-                            top_grid = thick_offset
-                                == nut_catcher_test_thick_offsets[
-                                    len(nut_catcher_test_thick_offsets) - 1
-                                ],
                             coupon_h = thick_offset
                                 == nut_catcher_test_thick_offsets[
                                     len(nut_catcher_test_thick_offsets) - 1
                                 ]
-                                ? nut_catcher_test_matrix_coupon_h
-                                    + nut_catcher_test_matrix_top_coupon_extra_h
+                                ? nut_catcher_test_matrix_top_coupon_h()
                                 : nut_catcher_test_matrix_coupon_h
                         );
         }

@@ -560,8 +560,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("matrix_d+nut_catcher_test_matrix_header_d", base)
 
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
-        self.assertIn("if(top_grid)", coupon)
-        self.assertIn("coupon_h-nut_catcher_test_matrix_grid_depth", coupon)
+        self.assertNotIn("top_grid", coupon)
         self.assertIn("module nut_catcher_sideways_print_roof_negative(", source)
         self.assertIn('orientation=="sideways"&&roof_mode=="30deg"', coupon)
         roof = compact_scad(
@@ -2214,6 +2213,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
             compact,
         )
         self.assertIn("nut_catcher_test_matrix_coupon_w=9;", compact)
+        self.assertIn("nut_catcher_test_matrix_roof_cover_t=1;", compact)
+        self.assertIn("nut_catcher_test_matrix_label_depth=0.3;", compact)
+        self.assertIn("functionnut_catcher_test_matrix_roof_apex_z(", compact)
+        self.assertIn("functionnut_catcher_test_matrix_top_coupon_h()", compact)
+        self.assertIn("+nut_catcher_test_matrix_roof_cover_t", compact)
+        self.assertNotIn("nut_catcher_test_matrix_top_coupon_extra_h", compact)
+        self.assertNotIn("nut_catcher_test_matrix_grid", compact)
+        self.assertNotIn("top_grid", compact)
         self.assertIn(
             '["all","roof_mode","values",["flat","30deg"]]',
             compact,
