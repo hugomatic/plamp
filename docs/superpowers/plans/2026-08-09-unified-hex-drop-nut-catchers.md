@@ -326,3 +326,11 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails while the roof still begins at the lower seat height, `slot_h`.
 - [ ] Move only the shared pocket-roof elevation; preserve the tunnel roof, drop, and both hex profiles.
 - [ ] Run the complete Things CAD suite, push source, and slice the committed matrix without supports.
+
+### Task 10: Carry the pointy tunnel roof through the exterior face
+
+- [ ] Require the tunnel-roof extrusion to extend by `boolean_shim` beyond the mouth in both entry directions.
+- [ ] Verify the test fails while the roof cutter remains exactly coplanar with the exterior face.
+- [ ] Extend the roof cutter length by the shim and offset only its negative-direction origin by the same amount.
+- [ ] Preserve the 30-degree polygon, tunnel clearance, drop, and pocket-roof geometry.
+- [ ] Run the complete Things CAD suite, push source, and render the committed 3x3 matrix for slicer review.

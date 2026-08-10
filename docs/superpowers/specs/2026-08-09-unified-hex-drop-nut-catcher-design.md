@@ -24,6 +24,8 @@ All production callers orient the module so the pocket is below the tunnel in th
 
 The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the pointy support-free roofs over the hex pocket and tunnel where required by print orientation. The hex-pocket roof begins at the top of the raised entry hex, `nut_drop + effective_tunnel_h`; beginning it at the lower seat height lets the raised hex cut through the slopes and recreate a flat, floating ceiling. `roof_mode = "flat"` leaves those additions out. Roof selection does not change the pocket, tunnel, or drop calculation.
 
+The tunnel-roof cutter crosses the exterior mouth face by `boolean_shim`. For positive-direction entry it retains its origin and extrudes `opening_edge_distance + boolean_shim`; for negative-direction entry its origin moves outward by `boolean_shim` and it uses the same extended length. A roof cutter ending exactly coplanar with the exterior face may leave a thin skin over its point in the sliced matrix, producing a flat or floating region. The shim changes only Boolean overlap, not the 30-degree roof profile or fit dimensions.
+
 The sideways diagnostic coupon uses a test-only gable because its printable roof faces a different direction after rotation. That gable must share the tunnel's local floor elevation, `nut_thickness * nut_drop_fraction`; otherwise changing the drop displaces the roof along the sideways tunnel. Its cross-section and 30-degree slopes remain unchanged.
 
 ## 45-Degree Test Coupon
