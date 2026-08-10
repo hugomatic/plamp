@@ -1290,7 +1290,11 @@ module m3_nut_catcher_negative(
                     ]);
 
             if (roof_mode == "30deg") {
-                translate([-slot_w / 2, 0, slot_h])
+                translate([
+                    -slot_w / 2,
+                    0,
+                    nut_drop + effective_tunnel_h
+                ])
                     rotate([0, 90, 0])
                         linear_extrude(height = slot_w)
                             polygon([

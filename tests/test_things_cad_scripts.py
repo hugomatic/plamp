@@ -358,6 +358,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "translate([tunnel_roof_x,0,nut_drop+effective_tunnel_h])",
             catcher,
         )
+        self.assertIn(
+            "translate([-slot_w/2,0,nut_drop+effective_tunnel_h])",
+            catcher,
+        )
+        self.assertNotIn("translate([-slot_w/2,0,slot_h])", catcher)
         self.assertNotIn("entry_tunnel_z_offset", compact)
         self.assertIn("if(nib_height>0)m3_nut_catcher_floor_nibs_positive(", catcher)
         self.assertIn("entry_tunnel_w=corner_nut_tunnel_w", corner)
