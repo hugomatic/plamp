@@ -165,3 +165,116 @@ git rev-parse origin/main
 ```
 
 Expected: status is clean and both revisions are identical.
+
+### Task 3: Enlarge only the 45-degree diagnostic coupon
+
+**Files:**
+- Modify: `tests/test_things_cad_scripts.py`
+- Modify: `things/plamp8/plamp8.scad`
+
+**Interfaces:**
+- Consumes: `nut_catcher_test_coupon()`, its base `coupon_w` and `coupon_h`, and the existing 45-degree orientation transform.
+- Produces: test-only parameters `nut_catcher_test_45_extra_w = 4`, `nut_catcher_test_45_extra_h = 4`, and `nut_catcher_test_45_tunnel_extra_l = 2.5`; a 20 mm wide by 14 mm high 45-degree coupon with its pocket datum unchanged and its tunnel still open through the top.
+
+- [ ] **Step 1: Write the failing structural test**
+
+Add this test to `tests/test_things_cad_scripts.py`:
+
+```python
+def test_plamp8_45_nut_coupon_has_extended_tunnel_envelope(self):
+    source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+    compact = compact_scad(source)
+    coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
+
+    self.assertIn("nut_catcher_test_45_extra_w=4;", compact)
+    self.assertIn("nut_catcher_test_45_extra_h=4;", compact)
+    self.assertIn("nut_catcher_test_45_tunnel_extra_l=2.5;", compact)
+    self.assertIn(
+        'effective_coupon_w=coupon_w+(orientation=="45"?nut_catcher_test_45_extra_w:0);',
+        coupon,
+    )
+    self.assertIn(
+        'effective_coupon_h=coupon_h+(orientation=="45"?nut_catcher_test_45_extra_h:0);',
+        coupon,
+    )
+    self.assertIn(
+        'opening_edge_distance=coupon_d/2+1+(orientation=="45"?nut_catcher_test_45_tunnel_extra_l:0);',
+        coupon,
+    )
+    self.assertIn("-effective_coupon_w/2", coupon)
+    self.assertIn("effective_coupon_w,effective_coupon_h", coupon)
+    self.assertIn(
+        "nut_catcher_orientation_transform(orientation,slot_w,slot_h,roof_mode,coupon_h)",
+        coupon,
+    )
+    self.assertIn(
+        "nut_catcher_test_screw_negative(orientation,roof_mode,effective_coupon_h)",
+        coupon,
+    )
+```
+
+- [ ] **Step 2: Run the focused test and verify RED**
+
+Run:
+
+```bash
+python -m unittest tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_45_nut_coupon_has_extended_tunnel_envelope -v
+```
+
+Expected: `FAIL` because the three 45-degree coupon extension parameters do not exist.
+
+- [ ] **Step 3: Implement the test-only envelope extension**
+
+Add the parameters next to the existing coupon dimensions:
+
+```scad
+nut_catcher_test_45_extra_w = 4;
+nut_catcher_test_45_extra_h = 4;
+nut_catcher_test_45_tunnel_extra_l = 2.5;
+```
+
+In `nut_catcher_test_coupon()`, derive:
+
+```scad
+effective_coupon_w = coupon_w
+    + (orientation == "45" ? nut_catcher_test_45_extra_w : 0);
+effective_coupon_h = coupon_h
+    + (orientation == "45" ? nut_catcher_test_45_extra_h : 0);
+opening_edge_distance = coupon_d / 2 + 1
+    + (orientation == "45" ? nut_catcher_test_45_tunnel_extra_l : 0);
+```
+
+Build the coupon cube using `effective_coupon_w` and `effective_coupon_h`. Continue passing the base `coupon_h` to `nut_catcher_orientation_transform()` so the pocket datum does not move, and pass `effective_coupon_h` to `nut_catcher_test_screw_negative()` so its bore crosses the taller coupon.
+
+- [ ] **Step 4: Run focused and complete tests and verify GREEN**
+
+Run:
+
+```bash
+python -m unittest tests.test_things_cad_scripts.ThingsCadScriptsTest.test_plamp8_45_nut_coupon_has_extended_tunnel_envelope -v
+python -m unittest tests.test_things_cad_scripts -v
+git diff --check
+```
+
+Expected: the focused test passes, all Things CAD tests pass, and `git diff --check` prints nothing.
+
+- [ ] **Step 5: Commit and push before rendering**
+
+```bash
+git add tests/test_things_cad_scripts.py things/plamp8/plamp8.scad
+git commit -m "Enlarge Plamp8 45-degree nut coupon"
+git push origin main
+```
+
+Expected: GitHub `main` advances to the implementation commit.
+
+- [ ] **Step 6: Plan and render a small diagnostic set**
+
+Run:
+
+```bash
+bin/plamp cad plan plamp8 --set nut_catcher_adjustment_test --define 'nut_catcher_test_width_offsets=[0]' --define 'nut_catcher_test_thick_offsets=[0]' --revision "$(git rev-parse --short HEAD)" --json
+xvfb-run -a bin/plamp cad generate plamp8 --set nut_catcher_adjustment_test --define 'nut_catcher_test_width_offsets=[0]' --define 'nut_catcher_test_thick_offsets=[0]' --preview --revision "$(git rev-parse --short HEAD)" --output /tmp/plamp8-large-45-coupon
+```
+
+Expected: one complete job, a non-empty simple STL, and no OpenSCAD warnings or errors.
