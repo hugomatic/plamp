@@ -327,10 +327,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Move only the shared pocket-roof elevation; preserve the tunnel roof, drop, and both hex profiles.
 - [ ] Run the complete Things CAD suite, push source, and slice the committed matrix without supports.
 
-### Task 10: Carry the pointy tunnel roof through the exterior face
+### Task 10: Carry every matrix roof through the stacked body
 
-- [ ] Require the tunnel-roof extrusion to extend by `boolean_shim` beyond the mouth in both entry directions.
-- [ ] Verify the test fails while the roof cutter remains exactly coplanar with the exterior face.
-- [ ] Extend the roof cutter length by the shim and offset only its negative-direction origin by the same amount.
-- [ ] Preserve the 30-degree polygon, tunnel clearance, drop, and pocket-roof geometry.
-- [ ] Run the complete Things CAD suite, push source, and render the committed 3x3 matrix for slicer review.
+- [ ] Require the matrix to unite its stacked body before reapplying each cell's shared catcher negative.
+- [ ] Verify the test fails while each coupon performs an isolated difference and the upper coupon fills the lower roof apex.
+- [ ] Reapply the existing pointy catcher negatives at matrix scope; do not create alternate roof geometry.
+- [ ] Remove the ineffective tunnel-direction shim change and preserve the existing exterior-mouth overrun.
+- [ ] Run the complete Things CAD suite, push source, and section the committed 3x3 matrix to verify all nine roofs are pointy.
