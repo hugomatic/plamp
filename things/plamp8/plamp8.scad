@@ -178,9 +178,9 @@ nut_catcher_test_orientations = ["up", "sideways", "45"];
 nut_catcher_test_rows = [
     ["all", "roof_mode", "values", ["flat", "30deg"]]
 ];
-// Seven values retain coarse limits while resolving the fit around zero.
-nut_catcher_test_width_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
-nut_catcher_test_thick_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
+// Compact 3x3 fit matrix at 0.1 mm intervals around the calibrated values.
+nut_catcher_test_width_offsets = [-0.1, 0, 0.1];
+nut_catcher_test_thick_offsets = [-0.1, 0, 0.1];
 nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
