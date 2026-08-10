@@ -1245,6 +1245,7 @@ module m3_nut_catcher_negative(
     pocket_d = slot_w / cos(30);
     detent_l = min(entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
+    tunnel_rear_extent = pocket_d / 2;
     effective_entry_mouth_w = is_undef(entry_mouth_w)
         ? slot_w - 2 * entry_detent
         : entry_mouth_w;
@@ -1261,12 +1262,12 @@ module m3_nut_catcher_negative(
 
             if (main_l > 0)
                 translate([
-                    direction > 0 ? 0 : -main_l,
+                    direction > 0 ? -tunnel_rear_extent : -main_l,
                     -effective_tunnel_w / 2,
                     nut_drop
                 ])
                     cube([
-                        main_l + boolean_shim,
+                        main_l + tunnel_rear_extent + boolean_shim,
                         effective_tunnel_w,
                         effective_tunnel_h
                     ]);
@@ -3312,7 +3313,8 @@ module nut_catcher_sideways_print_roof_negative(
     slot_w,
     slot_h,
     opening_edge_distance,
-    entry_detent = panel_nut_entry_detent
+    entry_detent = panel_nut_entry_detent,
+    tunnel_floor_z = m3_nut_thickness * nut_drop_fraction
 ) {
     // The roof must start at the narrowed entry throat, not at the full tunnel
     // width.  Starting it at slot_w/2 left a thin flat shelf below the gable.
@@ -3320,7 +3322,11 @@ module nut_catcher_sideways_print_roof_negative(
     roof_h = slot_h / 2 * tan(panel_nut_roof_angle);
     roof_l = opening_edge_distance + slot_w / 2;
 
-    translate([0, throat_w / 2 - boolean_shim, slot_h / 2])
+    translate([
+        0,
+        throat_w / 2 - boolean_shim,
+        tunnel_floor_z + slot_h / 2
+    ])
         rotate([0, 90, 0])
             linear_extrude(height = roof_l)
             polygon([

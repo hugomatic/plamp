@@ -398,6 +398,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         self.assertIn("cylinder(h=slot_h,d=pocket_d,$fn=6);", catcher)
+        self.assertIn("tunnel_rear_extent=pocket_d/2", catcher)
+        self.assertIn(
+            "direction>0?-tunnel_rear_extent:-main_l", catcher
+        )
+        self.assertIn(
+            "main_l+tunnel_rear_extent+boolean_shim", catcher
+        )
         self.assertNotIn(
             "rotate([0,0,30])cylinder(h=slot_h,d=pocket_d,$fn=6);",
             catcher,
@@ -537,7 +544,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("rotate([0,90,0])", roof)
         self.assertIn("roof_h=slot_h/2*tan(panel_nut_roof_angle)", roof)
         self.assertIn("throat_w=slot_w-2*entry_detent", roof)
-        self.assertIn("translate([0,throat_w/2-boolean_shim,slot_h/2])", roof)
+        self.assertIn(
+            "tunnel_floor_z=m3_nut_thickness*nut_drop_fraction", roof
+        )
+        self.assertIn(
+            "translate([0,throat_w/2-boolean_shim,"
+            "tunnel_floor_z+slot_h/2])",
+            roof,
+        )
         self.assertIn("[-slot_h/2,0]", roof)
         self.assertIn("[slot_h/2,0]", roof)
         self.assertIn("[0,roof_h]", roof)
