@@ -334,7 +334,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
 
         self.assertIn("corner_nut_tunnel_w=corner_nut_entry_mouth_w;", compact)
         self.assertIn("corner_nut_thickness_clearance=0.14;", compact)
-        self.assertIn("nut_drop_fraction=1/4;", compact)
+        self.assertIn("nut_drop_fraction=1/2;", compact)
         self.assertNotIn("corner_nut_drop", compact)
         self.assertIn(
             "corner_nut_tunnel_h=m3_nut_thickness+corner_nut_thickness_clearance;",
@@ -412,6 +412,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         transform = compact_scad(
             scad_module_body(source, "nut_catcher_orientation_transform")
         )
+        origin = compact_scad(
+            source.split("function nut_catcher_test_45_origin_z", 1)[1].split(
+                "function nut_catcher_test_45_opening_edge_distance", 1
+            )[0]
+        )
 
         self.assertIn(
             "rotate([0,-corner_nut_entry_angle,0])rotate([-90,0,0])",
@@ -458,9 +463,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
             scad_module_body(source, "nut_catcher_test_coupon")
         )
 
-        self.assertIn("nut_catcher_test_45_extra_w=4;", compact)
+        self.assertIn("nut_catcher_test_45_extra_w=12;", compact)
         self.assertIn("nut_catcher_test_45_extra_h=4;", compact)
-        self.assertIn("nut_catcher_test_45_tunnel_extra_l=2.5;", compact)
+        self.assertNotIn("nut_catcher_test_45_tunnel_extra_l", compact)
         self.assertIn(
             'effective_coupon_w=coupon_w+(orientation=="45"?'
             "nut_catcher_test_45_extra_w:0);",
@@ -472,9 +477,25 @@ class ThingsCadScriptsTest(unittest.TestCase):
             coupon,
         )
         self.assertIn(
-            'opening_edge_distance=coupon_d/2+1+(orientation=="45"?'
-            "nut_catcher_test_45_tunnel_extra_l:0);",
+            'opening_edge_distance=orientation=="45"?'
+            "nut_catcher_test_45_opening_edge_distance(slot_w,slot_h,"
+            "roof_mode,coupon_h,effective_coupon_h):coupon_d/2+1;",
             coupon,
+        )
+        self.assertIn(
+            "functionnut_catcher_test_45_origin_z(slot_w,slot_h,roof_mode,"
+            "coupon_h=nut_catcher_test_coupon_h)=",
+            compact,
+        )
+        self.assertIn(
+            "functionnut_catcher_test_45_opening_edge_distance(slot_w,slot_h,"
+            "roof_mode,coupon_h,effective_coupon_h)=",
+            compact,
+        )
+        self.assertIn(
+            "(effective_coupon_h-nut_catcher_test_45_origin_z(slot_w,slot_h,"
+            "roof_mode,coupon_h))*sqrt(2)+corner_nut_tunnel_w/2+boolean_shim;",
+            compact,
         )
         self.assertIn(
             "translate([-effective_coupon_w/2,coupon_y-coupon_d/2,0])"
@@ -485,6 +506,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "nut_catcher_orientation_transform(orientation,slot_w,slot_h,"
             "roof_mode,coupon_h)",
             coupon,
+        )
+        row = compact_scad(scad_module_body(source, "nut_catcher_test_row"))
+        self.assertIn(
+            '(items[item_i][0]=="45"?nut_catcher_test_45_extra_w/2:0)',
+            row,
         )
         self.assertIn(
             "nut_catcher_test_screw_negative(orientation,roof_mode,"
@@ -2131,6 +2157,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         transform = compact_scad(
             scad_module_body(source, "nut_catcher_orientation_transform")
         )
+        origin = compact_scad(
+            source.split("function nut_catcher_test_45_origin_z", 1)[1].split(
+                "function nut_catcher_test_45_opening_edge_distance", 1
+            )[0]
+        )
 
         for orientation in ('"up"', '"down"', '"sideways"', '"45"'):
             self.assertIn(orientation, compact)
@@ -2161,8 +2192,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("m3_nut_thickness+thick_clearance>0", coupon)
         self.assertNotIn("width_clearance>=0", coupon)
         self.assertNotIn("thick_clearance>=0", coupon)
-        self.assertIn("roof_top_extent_45", transform)
-        self.assertIn("nut_catcher_test_roof_cover_t", transform)
+        self.assertIn("roof_top_extent", origin)
+        self.assertIn("nut_catcher_test_roof_cover_t", origin)
+        self.assertIn("nut_catcher_test_45_origin_z", transform)
         self.assertIn("is_num(candidate)", coupon)
         self.assertIn('candidate=="flat"||candidate=="30deg"', coupon)
         self.assertIn('orientation=="up"', transform)
@@ -2189,9 +2221,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         coupon = compact_scad(scad_module_body(source, "nut_catcher_test_coupon"))
 
         self.assertIn("rotate([0,0,-90])", transform)
-        self.assertIn(
-            "opening_edge_distance=coupon_d/2+1", coupon
-        )
+        self.assertIn(":coupon_d/2+1", coupon)
 
     def test_plamp8_nut_jig_keeps_roof_coupons_independent(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()

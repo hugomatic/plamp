@@ -157,7 +157,7 @@ corner_nut_entry_mouth_w = 6.1;
 corner_nut_tunnel_w = corner_nut_entry_mouth_w;
 corner_nut_thickness_clearance = 0.14;
 corner_nut_tunnel_h = m3_nut_thickness + corner_nut_thickness_clearance;
-nut_drop_fraction = 1 / 4;
+nut_drop_fraction = 1 / 2;
 panel_nut_floor_nib_h = 0.2;
 panel_nut_floor_nib_l = 1.2;
 panel_nut_floor_nib_w = 1;
@@ -184,9 +184,8 @@ nut_catcher_test_thick_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
 nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
-nut_catcher_test_45_extra_w = 4;
+nut_catcher_test_45_extra_w = 12;
 nut_catcher_test_45_extra_h = 4;
-nut_catcher_test_45_tunnel_extra_l = 2.5;
 nut_catcher_test_gap = 3;
 nut_catcher_test_row_gap = 20;
 nut_catcher_test_mark_font = 1.7;
@@ -3207,6 +3206,36 @@ function nut_catcher_candidate_label(orientation, parameter, mode, candidate) =
                 : fixed_2(candidate)
         );
 
+function nut_catcher_test_45_origin_z(
+    slot_w,
+    slot_h,
+    roof_mode,
+    coupon_h = nut_catcher_test_coupon_h
+) =
+    let(
+        roof_h = roof_mode == "30deg"
+            ? slot_w / 2 * tan(panel_nut_roof_angle)
+            : 0,
+        roof_top_extent = (slot_w / 2 + slot_h + roof_h) / sqrt(2)
+    )
+    coupon_h - nut_catcher_test_roof_cover_t - roof_top_extent;
+
+function nut_catcher_test_45_opening_edge_distance(
+    slot_w,
+    slot_h,
+    roof_mode,
+    coupon_h,
+    effective_coupon_h
+) =
+    (effective_coupon_h - nut_catcher_test_45_origin_z(
+        slot_w,
+        slot_h,
+        roof_mode,
+        coupon_h
+    )) * sqrt(2)
+    + corner_nut_tunnel_w / 2
+    + boolean_shim;
+
 module nut_catcher_orientation_transform(
     orientation,
     slot_w,
@@ -3214,13 +3243,12 @@ module nut_catcher_orientation_transform(
     roof_mode,
     coupon_h = nut_catcher_test_coupon_h
 ) {
-    roof_h = roof_mode == "30deg"
-        ? slot_w / 2 * tan(panel_nut_roof_angle)
-        : 0;
-    roof_top_extent_45 = (slot_w / 2 + slot_h + roof_h) / sqrt(2);
-    origin_45_z = coupon_h
-        - nut_catcher_test_roof_cover_t
-        - roof_top_extent_45;
+    origin_45_z = nut_catcher_test_45_origin_z(
+        slot_w,
+        slot_h,
+        roof_mode,
+        coupon_h
+    );
 
     assert(
         orientation == "up"
@@ -3337,8 +3365,15 @@ module nut_catcher_test_coupon(
         + (orientation == "45" ? nut_catcher_test_45_extra_w : 0);
     effective_coupon_h = coupon_h
         + (orientation == "45" ? nut_catcher_test_45_extra_h : 0);
-    opening_edge_distance = coupon_d / 2 + 1
-        + (orientation == "45" ? nut_catcher_test_45_tunnel_extra_l : 0);
+    opening_edge_distance = orientation == "45"
+        ? nut_catcher_test_45_opening_edge_distance(
+            slot_w,
+            slot_h,
+            roof_mode,
+            coupon_h,
+            effective_coupon_h
+        )
+        : coupon_d / 2 + 1;
     label = nut_catcher_candidate_label(
         orientation,
         parameter,
@@ -3475,7 +3510,10 @@ module nut_catcher_test_row(row, row_i) {
         translate(
             row[0] == "all"
                 ? [
-                    (item_i % 3) * (nut_catcher_test_coupon_w + nut_catcher_test_gap),
+                    (item_i % 3) * (nut_catcher_test_coupon_w + nut_catcher_test_gap)
+                        + (items[item_i][0] == "45"
+                            ? nut_catcher_test_45_extra_w / 2
+                            : 0),
                     floor(item_i / 3) * (nut_catcher_test_coupon_d + nut_catcher_test_row_gap),
                     0
                 ]
