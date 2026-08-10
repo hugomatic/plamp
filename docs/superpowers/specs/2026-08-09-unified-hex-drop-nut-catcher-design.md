@@ -2,13 +2,13 @@
 
 ## Goal
 
-Every Plamp8 nut catcher uses one geometry-producing module: a rectangular insertion tunnel united with a lower hexagonal nut pocket. The nut enters point-first, then gravity drops it into the hex seat so it cannot rotate while the screw is tightened.
+Every Plamp8 nut catcher uses one geometry-producing module: a rectangular insertion tunnel joined to a raised hexagonal entry pocket above a lower hexagonal nut pocket. The nut enters point-first, reaches the raised hex without meeting a flat rear wall, then gravity drops it into the lower hex seat so it cannot rotate while the screw is tightened.
 
 ## Geometry
 
 `m3_nut_catcher_negative()` remains the single source of catcher geometry. It creates the hex-cylinder pocket, tunnel, mouth, and optional support-free roofs.
 
-The rectangular insertion tunnel runs continuously from the exterior mouth, across the screw axis, to the far point of the hex pocket. Stopping it at the screw axis leaves the leading half of a raised nut obstructed in flat-roof orientations. The lower hex pocket remains beneath this full-length tunnel to provide the drop and anti-rotation seat.
+The rectangular insertion tunnel runs from the exterior mouth to the screw axis, where it joins a raised point-first hexagonal entry pocket at the tunnel elevation. The raised hex provides clearance for the complete nut while preserving the pointy rear wall of the catcher. A second hex pocket below it provides the drop and anti-rotation seat. The rectangular tunnel must not extend through the rear half of the hex, because that cuts away the pointy wall and leaves a flat tunnel end.
 
 The drop is proportional to nominal nut thickness:
 

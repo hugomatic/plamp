@@ -299,7 +299,7 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Offset the test-only gable by `m3_nut_thickness * nut_drop_fraction` and leave its angle and cross-section unchanged.
 - [ ] Run the complete Things CAD suite, push source, and visually inspect a committed `S R30` render.
 
-### Task 6: Carry the straight tunnel through the full hex pocket
+### Task 6: Carry the straight tunnel through the full hex pocket (superseded)
 
 - [ ] Require the shared tunnel to extend from the mouth to the far point of the hex pocket rather than stopping at the screw axis.
 - [ ] Verify the test fails against the center-stopping tunnel.
@@ -312,3 +312,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails while the enlarged coupon still engraves at the original 10 mm height.
 - [ ] Move only the label and revision cutters to the effective top surface.
 - [ ] Push source, generate with text enabled, and verify the complete STL is slicer-safe.
+
+### Task 8: Restore the pointy end with a raised hex entry pocket
+
+- [ ] Require a raised point-first hex at the tunnel elevation and reject a rectangular tunnel extending behind the screw axis.
+- [ ] Verify the test fails against the flat-ended full-length rectangular tunnel from Task 6.
+- [ ] Join the mouth-to-axis straight tunnel to the raised hex; retain the second, lower hex as the drop seat.
+- [ ] Run the complete Things CAD suite, push source, and inspect `S RF` in a committed diagnostic render.
