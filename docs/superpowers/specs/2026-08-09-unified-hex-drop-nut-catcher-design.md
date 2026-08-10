@@ -22,6 +22,8 @@ All production callers orient the module so the pocket is below the tunnel in th
 
 The same module retains its roof-mode parameter. `roof_mode = "30deg"` adds the pointy support-free roofs over the hex pocket and tunnel where required by print orientation. `roof_mode = "flat"` leaves those additions out. Roof selection does not change the pocket, tunnel, or drop calculation.
 
+The sideways diagnostic coupon uses a test-only gable because its printable roof faces a different direction after rotation. That gable must share the tunnel's local floor elevation, `nut_thickness * nut_drop_fraction`; otherwise changing the drop displaces the roof along the sideways tunnel. Its cross-section and 30-degree slopes remain unchanged.
+
 ## 45-Degree Test Coupon
 
 The 45-degree diagnostic coupon must expose the complete cross-section of its straight diagonal tunnel through the top, not merely let one corner of the cutter graze the surface. Only this coupon grows: its width increases from 16 mm to 28 mm and its height from 10 mm to 14 mm. The hex pocket remains at its existing datum.

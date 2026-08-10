@@ -291,3 +291,10 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Verify the test fails against the seven-value defaults.
 - [ ] Change only the two default arrays; retain CLI adjustability and the existing matrix generator.
 - [ ] Run the complete Things CAD suite, push source, then plan and render the committed diagnostic set.
+
+### Task 5: Align the sideways 30-degree roof with its dropped tunnel
+
+- [ ] Require `nut_catcher_sideways_print_roof_negative()` to receive the shared proportional tunnel-floor elevation.
+- [ ] Verify the test fails while the roof remains at local Z zero.
+- [ ] Offset the test-only gable by `m3_nut_thickness * nut_drop_fraction` and leave its angle and cross-section unchanged.
+- [ ] Run the complete Things CAD suite, push source, and visually inspect a committed `S R30` render.
