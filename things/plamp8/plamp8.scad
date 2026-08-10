@@ -184,6 +184,9 @@ nut_catcher_test_thick_offsets = [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1];
 nut_catcher_test_coupon_w = 16;
 nut_catcher_test_coupon_d = 12;
 nut_catcher_test_coupon_h = 10;
+nut_catcher_test_45_extra_w = 4;
+nut_catcher_test_45_extra_h = 4;
+nut_catcher_test_45_tunnel_extra_l = 2.5;
 nut_catcher_test_gap = 3;
 nut_catcher_test_row_gap = 20;
 nut_catcher_test_mark_font = 1.7;
@@ -3330,7 +3333,12 @@ module nut_catcher_test_coupon(
     catcher_roof_mode = orientation == "sideways" ? "flat" : roof_mode;
     slot_w = m3_nut_across_flats + width_clearance;
     slot_h = m3_nut_thickness + effective_thick_clearance;
-    opening_edge_distance = coupon_d / 2 + 1;
+    effective_coupon_w = coupon_w
+        + (orientation == "45" ? nut_catcher_test_45_extra_w : 0);
+    effective_coupon_h = coupon_h
+        + (orientation == "45" ? nut_catcher_test_45_extra_h : 0);
+    opening_edge_distance = coupon_d / 2 + 1
+        + (orientation == "45" ? nut_catcher_test_45_tunnel_extra_l : 0);
     label = nut_catcher_candidate_label(
         orientation,
         parameter,
@@ -3355,14 +3363,14 @@ module nut_catcher_test_coupon(
 
     difference() {
         translate([
-            -coupon_w / 2,
+            -effective_coupon_w / 2,
             coupon_y - coupon_d / 2,
             0
         ])
             cube([
-                coupon_w,
+                effective_coupon_w,
                 coupon_d,
-                coupon_h
+                effective_coupon_h
             ]);
 
         nut_catcher_orientation_transform(
@@ -3400,7 +3408,7 @@ module nut_catcher_test_coupon(
                 nut_catcher_test_screw_negative(
                     orientation,
                     roof_mode,
-                    coupon_h
+                    effective_coupon_h
                 );
             }
 
@@ -3594,6 +3602,11 @@ module nut_catcher_adjustment_matrix() {
 }
 
 module nut_catcher_adjustment_test(rows = nut_catcher_test_rows) {
+    echo(str(
+        "Nut catcher drop: ",
+        fixed_3(m3_nut_thickness * nut_drop_fraction),
+        " mm (", nut_drop_fraction, " x nut thickness)"
+    ));
     echo("Nut catcher features: screw bore; nut pocket; insertion tunnel; tunnel mouth; entry throat (narrowed by retention nibs); tunnel floor; tunnel roof; print roof; countersink absent");
     echo("Nut catcher legend: U=bore up, S=side bore, 45=north-wall diagonal, W=width clearance, T=thickness clearance, RF=flat print roof, R30=30-degree print roof");
 

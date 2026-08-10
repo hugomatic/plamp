@@ -451,6 +451,47 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("*nut_catcher_test_matrix_coupon_h", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_w", matrix)
 
+    def test_plamp8_45_nut_coupon_has_extended_tunnel_envelope(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        coupon = compact_scad(
+            scad_module_body(source, "nut_catcher_test_coupon")
+        )
+
+        self.assertIn("nut_catcher_test_45_extra_w=4;", compact)
+        self.assertIn("nut_catcher_test_45_extra_h=4;", compact)
+        self.assertIn("nut_catcher_test_45_tunnel_extra_l=2.5;", compact)
+        self.assertIn(
+            'effective_coupon_w=coupon_w+(orientation=="45"?'
+            "nut_catcher_test_45_extra_w:0);",
+            coupon,
+        )
+        self.assertIn(
+            'effective_coupon_h=coupon_h+(orientation=="45"?'
+            "nut_catcher_test_45_extra_h:0);",
+            coupon,
+        )
+        self.assertIn(
+            'opening_edge_distance=coupon_d/2+1+(orientation=="45"?'
+            "nut_catcher_test_45_tunnel_extra_l:0);",
+            coupon,
+        )
+        self.assertIn(
+            "translate([-effective_coupon_w/2,coupon_y-coupon_d/2,0])"
+            "cube([effective_coupon_w,coupon_d,effective_coupon_h]);",
+            coupon,
+        )
+        self.assertIn(
+            "nut_catcher_orientation_transform(orientation,slot_w,slot_h,"
+            "roof_mode,coupon_h)",
+            coupon,
+        )
+        self.assertIn(
+            "nut_catcher_test_screw_negative(orientation,roof_mode,"
+            "effective_coupon_h)",
+            coupon,
+        )
+
         base = compact_scad(
             scad_module_body(source, "nut_catcher_test_matrix_base")
         )
@@ -2205,6 +2246,12 @@ class ThingsCadScriptsTest(unittest.TestCase):
             'echo("Nutcatcherlegend:U=boreup,S=sidebore,45=north-walldiagonal,'
             'W=widthclearance,T=thicknessclearance,RF=flatprintroof,'
             'R30=30-degreeprintroof")',
+            jig,
+        )
+        self.assertIn(
+            'echo(str("Nutcatcherdrop:",fixed_3('
+            'm3_nut_thickness*nut_drop_fraction),"mm(",'
+            'nut_drop_fraction,"xnutthickness)"));',
             jig,
         )
         self.assertIn(
