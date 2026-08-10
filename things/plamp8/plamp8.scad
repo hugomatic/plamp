@@ -1245,7 +1245,6 @@ module m3_nut_catcher_negative(
     pocket_d = slot_w / cos(30);
     detent_l = min(entry_detent_l, opening_edge_distance);
     main_l = opening_edge_distance - detent_l;
-    tunnel_rear_extent = pocket_d / 2;
     effective_entry_mouth_w = is_undef(entry_mouth_w)
         ? slot_w - 2 * entry_detent
         : entry_mouth_w;
@@ -1260,14 +1259,21 @@ module m3_nut_catcher_negative(
         union() {
             cylinder(h = slot_h, d = pocket_d, $fn = 6);
 
+            translate([0, 0, nut_drop])
+                cylinder(
+                    h = effective_tunnel_h,
+                    d = pocket_d,
+                    $fn = 6
+                );
+
             if (main_l > 0)
                 translate([
-                    direction > 0 ? -tunnel_rear_extent : -main_l,
+                    direction > 0 ? 0 : -main_l,
                     -effective_tunnel_w / 2,
                     nut_drop
                 ])
                     cube([
-                        main_l + tunnel_rear_extent + boolean_shim,
+                        main_l + boolean_shim,
                         effective_tunnel_w,
                         effective_tunnel_h
                     ]);

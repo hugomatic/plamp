@@ -398,13 +398,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         self.assertIn("cylinder(h=slot_h,d=pocket_d,$fn=6);", catcher)
-        self.assertIn("tunnel_rear_extent=pocket_d/2", catcher)
         self.assertIn(
-            "direction>0?-tunnel_rear_extent:-main_l", catcher
+            "translate([0,0,nut_drop])cylinder(h=effective_tunnel_h,d=pocket_d,$fn=6);",
+            catcher,
         )
-        self.assertIn(
-            "main_l+tunnel_rear_extent+boolean_shim", catcher
-        )
+        self.assertIn("direction>0?0:-main_l", catcher)
+        self.assertIn("main_l+boolean_shim", catcher)
+        self.assertNotIn("tunnel_rear_extent", catcher)
         self.assertNotIn(
             "rotate([0,0,30])cylinder(h=slot_h,d=pocket_d,$fn=6);",
             catcher,
