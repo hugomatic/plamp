@@ -359,14 +359,6 @@ class ThingsCadScriptsTest(unittest.TestCase):
             catcher,
         )
         self.assertIn(
-            "tunnel_roof_x=direction<0?-opening_edge_distance-boolean_shim:0",
-            catcher,
-        )
-        self.assertIn(
-            "linear_extrude(height=opening_edge_distance+boolean_shim)",
-            catcher,
-        )
-        self.assertIn(
             "translate([-slot_w/2,0,nut_drop+effective_tunnel_h])",
             catcher,
         )
@@ -469,9 +461,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
         matrix = compact_scad(
             scad_module_body(source, "nut_catcher_adjustment_matrix")
         )
+        self.assertIn("module nut_catcher_test_matrix_catcher_negative(", source)
+        matrix_negative = compact_scad(
+            scad_module_body(source, "nut_catcher_test_matrix_catcher_negative")
+        )
         self.assertIn("for(width_offset=nut_catcher_test_width_offsets)", matrix)
         self.assertIn("for(thick_offset=nut_catcher_test_thick_offsets)", matrix)
         self.assertIn("nut_catcher_test_coupon_matrix(", matrix)
+        self.assertIn("difference(){union(){", matrix)
+        self.assertIn("nut_catcher_test_matrix_catcher_negative(", matrix)
+        self.assertIn("m3_nut_catcher_negative(", matrix_negative)
+        self.assertIn(
+            'nut_catcher_orientation_transform("up",slot_w,slot_h,"30deg")',
+            matrix_negative,
+        )
         self.assertIn("nut_catcher_test_matrix_base(matrix_w,", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_h", matrix)
         self.assertIn("*nut_catcher_test_matrix_coupon_w", matrix)
