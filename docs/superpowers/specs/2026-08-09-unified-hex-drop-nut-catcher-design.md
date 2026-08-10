@@ -49,6 +49,10 @@ Normal orientation coupons and the clearance matrix retain their existing dimens
 
 The clearance matrix defaults to three width values and three thickness values: `[-0.1, 0, 0.1]` mm. This produces a compact 3×3 matrix at 0.1 mm intervals while keeping both dimensions independently adjustable from the command line.
 
+The top row has at least 1.0 mm of material above the tallest pointy roof apex. Its coupon height is derived from the active width and thickness offsets plus the adjustable `nut_catcher_test_matrix_roof_cover_t`; it is not a fixed extra-height guess. All three top cells share the height required by the tallest apex so the matrix retains a flat top.
+
+The matrix has no engraved grid. Width and thickness identification remains on the inscription base, where its engraving depth is controlled independently from roof thickness.
+
 ## Cleanup
 
 Remove the corner-only absolute drop and the public tunnel-Z-offset parameter. No production catcher may bypass the proportional drop. Orientation helpers may transform the shared module but must not construct alternate catcher geometry.

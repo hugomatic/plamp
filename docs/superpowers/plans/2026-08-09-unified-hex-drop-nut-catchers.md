@@ -334,3 +334,11 @@ Expected: one complete job, a non-empty simple STL, no OpenSCAD warnings or erro
 - [ ] Reapply the existing pointy catcher negatives at matrix scope; do not create alternate roof geometry.
 - [ ] Remove the ineffective tunnel-direction shim change and preserve the existing exterior-mouth overrun.
 - [ ] Run the complete Things CAD suite, push source, and section the committed 3x3 matrix to verify all nine roofs are pointy.
+
+### Task 11: Give the top row a one-millimeter roof and remove its grid
+
+- [ ] Require an adjustable `nut_catcher_test_matrix_roof_cover_t = 1` and derive the shared top-row height from the tallest active roof apex.
+- [ ] Remove the top-grid parameter, cutters, and grid-only dimensions while retaining base labels and revision engraving.
+- [ ] Verify the test fails against the fixed one-millimeter height addition and existing grid geometry.
+- [ ] Implement only the derived roof cover and grid removal; preserve the 3x3 offsets, pointy roofs, and matrix CSG order.
+- [ ] Run the complete Things CAD suite, push source, and section the committed matrix to verify a flat top with at least 1.0 mm above every apex.
