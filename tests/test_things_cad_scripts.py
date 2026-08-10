@@ -359,6 +359,14 @@ class ThingsCadScriptsTest(unittest.TestCase):
             catcher,
         )
         self.assertIn(
+            "tunnel_roof_x=direction<0?-opening_edge_distance-boolean_shim:0",
+            catcher,
+        )
+        self.assertIn(
+            "linear_extrude(height=opening_edge_distance+boolean_shim)",
+            catcher,
+        )
+        self.assertIn(
             "translate([-slot_w/2,0,nut_drop+effective_tunnel_h])",
             catcher,
         )

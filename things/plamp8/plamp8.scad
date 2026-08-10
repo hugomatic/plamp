@@ -1253,7 +1253,9 @@ module m3_nut_catcher_negative(
     nut_drop = nut_thickness * drop_fraction;
     pocket_roof_h = slot_w / 2 * tan(panel_nut_roof_angle);
     tunnel_roof_h = effective_tunnel_w / 2 * tan(panel_nut_roof_angle);
-    tunnel_roof_x = direction < 0 ? -opening_edge_distance : 0;
+    tunnel_roof_x = direction < 0
+        ? -opening_edge_distance - boolean_shim
+        : 0;
 
     difference() {
         union() {
@@ -1309,7 +1311,9 @@ module m3_nut_catcher_negative(
                     nut_drop + effective_tunnel_h
                 ])
                     rotate([0, 90, 0])
-                        linear_extrude(height = opening_edge_distance)
+                        linear_extrude(
+                            height = opening_edge_distance + boolean_shim
+                        )
                             polygon([
                                 [boolean_shim, -effective_tunnel_w / 2],
                                 [boolean_shim, effective_tunnel_w / 2],
