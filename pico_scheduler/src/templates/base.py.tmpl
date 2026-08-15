@@ -39,8 +39,8 @@ def normalize_state(raw):
     for index, source in enumerate(raw["devices"]):
         if not isinstance(source, dict):
             raise ValueError("device %s must be an object" % index)
-        allowed = {{"id", "type", "pin", "current_t", "reschedule", "pattern"}}
-        required = {{"type", "pin", "current_t", "reschedule", "pattern"}}
+        allowed = {{"id", "type", "pin", "enabled", "current_t", "reschedule", "pattern"}}
+        required = {{"type", "pin", "enabled", "current_t", "reschedule", "pattern"}}
         if set(source) - allowed or not required <= set(source):
             raise ValueError("device %s has invalid fields" % index)
         device_type = source["type"]
@@ -58,6 +58,9 @@ def normalize_state(raw):
                 raise ValueError("duplicate device id: %s" % device_id)
             ids.add(device_id)
         current_t = _integer(source["current_t"], "device %s current_t" % index, 0)
+        enabled = source["enabled"]
+        if not isinstance(enabled, bool):
+            raise ValueError("device %s enabled must be a boolean" % index)
         reschedule = _integer(source["reschedule"], "device %s reschedule" % index, 0, 1)
         source_pattern = source["pattern"]
         if not isinstance(source_pattern, list) or not source_pattern:
@@ -73,6 +76,7 @@ def normalize_state(raw):
         item = {{
             "type": device_type,
             "pin": pin,
+            "enabled": enabled,
             "current_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,
@@ -149,6 +153,7 @@ def build_outputs(state):
             "type": source["type"],
             "pin": source["pin"],
             "overlay": False,
+            "enabled": source["enabled"],
             "elapsed_t": source["current_t"],
             "reschedule": source["reschedule"],
             "pattern": source["pattern"],
@@ -175,17 +180,21 @@ def retire_output(device):
 def replace_devices(replacement):
     global devices
     overlays = [device for device in devices if device.get("overlay")]
+    replacement_by_pin = {{device["pin"]: device for device in replacement}}
+    overlays = [
+        overlay for overlay in overlays
+        if (replacement_by_pin.get(overlay["pin"]) is not None
+                and replacement_by_pin[overlay["pin"]]["enabled"])
+    ]
     for device in devices:
         if not device.get("overlay"):
             reused = any(candidate["output"] is device["output"] for candidate in replacement)
             overlay_uses = any(overlay["output"] is device["output"] for overlay in overlays)
             if not reused and not overlay_uses:
                 retire_output(device)
-    replacement_by_pin = {{device["pin"]: device for device in replacement}}
     for overlay in overlays:
         base = replacement_by_pin.get(overlay["pin"])
-        if base is not None:
-            overlay["output"] = base["output"]
+        overlay["output"] = base["output"]
     devices = replacement + overlays
 
 
@@ -208,6 +217,8 @@ def report_item(device, current_value=None):
             "pattern": device["pattern"],
             "current_value": device["last_value"] if current_value is None else current_value,
     }}
+    if not device.get("overlay"):
+        item["enabled"] = device["enabled"]
     if "id" in device:
         item["id"] = device["id"]
     return item
@@ -236,14 +247,17 @@ def report():
 def apply():
     changed = False
     for device in devices:
-        cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
-        elapsed = 0
-        value = device["pattern"][-1]["val"]
-        for step in device["pattern"]:
-            elapsed += step["dur"]
-            if cycle_t < elapsed:
-                value = step["val"]
-                break
+        if not device.get("overlay") and not device["enabled"]:
+            value = 0
+        else:
+            cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
+            elapsed = 0
+            value = device["pattern"][-1]["val"]
+            for step in device["pattern"]:
+                elapsed += step["dur"]
+                if cycle_t < elapsed:
+                    value = step["val"]
+                    break
         if device["type"] == "gpio":
             device["output"].value(value)
         else:
@@ -324,6 +338,9 @@ def handle_command(line):
         if device is None:
             error("unknown pulse pin")
             return
+        if not device["enabled"]:
+            error("pulse pin is disabled")
+            return
         if device["output"].value() == 1:
             error("pulse pin is already on")
             return
@@ -371,6 +388,8 @@ def tick(dt):
         return
     remove = []
     for device in devices:
+        if not device.get("overlay") and not device["enabled"]:
+            continue
         device["elapsed_t"] += dt
         if not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:
             remove.append(device)

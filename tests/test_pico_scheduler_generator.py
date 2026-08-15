@@ -11,7 +11,7 @@ class PicoSchedulerGeneratorTests(unittest.TestCase):
         )
 
         self.assertIn('FIRMWARE_REVISION = "abc1234"', text)
-        self.assertIn("FIRMWARE_PROTOCOL = 2", text)
+        self.assertIn("FIRMWARE_PROTOCOL = 3", text)
         self.assertIn(
             'STATE_PATHS = ("/plamp_state_a.json", "/plamp_state_b.json")',
             text,
