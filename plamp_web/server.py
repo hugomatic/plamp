@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
+from plamp.controller_add import add_controller
 from plamp.context import resolve_context
 from plamp.locks import LockTimeout
 from plamp.pico_firmware import firmware_revision, render_scheduler_firmware
@@ -2127,6 +2128,43 @@ def get_controllers() -> dict[str, Any]:
     return controller_discovery_payload()
 
 
+@app.post("/api/controllers/{controller}/add")
+def post_controller_add(controller: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    serial_number = payload.get("serial")
+    profile = payload.get("profile")
+    apply = payload.get("apply", False)
+    provision = payload.get("provision", False)
+    if not isinstance(serial_number, str) or not serial_number:
+        raise HTTPException(status_code=422, detail="serial must be a non-empty string")
+    if profile != "plamp8":
+        raise HTTPException(status_code=422, detail="profile must be plamp8")
+    if not isinstance(apply, bool) or not isinstance(provision, bool):
+        raise HTTPException(status_code=422, detail="apply and provision must be booleans")
+    if provision and not apply:
+        raise HTTPException(status_code=422, detail="provision requires apply")
+    try:
+        return add_controller(
+            controller,
+            serial_number,
+            profile,
+            apply=apply,
+            allow_provision=provision,
+            config_file=CONFIG_FILE,
+            data_dir=DATA_DIR,
+            repo_root=REPO_ROOT,
+            lock_dir=RUNTIME_CONTEXT.lock_dir,
+            timeout=60.0 if provision else 3.0,
+        )
+    except ConfigError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ValueError, LockTimeout, PicoUnavailable, PicoReportTimeout, PicoFlashError, PicoCommandError, OSError, serial.SerialException) as exc:
+        status_code, health = scheduler_failure(serial_number, exc)
+        raise HTTPException(
+            status_code=status_code,
+            detail={"message": str(exc), "health": health.as_dict()},
+        ) from exc
+
+
 @app.get("/api/controllers/{controller}", response_model=None)
 def get_controller(controller: str, stream: bool = False) -> Any:
     if stream:
@@ -2283,6 +2321,7 @@ def compiled_timer_state_for_controller(
     *,
     config: dict[str, Any] | None = None,
     now: Any = None,
+    live_devices: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     config = load_config() if config is None else config
     controller_data = config.get("controllers", {}).get(controller)
@@ -2294,7 +2333,12 @@ def compiled_timer_state_for_controller(
         "report_every must be an integer",
     )
     try:
-        return compile_controller_state(channels, report_every=report_every, now=now)
+        return compile_controller_state(
+            channels,
+            report_every=report_every,
+            now=now,
+            live_devices=live_devices,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -2327,7 +2371,7 @@ def controller_schedule_candidate(
     return candidate
 
 
-def scheduler_failure_health(monitor: PicoMonitor, exc: BaseException) -> tuple[int, PicoHealth]:
+def scheduler_failure(pico_serial: str, exc: BaseException) -> tuple[int, PicoHealth]:
     raw_bytes = getattr(exc, "raw_lines", ())
     raw_lines = tuple(
         raw.decode("utf-8", errors="replace").strip()
@@ -2348,13 +2392,17 @@ def scheduler_failure_health(monitor: PicoMonitor, exc: BaseException) -> tuple[
     else:
         status_code, kind, step = 422, "validation", "configure"
     health = failed_health(
-        monitor.pico_serial,
+        pico_serial,
         kind=kind,
         step=step,
         message=str(exc),
         raw_lines=raw_lines,
     )
     return status_code, health
+
+
+def scheduler_failure_health(monitor: PicoMonitor, exc: BaseException) -> tuple[int, PicoHealth]:
+    return scheduler_failure(monitor.pico_serial, exc)
 
 
 def configure_and_commit_controller_schedule(
@@ -2424,19 +2472,42 @@ def post_controller_schedule(controller: str, proposed_controller: dict[str, Any
     with lock_for(role_locks, controller), config_lock:
         current_config = load_raw_config()
         candidate = controller_schedule_candidate(current_config, controller, proposed_controller)
+        monitor = get_or_start_monitor(controller)
+        try:
+            report = monitor.require_fresh_report(timeout=3.0)
+        except (ValueError, LockTimeout, PicoUnavailable, PicoReportTimeout, PicoFlashError, PicoCommandError, OSError, serial.SerialException) as exc:
+            status_code, health = scheduler_failure_health(monitor, exc)
+            raise HTTPException(
+                status_code=status_code,
+                detail={"message": str(exc), "health": health.as_dict()},
+            ) from exc
+        content = report.get("content") if isinstance(report, dict) else None
+        live_devices = content.get("devices") if isinstance(content, dict) else None
+        if not isinstance(live_devices, list):
+            raise HTTPException(status_code=502, detail="fresh controller report must contain devices")
         captured_time = datetime.now().time()
         current_state = validate_timer_state(
-            compiled_timer_state_for_controller(controller, config=current_config, now=captured_time)
+            compiled_timer_state_for_controller(
+                controller,
+                config=current_config,
+                now=captured_time,
+                live_devices=live_devices,
+            )
         )
         proposed_state = validate_timer_state(
-            compiled_timer_state_for_controller(controller, config=candidate, now=captured_time)
+            compiled_timer_state_for_controller(
+                controller,
+                config=candidate,
+                now=captured_time,
+                live_devices=live_devices,
+            )
         )
         result = configure_and_commit_controller_schedule(
             controller,
             candidate,
             current_state,
             proposed_state,
-            get_or_start_monitor(controller),
+            monitor,
         )
 
     reconcile_configured_monitors()

@@ -26,8 +26,11 @@
 
   <section aria-label="Plamp config">
     <h2>Plamp config</h2>
-    <p class="muted">Configure controllers, Pico scheduler devices, and cameras.</p>
-    <h3>Pico schedulers</h3>
+    <p class="muted">Configure Plamp Pico relay controllers, channels, and cameras.</p>
+    <h3>Plamp Pico relay controllers</h3>
+    <h4>Detected controllers</h4>
+    <div id="controller-candidates"></div>
+    <div id="controller-add-preview" class="subsection-indent" aria-live="polite"></div>
     <div id="scheduler-blocks"></div>
     <button id="save-controllers" type="button" disabled>Save controllers</button>
     <span id="controllers-status" class="status">Loading.</span>

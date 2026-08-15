@@ -3,13 +3,17 @@
   const commandStatus = document.getElementById("command-status");
   const statusBody = document.getElementById("controller-status");
   const pinsBody = document.getElementById("configured-pins");
+  const channelsHeading = document.getElementById("channels-heading");
+  const observedImport = document.getElementById("observed-import");
   const diagnosticsNode = document.getElementById("controller-diagnostics");
   const logNode = document.getElementById("serial-log");
   const pulsePinInput = document.getElementById("pulse-pin");
   const pulseSecondsInput = document.getElementById("pulse-seconds");
-  const controls = ["report-now", "pulse-send", "refresh-diagnostics", "refresh-log"].map((id) => document.getElementById(id));
+  const controls = ["report-now", "refresh-diagnostics", "refresh-log"].map((id) => document.getElementById(id));
   let controller = "";
+  let configuredSerial = "";
   let configuredPins = [];
+  let selectedPulseDevice = null;
   let controllerSource = null;
 
   function controllerIdFromPath() {
@@ -72,42 +76,102 @@
     }).map(([id, device]) => ({id, ...device}));
   }
 
-  function renderPins(devices) {
+  function observedDevices(node) {
+    const devices = node?.telemetry?.last_report?.content?.devices;
+    return Array.isArray(devices) ? devices : [];
+  }
+
+  function displayDeviceId(id) {
+    const text = String(id || "").replaceAll("_", " ");
+    return text ? text[0].toUpperCase() + text.slice(1) : "";
+  }
+
+  function isPulseEligible(device, source) {
+    return source === "configured"
+      && device.programming !== "disabled"
+      && (device.output_type || "gpio") === "gpio";
+  }
+
+  function clearPulseDevice() {
+    selectedPulseDevice = null;
+    pulsePinInput.value = "";
+    pulseSecondsInput.disabled = true;
+    document.getElementById("pulse-send").disabled = true;
+  }
+
+  function selectPulseDevice(device) {
+    selectedPulseDevice = device;
+    pulsePinInput.value = device.pin ?? "";
+    pulseSecondsInput.disabled = false;
+    document.getElementById("pulse-send").disabled = false;
+    pulseSecondsInput.focus();
+  }
+
+  function renderPins(devices, source) {
     pinsBody.replaceChildren();
-    if (!devices.length) {
-      addTableMessage(pinsBody, 7, "No configured pins.");
-      return;
-    }
     for (const device of devices) {
       const row = document.createElement("tr");
-      for (const value of [device.label || device.id, device.id, device.pin, device.output_type || "gpio", device.visibility || "visible", device.programming || "enabled"]) {
+      const deviceType = source === "configured" ? (device.output_type || "gpio") : (device.type || "gpio");
+      for (const value of [displayDeviceId(device.id), device.id, device.pin, deviceType]) {
         const cell = document.createElement("td");
         cell.textContent = value === null || value === undefined ? "" : String(value);
         row.append(cell);
       }
+      const status = document.createElement("td");
+      const disabled = source === "configured" ? device.programming === "disabled" : device.enabled === false;
+      if (disabled) status.textContent = "Disabled";
+      else status.textContent = source === "configured" ? "Enabled" : (device.enabled === true ? "Enabled (observed)" : "Observed");
+      row.append(status);
       const actionCell = document.createElement("td");
-      const useButton = document.createElement("button");
-      useButton.type = "button";
-      useButton.className = "use-pin";
-      useButton.textContent = "Use";
-      useButton.addEventListener("click", () => {
-        pulsePinInput.value = device.pin ?? "";
-        pulsePinInput.focus();
-      });
-      actionCell.append(useButton);
+      if (isPulseEligible(device, source)) {
+        const useButton = document.createElement("button");
+        useButton.type = "button";
+        useButton.className = "use-pin";
+        useButton.textContent = "Use";
+        useButton.addEventListener("click", () => selectPulseDevice(device));
+        actionCell.append(useButton);
+      }
       row.append(actionCell);
       pinsBody.append(row);
     }
   }
 
+  function renderChannelState(node) {
+    configuredPins = configuredDevices(node);
+    clearPulseDevice();
+    observedImport.hidden = true;
+    if (configuredPins.length) {
+      channelsHeading.textContent = "Configured channels";
+      renderPins(configuredPins, "configured");
+      return;
+    }
+    const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};
+    const reportIsFresh = telemetry.ok === true;
+    const observed = reportIsFresh ? observedDevices(node) : [];
+    if (observed.length) {
+      const observedChannelsMessage = "N channels found on controller";
+      channelsHeading.textContent = observedChannelsMessage.replace("N", String(observed.length));
+      observedImport.hidden = !configuredSerial;
+      renderPins(observed, "observed");
+      return;
+    }
+    const reportDevices = reportIsFresh ? telemetry?.last_report?.content?.devices : null;
+    if (Array.isArray(reportDevices)) {
+      channelsHeading.textContent = "Controller reports 0 channels";
+      addTableMessage(pinsBody, 6, "Controller reports 0 channels");
+      return;
+    }
+    channelsHeading.textContent = "Unable to read controller configuration";
+    const healthError = telemetry.last_error || telemetry?.error?.message || "No fresh valid report.";
+    addTableMessage(pinsBody, 6, `Unable to read controller configuration: ${healthError}`);
+  }
+
   function renderController(node) {
     const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};
-    configuredPins = configuredDevices(node);
+    configuredSerial = String(node?.payload?.pico_serial || "");
     renderStatus(telemetry);
-    renderPins(configuredPins);
+    renderChannelState(node);
     diagnosticsNode.textContent = JSON.stringify(telemetry, null, 2);
-    const firstGpio = configuredPins.find((item) => (item.output_type || "gpio") === "gpio");
-    if (firstGpio && firstGpio.pin !== undefined && firstGpio.pin !== null && pulsePinInput.value === "") pulsePinInput.value = firstGpio.pin;
   }
 
   function statusUrl() {
@@ -139,6 +203,11 @@
     const telemetry = data?.telemetry && typeof data.telemetry === "object" ? data.telemetry : data;
     if (!telemetry || typeof telemetry !== "object") return;
     if (eventName !== "report") renderStatus(telemetry);
+    if (!configuredPins.length) {
+      const lastReport = eventName === "report" ? data?.report : telemetry.last_report;
+      const ok = eventName === "report" ? true : telemetry.ok;
+      renderChannelState({telemetry: {...telemetry, ok, last_report: lastReport}});
+    }
     diagnosticsNode.textContent = JSON.stringify(telemetry, null, 2);
     loadStatus.textContent = "Live controller stream connected.";
     loadStatus.classList.remove("error");
@@ -161,7 +230,7 @@
 
   function pinLabel(pin) {
     const channel = configuredPins.find((item) => Number(item.pin) === Number(pin));
-    return channel ? (channel.label || channel.id || "") : "";
+    return channel ? displayDeviceId(channel.id) : "";
   }
 
   async function postCommand(url, body) {
@@ -189,8 +258,18 @@
     try { await refreshDiagnostics(); setCommandStatus("Diagnostics refreshed."); }
     catch (error) { setCommandStatus(error.message || String(error), true); }
   });
+  observedImport.addEventListener("click", () => {
+    const params = new URLSearchParams();
+    params.set("controller", controller);
+    params.set("serial", configuredSerial);
+    location.assign(`/settings?${params.toString()}#controller-add-preview`);
+  });
   document.getElementById("pulse-send").addEventListener("click", async () => {
-    const pin = Number(pulsePinInput.value);
+    if (!selectedPulseDevice || !isPulseEligible(selectedPulseDevice, "configured")) {
+      setCommandStatus("Choose an enabled GPIO channel.", true);
+      return;
+    }
+    const pin = Number(selectedPulseDevice.pin);
     const seconds = Number(pulseSecondsInput.value);
     if (!Number.isInteger(pin) || pin < 0 || pin > 29) { setCommandStatus("Enter a configured pin number.", true); return; }
     if (!Number.isInteger(seconds) || seconds <= 0) { setCommandStatus("Enter pulse seconds.", true); return; }
@@ -211,6 +290,7 @@
         refreshLog(),
       ]);
       setControlsDisabled(false);
+      if (!selectedPulseDevice) clearPulseDevice();
       setCommandStatus("Ready.");
       loadStatus.textContent = "Controller loaded.";
       startControllerStream();

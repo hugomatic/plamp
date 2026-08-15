@@ -53,6 +53,32 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('if (eventName !== "report") renderStatus(telemetry);', script)
         self.assertIn("renderStreamEvent(eventName, JSON.parse(event.data))", script)
 
+    def test_controller_page_distinguishes_configured_observed_empty_and_unavailable_states(self):
+        html = static_text("controller.html")
+        script = static_text("controller.js")
+
+        self.assertIn('id="channels-heading"', html)
+        self.assertIn("function observedDevices(node)", script)
+        self.assertIn("function displayDeviceId(id)", script)
+        self.assertIn("Configured channels", script)
+        self.assertIn("N channels found on controller", script)
+        self.assertIn("Controller reports 0 channels", script)
+        self.assertIn("Unable to read controller configuration", script)
+        self.assertNotIn("No configured pins.", script)
+        self.assertIn("telemetry.ok === true", script)
+        self.assertIn('eventName === "report" ? true : telemetry.ok', script)
+
+    def test_controller_page_only_offers_pulse_for_configured_enabled_gpio_channels(self):
+        script = static_text("controller.js")
+
+        self.assertIn('source === "configured"', script)
+        self.assertIn('device.programming !== "disabled"', script)
+        self.assertIn('(device.output_type || "gpio") === "gpio"', script)
+        self.assertIn('useButton.textContent = "Use"', script)
+        self.assertIn('status.textContent = "Disabled"', script)
+        self.assertIn('device.enabled === true ? "Enabled (observed)"', script)
+        self.assertNotIn("channel.label", script)
+
     def test_system_static_client_uses_rest_without_injected_state(self):
         html = static_text("system.html")
         script = static_text("system.js")
@@ -109,12 +135,11 @@ class PageRenderTests(unittest.TestCase):
             "collectControllers",
             "collectControllerDevices",
             "collectCameras",
-            "controllerRenames",
-            "collectConfigWithControllerRenames",
         ):
             self.assertIn(f"function {function_name}", script)
-        self.assertIn('saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())', script)
-        self.assertIn('saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())', script)
+        self.assertIn('saveSection("controllers-status", "/api/config/controllers", collectControllers())', script)
+        self.assertIn('/schedule`', script)
+        self.assertNotIn('saveSection("devices-status", "/api/config",', script)
         self.assertIn('saveSection("cameras-status", "/api/config/cameras", collectCameras())', script)
         self.assertIn("Pin required for device", script)
         self.assertIn("delete result[oldKey]", script)
@@ -123,18 +148,51 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="save-devices"', html)
         self.assertIn('id="save-cameras"', html)
 
-    def test_settings_static_client_preserves_hidden_and_camera_matching(self):
+    def test_settings_static_client_renders_zero_channel_controllers_and_preserves_camera_matching(self):
         html = static_text("settings.html")
         script = static_text("settings.js")
 
-        self.assertIn("hiddenControllers = {}", script)
-        self.assertIn("hydrateControllerRowFromHidden", script)
-        self.assertIn("structuredClone(hiddenControllers)", script)
+        self.assertIn("schedulerBlocks.append(createSchedulerBlock(controllerId, controller, devices));", script)
+        self.assertNotIn("if (devices.length) schedulerBlocks.append", script)
+        self.assertNotIn("hiddenControllers", script)
         self.assertIn("function cameraMatches", script)
         self.assertIn("normalizeCameraKey", script)
         self.assertIn("Capture dir must be inside repo root", script)
         self.assertIn('row.className = `camera-row${isNew ? " new-row" : ""}`', script)
         self.assertIn("Report an issue", html)
+
+    def test_settings_page_uses_plamp_controller_and_channel_copy(self):
+        html = static_text("settings.html")
+        script = static_text("settings.js")
+
+        self.assertIn("Plamp Pico relay controllers", html)
+        self.assertNotIn("Pico schedulers", html)
+        self.assertNotIn('class="device-label"', script)
+        self.assertNotIn("<th>Label</th><th>Pin</th>", script)
+        self.assertIn("Channels", script)
+
+    def test_settings_page_previews_add_before_explicit_import_or_provision(self):
+        html = static_text("settings.html")
+        script = static_text("settings.js")
+
+        self.assertIn('id="controller-add-preview"', html)
+        self.assertIn("Add/import controller", script)
+        self.assertIn("Upgrade, provision, and import", script)
+        self.assertIn('apply: false, provision: false', script)
+        self.assertIn('apply: true, provision: preview.action === "provision"', script)
+        self.assertIn("preview.before", script)
+        self.assertIn("preview.after", script)
+
+    def test_observed_controller_button_launches_the_single_settings_preview(self):
+        controller_html = static_text("controller.html")
+        controller_script = static_text("controller.js")
+        settings_script = static_text("settings.js")
+
+        self.assertIn('<button id="observed-import"', controller_html)
+        self.assertIn('params.set("controller", controller)', controller_script)
+        self.assertIn('params.set("serial", configuredSerial)', controller_script)
+        self.assertIn('location.assign(`/settings?${params.toString()}#controller-add-preview`)', controller_script)
+        self.assertIn('previewControllerAdd(requestedController, requestedSerial)', settings_script)
 
     def test_shared_shell_discovers_navigation_from_rest(self):
         shell = static_text("app.js")

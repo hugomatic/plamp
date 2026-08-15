@@ -1,11 +1,13 @@
 (() => {
   const schedulerBlocks = document.getElementById("scheduler-blocks");
+  const controllerCandidates = document.getElementById("controller-candidates");
+  const controllerAddPreview = document.getElementById("controller-add-preview");
   const cameraRows = document.getElementById("camera-rows");
   const loadStatus = document.getElementById("settings-load-status");
   const saveButtons = ["save-controllers", "save-devices", "save-cameras"].map((id) => document.getElementById(id));
   let detectedPicos = [];
   let detectedCameras = [];
-  let hiddenControllers = {};
+  let configuredControllers = {};
   let repoRootPath = "";
 
   function cleanObject(value) {
@@ -112,10 +114,10 @@
     return device?.editor?.kind === "daily_window" ? "clock_window" : "cycle";
   }
 
-  function createControllerRow(controllerId, controller, isNew = false) {
+  function createControllerRow(controllerId, controller) {
     const row = document.createElement("tr");
-    row.className = `controller-row${isNew ? " new-row" : ""}`;
-    row.dataset.controllerKey = isNew ? "" : controllerId;
+    row.className = "controller-row";
+    row.dataset.controllerKey = controllerId;
     const payload = controllerPayload(controller);
     const settings = controllerSettings(controller);
     const idInput = input("controller-id", controllerId, {placeholder: "pump_lights"});
@@ -127,7 +129,6 @@
     const hiddenType = cell(typeSelect);
     hiddenType.hidden = true;
     row.append(cell(idInput), cell(labelInput), cell(picoSelect), hiddenType);
-    if (isNew) idInput.addEventListener("input", () => hydrateControllerRowFromHidden(row));
     return row;
   }
 
@@ -140,7 +141,6 @@
     const mode = editorMode(device || {});
     row.append(
       cell(input("device-id", deviceId, {placeholder: "pump"})),
-      cell(input("device-label", device?.label || "", {placeholder: "Water pump"})),
       cell(input("device-pin", device?.pin, {type: "number", min: 0, max: 29})),
       cell(selectWithOptions("device-type", [["gpio", "gpio"], ["pwm", "pwm"]], device?.output_type || "gpio")),
       cell(selectWithOptions("device-editor", [["cycle", "cycle"], ["clock_window", "clock_window"], ["disabled", "disabled"], ["hidden", "hidden"]], mode)),
@@ -148,27 +148,35 @@
     return row;
   }
 
-  function createSchedulerBlock(controllerId, controller, devices, isNew = false) {
+  function createSchedulerBlock(controllerId, controller, devices) {
     const block = document.createElement("div");
-    block.className = `pico-scheduler-block${isNew ? " pico-scheduler-new" : ""}`;
-    block.dataset.controllerKey = isNew ? "" : controllerId;
+    block.className = "pico-scheduler-block";
+    block.dataset.controllerKey = controllerId;
     const controllerTable = document.createElement("table");
     controllerTable.innerHTML = "<thead><tr><th>ID</th><th>Label</th><th>Assigned peripheral</th></tr></thead>";
     const controllerBody = document.createElement("tbody");
-    controllerBody.append(createControllerRow(controllerId, controller, isNew));
+    controllerBody.append(createControllerRow(controllerId, controller));
     controllerTable.append(controllerBody);
     const deviceArea = document.createElement("div");
     deviceArea.className = "subsection-indent";
     const heading = document.createElement("h4");
-    heading.textContent = "Devices";
+    heading.textContent = "Channels";
     const deviceTable = document.createElement("table");
-    deviceTable.innerHTML = "<thead><tr><th>ID</th><th>Label</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>";
+    deviceTable.innerHTML = "<thead><tr><th>ID</th><th>Pin</th><th>Output type</th><th>Editor</th></tr></thead>";
     const deviceBody = document.createElement("tbody");
     for (const [deviceId, device] of devices) deviceBody.append(createDeviceRow(deviceId, device, controllerId));
     deviceBody.append(createDeviceRow("", {}, controllerId, true));
     deviceTable.append(deviceBody);
     deviceArea.append(heading, deviceTable);
     block.append(controllerTable, deviceArea);
+    const serial = String(controllerPayload(controller).pico_serial || "");
+    if (!devices.length && serial) {
+      const addButton = document.createElement("button");
+      addButton.type = "button";
+      addButton.textContent = "Add/import controller";
+      addButton.addEventListener("click", () => previewControllerAdd(controllerId, serial));
+      block.append(addButton);
+    }
     return block;
   }
 
@@ -226,22 +234,126 @@
     return {matches, unmatched};
   }
 
+  function candidateControllerId(pico) {
+    const role = String(pico?.role || "").trim();
+    const serial = String(pico?.serial || "").trim();
+    return (role || serial || "plamp8").toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  }
+
+  function renderControllerCandidates(controllers) {
+    controllerCandidates.replaceChildren();
+    const assigned = new Set(Object.values(controllers).map((controller) => String(controllerPayload(controller).pico_serial || "")).filter(Boolean));
+    const candidates = detectedPicos.filter((pico) => pico?.serial && !assigned.has(String(pico.serial)));
+    if (!candidates.length) {
+      const status = document.createElement("p");
+      status.className = "muted";
+      status.textContent = "No unassigned controllers detected.";
+      controllerCandidates.append(status);
+      return;
+    }
+    for (const pico of candidates) {
+      const row = document.createElement("div");
+      row.className = "controller-candidate";
+      const label = document.createElement("span");
+      label.textContent = `${pico.serial} ${pico.port || ""}`.trim();
+      const controllerId = input("candidate-controller-id", candidateControllerId(pico), {placeholder: "plamp8"});
+      const addButton = document.createElement("button");
+      addButton.type = "button";
+      addButton.textContent = "Add/import controller";
+      addButton.addEventListener("click", () => previewControllerAdd(controllerId.value.trim(), String(pico.serial)));
+      row.append(label, controllerId, addButton);
+      controllerCandidates.append(row);
+    }
+  }
+
+  async function requestControllerAdd(controllerId, body) {
+    const response = await fetch(`/api/controllers/${encodeURIComponent(controllerId)}/add`, {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    return PlampWeb.responseJson(response, "controller add");
+  }
+
+  function previewRows(title, rows) {
+    const fragment = document.createDocumentFragment();
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      for (const value of [title, item.pin, item.id || "-", item.enabled === true ? "enabled" : item.enabled === false ? "disabled" : "-"]) {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        row.append(cell);
+      }
+      fragment.append(row);
+    }
+    return fragment;
+  }
+
+  function renderControllerAddPreview(preview) {
+    controllerAddPreview.replaceChildren();
+    const heading = document.createElement("h4");
+    heading.textContent = `Preview ${preview.controller}`;
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>State</th><th>Pin</th><th>Channel</th><th>Programming</th></tr></thead>";
+    const body = document.createElement("tbody");
+    body.append(previewRows("Before", preview.before), previewRows("After", preview.after));
+    table.append(body);
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.textContent = preview.action === "provision" ? "Upgrade, provision, and import" : "Import";
+    const status = document.createElement("span");
+    status.className = "status";
+    confirm.addEventListener("click", async () => {
+      confirm.disabled = true;
+      status.textContent = preview.action === "provision" ? "Provisioning and verifying (up to 60 seconds)..." : "Importing and verifying (up to 3 seconds)...";
+      try {
+        const result = await requestControllerAdd(preview.controller, {
+          serial: preview.serial, profile: "plamp8", apply: true, provision: preview.action === "provision",
+        });
+        if (!result.verified) throw new Error("controller import was not verified");
+        window.location.assign(`/controllers/${encodeURIComponent(preview.controller)}`);
+      } catch (error) {
+        status.textContent = error.message || String(error);
+        status.classList.add("error");
+        confirm.disabled = false;
+      }
+    });
+    controllerAddPreview.append(heading, table, confirm, status);
+  }
+
+  async function previewControllerAdd(controllerId, serial) {
+    controllerAddPreview.classList.remove("error");
+    controllerAddPreview.textContent = "Reading controller configuration (up to 3 seconds)...";
+    if (!controllerId) {
+      controllerAddPreview.textContent = "Controller ID is required.";
+      return;
+    }
+    try {
+      const preview = await requestControllerAdd(controllerId, {
+        serial, profile: "plamp8", apply: false, provision: false,
+      });
+      renderControllerAddPreview(preview);
+    } catch (error) {
+      controllerAddPreview.textContent = error.message || String(error);
+      controllerAddPreview.classList.add("error");
+    }
+  }
+
   function renderSettings(config, system) {
     schedulerBlocks.replaceChildren();
     cameraRows.replaceChildren();
     const controllers = config?.controllers && typeof config.controllers === "object" ? config.controllers : {};
     const schedulerControllers = Object.fromEntries(Object.entries(controllers).filter(([, controller]) => String(controller?.type || "pico_scheduler") === "pico_scheduler"));
-    hiddenControllers = {};
+    configuredControllers = structuredClone(controllers);
     for (const [controllerId, controller] of Object.entries(schedulerControllers)) {
       const devices = Object.entries(semanticDevices(controller)).sort((left, right) => {
         const leftOrder = Number.isInteger(left[1]?.display_order) ? left[1].display_order : Number.MAX_SAFE_INTEGER;
         const rightOrder = Number.isInteger(right[1]?.display_order) ? right[1].display_order : Number.MAX_SAFE_INTEGER;
         return leftOrder - rightOrder;
       });
-      if (devices.length) schedulerBlocks.append(createSchedulerBlock(controllerId, controller, devices));
-      else hiddenControllers[controllerId] = structuredClone(controller);
+      schedulerBlocks.append(createSchedulerBlock(controllerId, controller, devices));
     }
-    schedulerBlocks.append(createSchedulerBlock("", {}, [], true));
+    renderControllerCandidates(controllers);
 
     const configuredCameras = config?.cameras && typeof config.cameras === "object" ? config.cameras : {};
     const {matches, unmatched} = cameraMatches(configuredCameras);
@@ -253,37 +365,21 @@
     document.getElementById("settings-heading").textContent = hostname ? `${hostname} Settings` : "Settings";
   }
 
-  function hydrateControllerRowFromHidden(row) {
-    const key = row.querySelector(".controller-id").value.trim();
-    const hiddenController = hiddenControllers[key];
-    if (!key || !hiddenController || row.dataset.controllerKey) return;
-    const payload = controllerPayload(hiddenController);
-    const settings = controllerSettings(hiddenController);
-    const labelInput = row.querySelector(".controller-label");
-    labelInput.value = settings.label || "";
-    labelInput.defaultValue = settings.label || "";
-    const picoSelect = row.querySelector(".controller-pico-serial");
-    picoSelect.value = payload.pico_serial || "";
-    picoSelect.dataset.defaultValue = payload.pico_serial || "";
-  }
-
   function collectControllers() {
-    const result = structuredClone(hiddenControllers);
+    const result = structuredClone(configuredControllers);
     for (const row of document.querySelectorAll(".controller-row")) {
       const key = row.querySelector(".controller-id").value.trim();
       if (!key) continue;
       const oldKey = row.dataset.controllerKey || "";
-      const existing = hiddenControllers[key] ? structuredClone(hiddenControllers[key]) : (oldKey && hiddenControllers[oldKey] ? structuredClone(hiddenControllers[oldKey]) : {});
-      const hiddenReuse = !oldKey && Object.keys(existing).length > 0;
-      const controller = hiddenReuse ? existing : {type: "pico_scheduler", payload: {}, settings: {}};
+      const controller = structuredClone(configuredControllers[oldKey] || {type: "pico_scheduler", payload: {}, settings: {}});
       if (oldKey && oldKey !== key) delete result[oldKey];
       controller.type = row.querySelector(".controller-type").value;
       controller.payload ||= {};
       controller.settings ||= {};
       const label = row.querySelector(".controller-label").value.trim();
       const serial = row.querySelector(".controller-pico-serial").value;
-      if (!hiddenReuse || label !== row.querySelector(".controller-label").defaultValue) controller.settings.label = label;
-      if (!hiddenReuse || serial !== row.querySelector(".controller-pico-serial").dataset.defaultValue) controller.payload.pico_serial = serial;
+      controller.settings.label = label;
+      controller.payload.pico_serial = serial;
       controller.payload = cleanObject(controller.payload);
       controller.settings = cleanObject(controller.settings);
       result[key] = controller;
@@ -309,7 +405,6 @@
       else editor = existingEditor.kind ? existingEditor : {kind: "cycle"};
       result[controller].settings[key] = cleanObject({
         pin: Number(pinValue),
-        label: row.querySelector(".device-label").value.trim(),
         display_order: Object.keys(result[controller].settings).length,
         visibility: mode === "hidden" ? "hidden" : "visible",
         programming: mode === "disabled" ? "disabled" : "enabled",
@@ -349,35 +444,6 @@
     return result;
   }
 
-  function controllerRenames() {
-    const result = {};
-    for (const row of document.querySelectorAll(".controller-row")) {
-      const oldKey = row.dataset.controllerKey || "";
-      const newKey = row.querySelector(".controller-id").value.trim();
-      if (oldKey && newKey && oldKey !== newKey) result[oldKey] = newKey;
-    }
-    return result;
-  }
-
-  function collectConfigWithControllerRenames() {
-    const controllers = collectControllers();
-    const devicesByController = collectControllerDevices();
-    for (const [oldKey, newKey] of Object.entries(controllerRenames())) {
-      if (devicesByController[oldKey]) {
-        devicesByController[newKey] = devicesByController[oldKey];
-        delete devicesByController[oldKey];
-      }
-    }
-    for (const [controllerId, devices] of Object.entries(devicesByController)) {
-      if (!controllers[controllerId]) throw new Error(`Unknown controller for devices: ${controllerId}.`);
-      controllers[controllerId].settings ||= {};
-      controllers[controllerId].payload ||= {};
-      controllers[controllerId].settings.devices = devices.settings;
-      delete controllers[controllerId].payload.devices;
-    }
-    return {controllers, cameras: collectCameras()};
-  }
-
   async function saveSection(statusId, url, payload) {
     const status = document.getElementById(statusId);
     status.textContent = "Saving...";
@@ -391,6 +457,35 @@
       window.location.reload();
     } catch (error) {
       status.textContent = error.message || String(error);
+    }
+  }
+
+  async function saveDevices() {
+    const status = document.getElementById("devices-status");
+    status.textContent = "Validating channels...";
+    try {
+      const devicesByController = collectControllerDevices();
+      const blocks = [...document.querySelectorAll(".pico-scheduler-block")];
+      for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        const controllerId = block.dataset.controllerKey;
+        const displayedId = block.querySelector(".controller-id").value.trim();
+        const proposed = structuredClone(configuredControllers[controllerId]);
+        proposed.settings ||= {};
+        proposed.settings.devices = devicesByController[displayedId]?.settings || {};
+        status.textContent = `Saving and verifying ${controllerId} (${index + 1}/${blocks.length})...`;
+        const response = await fetch(`/api/controllers/${encodeURIComponent(controllerId)}/schedule`, {
+          method: "POST",
+          headers: {"content-type": "application/json"},
+          body: JSON.stringify(proposed),
+        });
+        await PlampWeb.responseJson(response, `${controllerId} channels`);
+      }
+      status.textContent = "Saved and verified.";
+      window.location.reload();
+    } catch (error) {
+      status.textContent = error.message || String(error);
+      status.classList.add("error");
     }
   }
 
@@ -414,6 +509,10 @@
       detectedCameras = Array.isArray(system?.detected?.cameras) ? system.detected.cameras.map((camera) => ({...camera, key: normalizeCameraKey(camera?.key)})) : [];
       repoRootPath = String(system?.paths?.repo_root || system?.software?.path || "");
       renderSettings(configPayload?.config || {}, system || {});
+      const requested = new URLSearchParams(location.search);
+      const requestedController = String(requested.get("controller") || "");
+      const requestedSerial = String(requested.get("serial") || "");
+      if (requestedController && requestedSerial) await previewControllerAdd(requestedController, requestedSerial);
       setSaveDisabled(false);
       showLoadStatus("Ready.");
       for (const id of ["controllers-status", "devices-status", "cameras-status"]) document.getElementById(id).textContent = "Ready.";
@@ -423,8 +522,8 @@
     }
   }
 
-  document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config", collectConfigWithControllerRenames())));
-  document.getElementById("save-devices").addEventListener("click", () => runSave("devices-status", () => saveSection("devices-status", "/api/config", collectConfigWithControllerRenames())));
+  document.getElementById("save-controllers").addEventListener("click", () => runSave("controllers-status", () => saveSection("controllers-status", "/api/config/controllers", collectControllers())));
+  document.getElementById("save-devices").addEventListener("click", saveDevices);
   document.getElementById("save-cameras").addEventListener("click", () => runSave("cameras-status", () => saveSection("cameras-status", "/api/config/cameras", collectCameras())));
   bootstrapSettings();
 })();

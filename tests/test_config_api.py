@@ -68,6 +68,78 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_post_controller_add_forwards_path_and_flags_to_shared_operation(self):
+        with patch.object(server, "add_controller", return_value={"action": "import"}) as add:
+            result = server.post_controller_add("plamp8", {
+                "serial": "PICO-A",
+                "profile": "plamp8",
+                "apply": False,
+                "provision": False,
+            })
+
+        self.assertEqual(result, {"action": "import"})
+        self.assertEqual(add.call_args.args[:3], ("plamp8", "PICO-A", "plamp8"))
+        self.assertFalse(add.call_args.kwargs["apply"])
+        self.assertFalse(add.call_args.kwargs["allow_provision"])
+
+    def test_post_controller_add_rejects_invalid_payload_before_hardware_access(self):
+        cases = [
+            ({"profile": "plamp8"}, "serial must be a non-empty string"),
+            ({"serial": "PICO-A", "profile": "generic"}, "profile must be plamp8"),
+            ({"serial": "PICO-A", "profile": "plamp8", "apply": False, "provision": True}, "provision requires apply"),
+            ({"serial": "PICO-A", "profile": "plamp8", "apply": 1}, "apply and provision must be booleans"),
+        ]
+        for payload, detail in cases:
+            with self.subTest(detail=detail), patch.object(server, "add_controller") as add:
+                with self.assertRaises(HTTPException) as raised:
+                    server.post_controller_add("plamp8", payload)
+
+                self.assertEqual(raised.exception.status_code, 422)
+                self.assertEqual(raised.exception.detail, detail)
+                add.assert_not_called()
+
+    def test_post_controller_add_preserves_shared_operation_error_without_starting_monitor(self):
+        with (
+            patch.object(server, "add_controller", side_effect=server.ConfigError("serial already assigned to controller: old")),
+            patch.object(server, "get_or_start_monitor") as get_monitor,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                server.post_controller_add("plamp8", {
+                    "serial": "PICO-A",
+                    "profile": "plamp8",
+                    "apply": True,
+                    "provision": False,
+                })
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "serial already assigned to controller: old")
+        get_monitor.assert_not_called()
+
+    def test_post_controller_add_maps_hardware_errors_without_starting_monitor(self):
+        cases = [
+            (server.PicoUnavailable("configured Pico is not connected: PICO-A"), 409, "unavailable"),
+            (server.PicoReportTimeout("no valid report", [b"booting\n"]), 504, "protocol"),
+            (ValueError("report must contain exactly eight profile devices"), 422, "validation"),
+        ]
+        for failure, status_code, kind in cases:
+            with self.subTest(kind=kind):
+                with (
+                    patch.object(server, "add_controller", side_effect=failure),
+                    patch.object(server, "get_or_start_monitor") as get_monitor,
+                ):
+                    with self.assertRaises(HTTPException) as raised:
+                        server.post_controller_add("plamp8", {
+                            "serial": "PICO-A",
+                            "profile": "plamp8",
+                            "apply": False,
+                            "provision": False,
+                        })
+
+                    self.assertEqual(raised.exception.status_code, status_code)
+                    self.assertEqual(raised.exception.detail["message"], str(failure))
+                    self.assertEqual(raised.exception.detail["health"]["error"]["kind"], kind)
+                    get_monitor.assert_not_called()
+
     def test_system_route_is_static_file(self):
         fail = AssertionError("system route must not touch runtime state")
         with (
@@ -458,7 +530,6 @@ class ConfigApiTests(unittest.TestCase):
                     "pump": {
                         "pin": 3,
                         "output_type": "gpio",
-                        "label": "Pump",
                         "icon": "pump",
                         "display_order": 0,
                         "visibility": "visible",
@@ -533,7 +604,6 @@ class ConfigApiTests(unittest.TestCase):
                         "pump": {
                             "pin": 3,
                             "output_type": "gpio",
-                            "label": "Pump",
                             "icon": "pump",
                             "display_order": 0,
                             "visibility": "visible",
@@ -1401,7 +1471,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "lamp", "name": "lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}
+                        {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}
                     ]
                 },
                 "time_format": "12h",
@@ -1413,7 +1483,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
+                        {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
                     ]
                 },
                 "time_format": "12h",
@@ -1744,6 +1814,7 @@ class ConfigApiTests(unittest.TestCase):
             monitor = SimpleNamespace(
                 client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
                 record_apply_result=Mock(), update_health=Mock(),
+                require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}),
             )
             order = Mock()
 
@@ -1771,6 +1842,97 @@ class ConfigApiTests(unittest.TestCase):
         self.assertLess(ordered_names.index("apply"), ordered_names.index("write_state"))
         monitor.record_apply_result.assert_called_once_with(result)
 
+    def test_controller_schedule_uses_fresh_report_to_preserve_unchanged_pattern_phase(self):
+        pattern = [{"val": 1, "dur": 300}, {"val": 0, "dur": 600}]
+        current_controller = self.scheduler_controller(
+            serial="abc",
+            devices={"pump": self.scheduled_output(2)},
+        )
+        current_controller["devices"]["pump"]["settings"]["schedule"].update({
+            "on_seconds": 300,
+            "off_seconds": 600,
+            "start_at_seconds": 0,
+        })
+        proposed_controller = self.scheduler_controller(
+            serial="abc",
+            devices={"circulation_pump": self.scheduled_output(2, programming="disabled")},
+        )
+        proposed_controller["devices"]["circulation_pump"]["settings"]["schedule"].update({
+            "on_seconds": 300,
+            "off_seconds": 600,
+            "start_at_seconds": 0,
+        })
+        current_controller = server.config_view({
+            "controllers": {"plamp8": current_controller},
+            "cameras": {},
+        })["controllers"]["plamp8"]
+        proposed_controller = server.config_view({
+            "controllers": {"plamp8": proposed_controller},
+            "cameras": {},
+        })["controllers"]["plamp8"]
+        report = {
+            "type": "report",
+            "content": {
+                "devices": [{
+                    "id": "pump",
+                    "type": "gpio",
+                    "pin": 2,
+                    "enabled": True,
+                    "cycle_t": 247,
+                    "reschedule": 1,
+                    "pattern": pattern,
+                }],
+            },
+        }
+        monitor = self.healthy_monitor()
+        monitor.require_fresh_report.return_value = report
+        result = self.scheduler_apply_result()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch.object(server, "load_raw_config", return_value={"controllers": {"plamp8": current_controller}, "cameras": {}}),
+                patch.object(server, "DATA_DIR", root),
+                patch.object(server, "TIMERS_DIR", root / "timers"),
+                patch.object(server, "get_or_start_monitor", return_value=monitor),
+                patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
+                patch.object(server, "apply_scheduler_state", return_value=result) as apply,
+                patch.object(server, "write_config_file"),
+                patch.object(server, "atomic_write_json"),
+                patch.object(server, "reconcile_configured_monitors"),
+                patch.object(server, "reconcile_camera_worker"),
+            ):
+                server.post_controller_schedule("plamp8", proposed_controller)
+
+        monitor.require_fresh_report.assert_called_once()
+        proposed_state = apply.call_args.kwargs["proposed_state"]
+        self.assertEqual(proposed_state["devices"][0]["id"], "circulation_pump")
+        self.assertFalse(proposed_state["devices"][0]["enabled"])
+        self.assertEqual(proposed_state["devices"][0]["current_t"], 247)
+        self.assertEqual(proposed_state["devices"][0]["pattern"], pattern)
+
+    def test_controller_schedule_maps_fresh_report_lock_contention(self):
+        controller = server.config_view({
+            "controllers": {"plamp8": self.scheduler_controller(serial="abc")},
+            "cameras": {},
+        })["controllers"]["plamp8"]
+        monitor = self.healthy_monitor()
+        monitor.require_fresh_report.side_effect = server.LockTimeout("Pico is busy")
+
+        with (
+            patch.object(server, "load_raw_config", return_value={"controllers": {"plamp8": controller}, "cameras": {}}),
+            patch.object(server, "get_or_start_monitor", return_value=monitor),
+            patch.object(server, "configure_and_commit_controller_schedule") as configure,
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                server.post_controller_schedule("plamp8", controller)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["message"], "Pico is busy")
+        self.assertEqual(raised.exception.detail["health"]["error"]["kind"], "unavailable")
+        self.assertEqual(raised.exception.detail["health"]["error"]["step"], "lock")
+        configure.assert_not_called()
+
     def test_controller_schedule_upgrades_current_state_before_proposal(self):
         current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
         proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
@@ -1786,6 +1948,7 @@ class ConfigApiTests(unittest.TestCase):
         monitor = SimpleNamespace(
             client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
             record_apply_result=Mock(), update_health=Mock(),
+            require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}),
         )
         result = SimpleNamespace(
             report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": proposed_state["devices"]}},
@@ -1849,6 +2012,7 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "get_or_start_monitor", return_value=SimpleNamespace(
                     client=object(), pico_serial="abc", stop_event=SimpleNamespace(wait=Mock()),
                     record_apply_result=Mock(), update_health=Mock(),
+                    require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}),
                 )),
                 patch.object(server, "render_scheduler_firmware", return_value=("newrev", "# firmware")),
                 patch.object(server, "apply_scheduler_state", side_effect=server.PicoReportTimeout("no valid report", [b"booting\n"])),

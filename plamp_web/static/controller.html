@@ -31,16 +31,17 @@
     <p id="command-status" class="status">Loading.</p>
     <div class="actions"><button id="report-now" type="button" disabled>Report now</button></div>
     <div class="command-form">
-      <label>Pin <input id="pulse-pin" name="pin" type="number" min="0" max="29" step="1" inputmode="numeric"></label>
+      <label>Pin <input id="pulse-pin" name="pin" type="number" min="0" max="29" step="1" inputmode="numeric" readonly></label>
       <label>Seconds <input id="pulse-seconds" name="seconds" type="number" min="1" step="1" value="5" inputmode="numeric"></label>
       <button id="pulse-send" type="button" disabled>Pulse</button>
     </div>
   </section>
   <section>
-    <h2>Configured pins</h2>
+    <h2 id="channels-heading">Configured channels</h2>
+    <p><button id="observed-import" type="button" hidden>Add/import controller</button></p>
     <table>
-      <thead><tr><th>Name</th><th>Channel</th><th>Pin</th><th>Type</th><th>Visibility</th><th>Programming</th><th></th></tr></thead>
-      <tbody id="configured-pins"><tr><td colspan="7">Waiting for configuration.</td></tr></tbody>
+      <thead><tr><th>Name</th><th>ID</th><th>Pin</th><th>Type</th><th>Status</th><th></th></tr></thead>
+      <tbody id="configured-pins"><tr><td colspan="6">Waiting for configuration.</td></tr></tbody>
     </table>
   </section>
   <section>
