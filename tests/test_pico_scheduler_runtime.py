@@ -30,8 +30,6 @@ class FirmwareHarness:
         self.output = io.StringIO()
         self.input = io.StringIO()
         self.pins = {}
-        self.pwms = {}
-        self.pwm_instances = []
         harness = self
 
         class FakePin:
@@ -48,24 +46,6 @@ class FirmwareHarness:
                     self.state = state
                 return self.state
 
-        class FakePWM:
-            def __init__(self, pin):
-                self.pin = pin.pin
-                self.frequency = None
-                self.duty = 0
-                self.deinitialized = False
-                harness.pwms[self.pin] = self
-                harness.pwm_instances.append(self)
-
-            def freq(self, frequency):
-                self.frequency = frequency
-
-            def duty_u16(self, duty):
-                self.duty = duty
-
-            def deinit(self):
-                self.deinitialized = True
-
         class FakePoll:
             def register(self, stream, event):
                 self.stream = stream
@@ -78,7 +58,6 @@ class FirmwareHarness:
 
         machine = types.ModuleType("machine")
         machine.Pin = FakePin
-        machine.PWM = FakePWM
         select = types.ModuleType("select")
         select.POLLIN = 1
         select.poll = FakePoll
@@ -147,6 +126,32 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.messages()[-1]["type"], "error")
         self.assertIn("duplicate pin", firmware.messages()[-1]["content"]["message"])
 
+    def test_configure_rejects_pwm_before_persistence_or_output_changes(self):
+        firmware = self.harness()
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio()]}})
+        active_path = firmware.runtime.active_state_path
+        active_text = Path(active_path).read_text()
+        pwm = {
+            "id": "fan",
+            "type": "pwm",
+            "pin": 3,
+            "enabled": True,
+            "current_t": 0,
+            "reschedule": 1,
+            "pattern": [{"val": 1234, "dur": 10}],
+        }
+
+        firmware.call(
+            "handle_message", {"type": "configure", "content": {"devices": [pwm]}}
+        )
+
+        self.assertEqual(firmware.runtime.active_generation, 1)
+        self.assertEqual(firmware.runtime.active_state_path, active_path)
+        self.assertEqual(Path(active_path).read_text(), active_text)
+        self.assertEqual([(device["type"], device["pin"]) for device in firmware.runtime.devices], [("gpio", 2)])
+        self.assertEqual(firmware.messages()[-1]["type"], "error")
+        self.assertIn("unsupported type: pwm", firmware.messages()[-1]["content"]["message"])
+
     def test_configure_order_is_persist_build_replace_apply_report(self):
         firmware = self.harness()
         calls = []
@@ -204,21 +209,6 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.runtime.devices, [])
         self.assertIsNone(firmware.runtime.active_state_path)
 
-    def test_configure_replaces_gpio_with_pwm(self):
-        firmware = self.harness()
-        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio()]}})
-        pwm = {
-            "id": "fan", "type": "pwm", "pin": 3, "current_t": 0,
-            "enabled": True, "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}],
-        }
-
-        firmware.call("handle_message", {"type": "configure", "content": {"devices": [pwm]}})
-
-        self.assertEqual([(d["type"], d["pin"]) for d in firmware.runtime.devices], [("pwm", 3)])
-        self.assertEqual(firmware.pwms[3].frequency, 1000)
-        self.assertEqual(firmware.pwms[3].duty, 1234)
-        self.assertTrue(firmware.paths[1].exists())
-
     def test_configure_retires_removed_gpio(self):
         firmware = self.harness()
         firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=1)]}})
@@ -227,40 +217,6 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         firmware.call("handle_message", {"type": "configure", "content": {"devices": []}})
 
         self.assertEqual(removed.value(), 0)
-
-    def test_configure_retires_removed_pwm(self):
-        firmware = self.harness()
-        pwm = {
-            "id": "fan", "type": "pwm", "pin": 3, "current_t": 0,
-            "enabled": True, "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}],
-        }
-        firmware.call("handle_message", {"type": "configure", "content": {"devices": [pwm]}})
-        removed = firmware.pwms[3]
-
-        firmware.call("handle_message", {"type": "configure", "content": {"devices": []}})
-
-        self.assertEqual(removed.duty, 0)
-        self.assertTrue(removed.deinitialized)
-
-    def test_same_pin_pwm_replacement_reuses_output_without_leak(self):
-        firmware = self.harness()
-        first_state = {
-            "devices": [{"id": "fan", "type": "pwm", "pin": 3, "current_t": 0,
-                         "enabled": True, "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}]}]
-        }
-        firmware.call("handle_message", {"type": "configure", "content": first_state})
-        original = firmware.runtime.devices[0]["output"]
-        replacement = {
-            "devices": [{"id": "fan", "type": "pwm", "pin": 3, "current_t": 0,
-                         "enabled": True, "reschedule": 1, "pattern": [{"val": 4321, "dur": 10}]}]
-        }
-
-        firmware.call("handle_message", {"type": "configure", "content": replacement})
-
-        self.assertIs(firmware.runtime.devices[0]["output"], original)
-        self.assertEqual(firmware.pwm_instances, [original])
-        self.assertFalse(original.deinitialized)
-        self.assertEqual(original.duty, 4321)
 
     def test_command_buffer_overflow_emits_one_error_and_clears_buffer(self):
         firmware = self.harness()
@@ -297,27 +253,6 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
 
         self.assertEqual(firmware.runtime.devices[0]["elapsed_t"], 4)
         self.assertEqual(firmware.pins[2].value(), 0)
-        reported = firmware.messages()[-1]["content"]["devices"][0]
-        self.assertFalse(reported["enabled"])
-        self.assertEqual(reported["current_value"], 0)
-
-    def test_disabled_pwm_is_off_and_phase_does_not_advance(self):
-        firmware = self.harness()
-        pwm = {
-            "id": "fan", "type": "pwm", "pin": 3, "enabled": False,
-            "current_t": 4, "reschedule": 1,
-            "pattern": [{"val": 1234, "dur": 10}],
-        }
-        firmware.call("handle_message", {
-            "type": "configure", "content": {"devices": [pwm]},
-        })
-
-        self.assertEqual(firmware.pwms[3].duty, 0)
-        firmware.call("tick", 5)
-        firmware.call("apply")
-
-        self.assertEqual(firmware.runtime.devices[0]["elapsed_t"], 4)
-        self.assertEqual(firmware.pwms[3].duty, 0)
         reported = firmware.messages()[-1]["content"]["devices"][0]
         self.assertFalse(reported["enabled"])
         self.assertEqual(reported["current_value"], 0)
@@ -377,7 +312,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.runtime.devices[0]["id"], "new-lights")
         self.assertEqual(firmware.pins[2].value(), 1)
 
-    def test_pulsed_gpio_rejects_same_pin_pwm_before_persistence(self):
+    def test_pulsed_gpio_rejects_pwm_before_persistence(self):
         firmware = self.harness()
         firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=0)]}})
         firmware.call("handle_command", "p 2 5")
@@ -396,7 +331,6 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(Path(active_path).read_text(), active_text)
         self.assertFalse(inactive_path.exists())
         self.assertEqual(len(firmware.runtime.devices), 2)
-        self.assertEqual(firmware.pwm_instances, [])
         self.assertEqual(firmware.messages()[-1]["type"], "error")
         self.assertEqual(firmware.messages()[-1]["content"]["command"], "configure")
 

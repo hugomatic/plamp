@@ -61,11 +61,13 @@ plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --ap
 ```
 
 The middle command is a read-only preview: it reads the explicitly selected Pico
-but changes neither firmware nor host files. Import an already provisioned
-protocol 3 controller by adding `--apply` without `--provision`. If the preview
-requires provisioning, the last command is the explicit mutation that reflashes
-and resets the selected controller; confirm manual switches and connected loads
-are safe first.
+but changes neither firmware nor host files. Identityless, foreign, unsupported,
+and PWM reports are rejected. Protocol 2 requires provisioning; protocol 3 can be
+imported only when its generated revision and complete Plamp8 GPIO profile match
+exactly. Add `--apply` without `--provision` to persist that observed validated
+state. If the preview requires provisioning, the last command is the explicit
+mutation that reflashes and resets the selected controller; confirm manual
+switches and connected loads are safe first.
 
 Use `-` instead of `compiled-state.json` to read the complete compiled scheduler state from stdin. Configure sends that state through the shared locked Pico protocol. Upgrade renders the current generic scheduler firmware, seeds both state slots, resets once, and verifies the reconnected report. These commands work while the service is running or stopped and do not contact `plamp-web`. Remote agents can use either the REST CLI or direct CLI over SSH.
 

@@ -155,7 +155,10 @@ def camera_peripheral_options(detected_cameras: list[dict[str, Any]], selected: 
 
 
 def pin_type_options(selected: str | None) -> str:
-    return "".join(option_tag(value, value, selected or "gpio") for value in ["gpio", "pwm"])
+    selected = selected or "gpio"
+    if selected != "gpio":
+        raise ValueError(f"output type must be gpio, got: {selected}")
+    return option_tag("gpio", "gpio", selected)
 
 
 def controller_payload(controller: dict[str, Any]) -> dict[str, Any]:

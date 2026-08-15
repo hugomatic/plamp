@@ -9,7 +9,7 @@ import re
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _SCHEDULE_KINDS = {"cycle", "daily_window", "events"}
-_PIN_TYPES = {"gpio", "pwm"}
+_PIN_TYPES = {"gpio"}
 _CONTROLLER_TYPES = {"pico_scheduler"}
 _DEVICE_TYPES = {"scheduled_output"}
 _DEFAULT_CONTROLLER_TYPE = "pico_scheduler"

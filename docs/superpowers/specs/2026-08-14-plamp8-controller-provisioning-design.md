@@ -101,6 +101,10 @@ This is a protocol compatibility change and therefore advances the firmware
 protocol version. Complete reports include `enabled` alongside the existing ID,
 type, pin, timing, pattern, and current value.
 
+The scheduler supports only `gpio` outputs. Host state, persisted configuration,
+Pico configuration, reports, and UI input reject PWM explicitly; no compatibility
+path converts or migrates it.
+
 For an enabled device, existing scheduler and pulse behavior remains unchanged.
 For a disabled device, the Pico itself must:
 
@@ -303,7 +307,7 @@ Unit and fake-serial coverage must prove:
   phases;
 - import fills the existing serial-matched empty controller instead of creating
   a duplicate;
-- disabled GPIO and PWM outputs are driven to zero, do not advance, remain off
+- disabled GPIO outputs are driven to zero, do not advance, remain off
   after reboot, continue reporting, and reject pulses;
 - enabled outputs retain existing scheduling and pulse behavior;
 - provisioning preserves schedules by pin for the four enabled Plamp8 outputs;

@@ -1273,7 +1273,7 @@ class ConfigApiTests(unittest.TestCase):
                     serial="abc",
                     devices={
                         "pump": self.scheduled_output(21),
-                        "fan": self.scheduled_output(22, output_type="pwm"),
+                        "fan": self.scheduled_output(22),
                         "hidden": self.scheduled_output(23, visibility="hidden"),
                     },
                 )
@@ -1393,31 +1393,26 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(result["channel"], "hidden")
         self.assertEqual(timer_factory.call_args.args[0], 7.1)
 
-    def test_post_controller_channel_pulse_rejects_non_gpio_channel(self):
-        monitor = DummyMonitor("abc")
-        config = {
+    def test_put_config_rejects_pwm_controller_without_rewriting_config(self):
+        proposed = {
             "controllers": {
                 "pump_lights": self.scheduler_controller(
                     serial="abc",
-                    devices={
-                        "fan": self.scheduled_output(22, output_type="pwm"),
-                        "hidden": self.scheduled_output(23, visibility="hidden"),
-                    },
+                    devices={"fan": self.scheduled_output(22, output_type="pwm")},
                 )
             },
             "cameras": {},
         }
         with tempfile.TemporaryDirectory() as tmp:
-            config_file = self.make_config(Path(tmp), config)
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "get_or_start_monitor", return_value=monitor),
-            ):
-                with self.assertRaises(HTTPException):
-                    server.post_controller_channel_pulse("pump_lights", "fan", {"seconds": 5})
-                server.post_controller_channel_pulse("pump_lights", "hidden", {"seconds": 5})
+            original = {"controllers": {}, "cameras": {}}
+            config_file = self.make_config(Path(tmp), original)
+            with patch.object(server, "CONFIG_FILE", config_file):
+                with self.assertRaises(HTTPException) as caught:
+                    server.put_config(proposed)
 
-        self.assertEqual(monitor.sent_commands, ["p 23 5"])
+            self.assertEqual(caught.exception.status_code, 422)
+            self.assertIn("gpio", str(caught.exception.detail))
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), original)
 
     def test_get_controller_serial_log_returns_monitor_ring_buffer(self):
         monitor = DummyMonitor("abc")
@@ -1435,7 +1430,7 @@ class ConfigApiTests(unittest.TestCase):
             "report_every": 1,
             "devices": [
                 {"id": "runtime-lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
-                {"id": "runtime-fan", "type": "pwm", "pin": 3, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
             ],
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -1457,7 +1452,7 @@ class ConfigApiTests(unittest.TestCase):
                         "controllers": {
                             "sprouter": self.scheduler_controller(
                                 serial="abc",
-                                devices={"fan": self.scheduled_output(3, output_type="pwm")},
+                                devices={"fan": self.scheduled_output(3)},
                             )
                         },
                         "cameras": {},
@@ -1483,7 +1478,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "pwm", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
+                        {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
                     ]
                 },
                 "time_format": "12h",

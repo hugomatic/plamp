@@ -158,15 +158,42 @@ class HardwareConfigTests(unittest.TestCase):
             },
         )
 
-    def test_validate_controller_devices_allows_configured_pin_type(self):
-        self.assertEqual(
+    def test_validate_controller_devices_rejects_pwm_output_type(self):
+        with self.assertRaisesRegex(ValueError, "output_type.*gpio"):
             validate_controller_devices(
                 {"dev_1": {"type": "scheduled_output", "config": {"pin": 3, "output_type": "pwm"}}},
                 "ctrl_a",
                 "pico_scheduler",
-            )["dev_1"]["config"]["output_type"],
-            "pwm",
-        )
+            )
+
+    def test_validate_controllers_rejects_pwm_semantic_or_payload_config(self):
+        semantic = {
+            "ctrl_a": {
+                "settings": {
+                    "devices": {"fan": {"pin": 3, "output_type": "pwm"}}
+                }
+            }
+        }
+        payload = {
+            "ctrl_a": {
+                "settings": {"devices": {"fan": {"pin": 3}}},
+                "payload": {
+                    "devices": [
+                        {
+                            "pin": 3,
+                            "type": "pwm",
+                            "enabled": True,
+                            "pattern": [{"val": 1, "dur": 10}],
+                        }
+                    ]
+                },
+            }
+        }
+
+        for config in (semantic, payload):
+            with self.subTest(config=config):
+                with self.assertRaisesRegex(ValueError, "type.*gpio"):
+                    validate_controllers(config)
 
     def test_validate_controller_devices_requires_pico_scheduler_controller(self):
         with self.assertRaisesRegex(ValueError, "pico_scheduler"):

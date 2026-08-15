@@ -3,7 +3,12 @@ import json
 import unittest
 from pathlib import Path
 
-from plamp_web.pages import json_script_text, main_nav, render_api_test_page
+from plamp_web.pages import (
+    json_script_text,
+    main_nav,
+    pin_type_options,
+    render_api_test_page,
+)
 
 
 def static_timer_dashboard(*args, **kwargs) -> str:
@@ -15,6 +20,14 @@ def static_text(name: str) -> str:
 
 
 class PageRenderTests(unittest.TestCase):
+    def test_settings_output_type_is_gpio_only_and_rejects_pwm(self):
+        self.assertEqual(
+            pin_type_options("gpio"),
+            '<option value="gpio" selected>gpio</option>',
+        )
+        with self.assertRaisesRegex(ValueError, "output type.*gpio"):
+            pin_type_options("pwm")
+
     def test_timer_dashboard_names_pico_schedulers_by_role(self):
         html = static_timer_dashboard()
 
@@ -474,7 +487,7 @@ class PageRenderTests(unittest.TestCase):
             {
                 "pump_lights": [
                     {"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "visibility": "visible", "programming": "enabled"},
-                    {"id": "fan", "name": "Fan", "pin": 22, "type": "pwm", "visibility": "visible", "programming": "enabled"},
+                    {"id": "fan", "name": "Fan", "pin": 22, "type": "gpio", "visibility": "visible", "programming": "enabled"},
                     {"id": "hidden", "name": "Hidden", "pin": 23, "type": "gpio", "visibility": "hidden", "programming": "enabled"},
                 ]
             },

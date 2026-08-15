@@ -103,10 +103,13 @@ plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --ap
 `controllers candidates` only enumerates attached Raspberry Pi USB serial/device
 pairs; inspect the output and select the intended serial explicitly. The middle
 command reads that Pico's complete report and emits a read-only JSON preview. It
-does not change firmware or host files. When the preview action is `import`, use
-the same command with `--apply` and no `--provision` to register an already
-provisioned protocol 3 controller without changing its firmware. When the action
-is `provision`, the last command authorizes a reflash and reset of the selected
+does not change firmware or host files. Identityless, foreign, and unsupported
+protocol reports are rejected. Protocol 2 always previews as `provision`.
+Protocol 3 previews as `import` only when its generated revision and complete
+IDs, pins, GPIO types, and enabled flags exactly match the Plamp8 profile. Use
+the same command with `--apply` and no `--provision` to persist that validated
+observed state without changing firmware. When the action is `provision`, the
+last command authorizes a reflash and reset of the selected
 Pico before import. It writes the pre-provision report to
 `$PLAMP_DATA_DIR/controller-backups/<controller>-<serial>-pre-provision.json`;
 verify switches and connected loads are safe first. `--provision` without
@@ -118,6 +121,8 @@ locking and operation budgets. Direct hardware commands may run while the servic
 active because access is serialized through shared locks.
 
 Complete scheduler states and protocol 3 reports require `enabled` on every base
-device. The Pico enforces disabled channels by holding GPIO/PWM output at zero,
-freezing schedule phase, preserving the disabled state across reboot, and rejecting
-GPIO pulses; complete reports still include the disabled device and its zero value.
+device. Only `gpio` is supported; PWM state, reports, and configuration fail
+validation and are never converted. The Pico enforces disabled channels by holding
+GPIO output at zero, freezing schedule phase, preserving the disabled state across
+reboot, and rejecting pulses; complete reports still include the disabled device
+and its zero value.

@@ -18,6 +18,12 @@ def _as_int(value: Any, field: str) -> int:
         raise ValueError(f"{field} must be an integer") from exc
 
 
+def _require_gpio(value: Any, field: str) -> str:
+    if value != "gpio":
+        raise ValueError(f"{field} type must be gpio, got: {value}")
+    return "gpio"
+
+
 def _devices_by_pin(devices: list[dict[str, Any]] | None) -> dict[int, dict[str, Any]]:
     result: dict[int, dict[str, Any]] = {}
     for device in devices or []:
@@ -41,6 +47,9 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
     devices_state = state.get("devices", []) if isinstance(state, dict) else []
     if not isinstance(devices_state, list):
         devices_state = []
+    for index, live_device in enumerate(devices_state):
+        if isinstance(live_device, dict):
+            _require_gpio(live_device.get("type"), f"report device {index}")
     live_by_pin = _devices_by_pin(devices_state)
 
     result: list[dict[str, Any]] = []
@@ -62,17 +71,9 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
             default_editor = "disabled"
         live_device = live_by_pin.get(pin)
         payload_device = payload_by_pin.get(pin)
-        configured_type = device.get("output_type")
-        if configured_type in {"gpio", "pwm"}:
-            event_type = configured_type
-        elif isinstance(live_device, dict):
-            event_type = live_device.get("type", "gpio")
-        elif isinstance(payload_device, dict):
-            event_type = payload_device.get("type", "gpio")
-        else:
-            event_type = "gpio"
-        if event_type not in {"gpio", "pwm"}:
-            event_type = "gpio"
+        event_type = _require_gpio(device.get("output_type", "gpio"), f"device {device_id}")
+        if isinstance(payload_device, dict):
+            _require_gpio(payload_device.get("type"), f"device {device_id} payload")
         live_pin = pin
         if isinstance(live_device, dict):
             try:
@@ -217,7 +218,7 @@ def _resync_unedited_device(device: dict[str, Any], live_device: dict[str, Any] 
 def _new_channel_device(channel: dict[str, Any], channel_id: str) -> dict[str, Any]:
     return {
         "id": channel_id,
-        "type": channel.get("type", "gpio"),
+        "type": _require_gpio(channel.get("type", "gpio"), f"channel {channel_id}"),
         "pin": channel.get("pin"),
         "enabled": channel.get("programming", "enabled") != "disabled",
         "current_t": 0,

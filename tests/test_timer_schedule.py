@@ -64,11 +64,31 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(state["devices"][0]["id"], "pump")
         self.assertEqual(state["devices"][0]["current_t"], 247)
 
+    def test_compile_controller_state_rejects_pwm_channel(self):
+        channels = [{
+            "id": "fan", "pin": 3, "type": "pwm", "programming": "enabled",
+            "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20},
+        }]
+
+        with self.assertRaisesRegex(ValueError, "type.*gpio"):
+            compile_controller_state(channels, report_every=10)
+
+    def test_channel_metadata_rejects_pwm_live_report(self):
+        config = {
+            "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
+                "fan": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "cycle"}}},
+            }}},
+        }
+        state = {"devices": [{"id": "fan", "type": "pwm", "pin": 3}]}
+
+        with self.assertRaisesRegex(ValueError, "report.*type.*gpio"):
+            channel_metadata_for_role("sprouter", config, state)
+
     def test_channel_metadata_uses_configured_devices_for_role(self):
         config = {
             "controllers": {
                 "sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
-                    "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "pwm"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
+                    "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "gpio"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
                     "fan": {"type": "scheduled_output", "config": {"pin": 3}, "settings": {"schedule": {"kind": "cycle", "on_seconds": 300, "off_seconds": 1800, "start_at_seconds": 0, "unit": "minutes"}}},
                 }},
                 "other": {"config": {"pico_serial": "def456"}, "devices": {
@@ -78,7 +98,7 @@ class TimerScheduleTests(unittest.TestCase):
         }
         state = {
             "devices": [
-                {"id": "runtime-lamp", "type": "pwm", "pin": 2},
+                {"id": "runtime-lamp", "type": "gpio", "pin": 2},
                 {"id": "runtime-fan", "type": "gpio", "pin": 3},
                 {"id": "stray", "type": "gpio", "pin": 9},
             ]
@@ -87,22 +107,22 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, state),
             [
-                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
+                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
                 {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 1, "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 1800, "start_at_seconds": 0, "unit": "minutes"}},
             ],
         )
 
-    def test_channel_metadata_uses_configured_type_when_no_live_event_exists(self):
+    def test_channel_metadata_uses_configured_gpio_when_no_live_event_exists(self):
         config = {
             "controllers": {"sprouter": {"config": {"pico_serial": "abc123"}, "devices": {
-                "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "pwm"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
+                "lamp": {"type": "scheduled_output", "config": {"pin": 2, "output_type": "gpio"}, "settings": {"schedule": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}},
             }}},
         }
 
         self.assertEqual(
             channel_metadata_for_role("sprouter", config, {"devices": []}),
             [
-                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "pwm", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
+                {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}},
             ],
         )
 
@@ -252,7 +272,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["devices"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
 
     def test_patch_channel_schedule_rejects_pin_match_with_wrong_type(self):
-        state = {"report_every": 1, "devices": [{"id": "other", "type": "pwm", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        state = {"report_every": 1, "devices": [{"id": "other", "type": "relay", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):

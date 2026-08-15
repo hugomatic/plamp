@@ -77,10 +77,15 @@ plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --ap
 opening a candidate. Inspect the returned serials and pass the intended hardware
 serial explicitly. The middle command obtains one complete report from only that
 serial and returns a read-only JSON preview; it changes neither Pico firmware nor
-host files. If the preview action is `import`, register the already provisioned
-protocol 3 controller with `--apply` but without `--provision`. If the action is
-`provision`, the last command is the explicit destructive authorization: it saves
-the pre-provision report under
+host files. Reports without firmware identity, foreign firmware families, and
+protocols other than scheduler protocol 2 or 3 are rejected. Protocol 2 always
+requires provisioning. Protocol 3 is importable only when its revision is the
+current generated scheduler revision and every ID, GPIO pin, type, enabled flag,
+and required state field exactly matches the Plamp8 profile; other valid profile
+states require provisioning. If the preview action is `import`, register that
+validated observed state with `--apply` but without `--provision`. If the action
+is `provision`, the last command is the explicit destructive authorization: it
+saves the pre-provision report under
 `$PLAMP_DATA_DIR/controller-backups/<controller>-<serial>-pre-provision.json`,
 reflashes and resets the selected Pico, verifies the resulting protocol 3 report,
 and then imports it. Confirm manual switches and connected loads are safe before
@@ -103,8 +108,8 @@ The web pages are replaceable REST/SSE clients, not the source of domain behavio
 
 The scheduler generator renders one generic `main.py` for a firmware source
 revision. Controller identity, pins, devices, and schedules are not compiled
-into it. Its build-time options are `loop_sleep_ms` (default `20`) and
-`pwm_freq` (default `1000`); automatic rendering uses those defaults.
+into it. Its only build-time option is `loop_sleep_ms` (default `20`);
+automatic rendering uses that default.
 
 Schedule changes send and verify one complete persistent runtime state. A
 legacy or outdated Pico is upgraded once during the next mutating schedule
@@ -112,11 +117,13 @@ transaction, using the committed state before applying the proposal. Read-only
 reports never upgrade firmware, and ordinary schedule changes do not reset USB.
 
 Scheduler protocol 3 persists and reports each base device's required `enabled`
-state. The Pico itself enforces disabled outputs: GPIO and PWM are driven to zero,
-their schedule phase does not advance, the state remains disabled after reboot,
-and GPIO pulse requests are rejected. Disabling a channel with an active pulse
-cancels that overlay and drives the output off immediately. Disabled base devices
-remain present in complete reports with `enabled: false` and `current_value: 0`.
+state. Scheduler state and controller configuration accept only `gpio`; a PWM
+state, report, or configuration is rejected and is never converted or migrated.
+The Pico itself enforces disabled GPIO outputs by driving them to zero, freezing
+their schedule phase, preserving the disabled state after reboot, and rejecting
+pulse requests. Disabling a channel with an active pulse cancels that overlay and
+drives the output off immediately. Disabled base devices remain present in
+complete reports with `enabled: false` and `current_value: 0`.
 
 `pico_scheduler` is the only implemented firmware family. Dosing pumps attached
 to Plamp8 use bounded GPIO pulses requested by a human, host algorithm, or

@@ -46,13 +46,16 @@ class PicoSchedulerGeneratorTests(unittest.TestCase):
             {"firmware_revision", "options"},
         )
 
-    def test_options_are_rendered_into_generic_runtime(self) -> None:
+    def test_gpio_only_options_are_rendered_into_generic_runtime(self) -> None:
         text = generate_main_py(
-            firmware_revision="rev", options=GeneratorOptions(loop_sleep_ms=25, pwm_freq=700)
+            firmware_revision="rev", options=GeneratorOptions(loop_sleep_ms=25)
         )
 
         self.assertIn("LOOP_SLEEP_MS = 25", text)
-        self.assertIn("PWM_FREQ = 700", text)
+        self.assertNotIn("PWM", text)
+        self.assertEqual(
+            set(inspect.signature(GeneratorOptions).parameters), {"loop_sleep_ms"}
+        )
 
 
 if __name__ == "__main__":

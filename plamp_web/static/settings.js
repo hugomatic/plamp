@@ -140,10 +140,12 @@
     row.dataset.deviceController = controllerId;
     row.dataset.deviceEditorJson = JSON.stringify(device?.editor || {});
     const mode = editorMode(device || {});
+    const outputType = device?.output_type || "gpio";
+    if (outputType !== "gpio") throw new Error(`Channel ${deviceId || "(new)"} output type must be gpio`);
     row.append(
       cell(input("device-id", deviceId, {placeholder: "pump"})),
       cell(input("device-pin", device?.pin, {type: "number", min: 0, max: 29})),
-      cell(selectWithOptions("device-type", [["gpio", "gpio"], ["pwm", "pwm"]], device?.output_type || "gpio")),
+      cell(selectWithOptions("device-type", [["gpio", "gpio"]], outputType)),
       cell(selectWithOptions("device-editor", [["cycle", "cycle"], ["clock_window", "clock_window"], ["disabled", "disabled"], ["hidden", "hidden"]], mode)),
     );
     return row;

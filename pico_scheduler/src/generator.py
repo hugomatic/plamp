@@ -11,7 +11,6 @@ TEMPLATES_DIR = Path(__file__).with_name("templates")
 @dataclass(frozen=True)
 class GeneratorOptions:
     loop_sleep_ms: int = 20
-    pwm_freq: int = 1000
 
 
 def _template(name: str) -> str:
@@ -25,5 +24,4 @@ def generate_main_py(
         firmware_revision=json.dumps(firmware_revision),
         firmware_protocol=3,
         loop_sleep_ms=options.loop_sleep_ms,
-        pwm_freq=options.pwm_freq,
     ).rstrip() + "\n"

@@ -39,7 +39,7 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
         if not required <= set(source):
             raise ValueError(f"device {index} has invalid fields")
         device_type = source["type"]
-        if device_type not in {"gpio", "pwm"}:
+        if device_type != "gpio":
             raise ValueError(f"device {index} has unsupported type: {device_type}")
         pin = _integer(source["pin"], f"device {index} pin", minimum=0, maximum=29)
         if pin in pins:
@@ -60,8 +60,7 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
         for step_index, source_step in enumerate(source["pattern"]):
             if not isinstance(source_step, dict) or set(source_step) != {"val", "dur"}:
                 raise ValueError(f"device {index} pattern {step_index} must contain val and dur")
-            maximum = 1 if device_type == "gpio" else 65535
-            value = _integer(source_step["val"], f"device {index} pattern {step_index} val", minimum=0, maximum=maximum)
+            value = _integer(source_step["val"], f"device {index} pattern {step_index} val", minimum=0, maximum=1)
             duration = _integer(source_step["dur"], f"device {index} pattern {step_index} dur", minimum=1)
             pattern.append({"val": value, "dur": duration})
         item = {"type": device_type, "pin": pin, "enabled": enabled, "current_t": current_t,

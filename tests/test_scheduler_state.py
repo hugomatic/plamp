@@ -35,6 +35,12 @@ class SchedulerStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "enabled must be a boolean"):
             normalize_scheduler_state({"devices": [device]})
 
+    def test_rejects_pwm_state_instead_of_converting_it(self):
+        device = dict(STATE["devices"][0], type="pwm")
+
+        with self.assertRaisesRegex(ValueError, "unsupported type: pwm"):
+            normalize_scheduler_state({"devices": [device]})
+
     def test_reads_firmware_identity_from_report(self):
         report = {"type": "report", "content": {
             "firmware": {"name": "pico_scheduler", "revision": "abc1234", "protocol": 3},

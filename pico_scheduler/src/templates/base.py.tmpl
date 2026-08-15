@@ -3,7 +3,7 @@ import select
 import sys
 import time
 import ujson as json
-from machine import Pin, PWM
+from machine import Pin
 
 FIRMWARE_NAME = "pico_scheduler"
 FIRMWARE_REVISION = {firmware_revision}
@@ -11,7 +11,6 @@ FIRMWARE_PROTOCOL = {firmware_protocol}
 STATE_PATHS = ("/plamp_state_a.json", "/plamp_state_b.json")
 MAX_COMMAND_BYTES = 16384
 LOOP_SLEEP_MS = {loop_sleep_ms}
-PWM_FREQ = {pwm_freq}
 
 devices = []
 active_generation = 0
@@ -44,7 +43,7 @@ def normalize_state(raw):
         if set(source) - allowed or not required <= set(source):
             raise ValueError("device %s has invalid fields" % index)
         device_type = source["type"]
-        if device_type not in ("gpio", "pwm"):
+        if device_type != "gpio":
             raise ValueError("device %s has unsupported type: %s" % (index, device_type))
         pin = _integer(source["pin"], "device %s pin" % index, 0, 29)
         if pin in pins:
@@ -69,8 +68,7 @@ def normalize_state(raw):
         for step_index, source_step in enumerate(source_pattern):
             if not isinstance(source_step, dict) or set(source_step) != {{"val", "dur"}}:
                 raise ValueError("device %s pattern %s must contain val and dur" % (index, step_index))
-            value_max = 1 if device_type == "gpio" else 65535
-            value = _integer(source_step["val"], "device %s pattern %s val" % (index, step_index), 0, value_max)
+            value = _integer(source_step["val"], "device %s pattern %s val" % (index, step_index), 0, 1)
             duration = _integer(source_step["dur"], "device %s pattern %s dur" % (index, step_index), 1)
             pattern.append({{"val": value, "dur": duration}})
         item = {{
@@ -139,16 +137,11 @@ def build_outputs(state):
     for source in state["devices"]:
         output = None
         for active in devices:
-            if (not active.get("overlay") and active["type"] == source["type"]
-                    and active["pin"] == source["pin"]):
+            if not active.get("overlay") and active["pin"] == source["pin"]:
                 output = active["output"]
                 break
         if output is None:
-            if source["type"] == "gpio":
-                output = Pin(source["pin"], Pin.OUT)
-            else:
-                output = PWM(Pin(source["pin"]))
-                output.freq(PWM_FREQ)
+            output = Pin(source["pin"], Pin.OUT)
         device = {{
             "type": source["type"],
             "pin": source["pin"],
@@ -168,13 +161,7 @@ def build_outputs(state):
 
 
 def retire_output(device):
-    if device["type"] == "gpio":
-        device["output"].value(0)
-        return
-    device["output"].duty_u16(0)
-    deinit = getattr(device["output"], "deinit", None)
-    if deinit is not None:
-        deinit()
+    device["output"].value(0)
 
 
 def replace_devices(replacement):
@@ -258,10 +245,7 @@ def apply():
                 if cycle_t < elapsed:
                     value = step["val"]
                     break
-        if device["type"] == "gpio":
-            device["output"].value(value)
-        else:
-            device["output"].duty_u16(value)
+        device["output"].value(value)
         if device["last_value"] != value:
             device["last_value"] = value
             changed = True
@@ -271,10 +255,6 @@ def apply():
 def configure(content):
     try:
         normalized = normalize_state(content)
-        proposed_types = {{device["pin"]: device["type"] for device in normalized["devices"]}}
-        for device in devices:
-            if device.get("overlay") and proposed_types.get(device["pin"], "gpio") != "gpio":
-                raise ValueError("cannot change active pulse pin %s from gpio to pwm" % device["pin"])
         persist_state(normalized)
         replacement = build_outputs(normalized)
         replace_devices(replacement)

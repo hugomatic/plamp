@@ -16,6 +16,7 @@
 - Firmware/output mutation requires both `--provision` and `--apply` in the direct CLI and an explicit web confirmation.
 - Use the exact Plamp8 mapping: GP21 `ph_up` disabled, GP20 `ph_down` disabled, GP19 `agitator` disabled, GP18 `nutrients` disabled, GP17 `pump` enabled, GP16 `fan` enabled, GP15 `lights_1` enabled, GP14 `lights_2` enabled.
 - Disabled means Pico-enforced logical `0`, no schedule advancement, continued full reporting, persistence across reboot, and pulse rejection.
+- The scheduler accepts only `gpio`; PWM state, configuration, reports, firmware paths, and UI options are rejected or removed without migration.
 - Device IDs are lowercase snake case and are the only channel names; user-facing text replaces underscores with spaces and uppercases the first character.
 - Remove only scheduled-device labels. Controller and camera labels remain.
 - The Settings heading is exactly **Plamp Pico relay controllers**; `pico_scheduler` remains a diagnostics/protocol name.
@@ -231,7 +232,7 @@ def gpio(pin=2, value=1, current_t=0, *, enabled=True):
     }
 ```
 
-Add `enabled: True` to PWM fixtures.
+Remove obsolete positive-PWM fixtures; keep explicit GPIO-only rejection coverage.
 
 - [ ] **Step 2: Write failing disabled-runtime tests**
 
@@ -277,7 +278,7 @@ def test_disabling_pin_cancels_active_pulse_and_turns_it_off(self):
     self.assertEqual(firmware.pins[2].value(), 0)
 ```
 
-Add equivalent PWM-off and boot-from-disabled-state assertions.
+Add boot-from-disabled-GPIO state assertions.
 
 - [ ] **Step 3: Run firmware tests and verify RED**
 
@@ -959,7 +960,7 @@ Require protocol 3, IDs/pins matching the canonical table, GP21–GP18 `enabled:
 - [ ] Preview is read-only in web and direct CLI.
 - [ ] Provisioning requires explicit mutation authorization.
 - [ ] Complete reports require and include `enabled`.
-- [ ] Disabled GPIO/PWM channels remain off, frozen, reported, reboot-safe, and unpulseable.
+- [ ] Disabled GPIO channels remain off, frozen, reported, reboot-safe, and unpulseable.
 - [ ] Plamp8 IDs, pins, and initial enabled states exactly match the approved table.
 - [ ] Existing enabled schedules are preserved by pin during provisioning.
 - [ ] Import fills the existing empty `plamp8` controller and sends no mutating command.

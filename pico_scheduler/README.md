@@ -6,10 +6,10 @@ options, every controller receives the same application.
 
 ## Generation
 
-The generator accepts a firmware revision and two build-time options:
+The generator accepts a firmware revision and one build-time option:
 
 ```python
-GeneratorOptions(loop_sleep_ms=20, pwm_freq=1000)
+GeneratorOptions(loop_sleep_ms=20)
 ```
 
 All inputs that can change the rendered application live under `src/`. The
@@ -28,7 +28,7 @@ persistent state slots and verifies the report after reset.
 
 Generated firmware:
 
-- runs GPIO and PWM schedules without the host;
+- runs GPIO schedules without the host and rejects every non-`gpio` output type;
 - stays silent during routine schedule transitions;
 - answers `r` with one newline-delimited JSON report;
 - accepts one complete JSON `configure` document, persists it in alternating
