@@ -1,8 +1,14 @@
 """Pure Plamp8 controller-profile conversion helpers."""
 
 from dataclasses import asdict, dataclass
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from plamp.config import ConfigError, atomic_write_json, load_config, save_config
+from plamp.locks import exclusive_lock
+from plamp.pico_commands import upgrade_scheduler
+from plamp.pico_transport import request_report
 from plamp.scheduler_state import FirmwareIdentity, firmware_identity, normalize_scheduler_state
 
 
@@ -161,3 +167,110 @@ def preview_controller_add(
         "before": _channel_rows(before),
         "after": _channel_rows(after),
     }
+
+
+_PLAMP8_IDENTITY = FirmwareIdentity("pico_scheduler", "plamp8", 3)
+
+
+def _result(preview: dict[str, Any], *, applied: bool, recovery_path: Path | None) -> dict[str, Any]:
+    provisioned = preview["action"] == "provision"
+    return {
+        **preview,
+        "hardware_changed": applied and provisioned,
+        "host_config_changed": applied,
+        "reset": applied and provisioned,
+        "verified": applied,
+        "recovery_path": None if recovery_path is None else str(recovery_path),
+    }
+
+
+def _merged_controller_config(
+    config: dict[str, Any], controller_id: str, pico_serial: str, report: dict[str, Any]
+) -> dict[str, Any]:
+    controllers = config.get("controllers")
+    if not isinstance(controllers, dict):
+        raise ConfigError("controllers must be a mapping")
+    existing = controllers.get(controller_id)
+    for existing_id, controller in controllers.items():
+        payload = controller.get("payload") if isinstance(controller, dict) else None
+        serial = payload.get("pico_serial") if isinstance(payload, dict) else None
+        if serial == pico_serial and existing_id != controller_id:
+            raise ConfigError(f"serial already assigned to controller: {existing_id}")
+    if existing is not None:
+        payload = existing.get("payload") if isinstance(existing, dict) else None
+        serial = payload.get("pico_serial") if isinstance(payload, dict) else None
+        devices = existing.get("settings", {}).get("devices") if isinstance(existing, dict) else None
+        if serial != pico_serial or not isinstance(devices, dict) or devices:
+            raise ConfigError(f"controller already has a configuration: {controller_id}")
+    updated = dict(config)
+    updated_controllers = dict(controllers)
+    updated_controllers[controller_id] = controller_config_from_report(pico_serial, report)
+    updated["controllers"] = updated_controllers
+    return updated
+
+
+def _upgrade_report(result: dict[str, Any]) -> dict[str, Any]:
+    report = result.get("report") if isinstance(result, dict) else None
+    if not isinstance(report, dict):
+        raise ConfigError("controller provisioning verification report is missing")
+    return report
+
+
+def add_controller(
+    controller_id: str,
+    pico_serial: str,
+    profile_id: str,
+    *,
+    apply: bool,
+    allow_provision: bool,
+    config_file: Path,
+    data_dir: Path,
+    repo_root: Path,
+    lock_dir: Path,
+    timeout: float,
+    report_func: Callable[..., dict[str, Any]] = request_report,
+    upgrade_func: Callable[..., dict[str, Any]] = upgrade_scheduler,
+) -> dict[str, Any]:
+    """Preview or explicitly import a single Plamp8 controller report."""
+    if profile_id != "plamp8":
+        raise ConfigError(f"unsupported controller profile: {profile_id}")
+    report = report_func(pico_serial, lock_dir=lock_dir, timeout=timeout)
+    preview = preview_controller_add(controller_id, pico_serial, report, _PLAMP8_IDENTITY)
+    if not apply:
+        return _result(preview, applied=False, recovery_path=None)
+    if preview["action"] == "provision" and not allow_provision:
+        raise ConfigError("controller requires explicit --provision")
+
+    imported_report = report
+    recovery_path = None
+    if preview["action"] == "provision":
+        # Avoid mutating a controller that cannot be represented in host config.
+        with exclusive_lock(lock_dir / "config.lock", timeout=timeout):
+            _merged_controller_config(load_config(config_file), controller_id, pico_serial, report)
+        recovery_path = data_dir / "controller-backups" / f"{controller_id}-{pico_serial}-pre-provision.json"
+        atomic_write_json(recovery_path, report)
+        upgraded = upgrade_func(
+            pico_serial,
+            provisioned_plamp8_state(report),
+            lock_dir=lock_dir,
+            timeout=timeout,
+            repo_root=repo_root,
+            data_dir=data_dir,
+        )
+        imported_report = _upgrade_report(upgraded)
+        verified_preview = preview_controller_add(
+            controller_id, pico_serial, imported_report, _PLAMP8_IDENTITY
+        )
+        if verified_preview["action"] != "import":
+            raise ConfigError("controller provisioning verification failed")
+
+    with exclusive_lock(lock_dir / "config.lock", timeout=timeout):
+        save_config(
+            config_file,
+            _merged_controller_config(load_config(config_file), controller_id, pico_serial, imported_report),
+        )
+        atomic_write_json(
+            data_dir / "timers" / f"{controller_id}.json",
+            provisioned_plamp8_state(imported_report),
+        )
+    return _result(preview, applied=True, recovery_path=recovery_path)

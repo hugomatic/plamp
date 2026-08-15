@@ -31,26 +31,29 @@ def load_config(config_file: Path) -> dict[str, Any]:
     return _validated_complete_config(config)
 
 
-def save_config(config_file: Path, config: Any) -> dict[str, Any]:
-    validated = _validated_complete_config(config)
-
-    config_file.parent.mkdir(parents=True, exist_ok=True)
+def atomic_write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
-        dir=config_file.parent,
-        prefix=f".{config_file.name}.",
+        dir=path.parent,
+        prefix=f".{path.name}.",
         text=True,
     )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            json.dump(validated, output, indent=2)
+            json.dump(value, output, indent=2)
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, config_file)
+        os.replace(temporary, path)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def save_config(config_file: Path, config: Any) -> dict[str, Any]:
+    validated = _validated_complete_config(config)
+    atomic_write_json(config_file, validated)
     return validated
 
 

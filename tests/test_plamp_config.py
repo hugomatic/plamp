@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from plamp.config import ConfigError, load_config, save_config
+from plamp.config import ConfigError, atomic_write_json, load_config, save_config
 
 
 class ConfigFileTests(unittest.TestCase):
@@ -68,6 +68,16 @@ class ConfigFileTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text(encoding="utf-8")), saved)
             self.assertTrue(path.read_text(encoding="utf-8").endswith("\n"))
             self.assertEqual(list(path.parent.glob(".config.json.*")), [])
+
+    def test_atomic_write_json_saves_non_config_runtime_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "timers" / "plamp8.json"
+            state = {"devices": [{"id": "pump", "pin": 17}]}
+
+            atomic_write_json(path, state)
+
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), state)
+            self.assertEqual(list(path.parent.glob(".plamp8.json.*")), [])
 
 
 if __name__ == "__main__":

@@ -62,6 +62,15 @@ def build_parser() -> argparse.ArgumentParser:
     camera_actions = camera.add_subparsers(dest="action", required=True)
     capture = camera_actions.add_parser("capture")
     capture.add_argument("camera_id")
+    controllers = areas.add_parser("controllers")
+    controller_actions = controllers.add_subparsers(dest="action", required=True)
+    controller_actions.add_parser("candidates")
+    add = controller_actions.add_parser("add")
+    add.add_argument("controller")
+    add.add_argument("--serial", required=True)
+    add.add_argument("--profile", choices=("plamp8",), required=True)
+    add.add_argument("--apply", action="store_true")
+    add.add_argument("--provision", action="store_true")
     return parser
 
 
@@ -77,6 +86,8 @@ def main(
     camera_capture_func: Callable[..., dict[str, Any]] | None = None,
     configure_func: Callable[..., dict[str, Any]] | None = None,
     upgrade_func: Callable[..., dict[str, Any]] | None = None,
+    add_controller_func: Callable[..., dict[str, Any]] | None = None,
+    discover_picos_func: Callable[[], list[Any]] | None = None,
     cad_generate_func: Callable[..., Any] = generate_plan,
     cad_list_runs_func: Callable[..., Any] = list_runs,
     cad_load_run_func: Callable[..., Any] = load_run,
@@ -100,8 +111,10 @@ def main(
             },
         )
     from plamp.camera import CameraError, capture_camera
+    from plamp.controller_add import add_controller
     from plamp.locks import LockTimeout
     from plamp.pico_commands import configure_scheduler, upgrade_scheduler
+    from plamp.pico_discovery import discover_picos
     from plamp.pico_transport import (
         PicoCommandError,
         PicoFlashError,
@@ -117,6 +130,8 @@ def main(
     camera_capture_func = camera_capture_func or capture_camera
     configure_func = configure_func or configure_scheduler
     upgrade_func = upgrade_func or upgrade_scheduler
+    add_controller_func = add_controller_func or add_controller
+    discover_picos_func = discover_picos_func or discover_picos
     lock_dir = args.lock_dir or context.lock_dir
     try:
         if args.area == "context":
@@ -156,6 +171,27 @@ def main(
                 config_file=context.config_file,
                 capture_kind="manual",
             )
+        elif args.area == "controllers":
+            if args.action == "candidates":
+                result = [
+                    {"serial": candidate.serial, "device": candidate.device}
+                    for candidate in discover_picos_func()
+                ]
+            else:
+                if args.provision and not args.apply:
+                    raise ConfigError("--provision requires --apply")
+                result = add_controller_func(
+                    args.controller,
+                    args.serial,
+                    args.profile,
+                    apply=args.apply,
+                    allow_provision=args.provision,
+                    config_file=context.config_file,
+                    data_dir=context.data_dir,
+                    repo_root=context.root,
+                    lock_dir=lock_dir,
+                    timeout=args.timeout,
+                )
         else:
             state = None
             if args.action in {"configure", "upgrade"}:

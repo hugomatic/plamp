@@ -1,10 +1,11 @@
 from importlib import import_module
 
-__all__ = ["CameraError", "EXPECTED_FIRMWARE_PROTOCOL", "FirmwareIdentity", "LockTimeout", "PicoClient", "PicoCommandError", "PicoExchange", "PicoFlashError", "PicoHealth", "PicoHealthError", "PicoOperation", "PicoReportTimeout", "PicoUnavailable", "SchedulerApplyResult", "apply_scheduler_state", "capture_camera", "failed_health", "firmware_identity", "firmware_revision", "normalize_scheduler_state", "probe_pico", "pulse_gpio", "render_scheduler_firmware", "report_matches_state", "request_report"]
+__all__ = ["CameraError", "EXPECTED_FIRMWARE_PROTOCOL", "FirmwareIdentity", "LockTimeout", "PicoClient", "PicoCommandError", "PicoExchange", "PicoFlashError", "PicoHealth", "PicoHealthError", "PicoOperation", "PicoReportTimeout", "PicoUnavailable", "SchedulerApplyResult", "add_controller", "apply_scheduler_state", "capture_camera", "failed_health", "firmware_identity", "firmware_revision", "normalize_scheduler_state", "probe_pico", "pulse_gpio", "render_scheduler_firmware", "report_matches_state", "request_report"]
 
 _EXPORT_MODULES = {
     "CameraError": "plamp.camera",
     "capture_camera": "plamp.camera",
+    "add_controller": "plamp.controller_add",
     "LockTimeout": "plamp.locks",
     "firmware_revision": "plamp.pico_firmware",
     "render_scheduler_firmware": "plamp.pico_firmware",

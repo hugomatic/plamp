@@ -10,6 +10,7 @@ from unittest.mock import patch
 from plamp.cli import build_parser, main
 from plamp.config import ConfigError, controller_pico_serial
 from plamp.pico_transport import PicoFlashError
+from plamp.pico_discovery import PicoPort
 
 
 STATE = {
@@ -59,6 +60,87 @@ class DirectCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = self.write_config(Path(tmp))
             self.assertEqual(controller_pico_serial(path, "tower"), "PICO-A")
+
+    def test_controllers_add_previews_with_explicit_read_only_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            calls = []
+
+            def fake_add(controller, serial, profile, **kwargs):
+                calls.append({"controller": controller, "serial": serial, "profile": profile, **kwargs})
+                return {"action": "provision", "serial": serial}
+
+            rc = main(
+                ["controllers", "add", "plamp8", "--serial", "PICO-A", "--profile", "plamp8"],
+                env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                add_controller_func=fake_add,
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertFalse(calls[0]["apply"])
+            self.assertFalse(calls[0]["allow_provision"])
+            self.assertEqual(calls[0]["config_file"], root.resolve() / "config.json")
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertEqual(json.loads(stdout.getvalue())["action"], "provision")
+            self.assertEqual(stdout.getvalue(), '{"action": "provision", "serial": "PICO-A"}\n')
+
+    def test_controllers_add_passes_apply_and_provision_only_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calls = []
+            fake_add = lambda *args, **kwargs: calls.append(kwargs) or {"action": "import"}
+
+            rc = main(
+                ["controllers", "add", "plamp8", "--serial", "PICO-A", "--profile", "plamp8", "--apply"],
+                env=self.runtime_env(root), stdout=io.StringIO(), stderr=io.StringIO(),
+                add_controller_func=fake_add,
+            )
+            self.assertEqual(rc, 0)
+            self.assertTrue(calls[0]["apply"])
+            self.assertFalse(calls[0]["allow_provision"])
+
+            rc = main(
+                ["controllers", "add", "plamp8", "--serial", "PICO-A", "--profile", "plamp8", "--apply", "--provision"],
+                env=self.runtime_env(root), stdout=io.StringIO(), stderr=io.StringIO(),
+                add_controller_func=fake_add,
+            )
+            self.assertEqual(rc, 0)
+            self.assertTrue(calls[1]["apply"])
+            self.assertTrue(calls[1]["allow_provision"])
+
+    def test_controllers_add_rejects_provision_without_apply_before_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calls = []
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            rc = main(
+                ["controllers", "add", "plamp8", "--serial", "PICO-A", "--profile", "plamp8", "--provision"],
+                env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                add_controller_func=lambda *args, **kwargs: calls.append((args, kwargs)),
+            )
+
+            self.assertEqual(rc, 2)
+            self.assertEqual(calls, [])
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("--provision requires --apply", stderr.getvalue())
+
+    def test_controllers_candidates_uses_injected_usb_discovery_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            calls = []
+
+            rc = main(
+                ["controllers", "candidates"], env=self.runtime_env(root), stdout=stdout, stderr=stderr,
+                discover_picos_func=lambda: calls.append("discover") or [PicoPort("PICO-B", "/dev/ttyACM1")],
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls, ["discover"])
+            self.assertEqual(json.loads(stdout.getvalue()), [{"device": "/dev/ttyACM1", "serial": "PICO-B"}])
+            self.assertEqual(stderr.getvalue(), "")
 
     def test_unknown_controller_is_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
