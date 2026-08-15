@@ -9,6 +9,7 @@
   let detectedCameras = [];
   let configuredControllers = {};
   let repoRootPath = "";
+  const removedControllerKeys = new Set();
 
   function cleanObject(value) {
     const result = {};
@@ -177,6 +178,19 @@
       addButton.addEventListener("click", () => previewControllerAdd(controllerId, serial));
       block.append(addButton);
     }
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "Remove controller";
+    removeButton.addEventListener("click", () => {
+      const confirmed = window.confirm(
+        `Remove controller ${controllerId}? This will unregister it from Plamp but does not stop, reset, or contact the Pico.`,
+      );
+      if (!confirmed) return;
+      removedControllerKeys.add(controllerId);
+      block.remove();
+      document.getElementById("controllers-status").textContent = "Controller removed from this form. Select Save controllers to persist.";
+    });
+    block.append(removeButton);
     return block;
   }
 
@@ -367,6 +381,7 @@
 
   function collectControllers() {
     const result = structuredClone(configuredControllers);
+    for (const controllerId of removedControllerKeys) delete result[controllerId];
     for (const row of document.querySelectorAll(".controller-row")) {
       const key = row.querySelector(".controller-id").value.trim();
       if (!key) continue;

@@ -148,6 +148,19 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="save-devices"', html)
         self.assertIn('id="save-cameras"', html)
 
+    def test_settings_controller_removal_is_confirmed_and_saved_only_with_controllers(self):
+        script = static_text("settings.js")
+
+        self.assertIn("Remove controller", script)
+        self.assertIn("unregister it from Plamp", script)
+        self.assertIn("does not stop, reset, or contact the Pico", script)
+        self.assertIn("removedControllerKeys.add(controllerId)", script)
+        self.assertIn("block.remove()", script)
+        self.assertIn("for (const controllerId of removedControllerKeys) delete result[controllerId]", script)
+        self.assertIn("Select Save controllers to persist", script)
+        self.assertNotIn("/remove", script)
+        self.assertNotIn("DELETE", script)
+
     def test_settings_static_client_renders_zero_channel_controllers_and_preserves_camera_matching(self):
         html = static_text("settings.html")
         script = static_text("settings.js")
