@@ -92,6 +92,30 @@ class HardwareConfigTests(unittest.TestCase):
             {"ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 30, "devices": []}, "settings": {"devices": {}}}},
         )
 
+    def test_semantic_devices_compile_enabled_and_disabled_payloads(self):
+        controller = validate_controllers({
+            "ctrl_a": {"settings": {"devices": {
+                "pump": {
+                    "pin": 2,
+                    "programming": "enabled",
+                    "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20},
+                },
+                "lights": {
+                    "pin": 3,
+                    "programming": "disabled",
+                    "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1},
+                },
+            }}},
+        })["ctrl_a"]
+
+        self.assertEqual(
+            controller["payload"]["devices"],
+            [
+                {"pin": 2, "type": "gpio", "enabled": True, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]},
+                {"pin": 3, "type": "gpio", "enabled": False, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]},
+            ],
+        )
+
     def test_validate_controllers_rejects_unimplemented_doser_type(self):
         with self.assertRaisesRegex(ValueError, "type must be one of"):
             validate_controllers({"doser_a": {"type": "pico_doser"}})
@@ -369,7 +393,7 @@ class HardwareConfigTests(unittest.TestCase):
                     "type": "pico_scheduler",
                     "payload": {
                         "report_every": 10,
-                        "devices": [{"pin": 3, "type": "gpio", "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                        "devices": [{"pin": 3, "type": "gpio", "enabled": True, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
                     },
                     "settings": {
                         "devices": {

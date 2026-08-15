@@ -177,7 +177,7 @@ class ConfigApiTests(unittest.TestCase):
         )
 
     def scheduler_apply_result(self, *, upgraded: bool = False):
-        identity = server.FirmwareIdentity("pico_scheduler", "newrev", 2)
+        identity = server.FirmwareIdentity("pico_scheduler", "newrev", 3)
         return SimpleNamespace(
             report={"type": "report", "content": {"firmware": server.identity_payload(identity), "devices": []}},
             port="/dev/ttyACM0", upgraded=upgraded, previous_identity=None,
@@ -447,6 +447,7 @@ class ConfigApiTests(unittest.TestCase):
                     {
                         "pin": 3,
                         "type": "gpio",
+                        "enabled": True,
                         "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
                     }
                 ],
@@ -521,6 +522,7 @@ class ConfigApiTests(unittest.TestCase):
                         {
                             "pin": 3,
                             "type": "gpio",
+                            "enabled": True,
                             "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
                         }
                     ],
@@ -582,7 +584,7 @@ class ConfigApiTests(unittest.TestCase):
                             "type": "pico_scheduler",
                             "payload": {
                                 "report_every": 10,
-                                "devices": [{"pin": 3, "type": "gpio", "pattern": []}],
+                                "devices": [{"pin": 3, "type": "gpio", "enabled": True, "pattern": []}],
                             },
                             "settings": {"devices": {}},
                         }
@@ -601,8 +603,8 @@ class ConfigApiTests(unittest.TestCase):
                             "payload": {
                                 "report_every": 10,
                                 "devices": [
-                                    {"pin": 3, "type": "gpio", "pattern": []},
-                                    {"pin": 3, "type": "gpio", "pattern": []},
+                                    {"pin": 3, "type": "gpio", "enabled": True, "pattern": []},
+                                    {"pin": 3, "type": "gpio", "enabled": True, "pattern": []},
                                 ],
                             },
                             "settings": {
@@ -674,7 +676,7 @@ class ConfigApiTests(unittest.TestCase):
                 json.dumps(
                     {
                         "report_every": 10,
-                        "devices": [{"type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                        "devices": [{"type": "gpio", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
                     }
                 ),
                 encoding="utf-8",
@@ -704,7 +706,7 @@ class ConfigApiTests(unittest.TestCase):
                 with self.assertRaises(HTTPException) as raised:
                     server.put_controller(
                         "pump_lights",
-                        {"devices": [{"id": "new", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]},
+                        {"devices": [{"id": "new", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]},
                     )
 
             self.assertEqual(state_path.read_bytes(), original)
@@ -1044,6 +1046,7 @@ class ConfigApiTests(unittest.TestCase):
                     "id": "test_pin",
                     "type": "gpio",
                     "pin": 25,
+                    "enabled": True,
                     "current_t": 3,
                     "reschedule": 1,
                     "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1144,6 +1147,7 @@ class ConfigApiTests(unittest.TestCase):
                                 "id": "pump",
                                 "type": "gpio",
                                 "pin": 2,
+                                "enabled": True,
                                 "current_t": 0,
                                 "reschedule": 1,
                                 "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1160,6 +1164,7 @@ class ConfigApiTests(unittest.TestCase):
                         "id": "pump",
                         "type": "gpio",
                         "pin": 2,
+                        "enabled": True,
                         "current_t": 5,
                         "reschedule": 1,
                         "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1359,8 +1364,8 @@ class ConfigApiTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "devices": [
-                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
-                {"id": "runtime-fan", "type": "pwm", "pin": 3, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-fan", "type": "pwm", "pin": 3, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1000, "dur": 10}, {"val": 0, "dur": 50}]},
             ],
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -1452,7 +1457,7 @@ class ConfigApiTests(unittest.TestCase):
         applied = {
             "controller": "sprouter", "success": True,
             "message": "schedule verified, saved, and applied",
-            "firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2},
+            "firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3},
             "firmware_upgraded": False,
         }
         with (
@@ -1635,7 +1640,7 @@ class ConfigApiTests(unittest.TestCase):
                     {
                         "report_every": 1,
                         "devices": [
-                            {"id": "pump", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                            {"id": "pump", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
                         ],
                     }
                 ),
@@ -1644,7 +1649,7 @@ class ConfigApiTests(unittest.TestCase):
             stale_live = {
                 "report_every": 1,
                 "devices": [
-                    {"id": "test_pin", "type": "gpio", "pin": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+                    {"id": "test_pin", "type": "gpio", "pin": 25, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
                 ],
             }
             with (
@@ -1729,11 +1734,11 @@ class ConfigApiTests(unittest.TestCase):
                 "start_at_seconds": 0,
             }
             result = SimpleNamespace(
-                report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+                report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
                 port="/dev/ttyACM0",
                 upgraded=False,
-                previous_identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2),
-                identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2),
+                previous_identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3),
+                identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3),
                 raw_lines=(b'{"type":"report"}\n',),
             )
             monitor = SimpleNamespace(
@@ -1767,8 +1772,8 @@ class ConfigApiTests(unittest.TestCase):
         monitor.record_apply_result.assert_called_once_with(result)
 
     def test_controller_schedule_upgrades_current_state_before_proposal(self):
-        current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
-        proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
+        current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
+        proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
         operation = Mock()
         upgraded = SimpleNamespace(message={"type": "report"}, port="/dev/ttyACM0", raw_lines=())
         upgraded_state = []
@@ -1783,9 +1788,9 @@ class ConfigApiTests(unittest.TestCase):
             record_apply_result=Mock(), update_health=Mock(),
         )
         result = SimpleNamespace(
-            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": proposed_state["devices"]}},
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": proposed_state["devices"]}},
             port="/dev/ttyACM0", upgraded=True, previous_identity=None,
-            identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=2), raw_lines=(),
+            identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3), raw_lines=(),
         )
 
         def apply_transaction(**kwargs):
@@ -2063,11 +2068,11 @@ class ConfigApiTests(unittest.TestCase):
 
     def test_pico_monitor_reports_firmware_currency_without_upgrading(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
-        expected = server.FirmwareIdentity("pico_scheduler", "newrev", 2)
+        expected = server.FirmwareIdentity("pico_scheduler", "newrev", 3)
         reports = [
             {"type": "report", "content": {"devices": []}},
-            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "oldrev", "protocol": 2}, "devices": []}},
-            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "oldrev", "protocol": 3}, "devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
         ]
 
         with (
@@ -2088,7 +2093,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertTrue(all(status["ok"] and status["status"] == "OK" for status in statuses))
         self.assertEqual(statuses[0]["firmware"], {
             "current": False,
-            "expected": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2},
+            "expected": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3},
             "observed": None,
         })
         self.assertFalse(statuses[1]["firmware"]["current"])
@@ -2102,9 +2107,9 @@ class ConfigApiTests(unittest.TestCase):
             record_apply_result=Mock(), update_health=Mock(),
         )
         result = SimpleNamespace(
-            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 2}, "devices": []}},
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
             port="/dev/ttyACM0", upgraded=False, previous_identity=None,
-            identity=server.FirmwareIdentity("pico_scheduler", "newrev", 2), raw_lines=(),
+            identity=server.FirmwareIdentity("pico_scheduler", "newrev", 3), raw_lines=(),
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

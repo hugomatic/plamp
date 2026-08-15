@@ -12,7 +12,7 @@ from plamp.scheduler_state import (
 STATE = {
     "report_every": 5,
     "devices": [{
-        "id": "lights", "type": "gpio", "pin": 2, "current_t": 7,
+        "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 7,
         "reschedule": 1,
         "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
     }],
@@ -28,9 +28,16 @@ class SchedulerStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate pin: 2"):
             normalize_scheduler_state(raw)
 
+    def test_rejects_device_without_enabled(self):
+        device = dict(STATE["devices"][0])
+        del device["enabled"]
+
+        with self.assertRaisesRegex(ValueError, "enabled must be a boolean"):
+            normalize_scheduler_state({"devices": [device]})
+
     def test_reads_firmware_identity_from_report(self):
         report = {"type": "report", "content": {
-            "firmware": {"name": "pico_scheduler", "revision": "abc1234", "protocol": 2},
+            "firmware": {"name": "pico_scheduler", "revision": "abc1234", "protocol": 3},
             "devices": [],
         }}
         self.assertEqual(
@@ -43,8 +50,15 @@ class SchedulerStateTests(unittest.TestCase):
 
     def test_report_comparison_ignores_runtime_elapsed_fields(self):
         report = {"type": "report", "content": {"devices": [{
-            "id": "lights", "type": "gpio", "pin": 2, "elapsed_t": 19,
+            "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "elapsed_t": 19,
             "cycle_t": 19, "current_value": 0, "reschedule": 1,
             "pattern": STATE["devices"][0]["pattern"],
         }]}}
         self.assertTrue(report_matches_state(report, STATE))
+
+    def test_report_comparison_includes_enabled(self):
+        report = {"type": "report", "content": {"devices": [
+            dict(STATE["devices"][0], enabled=False, elapsed_t=7, cycle_t=7, current_value=0)
+        ]}}
+
+        self.assertFalse(report_matches_state(report, STATE))

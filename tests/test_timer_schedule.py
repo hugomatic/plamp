@@ -18,13 +18,15 @@ class TimerScheduleTests(unittest.TestCase):
                 "id": "pump",
                 "pin": 3,
                 "type": "gpio",
+                "programming": "enabled",
                 "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 2400, "start_at_seconds": 0, "unit": "minutes"},
             },
             {
                 "id": "lights",
                 "pin": 2,
                 "type": "gpio",
-                "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"},
+                "programming": "disabled",
+                "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1},
             },
         ]
 
@@ -34,10 +36,33 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(
             state["devices"],
             [
-                {"id": "pump", "type": "gpio", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}]},
-                {"id": "lights", "type": "gpio", "pin": 2, "current_t": 12600, "reschedule": 1, "pattern": [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}]},
+                {"id": "pump", "type": "gpio", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}]},
+                {"id": "lights", "type": "gpio", "pin": 2, "enabled": False, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]},
             ],
         )
+        self.assertTrue(state["devices"][0]["enabled"])
+        self.assertFalse(state["devices"][1]["enabled"])
+        self.assertEqual(state["devices"][1]["pattern"], [
+            {"val": 1, "dur": 1}, {"val": 0, "dur": 1},
+        ])
+
+    def test_compile_controller_state_preserves_live_phase_for_unchanged_pattern(self):
+        channels = [{
+            "id": "pump", "pin": 3, "type": "gpio", "programming": "enabled",
+            "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 2400},
+        }]
+
+        state = compile_controller_state(
+            channels, report_every=10,
+            live_devices=[{
+                "id": "old_name", "pin": 3, "type": "gpio", "enabled": True,
+                "cycle_t": 247, "current_value": 1,
+                "pattern": [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}],
+            }],
+        )
+
+        self.assertEqual(state["devices"][0]["id"], "pump")
+        self.assertEqual(state["devices"][0]["current_t"], 247)
 
     def test_channel_metadata_uses_configured_devices_for_role(self):
         config = {
@@ -118,7 +143,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(inspect_two_step_pattern(event), {"on_seconds": 30, "off_seconds": 600, "total_seconds": 630})
 
     def test_apply_cycle_schedule_defaults_to_start_at_zero(self):
-        event = {"id": "fan", "type": "gpio", "pin": 3, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
+        event = {"id": "fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
 
         updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20)
 
@@ -129,14 +154,14 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["pin"], 3)
 
     def test_apply_cycle_schedule_can_start_at_explicit_seconds(self):
-        event = {"id": "fan", "type": "gpio", "pin": 3, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
+        event = {"id": "fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 200, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 600}]}
 
         updated = apply_cycle_schedule(event, on_seconds=10, off_seconds=20, start_at_seconds=28)
 
         self.assertEqual(updated["current_t"], 28)
 
     def test_apply_clock_window_schedule_uses_host_time(self):
-        event = {"id": "lamp", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]}
+        event = {"id": "lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]}
 
         updated = apply_clock_window_schedule(event, on_time="06:00", off_time="18:30", now=time(7, 0, 0))
 
@@ -144,7 +169,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["current_t"], 3600)
 
     def test_apply_clock_window_schedule_rejects_identical_times(self):
-        event = {"id": "lamp", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]}
+        event = {"id": "lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]}
 
         with self.assertRaisesRegex(ValueError, "ON and OFF times must be different"):
             apply_clock_window_schedule(event, on_time="06:00", off_time="06:00", now=time(7, 0, 0))
@@ -153,8 +178,8 @@ class TimerScheduleTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "devices": [
-                {"id": "fan", "type": "gpio", "pin": 3, "current_t": 4, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
-                {"id": "lamp", "type": "gpio", "pin": 2, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}]},
+                {"id": "fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 4, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 3600}, {"val": 0, "dur": 82800}]},
             ],
         }
         channels = [
@@ -181,8 +206,8 @@ class TimerScheduleTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "devices": [
-                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "current_t": 5, "reschedule": 1, "pattern": [{"val": 1, "dur": 15}, {"val": 0, "dur": 45}]},
-                {"id": "fan", "type": "gpio", "pin": 3, "current_t": 9, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 90}]},
+                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 5, "reschedule": 1, "pattern": [{"val": 1, "dur": 15}, {"val": 0, "dur": 45}]},
+                {"id": "fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 9, "reschedule": 1, "pattern": [{"val": 1, "dur": 30}, {"val": 0, "dur": 90}]},
             ],
         }
         channels = [
@@ -208,7 +233,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["devices"][1]["current_t"], 44)
 
     def test_patch_channel_schedule_migrates_id_matched_pin_change(self):
-        state = {"report_every": 1, "devices": [{"id": "fan", "type": "gpio", "pin": 4, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        state = {"report_every": 1, "devices": [{"id": "fan", "type": "gpio", "pin": 4, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         updated = patch_channel_schedule(state, channels, "fan", {"mode": "cycle", "on_seconds": 20, "off_seconds": 40, "start_at_seconds": 0})
@@ -218,7 +243,7 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(updated["devices"][0]["pattern"], [{"val": 1, "dur": 20}, {"val": 0, "dur": 40}])
 
     def test_patch_channel_schedule_rejects_pin_match_with_wrong_type(self):
-        state = {"report_every": 1, "devices": [{"id": "other", "type": "pwm", "pin": 3, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
+        state = {"report_every": 1, "devices": [{"id": "other", "type": "pwm", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]}]}
         channels = [{"id": "fan", "pin": 3, "type": "gpio", "default_editor": "cycle"}]
 
         with self.assertRaisesRegex(ValueError, "pin/type"):
@@ -228,7 +253,7 @@ class TimerScheduleTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "devices": [
-                {"id": "test_pin", "type": "gpio", "pin": 25, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+                {"id": "test_pin", "type": "gpio", "pin": 25, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
             ],
         }
         channels = [{"id": "pump", "pin": 2, "type": "gpio", "default_editor": "cycle"}]

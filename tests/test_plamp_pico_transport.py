@@ -54,10 +54,10 @@ class FakeSerial:
 
 class PicoTransportTests(unittest.TestCase):
     CONFIGURED_STATE = {"devices": [{
-        "id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+        "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0,
         "reschedule": 1, "pattern": [{"val": 1, "dur": 10}],
     }]}
-    MATCHING_REPORT = b'{"type":"report","content":{"devices":[{"id":"lights","type":"gpio","pin":2,"elapsed_t":0,"cycle_t":0,"current_value":1,"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
+    MATCHING_REPORT = b'{"type":"report","content":{"devices":[{"id":"lights","type":"gpio","pin":2,"enabled":true,"elapsed_t":0,"cycle_t":0,"current_value":1,"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
 
     def test_package_exports_lock_timeout(self):
         self.assertIs(ExportedLockTimeout, LockTimeout)
@@ -339,8 +339,8 @@ class PicoTransportTests(unittest.TestCase):
     def test_scheduler_upgrade_copies_state_before_firmware(self):
         report = (
             b'{"type":"report","content":{"firmware":{"name":"pico_scheduler",'
-            b'"revision":"newrev","protocol":2},"devices":[{"id":"lights",'
-            b'"type":"gpio","pin":2,"elapsed_t":4,"cycle_t":0,"current_value":1,'
+            b'"revision":"newrev","protocol":3},"devices":[{"id":"lights",'
+            b'"type":"gpio","pin":2,"enabled":true,"elapsed_t":4,"cycle_t":0,"current_value":1,'
             b'"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'
         )
         conn = FakeSerial([b"boot noise\n", report])
@@ -384,7 +384,7 @@ class PicoTransportTests(unittest.TestCase):
                 result = operation.upgrade_scheduler(
                     main_path,
                     state_path,
-                    FirmwareIdentity("pico_scheduler", "newrev", 2),
+                    FirmwareIdentity("pico_scheduler", "newrev", 3),
                     command_runner=run,
                     interrupter=lambda port: events.append(("interrupt", port)),
                     mpremote="/usr/bin/mpremote",
@@ -410,7 +410,7 @@ class PicoTransportTests(unittest.TestCase):
     def test_scheduler_upgrade_rejects_wrong_identity(self):
         wrong = (
             b'{"type":"report","content":{"firmware":{"name":"pico_scheduler",'
-            b'"revision":"oldrev","protocol":2},"devices":[]}}\n'
+            b'"revision":"oldrev","protocol":3},"devices":[]}}\n'
         )
         conn = FakeSerial([b"reconnect noise\n", wrong])
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,7 +429,7 @@ class PicoTransportTests(unittest.TestCase):
                 operation.upgrade_scheduler(
                     main_path,
                     state_path,
-                    FirmwareIdentity("pico_scheduler", "newrev", 2),
+                    FirmwareIdentity("pico_scheduler", "newrev", 3),
                     command_runner=lambda args, timeout: (0, "", ""),
                     interrupter=lambda port: None,
                     mpremote="mpremote",
@@ -464,7 +464,7 @@ class PicoTransportTests(unittest.TestCase):
                 with self.assertRaises(PicoFlashError) as caught:
                     operation.upgrade_scheduler(
                         main_path, state_path,
-                        FirmwareIdentity("pico_scheduler", "newrev", 2),
+                        FirmwareIdentity("pico_scheduler", "newrev", 3),
                         command_runner=run, interrupter=lambda port: None,
                         mpremote="mpremote", sleeper=lambda seconds: None,
                     )
@@ -486,7 +486,7 @@ class PicoTransportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unknown"):
                 operation.upgrade_scheduler(
                     root / "main.py", state_path,
-                    FirmwareIdentity("pico_scheduler", "unknown", 2),
+                    FirmwareIdentity("pico_scheduler", "unknown", 3),
                     command_runner=lambda args, timeout: (0, "", ""),
                     interrupter=interrupts.append, mpremote="mpremote",
                 )

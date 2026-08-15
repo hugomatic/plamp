@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-EXPECTED_FIRMWARE_PROTOCOL = 2
+EXPECTED_FIRMWARE_PROTOCOL = 3
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,14 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
     for index, source in enumerate(raw["devices"]):
         if not isinstance(source, dict):
             raise ValueError(f"device {index} must be an object")
-        allowed = {"id", "type", "pin", "current_t", "reschedule", "pattern"}
-        if set(source) - allowed or not {"type", "pin", "current_t", "reschedule", "pattern"} <= set(source):
+        allowed = {"id", "type", "pin", "enabled", "current_t", "reschedule", "pattern"}
+        required = {"type", "pin", "enabled", "current_t", "reschedule", "pattern"}
+        if set(source) - allowed:
+            raise ValueError(f"device {index} has invalid fields")
+        enabled = source.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError(f"device {index} enabled must be a boolean")
+        if not required <= set(source):
             raise ValueError(f"device {index} has invalid fields")
         device_type = source["type"]
         if device_type not in {"gpio", "pwm"}:
@@ -58,7 +64,7 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
             value = _integer(source_step["val"], f"device {index} pattern {step_index} val", minimum=0, maximum=maximum)
             duration = _integer(source_step["dur"], f"device {index} pattern {step_index} dur", minimum=1)
             pattern.append({"val": value, "dur": duration})
-        item = {"type": device_type, "pin": pin, "current_t": current_t,
+        item = {"type": device_type, "pin": pin, "enabled": enabled, "current_t": current_t,
                 "reschedule": reschedule, "pattern": pattern}
         if device_id is not None:
             item["id"] = device_id
@@ -82,13 +88,13 @@ def firmware_identity(report: Any) -> FirmwareIdentity | None:
 
 
 def report_matches_state(report: Any, state: Any) -> bool:
-    """Compare normalized id/type/pin/reschedule/pattern fields in stable order."""
+    """Compare normalized static scheduler fields in stable order."""
     expected = normalize_scheduler_state(state)["devices"]
     content = report.get("content") if isinstance(report, dict) else None
     devices = content.get("devices") if isinstance(content, dict) else None
     if not isinstance(devices, list) or len(devices) != len(expected):
         return False
-    fields = ("id", "type", "pin", "reschedule", "pattern")
+    fields = ("id", "type", "pin", "enabled", "reschedule", "pattern")
     observed = [{key: item.get(key) for key in fields if key in item}
                 for item in devices if isinstance(item, dict)]
     static_expected = [{key: item[key] for key in fields if key in item}

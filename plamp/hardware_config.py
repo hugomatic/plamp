@@ -244,19 +244,22 @@ def _validate_payload_pins_match_settings(payload_devices: list[dict], semantic_
 
 def _validate_payload_device(value: object, controller_id: str) -> dict:
     value = _as_mapping(value, f"controller {controller_id} payload device")
-    extra_keys = set(value) - {"pin", "type", "pattern"}
+    extra_keys = set(value) - {"pin", "type", "enabled", "pattern"}
     if extra_keys:
         raise ValueError(f"controller {controller_id} payload device has unknown keys: {sorted(extra_keys)!r}")
     pin = value.get("pin")
     output_type = value.get("type")
+    enabled = value.get("enabled")
     pattern = value.get("pattern")
     if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
         raise ValueError(f"controller {controller_id} payload device pin must be an int in 0..29")
     if output_type not in _PIN_TYPES:
         raise ValueError(f"controller {controller_id} payload device type must be one of {sorted(_PIN_TYPES)!r}")
+    if not isinstance(enabled, bool):
+        raise ValueError(f"controller {controller_id} payload device enabled must be a boolean")
     if not isinstance(pattern, list):
         raise ValueError(f"controller {controller_id} payload device pattern must be a list")
-    return {"pin": pin, "type": output_type, "pattern": pattern}
+    return {"pin": pin, "type": output_type, "enabled": enabled, "pattern": pattern}
 
 
 def _compile_payload_device(device: Mapping) -> dict:
@@ -264,6 +267,7 @@ def _compile_payload_device(device: Mapping) -> dict:
     output = {
         "pin": device["pin"],
         "type": device.get("output_type", "gpio"),
+        "enabled": device.get("programming", "enabled") != "disabled",
     }
     if editor["kind"] == "cycle":
         output["pattern"] = [
@@ -287,6 +291,7 @@ def _compile_legacy_payload_device(device: Mapping) -> dict:
     semantic_device = {
         "pin": device["config"]["pin"],
         "output_type": device["config"]["output_type"],
+        "programming": device["settings"]["programming"],
         "editor": device["settings"]["schedule"],
     }
     return _compile_payload_device(semantic_device)
@@ -342,6 +347,10 @@ def _validate_schedule(value: object, label: str) -> dict:
         if not isinstance(events, list):
             raise ValueError(f"{label} events must be a list")
         schedule["events"] = events
+        if "start_at_seconds" in value:
+            schedule["start_at_seconds"] = _required_non_negative_int(
+                value["start_at_seconds"], f"{label} start_at_seconds"
+            )
     return schedule
 
 

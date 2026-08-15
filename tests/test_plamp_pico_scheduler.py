@@ -6,7 +6,7 @@ from plamp.pico_scheduler import apply_scheduler_state
 from plamp.pico_transport import PicoCommandError, PicoExchange
 
 
-EXPECTED = FirmwareIdentity("pico_scheduler", "newrev", 2)
+EXPECTED = FirmwareIdentity("pico_scheduler", "newrev", 3)
 CURRENT = {"devices": [{"id": "old"}]}
 PROPOSED = {"devices": [{"id": "new"}]}
 
@@ -97,7 +97,7 @@ class SchedulerApplyTests(unittest.TestCase):
         return client, result
 
     def test_mismatched_firmware_upgrades_committed_state_then_configures_proposal(self):
-        previous = FirmwareIdentity("pico_scheduler", "oldrev", 2)
+        previous = FirmwareIdentity("pico_scheduler", "oldrev", 3)
         proposed_report = report(EXPECTED, devices=[{"id": "new"}])
         operation = FakeOperation(
             exchange(previous, "/dev/old", b"before\n"),
@@ -151,8 +151,8 @@ class SchedulerApplyTests(unittest.TestCase):
 
     def test_each_firmware_identity_field_mismatch_triggers_upgrade(self):
         mismatches = (
-            FirmwareIdentity("other_firmware", "newrev", 2),
-            FirmwareIdentity("pico_scheduler", "oldrev", 2),
+            FirmwareIdentity("other_firmware", "newrev", 3),
+            FirmwareIdentity("pico_scheduler", "oldrev", 3),
             FirmwareIdentity("pico_scheduler", "newrev", 1),
         )
         for previous in mismatches:
@@ -181,7 +181,7 @@ class SchedulerApplyTests(unittest.TestCase):
         self.assertEqual(operation.calls, ["report", "upgrade"])
 
     def test_upgrade_that_does_not_reach_expected_identity_does_not_configure(self):
-        old = FirmwareIdentity("pico_scheduler", "oldrev", 2)
+        old = FirmwareIdentity("pico_scheduler", "oldrev", 3)
         operation = FakeOperation(
             exchange(None, "/dev/pico", b"legacy\n"),
             exchange(EXPECTED, "/dev/pico", b"configured\n"),
@@ -195,7 +195,7 @@ class SchedulerApplyTests(unittest.TestCase):
         self.assertEqual(raised.exception.raw_lines, (b"legacy\n", b"upgraded\n"))
 
     def test_configure_identity_mismatch_is_rejected(self):
-        changed = FirmwareIdentity("pico_scheduler", "otherrev", 2)
+        changed = FirmwareIdentity("pico_scheduler", "otherrev", 3)
         operation = FakeOperation(
             exchange(EXPECTED, "/dev/pico", b"before\n"),
             exchange(changed, "/dev/pico", b"configured\n"),

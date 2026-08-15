@@ -218,6 +218,7 @@ def _new_channel_device(channel: dict[str, Any], channel_id: str) -> dict[str, A
         "id": channel_id,
         "type": channel.get("type", "gpio"),
         "pin": channel.get("pin"),
+        "enabled": channel.get("programming", "enabled") != "disabled",
         "current_t": 0,
         "reschedule": 1,
     }
@@ -228,8 +229,10 @@ def compile_controller_state(
     *,
     report_every: int,
     now: time | None = None,
+    live_devices: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     devices = []
+    live_by_pin = _devices_by_pin(live_devices)
     for channel in channels:
         channel_id = str(channel["id"])
         device = _new_channel_device(channel, channel_id)
@@ -251,8 +254,20 @@ def compile_controller_state(
                 off_time=str(editor.get("off_time", "")),
                 now=now,
             )
+        elif kind == "events":
+            device["pattern"] = list(editor.get("events", []))
+            device["current_t"] = _as_int(editor.get("start_at_seconds", 0), "start_at_seconds")
         else:
             raise ValueError(f"channel {channel_id} has unsupported schedule kind: {kind}")
+        live_device = live_by_pin.get(device["pin"])
+        if isinstance(live_device, dict) and live_device.get("pattern") == device["pattern"]:
+            raw_cycle = live_device.get("cycle_t", live_device.get("elapsed_t"))
+            try:
+                cycle_t = int(raw_cycle)
+            except (TypeError, ValueError):
+                cycle_t = -1
+            if cycle_t >= 0:
+                device["current_t"] = cycle_t
         devices.append(device)
     return {"report_every": report_every, "devices": devices}
 
