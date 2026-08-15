@@ -64,6 +64,40 @@ class TimerScheduleTests(unittest.TestCase):
         self.assertEqual(state["devices"][0]["id"], "pump")
         self.assertEqual(state["devices"][0]["current_t"], 247)
 
+    def test_compile_controller_state_uses_elapsed_t_when_live_cycle_t_is_absent(self):
+        channels = [{
+            "id": "pump", "pin": 3, "type": "gpio", "programming": "enabled",
+            "editor": {"kind": "cycle", "on_seconds": 300, "off_seconds": 2400},
+        }]
+
+        state = compile_controller_state(
+            channels,
+            report_every=10,
+            live_devices=[{
+                "id": "pump", "pin": 3, "type": "gpio", "enabled": True,
+                "elapsed_t": 247, "current_value": 1,
+                "pattern": [{"val": 1, "dur": 300}, {"val": 0, "dur": 2400}],
+            }],
+        )
+
+        self.assertEqual(state["devices"][0]["current_t"], 247)
+
+    def test_compile_controller_state_applies_events_start_at_seconds_directly(self):
+        events = [
+            {"val": 1, "dur": 4},
+            {"val": 0, "dur": 6},
+            {"val": 1, "dur": 8},
+        ]
+        channels = [{
+            "id": "pump", "pin": 3, "type": "gpio", "programming": "enabled",
+            "editor": {"kind": "events", "events": events, "start_at_seconds": 7},
+        }]
+
+        state = compile_controller_state(channels, report_every=10)
+
+        self.assertEqual(state["devices"][0]["pattern"], events)
+        self.assertEqual(state["devices"][0]["current_t"], 7)
+
     def test_compile_controller_state_rejects_pwm_channel(self):
         channels = [{
             "id": "fan", "pin": 3, "type": "pwm", "programming": "enabled",

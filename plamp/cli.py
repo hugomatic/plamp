@@ -112,7 +112,7 @@ def main(
         )
     from plamp.camera import CameraError, capture_camera
     from plamp.controller_add import add_controller
-    from plamp.locks import LockTimeout
+    from plamp.locks import LockTimeout, exclusive_lock
     from plamp.pico_commands import configure_scheduler, upgrade_scheduler
     from plamp.pico_discovery import discover_picos
     from plamp.pico_transport import (
@@ -160,7 +160,10 @@ def main(
                     submitted = json.loads(raw)
                 except (OSError, json.JSONDecodeError) as exc:
                     raise ConfigError(f"cannot read submitted configuration: {exc}") from exc
-                result = save_config(context.config_file, submitted)
+                with exclusive_lock(
+                    lock_dir / "config.lock", timeout=args.timeout
+                ):
+                    result = save_config(context.config_file, submitted)
         elif args.area == "camera":
             result = camera_capture_func(
                 args.camera_id,

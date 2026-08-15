@@ -121,6 +121,26 @@ def _report_identity(
     return identity
 
 
+def _static_report_devices(
+    report: Any, *, label: str, raw_lines: tuple[bytes, ...] = ()
+) -> str:
+    content = report.get("content") if isinstance(report, dict) else None
+    devices = content.get("devices") if isinstance(content, dict) else None
+    if not isinstance(devices, list) or not all(
+        isinstance(device, dict) for device in devices
+    ):
+        raise PicoCommandError(
+            f"invalid devices in {label} Pico report",
+            raw_lines=raw_lines,
+        )
+    runtime_fields = {"current_t", "elapsed_t", "cycle_t", "current_value"}
+    static = [
+        {key: value for key, value in device.items() if key not in runtime_fields}
+        for device in devices
+    ]
+    return json.dumps(static, sort_keys=True, separators=(",", ":"))
+
+
 def upgrade_scheduler(
     pico_serial: str,
     state: dict[str, Any],
@@ -129,6 +149,7 @@ def upgrade_scheduler(
     timeout: float,
     repo_root: Path,
     data_dir: Path,
+    inspected_report: dict[str, Any] | None = None,
     client_factory: Callable[..., PicoClient] = PicoClient,
     render_func: Callable[[Path], tuple[str, str]] = render_scheduler_firmware,
     mpremote_finder: Callable[[str], str | None] = shutil.which,
@@ -160,6 +181,26 @@ def upgrade_scheduler(
         with client.operation(timeout=timeout) as operation:
             before = operation.report()
             previous = _report_identity(before, label="initial", required=False)
+            if inspected_report is not None:
+                try:
+                    inspected_identity = firmware_identity(inspected_report)
+                except (TypeError, ValueError) as exc:
+                    raise PicoCommandError(
+                        f"invalid firmware identity in inspected Pico report: {exc}"
+                    ) from exc
+                inspected_static = _static_report_devices(
+                    inspected_report, label="inspected"
+                )
+                fresh_static = _static_report_devices(
+                    before.message,
+                    label="initial",
+                    raw_lines=before.raw_lines,
+                )
+                if inspected_identity != previous or inspected_static != fresh_static:
+                    raise PicoCommandError(
+                        "Pico report changed since inspection; preview again",
+                        raw_lines=before.raw_lines,
+                    )
             upgraded = operation.upgrade_scheduler(
                 firmware_path,
                 state_path,

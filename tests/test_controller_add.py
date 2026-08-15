@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from plamp.controller_add import (
     add_controller,
@@ -13,6 +14,7 @@ from plamp.controller_add import (
 )
 from plamp.scheduler_state import FirmwareIdentity
 from plamp.config import ConfigError
+from plamp.config import atomic_write_json as real_atomic_write_json
 
 
 EXPECTED = [
@@ -228,7 +230,68 @@ class ControllerAddTests(unittest.TestCase):
             self.assertEqual(calls[0][0], "PICO-A")
             self.assertEqual(calls[0][1], provisioned_plamp8_state(protocol_2_report()))
             self.assertEqual(calls[0][2]["repo_root"], root)
+            self.assertEqual(calls[0][2]["inspected_report"], protocol_2_report())
             self.assertEqual(json.loads(config_file.read_text(encoding="utf-8"))["controllers"]["plamp8"]["payload"]["pico_serial"], "PICO-A")
+
+    def test_apply_rejects_changed_preview_action_before_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            with self.assertRaisesRegex(ConfigError, "action changed.*provision.*import"):
+                add_controller(
+                    "plamp8", "PICO-A", "plamp8",
+                    apply=True, allow_provision=True, expected_action="provision",
+                    config_file=config_file, data_dir=root / "data", repo_root=root,
+                    lock_dir=root / "locks", timeout=3,
+                    report_func=lambda *args, **kwargs: protocol_3_report(),
+                    upgrade_func=lambda *args, **kwargs: self.fail("upgrade must not run"),
+                    firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                )
+
+            self.assertEqual(
+                json.loads(config_file.read_text(encoding="utf-8")),
+                {"controllers": {}, "cameras": {}},
+            )
+
+    def test_provision_validates_safe_path_components_before_backup_or_upgrade(self):
+        for controller_id, pico_serial in (("../escaped", "PICO-A"), ("plamp8", "../PICO-A")):
+            with self.subTest(controller_id=controller_id, pico_serial=pico_serial):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    config_file = self.write_config(root)
+                    upgrades = []
+                    with self.assertRaisesRegex(ConfigError, "(controller id|serial).*(safe|valid)"):
+                        add_controller(
+                            controller_id, pico_serial, "plamp8",
+                            apply=True, allow_provision=True,
+                            config_file=config_file, data_dir=root / "data", repo_root=root,
+                            lock_dir=root / "locks", timeout=3,
+                            report_func=lambda *args, **kwargs: protocol_2_report(),
+                            upgrade_func=lambda *args, **kwargs: upgrades.append((args, kwargs)),
+                            firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                        )
+
+                    self.assertEqual(upgrades, [])
+                    self.assertFalse((root / "data" / "controller-backups").exists())
+
+    def test_provision_validates_complete_merged_config_before_backup_or_upgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            upgrades = []
+            with self.assertRaisesRegex(ConfigError, "reserved"):
+                add_controller(
+                    "config", "PICO-A", "plamp8",
+                    apply=True, allow_provision=True,
+                    config_file=config_file, data_dir=root / "data", repo_root=root,
+                    lock_dir=root / "locks", timeout=3,
+                    report_func=lambda *args, **kwargs: protocol_2_report(),
+                    upgrade_func=lambda *args, **kwargs: upgrades.append((args, kwargs)),
+                    firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                )
+
+            self.assertEqual(upgrades, [])
+            self.assertFalse((root / "data" / "controller-backups").exists())
 
     def test_provision_accepts_the_generated_scheduler_revision(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -269,7 +332,7 @@ class ControllerAddTests(unittest.TestCase):
             root = Path(tmp)
             config_file = self.write_config(root)
 
-            with self.assertRaisesRegex(ConnectionError, "flash failed"):
+            with self.assertRaises(ConnectionError) as raised:
                 add_controller(
                     "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=True,
                     config_file=config_file, data_dir=root / "data", repo_root=root,
@@ -279,11 +342,68 @@ class ControllerAddTests(unittest.TestCase):
                     firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
                 )
 
+            self.assertIn("stage=upgrade", str(raised.exception))
+            self.assertIn("plamp8-PICO-A-pre-provision.json", str(raised.exception))
+
             self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
             self.assertEqual(
                 json.loads((root / "data" / "controller-backups" / "plamp8-PICO-A-pre-provision.json").read_text(encoding="utf-8")),
                 protocol_2_report(),
             )
+
+    def test_repeated_failed_provisioning_keeps_each_recovery_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            reports = [protocol_2_report(), protocol_2_report()]
+            reports[1]["content"]["devices"][0]["cycle_t"] = 99
+            reports[1]["content"]["devices"][0]["elapsed_t"] = 99
+
+            for report in reports:
+                with self.assertRaises(ConnectionError):
+                    self.add(
+                        root,
+                        apply=True,
+                        allow_provision=True,
+                        report=lambda *args, captured=report, **kwargs: captured,
+                        upgrade=lambda *args, **kwargs: (_ for _ in ()).throw(
+                            ConnectionError("flash failed")
+                        ),
+                    )
+
+            backups = sorted((root / "data" / "controller-backups").glob("*.json"))
+            self.assertEqual(len(backups), 2)
+            first_backup = (
+                root
+                / "data"
+                / "controller-backups"
+                / "plamp8-PICO-A-pre-provision.json"
+            )
+            second_backup = next(path for path in backups if path != first_backup)
+            self.assertEqual(
+                json.loads(first_backup.read_text(encoding="utf-8")), reports[0]
+            )
+            self.assertEqual(
+                json.loads(second_backup.read_text(encoding="utf-8")), reports[1]
+            )
+
+    def test_errno_hardware_failure_keeps_classification_and_recovery_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            failure = OSError(5, "flash I/O failed", "/dev/ttyACM0")
+            with self.assertRaises(OSError) as raised:
+                self.add(
+                    root,
+                    apply=True,
+                    allow_provision=True,
+                    report=lambda *args, **kwargs: protocol_2_report(),
+                    upgrade=lambda *args, **kwargs: (_ for _ in ()).throw(failure),
+                )
+
+            self.assertIs(raised.exception, failure)
+            self.assertEqual(raised.exception.errno, 5)
+            self.assertEqual(raised.exception.filename, "/dev/ttyACM0")
+            self.assertIn("stage=upgrade", str(raised.exception))
+            self.assertIn("plamp8-PICO-A-pre-provision.json", str(raised.exception))
 
     def test_existing_empty_matching_controller_is_filled_without_duplication(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -299,6 +419,121 @@ class ControllerAddTests(unittest.TestCase):
 
             self.assertTrue(result["host_config_changed"])
             self.assertEqual(list(json.loads(config_file.read_text(encoding="utf-8"))["controllers"]), ["plamp8"])
+
+    def test_existing_empty_controller_preserves_host_only_settings_on_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            empty = {
+                "controllers": {
+                    "plamp8": {
+                        "type": "pico_scheduler",
+                        "payload": {"pico_serial": "PICO-A", "report_every": 37},
+                        "settings": {"label": "Grow box", "devices": {}},
+                    }
+                },
+                "cameras": {},
+            }
+            _, config_file = self.add(
+                root, config=empty, apply=True, allow_provision=False,
+                report=lambda *args, **kwargs: protocol_3_report(),
+            )
+
+            controller = json.loads(config_file.read_text(encoding="utf-8"))["controllers"]["plamp8"]
+            self.assertEqual(controller["payload"]["report_every"], 37)
+            self.assertEqual(controller["settings"]["label"], "Grow box")
+            self.assertEqual(len(controller["settings"]["devices"]), 8)
+
+    def test_timer_write_failure_never_registers_controller_or_changes_previous_timer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            timer_path = root / "data" / "timers" / "plamp8.json"
+            real_atomic_write_json(timer_path, {"previous": True})
+            with patch("plamp.controller_add.atomic_write_json", side_effect=OSError("timer write failed")):
+                with self.assertRaisesRegex(OSError, "timer write failed"):
+                    add_controller(
+                        "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=False,
+                        config_file=config_file, data_dir=root / "data", repo_root=root,
+                        lock_dir=root / "locks", timeout=3,
+                        report_func=lambda *args, **kwargs: protocol_3_report(),
+                        firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                    )
+
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
+            self.assertEqual(json.loads(timer_path.read_text(encoding="utf-8")), {"previous": True})
+
+    def test_config_write_failure_rolls_back_previous_timer_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            timer_path = root / "data" / "timers" / "plamp8.json"
+            real_atomic_write_json(timer_path, {"previous": True})
+            with (
+                patch("plamp.controller_add.atomic_write_json", wraps=real_atomic_write_json) as write_timer,
+                patch("plamp.controller_add.save_config", side_effect=OSError("config write failed")),
+            ):
+                with self.assertRaisesRegex(OSError, "config write failed"):
+                    add_controller(
+                        "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=False,
+                        config_file=config_file, data_dir=root / "data", repo_root=root,
+                        lock_dir=root / "locks", timeout=3,
+                        report_func=lambda *args, **kwargs: protocol_3_report(),
+                        firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                    )
+
+            self.assertEqual(write_timer.call_count, 2)
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
+            self.assertEqual(json.loads(timer_path.read_text(encoding="utf-8")), {"previous": True})
+
+    def test_config_write_failure_removes_new_timer_when_none_existed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            timer_path = root / "data" / "timers" / "plamp8.json"
+            with patch("plamp.controller_add.save_config", side_effect=OSError("config write failed")):
+                with self.assertRaisesRegex(OSError, "config write failed"):
+                    add_controller(
+                        "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=False,
+                        config_file=config_file, data_dir=root / "data", repo_root=root,
+                        lock_dir=root / "locks", timeout=3,
+                        report_func=lambda *args, **kwargs: protocol_3_report(),
+                        firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                    )
+
+            self.assertFalse(timer_path.exists())
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
+
+    def test_timer_rollback_failure_preserves_the_original_config_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            timer_path = root / "data" / "timers" / "plamp8.json"
+            real_atomic_write_json(timer_path, {"previous": True})
+            writes = 0
+
+            def fail_rollback(path, value):
+                nonlocal writes
+                writes += 1
+                if writes == 2:
+                    raise OSError("timer rollback failed")
+                return real_atomic_write_json(path, value)
+
+            with (
+                patch("plamp.controller_add.atomic_write_json", side_effect=fail_rollback),
+                patch("plamp.controller_add.save_config", side_effect=OSError("config write failed")),
+            ):
+                with self.assertRaises(OSError) as raised:
+                    add_controller(
+                        "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=False,
+                        config_file=config_file, data_dir=root / "data", repo_root=root,
+                        lock_dir=root / "locks", timeout=3,
+                        report_func=lambda *args, **kwargs: protocol_3_report(),
+                        firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                    )
+
+            self.assertIn("config write failed", str(raised.exception))
+            self.assertIn("timer rollback failed", str(raised.exception))
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
 
     def test_existing_nonempty_controller_or_assigned_serial_is_rejected(self):
         for config in (
@@ -323,7 +558,7 @@ class ControllerAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_file = self.write_config(root)
-            with self.assertRaisesRegex(ConfigError, "verification"):
+            with self.assertRaises(ConfigError) as raised:
                 add_controller(
                     "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=True,
                     config_file=config_file, data_dir=root / "data", repo_root=root,
@@ -332,7 +567,42 @@ class ControllerAddTests(unittest.TestCase):
                     upgrade_func=lambda *args, **kwargs: {"report": protocol_2_report()},
                     firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
                 )
+            self.assertIn("stage=verification", str(raised.exception))
+            self.assertIn(
+                "plamp8-PICO-A-pre-provision.json", str(raised.exception)
+            )
             self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
+
+    def test_provisioned_host_import_failure_reports_recovery_stage_and_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = self.write_config(root)
+            failure = OSError("config write failed")
+            with patch("plamp.controller_add.save_config", side_effect=failure):
+                with self.assertRaises(OSError) as raised:
+                    add_controller(
+                        "plamp8", "PICO-A", "plamp8",
+                        apply=True, allow_provision=True,
+                        config_file=config_file, data_dir=root / "data", repo_root=root,
+                        lock_dir=root / "locks", timeout=3,
+                        report_func=lambda *args, **kwargs: protocol_2_report(),
+                        upgrade_func=lambda *args, **kwargs: {
+                            "report": protocol_3_report()
+                        },
+                        firmware_revision_func=lambda repo_root: EXPECTED_REVISION,
+                    )
+
+            self.assertIs(raised.exception, failure)
+            self.assertIn("stage=host-import", str(raised.exception))
+            self.assertIn(
+                "plamp8-PICO-A-pre-provision.json", str(raised.exception)
+            )
+            self.assertEqual(
+                json.loads(config_file.read_text(encoding="utf-8")),
+                {"controllers": {}, "cameras": {}},
+            )
+            self.assertFalse((root / "data" / "timers" / "plamp8.json").exists())
+
     def test_provisioned_plamp8_state_replaces_prototype_ids_by_pin(self):
         state = provisioned_plamp8_state(protocol_2_report())
 
@@ -455,6 +725,18 @@ class ControllerAddTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     preview_controller_add("tower", "PICO-1", report, expected)
 
+    def test_preview_rejects_disabled_channel_that_is_not_reported_off(self):
+        report = protocol_3_report()
+        report["content"]["devices"][0]["current_value"] = 1
+
+        with self.assertRaisesRegex(ValueError, "disabled current_value.*0"):
+            preview_controller_add(
+                "tower",
+                "PICO-1",
+                report,
+                FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3),
+            )
+
     def test_controller_config_from_report_converts_semantic_devices_and_editors(self):
         report = protocol_3_report()
         report["content"]["devices"][0].update(
@@ -493,6 +775,18 @@ class ControllerAddTests(unittest.TestCase):
         self.assertEqual(devices["pump"]["programming"], "enabled")
         self.assertEqual(devices["pump"]["editor"], {"kind": "cycle", "on_seconds": 14, "off_seconds": 24, "start_at_seconds": 9})
         self.assertNotIn("label", devices["pump"])
+
+    def test_controller_config_from_report_uses_elapsed_t_when_cycle_t_is_absent(self):
+        report = protocol_3_report()
+        del report["content"]["devices"][0]["cycle_t"]
+        report["content"]["devices"][0]["elapsed_t"] = 41
+
+        controller = controller_config_from_report("PICO-1", report)
+
+        self.assertEqual(
+            controller["settings"]["devices"]["ph_up"]["editor"]["start_at_seconds"],
+            41,
+        )
 
 
 if __name__ == "__main__":

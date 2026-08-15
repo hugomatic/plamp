@@ -33,7 +33,13 @@ def find_pico_port(
     *,
     comports: Callable[[], Iterable[Any]] = list_ports.comports,
 ) -> str | None:
-    for pico in discover_picos(comports=comports):
-        if pico.serial == pico_serial:
-            return pico.device
-    return None
+    matches = [
+        pico.device
+        for pico in discover_picos(comports=comports)
+        if pico.serial == pico_serial
+    ]
+    if len(matches) > 1:
+        raise ValueError(
+            f"multiple Pico ports found for serial {pico_serial}: {matches}"
+        )
+    return matches[0] if matches else None

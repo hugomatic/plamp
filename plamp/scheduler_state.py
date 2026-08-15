@@ -94,8 +94,27 @@ def report_matches_state(report: Any, state: Any) -> bool:
     if not isinstance(devices, list) or len(devices) != len(expected):
         return False
     fields = ("id", "type", "pin", "enabled", "reschedule", "pattern")
-    observed = [{key: item.get(key) for key in fields if key in item}
-                for item in devices if isinstance(item, dict)]
+    observed_state = []
+    for item in devices:
+        if not isinstance(item, dict):
+            return False
+        if item.get("enabled") is False and (
+            type(item.get("current_value")) is not int
+            or item["current_value"] != 0
+        ):
+            return False
+        observed_state.append({
+            **{key: item[key] for key in fields if key in item},
+            "current_t": 0,
+        })
+    try:
+        normalized_observed = normalize_scheduler_state(
+            {"devices": observed_state}
+        )["devices"]
+    except ValueError:
+        return False
+    observed = [{key: item[key] for key in fields if key in item}
+                for item in normalized_observed]
     static_expected = [{key: item[key] for key in fields if key in item}
                        for item in expected]
     return observed == static_expected

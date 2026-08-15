@@ -31,7 +31,7 @@ from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
 from plamp.controller_add import add_controller
 from plamp.context import resolve_context
-from plamp.locks import LockTimeout
+from plamp.locks import LockTimeout, exclusive_lock
 from plamp.pico_firmware import firmware_revision, render_scheduler_firmware
 from plamp.pico_health import PicoHealth, failed_health, probe_pico
 from plamp.pico_scheduler import SchedulerApplyResult, apply_scheduler_state
@@ -63,6 +63,7 @@ LOG_FILE = DATA_DIR / "plamp.log"
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 PICO_HEALTH_INTERVAL_SECONDS = 5.0
+CONFIG_WRITE_LOCK_TIMEOUT = 3.0
 ROLE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 HOSTNAME_RE = re.compile(
     r"^(?=.{1,63}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
@@ -2055,7 +2056,10 @@ def get_status_route(path: list[str] | None = Query(default=None), stream: bool 
 
 @app.put("/api/config")
 def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    with config_lock:
+    with config_lock, exclusive_lock(
+        RUNTIME_CONTEXT.lock_dir / "config.lock",
+        timeout=CONFIG_WRITE_LOCK_TIMEOUT,
+    ):
         raw_config = load_raw_config()
         submitted = {name: config.get(name, {}) for name in ("controllers", "cameras")}
         try:
@@ -2071,7 +2075,10 @@ def put_config(config: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 
 def put_config_section(section: str, value: dict[str, Any]) -> dict[str, Any]:
-    with config_lock:
+    with config_lock, exclusive_lock(
+        RUNTIME_CONTEXT.lock_dir / "config.lock",
+        timeout=CONFIG_WRITE_LOCK_TIMEOUT,
+    ):
         raw_config = load_raw_config()
         config = {name: raw_config.get(name, {}) for name in ("controllers", "cameras")}
         try:
@@ -2134,6 +2141,7 @@ def post_controller_add(controller: str, payload: dict[str, Any] = Body(...)) ->
     profile = payload.get("profile")
     apply = payload.get("apply", False)
     provision = payload.get("provision", False)
+    expected_action = payload.get("expected_action")
     if not isinstance(serial_number, str) or not serial_number:
         raise HTTPException(status_code=422, detail="serial must be a non-empty string")
     if profile != "plamp8":
@@ -2142,13 +2150,19 @@ def post_controller_add(controller: str, payload: dict[str, Any] = Body(...)) ->
         raise HTTPException(status_code=422, detail="apply and provision must be booleans")
     if provision and not apply:
         raise HTTPException(status_code=422, detail="provision requires apply")
+    if apply and expected_action not in {"import", "provision"}:
+        raise HTTPException(
+            status_code=422,
+            detail="expected_action must be import or provision",
+        )
     try:
-        return add_controller(
+        result = add_controller(
             controller,
             serial_number,
             profile,
             apply=apply,
             allow_provision=provision,
+            expected_action=expected_action,
             config_file=CONFIG_FILE,
             data_dir=DATA_DIR,
             repo_root=REPO_ROOT,
@@ -2163,6 +2177,9 @@ def post_controller_add(controller: str, payload: dict[str, Any] = Body(...)) ->
             status_code=status_code,
             detail={"message": str(exc), "health": health.as_dict()},
         ) from exc
+    if apply:
+        reconcile_configured_monitors()
+    return result
 
 
 @app.get("/api/controllers/{controller}", response_model=None)
@@ -2469,7 +2486,14 @@ def post_controller_schedule(controller: str, proposed_controller: dict[str, Any
     if not isinstance(proposed_controller, dict):
         raise HTTPException(status_code=422, detail="controller schedule must be an object")
 
-    with lock_for(role_locks, controller), config_lock:
+    with (
+        lock_for(role_locks, controller),
+        config_lock,
+        exclusive_lock(
+            RUNTIME_CONTEXT.lock_dir / "config.lock",
+            timeout=CONFIG_WRITE_LOCK_TIMEOUT,
+        ),
+    ):
         current_config = load_raw_config()
         candidate = controller_schedule_candidate(current_config, controller, proposed_controller)
         monitor = get_or_start_monitor(controller)

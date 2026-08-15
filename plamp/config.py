@@ -31,6 +31,11 @@ def load_config(config_file: Path) -> dict[str, Any]:
     return _validated_complete_config(config)
 
 
+def validate_config(config: Any) -> dict[str, Any]:
+    """Validate and canonicalize a complete config without writing it."""
+    return _validated_complete_config(config)
+
+
 def atomic_write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(

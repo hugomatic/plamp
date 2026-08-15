@@ -1,11 +1,19 @@
 """Pure Plamp8 controller-profile conversion helpers."""
 
+import json
+import re
 from dataclasses import asdict, dataclass
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from plamp.config import ConfigError, atomic_write_json, load_config, save_config
+from plamp.config import (
+    ConfigError,
+    atomic_write_json,
+    load_config,
+    save_config,
+    validate_config,
+)
 from plamp.locks import exclusive_lock
 from plamp.pico_commands import upgrade_scheduler
 from plamp.pico_firmware import firmware_revision
@@ -35,6 +43,8 @@ PLAMP8_CHANNELS = (
     ProfileChannel(15, "lights_1", True),
     ProfileChannel(14, "lights_2", True),
 )
+
+_SAFE_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def display_device_id(device_id: str) -> str:
@@ -107,7 +117,6 @@ def _validated_report_state(
         "type",
         "pin",
         "elapsed_t",
-        "cycle_t",
         "current_value",
         "reschedule",
         "pattern",
@@ -119,10 +128,15 @@ def _validated_report_state(
         if not required <= set(source):
             raise ValueError(f"device {index} has invalid fields")
         _report_integer(source["elapsed_t"], f"device {index} elapsed_t")
-        cycle_t = _report_integer(source["cycle_t"], f"device {index} cycle_t")
-        _report_integer(
+        cycle_t = _report_integer(
+            source.get("cycle_t", source["elapsed_t"]),
+            f"device {index} cycle_t",
+        )
+        current_value = _report_integer(
             source["current_value"], f"device {index} current_value", maximum=1
         )
+        if source.get("enabled") is False and current_value != 0:
+            raise ValueError(f"device {index} disabled current_value must be integer 0")
         state_devices.append(
             {
                 "id": source.get("id"),
@@ -296,9 +310,37 @@ def _merged_controller_config(
     config: dict[str, Any], controller_id: str, pico_serial: str, state: dict[str, Any]
 ) -> dict[str, Any]:
     controllers = _validated_controller_assignment(config, controller_id, pico_serial)
+    imported = _controller_config_from_state(pico_serial, state)
+    existing = controllers.get(controller_id)
+    if isinstance(existing, dict):
+        existing_payload = existing.get("payload")
+        preserved_payload = {
+            key: value
+            for key, value in (
+                existing_payload.items() if isinstance(existing_payload, dict) else ()
+            )
+            if key not in {"devices", "pico_serial"}
+        }
+        imported["payload"] = {
+            **imported["payload"],
+            **preserved_payload,
+            "pico_serial": pico_serial,
+        }
+        existing_settings = existing.get("settings")
+        preserved_settings = {
+            key: value
+            for key, value in (
+                existing_settings.items() if isinstance(existing_settings, dict) else ()
+            )
+            if key != "devices"
+        }
+        imported["settings"] = {
+            **preserved_settings,
+            "devices": imported["settings"]["devices"],
+        }
     updated = dict(config)
     updated_controllers = dict(controllers)
-    updated_controllers[controller_id] = _controller_config_from_state(pico_serial, state)
+    updated_controllers[controller_id] = imported
     updated["controllers"] = updated_controllers
     return updated
 
@@ -310,6 +352,71 @@ def _upgrade_report(result: dict[str, Any]) -> dict[str, Any]:
     return report
 
 
+def _validate_safe_path_component(value: str, label: str) -> None:
+    if not isinstance(value, str) or not _SAFE_PATH_COMPONENT_RE.fullmatch(value):
+        raise ConfigError(f"{label} must be a safe path component")
+
+
+def _append_error_context(exc: Exception, context: str) -> None:
+    if isinstance(exc, OSError) and exc.errno is not None:
+        detail = exc.strerror if isinstance(exc.strerror, str) else str(exc)
+        exc.strerror = f"{detail}; {context}"
+        return
+    message = f"{exc}; {context}"
+    exc.args = (message, *exc.args[1:]) if exc.args else (message,)
+
+
+def _annotate_recovery_error(exc: Exception, stage: str, recovery_path: Path) -> None:
+    exc.stage = stage
+    exc.recovery_path = str(recovery_path)
+    _append_error_context(exc, f"stage={stage}; recovery={recovery_path}")
+
+
+def _next_recovery_path(data_dir: Path, controller_id: str, pico_serial: str) -> Path:
+    directory = data_dir / "controller-backups"
+    base_name = f"{controller_id}-{pico_serial}-pre-provision"
+    candidate = directory / f"{base_name}.json"
+    suffix = 2
+    while candidate.exists():
+        candidate = directory / f"{base_name}-{suffix}.json"
+        suffix += 1
+    return candidate
+
+
+def _commit_host_import(
+    *,
+    config_file: Path,
+    data_dir: Path,
+    controller_id: str,
+    pico_serial: str,
+    imported_state: dict[str, Any],
+) -> None:
+    merged = validate_config(
+        _merged_controller_config(
+            load_config(config_file), controller_id, pico_serial, imported_state
+        )
+    )
+    timer_path = data_dir / "timers" / f"{controller_id}.json"
+    previous_exists = timer_path.exists()
+    previous_timer = None
+    if previous_exists:
+        previous_timer = json.loads(timer_path.read_text(encoding="utf-8"))
+    atomic_write_json(timer_path, imported_state)
+    try:
+        save_config(config_file, merged)
+    except Exception as commit_error:
+        try:
+            if previous_exists:
+                atomic_write_json(timer_path, previous_timer)
+            else:
+                timer_path.unlink(missing_ok=True)
+        except Exception as rollback_error:
+            _append_error_context(
+                commit_error, f"timer rollback failed: {rollback_error}"
+            )
+        raise
+
+
 def add_controller(
     controller_id: str,
     pico_serial: str,
@@ -317,6 +424,7 @@ def add_controller(
     *,
     apply: bool,
     allow_provision: bool,
+    expected_action: str | None = None,
     config_file: Path,
     data_dir: Path,
     repo_root: Path,
@@ -329,6 +437,10 @@ def add_controller(
     """Preview or explicitly import a single Plamp8 controller report."""
     if profile_id != "plamp8":
         raise ConfigError(f"unsupported controller profile: {profile_id}")
+    _validate_safe_path_component(controller_id, "controller id")
+    _validate_safe_path_component(pico_serial, "serial")
+    if expected_action not in {None, "import", "provision"}:
+        raise ConfigError("expected action must be import or provision")
     expected_revision = firmware_revision_func(repo_root)
     if not isinstance(expected_revision, str) or expected_revision.strip() in {"", "unknown"}:
         raise ConfigError("current generated firmware revision is unavailable")
@@ -339,6 +451,11 @@ def add_controller(
     )
     report = report_func(pico_serial, lock_dir=lock_dir, timeout=timeout)
     preview = preview_controller_add(controller_id, pico_serial, report, expected_identity)
+    if expected_action is not None and preview["action"] != expected_action:
+        raise ConfigError(
+            "controller action changed since preview: "
+            f"expected {expected_action}, now {preview['action']}; preview again"
+        )
     if not apply:
         return _result(preview, applied=False, recovery_path=None)
     if preview["action"] == "provision" and not allow_provision:
@@ -347,38 +464,52 @@ def add_controller(
     imported_state, _, _ = _validated_report_state(report)
     recovery_path = None
     if preview["action"] == "provision":
+        planned_state = provisioned_plamp8_state(report)
         # Avoid mutating a controller that cannot be represented in host config.
         with exclusive_lock(lock_dir / "config.lock", timeout=timeout):
-            _validated_controller_assignment(
-                load_config(config_file), controller_id, pico_serial
+            validate_config(
+                _merged_controller_config(
+                    load_config(config_file), controller_id, pico_serial, planned_state
+                )
             )
-        recovery_path = data_dir / "controller-backups" / f"{controller_id}-{pico_serial}-pre-provision.json"
-        atomic_write_json(recovery_path, report)
-        upgraded = upgrade_func(
-            pico_serial,
-            provisioned_plamp8_state(report),
-            lock_dir=lock_dir,
-            timeout=timeout,
-            repo_root=repo_root,
-            data_dir=data_dir,
-        )
-        imported_report = _upgrade_report(upgraded)
-        verified_preview = preview_controller_add(
-            controller_id, pico_serial, imported_report, expected_identity
-        )
-        if verified_preview["action"] != "import":
-            raise ConfigError("controller provisioning verification failed")
-        imported_state, _, _ = _validated_report_state(imported_report)
+            recovery_path = _next_recovery_path(data_dir, controller_id, pico_serial)
+            atomic_write_json(recovery_path, report)
+        try:
+            upgraded = upgrade_func(
+                pico_serial,
+                planned_state,
+                lock_dir=lock_dir,
+                timeout=timeout,
+                repo_root=repo_root,
+                data_dir=data_dir,
+                inspected_report=report,
+            )
+        except Exception as exc:
+            _annotate_recovery_error(exc, "upgrade", recovery_path)
+            raise
+        try:
+            imported_report = _upgrade_report(upgraded)
+            verified_preview = preview_controller_add(
+                controller_id, pico_serial, imported_report, expected_identity
+            )
+            if verified_preview["action"] != "import":
+                raise ConfigError("controller provisioning verification failed")
+            imported_state, _, _ = _validated_report_state(imported_report)
+        except Exception as exc:
+            _annotate_recovery_error(exc, "verification", recovery_path)
+            raise
 
-    with exclusive_lock(lock_dir / "config.lock", timeout=timeout):
-        save_config(
-            config_file,
-            _merged_controller_config(
-                load_config(config_file), controller_id, pico_serial, imported_state
-            ),
-        )
-        atomic_write_json(
-            data_dir / "timers" / f"{controller_id}.json",
-            imported_state,
-        )
+    try:
+        with exclusive_lock(lock_dir / "config.lock", timeout=timeout):
+            _commit_host_import(
+                config_file=config_file,
+                data_dir=data_dir,
+                controller_id=controller_id,
+                pico_serial=pico_serial,
+                imported_state=imported_state,
+            )
+    except Exception as exc:
+        if recovery_path is not None:
+            _annotate_recovery_error(exc, "host-import", recovery_path)
+        raise
     return _result(preview, applied=True, recovery_path=recovery_path)

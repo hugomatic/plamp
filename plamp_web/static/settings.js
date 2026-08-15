@@ -309,6 +309,8 @@
     controllerAddPreview.replaceChildren();
     const heading = document.createElement("h4");
     heading.textContent = `Preview ${preview.controller}`;
+    const selected = document.createElement("p");
+    selected.textContent = `Selected serial: ${preview.serial}`;
     const table = document.createElement("table");
     table.innerHTML = "<thead><tr><th>State</th><th>Pin</th><th>Channel</th><th>Programming</th></tr></thead>";
     const body = document.createElement("tbody");
@@ -324,7 +326,11 @@
       status.textContent = preview.action === "provision" ? "Provisioning and verifying (up to 60 seconds)..." : "Importing and verifying (up to 3 seconds)...";
       try {
         const result = await requestControllerAdd(preview.controller, {
-          serial: preview.serial, profile: "plamp8", apply: true, provision: preview.action === "provision",
+          serial: preview.serial,
+          profile: preview.profile,
+          expected_action: preview.action,
+          apply: true,
+          provision: preview.action === "provision",
         });
         if (!result.verified) throw new Error("controller import was not verified");
         window.location.assign(`/controllers/${encodeURIComponent(preview.controller)}`);
@@ -334,7 +340,7 @@
         confirm.disabled = false;
       }
     });
-    controllerAddPreview.append(heading, table, confirm, status);
+    controllerAddPreview.append(heading, selected, table, confirm, status);
   }
 
   async function previewControllerAdd(controllerId, serial) {

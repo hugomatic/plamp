@@ -68,3 +68,39 @@ class SchedulerStateTests(unittest.TestCase):
         ]}}
 
         self.assertFalse(report_matches_state(report, STATE))
+
+    def test_report_comparison_rejects_integer_enabled_as_boolean(self):
+        report = {"type": "report", "content": {"devices": [{
+            **STATE["devices"][0],
+            "enabled": 1,
+            "elapsed_t": 7,
+            "cycle_t": 7,
+            "current_value": 1,
+        }]}}
+
+        self.assertFalse(report_matches_state(report, STATE))
+
+    def test_report_comparison_requires_disabled_device_to_report_integer_zero(self):
+        disabled = {
+            "devices": [{**STATE["devices"][0], "enabled": False}],
+        }
+        base = {
+            **disabled["devices"][0],
+            "elapsed_t": 7,
+            "cycle_t": 7,
+        }
+
+        for current_value in (False, 0.0, 1, None):
+            with self.subTest(current_value=current_value):
+                report = {"type": "report", "content": {"devices": [
+                    {**base, "current_value": current_value}
+                ]}}
+                self.assertFalse(report_matches_state(report, disabled))
+
+        missing = {"type": "report", "content": {"devices": [base]}}
+        self.assertFalse(report_matches_state(missing, disabled))
+
+        report = {"type": "report", "content": {"devices": [
+            {**base, "current_value": 0}
+        ]}}
+        self.assertTrue(report_matches_state(report, disabled))

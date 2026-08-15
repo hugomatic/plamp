@@ -205,7 +205,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("Add/import controller", script)
         self.assertIn("Upgrade, provision, and import", script)
         self.assertIn('apply: false, provision: false', script)
-        self.assertIn('apply: true, provision: preview.action === "provision"', script)
+        self.assertIn("apply: true", script)
+        self.assertIn('provision: preview.action === "provision"', script)
+        self.assertIn("expected_action: preview.action", script)
+        self.assertIn("profile: preview.profile", script)
+        self.assertIn("Selected serial", script)
+        self.assertIn("preview.serial", script)
         self.assertIn("preview.before", script)
         self.assertIn("preview.after", script)
 

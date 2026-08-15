@@ -1,3 +1,4 @@
+import copy
 import json
 import tempfile
 import unittest
@@ -20,7 +21,7 @@ def report(revision):
                 "revision": revision,
                 "protocol": 3,
             },
-            "devices": STATE["devices"],
+            "devices": copy.deepcopy(STATE["devices"]),
         },
     }
 
@@ -118,6 +119,114 @@ class PicoCommandTests(unittest.TestCase):
         self.assertEqual(result["identity"]["revision"], "newrev")
         self.assertEqual(result["port"], "/dev/ttyACM1")
         self.assertEqual(result["report"], report("newrev"))
+
+    def test_upgrade_aborts_before_mutation_when_under_lock_report_changed(self):
+        inspected = report("oldrev")
+
+        class ChangedOperation(FakeOperation):
+            def report(self):
+                self.calls.append("report")
+                changed = report("oldrev")
+                changed["content"]["devices"] = [
+                    {**changed["content"]["devices"][0], "pin": 9}
+                ]
+                return PicoExchange(changed, "/dev/ttyACM0", (b"changed\n",))
+
+        class ChangedClient(FakeClient):
+            def __init__(self, serial, *, lock_dir):
+                super().__init__(serial, lock_dir=lock_dir)
+                self.active = ChangedOperation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clients = []
+
+            def factory(*args, **kwargs):
+                client = ChangedClient(*args, **kwargs)
+                clients.append(client)
+                return client
+
+            with self.assertRaisesRegex(PicoCommandError, "changed since inspection"):
+                upgrade_scheduler(
+                    "PICO-A", STATE,
+                    lock_dir=root / "locks", timeout=60,
+                    repo_root=root, data_dir=root / "data",
+                    inspected_report=inspected,
+                    client_factory=factory,
+                    render_func=lambda repo_root: ("newrev", "# generic firmware\n"),
+                    mpremote_finder=lambda name: "/usr/bin/mpremote",
+                    command_runner=object(), interrupter=object(),
+                )
+
+        self.assertEqual(clients[0].active.calls, ["report"])
+
+    def test_upgrade_freshness_check_ignores_phase_and_current_progress(self):
+        inspected = report("oldrev")
+        fresh = report("oldrev")
+        fresh["content"]["devices"][0].update(
+            {"current_t": 99, "elapsed_t": 100, "cycle_t": 101, "current_value": 0}
+        )
+
+        class ProgressOperation(FakeOperation):
+            def report(self):
+                self.calls.append("report")
+                return PicoExchange(fresh, "/dev/ttyACM0", (b"fresh\n",))
+
+        class ProgressClient(FakeClient):
+            def __init__(self, serial, *, lock_dir):
+                super().__init__(serial, lock_dir=lock_dir)
+                self.active = ProgressOperation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = upgrade_scheduler(
+                "PICO-A", STATE,
+                lock_dir=root / "locks", timeout=60,
+                repo_root=root, data_dir=root / "data",
+                inspected_report=inspected,
+                client_factory=ProgressClient,
+                render_func=lambda repo_root: ("newrev", "# generic firmware\n"),
+                mpremote_finder=lambda name: "/usr/bin/mpremote",
+                command_runner=object(), interrupter=object(),
+            )
+
+        self.assertEqual(result["identity"]["revision"], "newrev")
+
+    def test_upgrade_aborts_before_mutation_when_firmware_identity_changed(self):
+        inspected = report("oldrev")
+
+        class ChangedIdentityOperation(FakeOperation):
+            def report(self):
+                self.calls.append("report")
+                return PicoExchange(report("another-revision"), "/dev/ttyACM0", (b"changed\n",))
+
+        class ChangedIdentityClient(FakeClient):
+            def __init__(self, serial, *, lock_dir):
+                super().__init__(serial, lock_dir=lock_dir)
+                self.active = ChangedIdentityOperation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clients = []
+
+            def factory(*args, **kwargs):
+                client = ChangedIdentityClient(*args, **kwargs)
+                clients.append(client)
+                return client
+
+            with self.assertRaisesRegex(PicoCommandError, "changed since inspection"):
+                upgrade_scheduler(
+                    "PICO-A", STATE,
+                    lock_dir=root / "locks", timeout=60,
+                    repo_root=root, data_dir=root / "data",
+                    inspected_report=inspected,
+                    client_factory=factory,
+                    render_func=lambda repo_root: ("newrev", "# generic firmware\n"),
+                    mpremote_finder=lambda name: "/usr/bin/mpremote",
+                    command_runner=object(), interrupter=object(),
+                )
+
+        self.assertEqual(clients[0].active.calls, ["report"])
 
     def test_upgrade_accepts_legacy_initial_report_with_null_previous_identity(self):
         class LegacyOperation(FakeOperation):

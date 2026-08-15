@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from plamp.cli import build_parser, main
 from plamp.config import ConfigError, controller_pico_serial
+from plamp.locks import exclusive_lock
 from plamp.pico_transport import PicoFlashError
 from plamp.pico_discovery import PicoPort
 
@@ -506,3 +507,28 @@ class DirectCliTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "config.json").read_text(encoding="utf-8")), replacement)
             self.assertEqual(json.loads(stdout.getvalue()), replacement)
             self.assertEqual(stderr.getvalue(), "")
+
+    def test_config_write_contends_on_shared_cross_process_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_config(root)
+            original = json.loads((root / "config.json").read_text(encoding="utf-8"))
+            lock_dir = root / "locks"
+            stderr = io.StringIO()
+
+            with exclusive_lock(lock_dir / "config.lock", timeout=1):
+                rc = main(
+                    [
+                        "--lock-dir", str(lock_dir),
+                        "--timeout", "0",
+                        "config", "write", "-",
+                    ],
+                    env=self.runtime_env(root),
+                    stdin=io.StringIO(json.dumps({"controllers": {}, "cameras": {}})),
+                    stdout=io.StringIO(),
+                    stderr=stderr,
+                )
+
+            self.assertEqual(rc, 4)
+            self.assertIn("config.lock", stderr.getvalue())
+            self.assertEqual(json.loads((root / "config.json").read_text(encoding="utf-8")), original)

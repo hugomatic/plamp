@@ -23,3 +23,12 @@ class PicoDiscoveryTests(unittest.TestCase):
 
     def test_missing_serial_returns_none(self):
         self.assertIsNone(find_pico_port("missing", comports=lambda: []))
+
+    def test_duplicate_serial_is_rejected_as_ambiguous(self):
+        ports = lambda: [
+            SimpleNamespace(device="/dev/ttyACM0", vid=0x2E8A, serial_number="PICO-A"),
+            SimpleNamespace(device="/dev/ttyACM1", vid=0x2E8A, serial_number="PICO-A"),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "multiple Pico ports.*PICO-A"):
+            find_pico_port("PICO-A", comports=ports)

@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from plamp.pico_health import PicoHealth, failed_health
+from plamp.locks import LockTimeout, exclusive_lock
 from plamp.usb_events import UsbSerialEvent
 
 import plamp_web.server as server
@@ -68,8 +69,59 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_web_config_writes_contend_on_cross_process_config_lock(self):
+        writers = (
+            lambda: server.put_config({"controllers": {}, "cameras": {}}),
+            lambda: server.put_config_controllers({}),
+        )
+        for writer in writers:
+            with self.subTest(writer=writer):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    original = {"controllers": {"keep": {}}, "cameras": {}}
+                    config_file = self.make_config(root, original)
+                    lock_dir = root / "locks"
+                    with (
+                        patch.object(server, "CONFIG_FILE", config_file),
+                        patch.object(server, "RUNTIME_CONTEXT", SimpleNamespace(lock_dir=lock_dir)),
+                        patch.object(server, "CONFIG_WRITE_LOCK_TIMEOUT", 0, create=True),
+                        exclusive_lock(lock_dir / "config.lock", timeout=1),
+                    ):
+                        with self.assertRaises(LockTimeout):
+                            writer()
+
+                    self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), original)
+
+    def test_controller_schedule_contends_on_cross_process_config_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = {
+                "controllers": {
+                    "plamp8": self.scheduler_controller(serial="PICO-A")
+                },
+                "cameras": {},
+            }
+            config_file = self.make_config(root, original)
+            lock_dir = root / "locks"
+            with (
+                patch.object(server, "CONFIG_FILE", config_file),
+                patch.object(server, "RUNTIME_CONTEXT", SimpleNamespace(lock_dir=lock_dir)),
+                patch.object(server, "CONFIG_WRITE_LOCK_TIMEOUT", 0),
+                patch.object(server, "role_locks", {}),
+                patch.object(server, "get_or_start_monitor") as get_monitor,
+                exclusive_lock(lock_dir / "config.lock", timeout=1),
+            ):
+                with self.assertRaises(LockTimeout):
+                    server.post_controller_schedule("plamp8", {})
+
+            get_monitor.assert_not_called()
+            self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), original)
+
     def test_post_controller_add_forwards_path_and_flags_to_shared_operation(self):
-        with patch.object(server, "add_controller", return_value={"action": "import"}) as add:
+        with (
+            patch.object(server, "add_controller", return_value={"action": "import"}) as add,
+            patch.object(server, "reconcile_configured_monitors") as reconcile,
+        ):
             result = server.post_controller_add("plamp8", {
                 "serial": "PICO-A",
                 "profile": "plamp8",
@@ -81,6 +133,29 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(add.call_args.args[:3], ("plamp8", "PICO-A", "plamp8"))
         self.assertFalse(add.call_args.kwargs["apply"])
         self.assertFalse(add.call_args.kwargs["allow_provision"])
+        self.assertIsNone(add.call_args.kwargs["expected_action"])
+        reconcile.assert_not_called()
+
+    def test_post_controller_add_apply_forwards_expected_action_and_reconciles_monitors(self):
+        with (
+            patch.object(
+                server,
+                "add_controller",
+                return_value={"action": "import", "verified": True},
+            ) as add,
+            patch.object(server, "reconcile_configured_monitors") as reconcile,
+        ):
+            result = server.post_controller_add("plamp8", {
+                "serial": "PICO-A",
+                "profile": "plamp8",
+                "apply": True,
+                "provision": False,
+                "expected_action": "import",
+            })
+
+        self.assertTrue(result["verified"])
+        self.assertEqual(add.call_args.kwargs["expected_action"], "import")
+        reconcile.assert_called_once_with()
 
     def test_post_controller_add_rejects_invalid_payload_before_hardware_access(self):
         cases = [
@@ -88,6 +163,7 @@ class ConfigApiTests(unittest.TestCase):
             ({"serial": "PICO-A", "profile": "generic"}, "profile must be plamp8"),
             ({"serial": "PICO-A", "profile": "plamp8", "apply": False, "provision": True}, "provision requires apply"),
             ({"serial": "PICO-A", "profile": "plamp8", "apply": 1}, "apply and provision must be booleans"),
+            ({"serial": "PICO-A", "profile": "plamp8", "apply": True}, "expected_action must be import or provision"),
         ]
         for payload, detail in cases:
             with self.subTest(detail=detail), patch.object(server, "add_controller") as add:
@@ -102,6 +178,7 @@ class ConfigApiTests(unittest.TestCase):
         with (
             patch.object(server, "add_controller", side_effect=server.ConfigError("serial already assigned to controller: old")),
             patch.object(server, "get_or_start_monitor") as get_monitor,
+            patch.object(server, "reconcile_configured_monitors") as reconcile,
         ):
             with self.assertRaises(HTTPException) as raised:
                 server.post_controller_add("plamp8", {
@@ -109,11 +186,13 @@ class ConfigApiTests(unittest.TestCase):
                     "profile": "plamp8",
                     "apply": True,
                     "provision": False,
+                    "expected_action": "import",
                 })
 
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail, "serial already assigned to controller: old")
         get_monitor.assert_not_called()
+        reconcile.assert_not_called()
 
     def test_post_controller_add_maps_hardware_errors_without_starting_monitor(self):
         cases = [
@@ -126,6 +205,7 @@ class ConfigApiTests(unittest.TestCase):
                 with (
                     patch.object(server, "add_controller", side_effect=failure),
                     patch.object(server, "get_or_start_monitor") as get_monitor,
+                    patch.object(server, "reconcile_configured_monitors") as reconcile,
                 ):
                     with self.assertRaises(HTTPException) as raised:
                         server.post_controller_add("plamp8", {
@@ -139,6 +219,7 @@ class ConfigApiTests(unittest.TestCase):
                     self.assertEqual(raised.exception.detail["message"], str(failure))
                     self.assertEqual(raised.exception.detail["health"]["error"]["kind"], kind)
                     get_monitor.assert_not_called()
+                    reconcile.assert_not_called()
 
     def test_system_route_is_static_file(self):
         fail = AssertionError("system route must not touch runtime state")
