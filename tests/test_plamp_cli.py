@@ -527,6 +527,7 @@ class PlampCliFirmwareTests(unittest.TestCase):
                     "id": "lights",
                     "type": "gpio",
                     "pin": 2,
+                    "enabled": True,
                     "current_t": 0,
                     "reschedule": 1,
                     "pattern": [{"val": 1, "dur": 10}],
@@ -547,7 +548,7 @@ class PlampCliFirmwareTests(unittest.TestCase):
     @patch("plamp_cli.main.load_json_input")
     def test_scheduler_flash_rejects_nonempty_payload_before_hardware_mutation(self, load_json_input, run_command, popen):
         load_json_input.return_value = {
-            "devices": [{"id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
+            "devices": [{"id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0,
                          "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]
         }
         stdout = StringIO()

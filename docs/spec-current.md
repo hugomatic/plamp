@@ -44,6 +44,12 @@ Controller IDs are unique. Device IDs are unique within a controller. Pins may n
 
 Observed reports describe runtime state. They do not replace desired configuration or host-only preferences.
 
+Protocol 3 complete scheduler states require an `enabled` boolean for every base
+device. Complete Pico reports include that field along with the device identity,
+type, pin, schedule, phase, and current output value; partial telemetry fragments
+are not a substitute for a complete report. Host configuration exposes the same
+choice as semantic `programming: "enabled"` or `programming: "disabled"`.
+
 ## Interfaces
 
 Agents should receive machine-readable JSON on stdout and diagnostics on stderr.
@@ -57,6 +63,28 @@ plamp pico pulse <controller> <pin> <seconds>
 plamp pico configure <controller> <compiled-state.json>
 plamp pico upgrade <controller> <compiled-state.json>
 ```
+
+Inspect attached Pico serials and preview Plamp8 onboarding before authorizing any
+mutation:
+
+```bash
+plamp controllers candidates
+plamp controllers add plamp8 --serial <serial> --profile plamp8
+plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --apply
+```
+
+`controllers candidates` enumerates Raspberry Pi USB serial/device pairs without
+opening a candidate. Inspect the returned serials and pass the intended hardware
+serial explicitly. The middle command obtains one complete report from only that
+serial and returns a read-only JSON preview; it changes neither Pico firmware nor
+host files. If the preview action is `import`, register the already provisioned
+protocol 3 controller with `--apply` but without `--provision`. If the action is
+`provision`, the last command is the explicit destructive authorization: it saves
+the pre-provision report under
+`$PLAMP_DATA_DIR/controller-backups/<controller>-<serial>-pre-provision.json`,
+reflashes and resets the selected Pico, verifies the resulting protocol 3 report,
+and then imports it. Confirm manual switches and connected loads are safe before
+running it. `--provision` without `--apply` is rejected.
 
 `python3 -m plamp_cli` remains an explicitly named REST compatibility client during
 migration. It does not own the `plamp` command.
@@ -82,6 +110,13 @@ Schedule changes send and verify one complete persistent runtime state. A
 legacy or outdated Pico is upgraded once during the next mutating schedule
 transaction, using the committed state before applying the proposal. Read-only
 reports never upgrade firmware, and ordinary schedule changes do not reset USB.
+
+Scheduler protocol 3 persists and reports each base device's required `enabled`
+state. The Pico itself enforces disabled outputs: GPIO and PWM are driven to zero,
+their schedule phase does not advance, the state remains disabled after reboot,
+and GPIO pulse requests are rejected. Disabling a channel with an active pulse
+cancels that overlay and drives the output off immediately. Disabled base devices
+remain present in complete reports with `enabled: false` and `current_value: 0`.
 
 `pico_scheduler` is the only implemented firmware family. Dosing pumps attached
 to Plamp8 use bounded GPIO pulses requested by a human, host algorithm, or

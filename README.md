@@ -51,6 +51,22 @@ plamp pico upgrade pump_lights compiled-state.json
 plamp camera capture rpicam_cam0
 ```
 
+Inspect the stable USB serial before onboarding a Plamp8 controller, and preview
+the exact action before authorizing it:
+
+```bash
+plamp controllers candidates
+plamp controllers add plamp8 --serial <serial> --profile plamp8
+plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --apply
+```
+
+The middle command is a read-only preview: it reads the explicitly selected Pico
+but changes neither firmware nor host files. Import an already provisioned
+protocol 3 controller by adding `--apply` without `--provision`. If the preview
+requires provisioning, the last command is the explicit mutation that reflashes
+and resets the selected controller; confirm manual switches and connected loads
+are safe first.
+
 Use `-` instead of `compiled-state.json` to read the complete compiled scheduler state from stdin. Configure sends that state through the shared locked Pico protocol. Upgrade renders the current generic scheduler firmware, seeds both state slots, resets once, and verifies the reconnected report. These commands work while the service is running or stopped and do not contact `plamp-web`. Remote agents can use either the REST CLI or direct CLI over SSH.
 
 During migration, the explicitly named REST compatibility client remains available as

@@ -22,6 +22,7 @@ class PicoGeneratorTests(unittest.TestCase):
                             "id": "lights",
                             "type": "gpio",
                             "pin": 21,
+                            "enabled": True,
                             "current_t": current_t,
                             "reschedule": 1,
                             "pattern": pattern,

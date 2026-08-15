@@ -92,7 +92,32 @@ plamp pico upgrade pump_lights compiled-state.json
 plamp camera capture rpicam_cam0
 ```
 
+Inspect serials and preview a Plamp8 controller before authorizing changes:
+
+```bash
+plamp controllers candidates
+plamp controllers add plamp8 --serial <serial> --profile plamp8
+plamp controllers add plamp8 --serial <serial> --profile plamp8 --provision --apply
+```
+
+`controllers candidates` only enumerates attached Raspberry Pi USB serial/device
+pairs; inspect the output and select the intended serial explicitly. The middle
+command reads that Pico's complete report and emits a read-only JSON preview. It
+does not change firmware or host files. When the preview action is `import`, use
+the same command with `--apply` and no `--provision` to register an already
+provisioned protocol 3 controller without changing its firmware. When the action
+is `provision`, the last command authorizes a reflash and reset of the selected
+Pico before import. It writes the pre-provision report to
+`$PLAMP_DATA_DIR/controller-backups/<controller>-<serial>-pre-provision.json`;
+verify switches and connected loads are safe first. `--provision` without
+`--apply` is rejected.
+
 Commands emit JSON on stdout and diagnostics on stderr. `PLAMP_ROOT` and
 `PLAMP_DATA_DIR` select local paths; `--lock-dir` and `--timeout` control hardware
 locking and operation budgets. Direct hardware commands may run while the service is
 active because access is serialized through shared locks.
+
+Complete scheduler states and protocol 3 reports require `enabled` on every base
+device. The Pico enforces disabled channels by holding GPIO/PWM output at zero,
+freezing schedule phase, preserving the disabled state across reboot, and rejecting
+GPIO pulses; complete reports still include the disabled device and its zero value.
