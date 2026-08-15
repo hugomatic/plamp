@@ -222,8 +222,10 @@ disabled imported channel cannot be pulsed.
 ## Settings and later edits
 
 The settings page calls these devices **channels** where that is clearer to the
-user. It edits the canonical ID directly and shows its derived display name.
-There is no device-label input.
+user. Remove the scheduled-device **Label** column and input entirely. Settings
+edits the canonical device ID directly and shows its derived display name; the
+device ID is the only editable channel name. Controller and camera label fields
+remain unchanged.
 
 Saving controller assignment remains a host operation and does not implicitly
 probe or configure hardware. After import, changing a channel ID or enabled
