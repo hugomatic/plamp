@@ -77,9 +77,7 @@ while preserving the program already associated with each physical output.
 
 The same exact mapping is the contract for controller provisioning and Plamp8
 box lettering. The current CAD names `Lights` and `Aux` are stale and must be
-corrected to `Lights 1` and `Lights 2`. Automated contract coverage must compare
-the CAD channel/pin declarations with the shared Plamp8 profile so they cannot
-silently drift again.
+corrected directly to `Lights 1` and `Lights 2`.
 
 ## Device IDs and display names
 
@@ -321,9 +319,6 @@ Unit and fake-serial coverage must prove:
   stderr; and
 - web, REST, and CLI adapters produce the same preview and result from the
   shared operation.
-
-The CAD contract test must fail if the channel text/pin mapping differs from the
-canonical Plamp8 profile.
 
 Hardware verification on the installed Plamp8 must be explicitly authorized
 because it reflashes and resets the live Pico. Before execution, confirm manual
