@@ -159,9 +159,8 @@ def _semantic_devices_from_legacy(legacy_devices: Mapping) -> dict:
             "programming": settings["programming"],
             "editor": settings["schedule"],
         }
-        for key in ("label", "icon"):
-            if key in config:
-                devices[device_id][key] = config[key]
+        if "icon" in config:
+            devices[device_id]["icon"] = config["icon"]
     return devices
 
 
@@ -202,9 +201,7 @@ def _validate_semantic_devices(value: object, controller_id: str) -> dict:
             "programming": programming,
             "editor": _validate_schedule(device_value.get("editor", {}), f"device {device_id} editor"),
         }
-        label = _optional_label(device_value, f"device {device_id}")
-        if label:
-            devices[device_id]["label"] = label
+        _optional_label(device_value, f"device {device_id}")
         icon = device_value.get("icon")
         if icon is not None:
             if not isinstance(icon, str) or not icon:

@@ -49,7 +49,7 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(devices["ch1"]["programming"], "disabled")
         self.assertEqual(devices["ch2"]["visibility"], "visible")
         self.assertEqual(devices["ch2"]["programming"], "disabled")
-        self.assertEqual(devices["ch8"]["label"], "CH8")
+        self.assertNotIn("label", devices["ch8"])
         self.assertEqual(devices["ch8"]["editor"], {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0})
 
     def test_config_view_rejects_legacy_top_level_device_unknown_controller(self):
@@ -91,6 +91,13 @@ class HardwareConfigTests(unittest.TestCase):
             validate_controllers({"ctrl_a": {"type": "pico_scheduler", "settings": {"report_every": 30}}}),
             {"ctrl_a": {"type": "pico_scheduler", "payload": {"report_every": 30, "devices": []}, "settings": {"devices": {}}}},
         )
+
+    def test_semantic_device_label_is_accepted_but_not_normalized(self):
+        device = validate_controllers({"ctrl_a": {"settings": {"devices": {
+            "pump": {"pin": 2, "label": "Main pump"},
+        }}}})["ctrl_a"]["settings"]["devices"]["pump"]
+
+        self.assertNotIn("label", device)
 
     def test_semantic_devices_compile_enabled_and_disabled_payloads(self):
         controller = validate_controllers({

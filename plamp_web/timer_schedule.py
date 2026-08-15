@@ -4,6 +4,7 @@ import re
 from datetime import datetime, time
 from typing import Any
 
+from plamp.controller_add import display_device_id
 from plamp_web.hardware_config import config_view, scheduler_devices_for_controller
 
 CLOCK_DAY_SECONDS = 24 * 60 * 60
@@ -84,7 +85,7 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
             {
                 "role": role,
                 "id": device_id,
-                "name": device_id,
+                "name": display_device_id(device_id),
                 "pin": live_pin,
                 "type": event_type,
                 "default_editor": default_editor,
