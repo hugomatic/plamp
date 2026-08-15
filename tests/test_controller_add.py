@@ -49,10 +49,10 @@ def protocol_2_report():
     }
 
 
-def protocol_3_report():
+def protocol_3_report(*, revision="plamp8", name="pico_scheduler", protocol=3):
     report = protocol_2_report()
     report["content"]["firmware"] = {
-        "name": "pico_scheduler", "revision": "plamp8", "protocol": 3,
+        "name": name, "revision": revision, "protocol": protocol,
     }
     return report
 
@@ -155,6 +155,39 @@ class ControllerAddTests(unittest.TestCase):
             self.assertEqual(calls[0][1], provisioned_plamp8_state(protocol_2_report()))
             self.assertEqual(calls[0][2]["repo_root"], root)
             self.assertEqual(json.loads(config_file.read_text(encoding="utf-8"))["controllers"]["plamp8"]["payload"]["pico_serial"], "PICO-A")
+
+    def test_provision_accepts_the_generated_scheduler_revision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated_report = protocol_3_report(revision="83508b0")
+            result, config_file = self.add(
+                root, apply=True, allow_provision=True,
+                report=lambda *args, **kwargs: protocol_2_report(),
+                upgrade=lambda *args, **kwargs: {"report": generated_report},
+            )
+
+            self.assertTrue(result["verified"])
+            self.assertEqual(result["action"], "provision")
+            self.assertIn("plamp8", json.loads(config_file.read_text(encoding="utf-8"))["controllers"])
+
+    def test_provision_rejects_upgraded_report_with_wrong_firmware_family_or_protocol(self):
+        for upgraded_report, error in (
+            (protocol_3_report(revision="83508b0", name="pico_doser"), "pico_scheduler"),
+            (protocol_3_report(revision="83508b0", protocol=2), "protocol 3"),
+        ):
+            with self.subTest(firmware=upgraded_report["content"]["firmware"]):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    config_file = self.write_config(root)
+                    with self.assertRaisesRegex(ValueError, error):
+                        add_controller(
+                            "plamp8", "PICO-A", "plamp8", apply=True, allow_provision=True,
+                            config_file=config_file, data_dir=root / "data", repo_root=root,
+                            lock_dir=root / "locks", timeout=3,
+                            report_func=lambda *args, **kwargs: protocol_2_report(),
+                            upgrade_func=lambda *args, **kwargs: {"report": upgraded_report},
+                        )
+                    self.assertEqual(json.loads(config_file.read_text(encoding="utf-8")), {"controllers": {}, "cameras": {}})
 
     def test_upgrade_failure_keeps_config_and_recovery_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:

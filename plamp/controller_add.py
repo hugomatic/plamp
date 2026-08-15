@@ -155,7 +155,13 @@ def preview_controller_add(
     """Describe whether a fresh report can be imported or needs provisioning."""
     before, observed = _profile_report_devices(report)
     after = provisioned_plamp8_state(report)["devices"]
-    action = "import" if observed == expected_identity else "provision"
+    action = (
+        "import"
+        if observed is not None
+        and observed.name == expected_identity.name
+        and observed.protocol == expected_identity.protocol
+        else "provision"
+    )
     return {
         "controller": controller_id,
         "serial": pico_serial,
