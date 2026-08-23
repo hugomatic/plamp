@@ -1729,6 +1729,33 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
         self.assertEqual(system.default_product, "split-box")
 
+    def test_plamp8_has_four_independent_enclosure_products(self):
+        system = load_system(REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT)
+        expected_sets = {
+            "split-box": (
+                "floor", "north_south_walls", "east_west_walls",
+                "top_panel", "sub_panel",
+            ),
+            "fuse-box": ("box", "top_panel", "sub_panel"),
+            "split-box-auto": (
+                "floor", "north_south_walls", "east_west_walls",
+                "top_panel", "sub_panel",
+            ),
+            "fuse-box-auto": ("box", "top_panel", "sub_panel"),
+        }
+        for name, set_names in expected_sets.items():
+            with self.subTest(product=name):
+                product = system.products[name]
+                self.assertEqual(
+                    tuple(item.set_name for item in product.items), set_names
+                )
+                expected_mode = name.endswith("-auto")
+                self.assertTrue(all(
+                    item.variables.get("auto_only", False) is expected_mode
+                    for item in product.items
+                ))
+        self.assertEqual(system.default_product, "split-box")
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)

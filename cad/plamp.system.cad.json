@@ -32,6 +32,24 @@
         {"model": "plamp8", "set": "sub_panel"}
       ]
     },
+    "split-box-auto": {
+      "description": "Auto-only enclosure printed as separate floor, short walls, and panels",
+      "items": [
+        {"model": "plamp8", "set": "floor", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "north_south_walls", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "east_west_walls", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "top_panel", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "sub_panel", "variables": {"auto_only": true}}
+      ]
+    },
+    "fuse-box-auto": {
+      "description": "Auto-only enclosure printed as a fused short box with separate panels",
+      "items": [
+        {"model": "plamp8", "set": "box", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "top_panel", "variables": {"auto_only": true}},
+        {"model": "plamp8", "set": "sub_panel", "variables": {"auto_only": true}}
+      ]
+    },
     "panels": {
       "description": "Printable top and internal sub-panels",
       "items": [
