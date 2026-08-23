@@ -397,7 +397,7 @@ git commit -m "Model Plamp8 auto-only service clearances"
 Run:
 
 ```bash
-/home/hugo/.local/bin/uv run plamp cad validate plamp8 --json
+bin/plamp cad validate plamp8 --json
 ```
 
 Expected: valid model metadata with no unknown sets or variables.
@@ -407,10 +407,10 @@ Expected: valid model metadata with no unknown sets or variables.
 Run each command and inspect `jobs[].set_name` and `jobs[].variables.auto_only`:
 
 ```bash
-/home/hugo/.local/bin/uv run plamp cad plan --system plamp --product split-box --json
-/home/hugo/.local/bin/uv run plamp cad plan --system plamp --product fuse-box --json
-/home/hugo/.local/bin/uv run plamp cad plan --system plamp --product split-box-auto --json
-/home/hugo/.local/bin/uv run plamp cad plan --system plamp --product fuse-box-auto --json
+bin/plamp cad plan --system plamp --product split-box --json
+bin/plamp cad plan --system plamp --product fuse-box --json
+bin/plamp cad plan --system plamp --product split-box-auto --json
+bin/plamp cad plan --system plamp --product fuse-box-auto --json
 ```
 
 Expected: manual jobs omit or set `auto_only` false; every auto job sets it true. Split products contain five jobs and fused products contain three.
@@ -420,8 +420,8 @@ Expected: manual jobs omit or set `auto_only` false; every auto job sets it true
 Use an honest revision label if the Plamp8 source is dirty:
 
 ```bash
-/home/hugo/.local/bin/uv run plamp cad generate --system plamp --product split-box-auto --revision auto-only-fit-1 --json
-/home/hugo/.local/bin/uv run plamp cad generate --system plamp --product fuse-box-auto --revision auto-only-fit-1 --json
+bin/plamp cad generate --system plamp --product split-box-auto --revision auto-only-fit-1 --json
+bin/plamp cad generate --system plamp --product fuse-box-auto --revision auto-only-fit-1 --json
 ```
 
 Expected: all eight total jobs complete and produce non-empty STLs in managed run archives.
@@ -431,8 +431,8 @@ Expected: all eight total jobs complete and produce non-empty STLs in managed ru
 For each returned run ID, use:
 
 ```bash
-/home/hugo/.local/bin/uv run plamp cad show RUN_ID --json
-/home/hugo/.local/bin/uv run plamp cad log RUN_ID ARTIFACT_ID --json
+bin/plamp cad show RUN_ID --json
+bin/plamp cad log RUN_ID ARTIFACT_ID --json
 ```
 
 Substitute identifiers from the generation output. Expected: no missing includes, OpenSCAD errors, empty geometry, or failed jobs. Confirm the archived source snapshot exists.
