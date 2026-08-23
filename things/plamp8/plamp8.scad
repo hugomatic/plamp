@@ -1438,7 +1438,7 @@ module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
     translate([0, 0, sub_panel_bonding_nut_z])
         side_loaded_panel_nut_trap_negative(
             mouth_direction,
-            opening_edge_distance
+            opening_edge_distance + boolean_shim
         );
 }
 
