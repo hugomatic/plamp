@@ -1795,7 +1795,7 @@ function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
 function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
 function ac_connector_x() = auto_only
-    ? (outlet_feature_x + outlet_toggle_x) / 2
+    ? outlet_group_x
     : manual_ac_connector_x;
 function dc_connector_x() = auto_only
     ? barrel_group_x

@@ -1764,7 +1764,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "wall_z_height=auto_only?auto_wall_z_height:manual_wall_z_height;",
             compact,
         )
-        self.assertIn("functionac_connector_x()=auto_only?", compact)
+        self.assertIn(
+            "functionac_connector_x()=auto_only?outlet_group_x:manual_ac_connector_x;",
+            compact,
+        )
         self.assertIn("functiondc_connector_x()=auto_only?", compact)
         self.assertIn(
             "functiondc_label_x()=auto_only?dc_connector_x():manual_dc_label_x;",
