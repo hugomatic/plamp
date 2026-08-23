@@ -1756,6 +1756,56 @@ class ThingsCadScriptsTest(unittest.TestCase):
                 ))
         self.assertEqual(system.default_product, "split-box")
 
+    def test_plamp8_auto_only_mode_controls_height_switches_and_centers(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        self.assertIn("auto_only=false;", compact)
+        self.assertIn(
+            "wall_z_height=auto_only?auto_wall_z_height:manual_wall_z_height;",
+            compact,
+        )
+        self.assertIn("functionac_connector_x()=auto_only?", compact)
+        self.assertIn("functiondc_connector_x()=auto_only?", compact)
+        self.assertIn(
+            "functiondc_label_x()=auto_only?dc_connector_x():manual_dc_label_x;",
+            compact,
+        )
+        self.assertIn("manual_wall_z_height=128;", compact)
+        self.assertIn("auto_wall_z_height=75;", compact)
+        self.assertIn("manual_ac_connector_x=outlet_feature_x;", compact)
+        self.assertIn("manual_dc_label_x=barrel_label_x;", compact)
+
+        outlet_negative = compact_scad(
+            scad_module_body(source, "outlet_cover_negative")
+        )
+        barrel_negative = compact_scad(
+            scad_module_body(source, "barrel_channel_negative")
+        )
+        sub_panel = compact_scad(
+            scad_module_body(source, "sub_panel_8ch_negative")
+        )
+        top_panel = compact_scad(scad_module_body(source, "top_panel_8ch"))
+        writings = compact_scad(
+            scad_module_body(source, "positive_plate_writings")
+        )
+        self.assertIn("if(!auto_only)", outlet_negative)
+        self.assertIn("if(!auto_only)", barrel_negative)
+        self.assertIn("if(!auto_only)", sub_panel)
+        self.assertIn("if(!auto_only)", top_panel)
+        self.assertIn("if(!auto_only)", writings)
+        self.assertIn(
+            "modulesub_panel_socket_usb_rib_relief_negative()", compact
+        )
+        self.assertIn(
+            "x+ac_connector_x()-sub_panel_socket_rim_relief_w/2", compact
+        )
+        self.assertIn(
+            "sub_panel_socket_usb_rib_relief_negative();", sub_panel
+        )
+        self.assertIn(
+            "sub_panel_socket_bottom_rim_relief_negative();", sub_panel
+        )
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)
@@ -1850,7 +1900,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         for definition in (
             "sub_panel_ac_bonding_rib_w=4;",
             "sub_panel_ac_bonding_rib_x_adjust=15;",
-            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+outlet_feature_x+right_ac_x+outlet_feature_x)/2+sub_panel_ac_bonding_rib_x_adjust;",
+            "sub_panel_ac_bonding_rib_x=layout_offset_x+(left_ac_x+ac_connector_x()+right_ac_x+ac_connector_x())/2+sub_panel_ac_bonding_rib_x_adjust;",
             "sub_panel_ac_bonding_rib_y0=sub_panel_wall;",
             "sub_panel_ac_bonding_rib_y1=layout_offset_y+dc_region_bottom_y;",
         ):
@@ -1913,7 +1963,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
             cutter,
         )
         self.assertIn(
-            "translate([x+outlet_feature_x,ac_row_y,plate_t/2])"
+            "translate([x+ac_connector_x(),ac_row_y,plate_t/2])"
             "sub_panel_socket_negative();",
             sub_panel,
         )

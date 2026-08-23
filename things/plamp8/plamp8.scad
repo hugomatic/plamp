@@ -5,6 +5,7 @@ $fn = render_fn;
 set = ""; // [floor, north_south_walls, east_west_walls, box, top_panel, sub_panel, north_wall, south_wall, west_wall, east_wall, relay_footprint, psu_footprint, converter_footprint, ac_duplex_panel, dc_connector_panel, usb_c_panel, c13_panel, panel_corner_fastener_test, nut_catcher_adjustment_test, corner_coupon, wall_corner_fastener_assembly, assembly]
 
 dc_connector_type = "xt60"; // [barrel, xt60]
+auto_only = false;
 
 /* [assembly view options] */
 
@@ -40,7 +41,9 @@ feature_power_screw_mounts = true;
 
 /* [dimensions] */
 
-wall_z_height = 128;
+manual_wall_z_height = 128;
+auto_wall_z_height = 75;
+wall_z_height = auto_only ? auto_wall_z_height : manual_wall_z_height;
 plate_t = 3;
 connector_panel_rim = 3;
 connector_panel_pair_gap = 10;
@@ -52,6 +55,7 @@ cut_off_y = 2.5;
 outlet_spacing = 39.65;
 outlet_feature_x = -4;
 outlet_toggle_x = 32;
+manual_ac_connector_x = outlet_feature_x;
 outlet_group_x = 8;
 outlet_group_w = 104;
 outlet_group_h = 56;
@@ -237,6 +241,7 @@ barrel_channel_h = 58;
 barrel_label_w = 34;
 barrel_label_h = 10;
 barrel_label_x = 7;
+manual_dc_label_x = barrel_label_x;
 barrel_group_y = -6;
 barrel_group_x = 5;
 barrel_group_w = dc_region_w;
@@ -601,7 +606,7 @@ service_region_bottom_y = service_group_y - service_group_h / 2;
 service_region_top_y = service_group_y + service_group_h / 2;
 c13_service_gap = c13_region_bottom_y - service_region_top_y;
 ac_connector_pair_aligned =
-    left_ac_x + outlet_feature_x - left_ac_x == outlet_feature_x
+    left_ac_x + ac_connector_x() - left_ac_x == ac_connector_x()
     && ac_row_y - ac_row_y == 0;
 dc_connector_pair_aligned =
     dc_channel_x(0) + dc_connector_x() - dc_channel_x(0) == dc_connector_x()
@@ -626,15 +631,21 @@ xt60_screw_nut_envelope_inside_region =
     && xt60_screw_nut_right_x <= barrel_group_x + dc_region_w / 2
     && -xt60_screw_nut_radius >= barrel_group_y - barrel_group_h / 2
     && xt60_screw_nut_radius <= barrel_group_y + barrel_group_h / 2;
-dc_hardware_left_x = min(
-    dc_connector_x() - xt60_outside_w / 2,
-    dc_toggle_x() - sub_panel_switch_w / 2
-);
-dc_hardware_right_x = max(
-    dc_connector_x() + xt60_outside_w / 2,
-    dc_toggle_x() + sub_panel_switch_w / 2
-);
-dc_hardware_half_h = max(xt60_face_h / 2, sub_panel_switch_h / 2);
+dc_hardware_left_x = auto_only
+    ? dc_connector_x() - xt60_outside_w / 2
+    : min(
+        dc_connector_x() - xt60_outside_w / 2,
+        dc_toggle_x() - sub_panel_switch_w / 2
+    );
+dc_hardware_right_x = auto_only
+    ? dc_connector_x() + xt60_outside_w / 2
+    : max(
+        dc_connector_x() + xt60_outside_w / 2,
+        dc_toggle_x() + sub_panel_switch_w / 2
+    );
+dc_hardware_half_h = auto_only
+    ? xt60_face_h / 2
+    : max(xt60_face_h / 2, sub_panel_switch_h / 2);
 dc_hardware_inside_region =
     dc_hardware_left_x >= barrel_group_x - dc_region_w / 2
     && dc_hardware_right_x <= barrel_group_x + dc_region_w / 2
@@ -652,7 +663,7 @@ dc_row_cutters_clear_separator =
 ac_socket_screw_cutter_top_y = ac_row_y + max(
     sub_panel_socket_h / 2,
     sub_panel_socket_screw_spacing / 2 + screw_d / 2,
-    outlet_spacing / 2 + sub_panel_switch_h / 2
+    auto_only ? 0 : outlet_spacing / 2 + sub_panel_switch_h / 2
 );
 ac_socket_screw_cutters_below_separators =
     ac_socket_screw_cutter_top_y <= dc_region_bottom_y;
@@ -715,14 +726,14 @@ layout_offset_x = panel_margin - content_left_x;
 sub_panel_ac_bonding_rib_w = 4;
 sub_panel_ac_bonding_rib_x_adjust = 15;
 sub_panel_ac_bonding_rib_x = layout_offset_x
-    + (left_ac_x + outlet_feature_x + right_ac_x + outlet_feature_x) / 2
+    + (left_ac_x + ac_connector_x() + right_ac_x + ac_connector_x()) / 2
     + sub_panel_ac_bonding_rib_x_adjust;
 sub_panel_ac_bonding_rib_y0 = sub_panel_wall;
 sub_panel_ac_bonding_rib_y1 = layout_offset_y + dc_region_bottom_y;
 sub_panel_ac_left_socket_right_x = layout_offset_x + left_ac_x
-    + outlet_feature_x + sub_panel_socket_w / 2;
+    + ac_connector_x() + sub_panel_socket_w / 2;
 sub_panel_ac_right_socket_left_x = layout_offset_x + right_ac_x
-    + outlet_feature_x - sub_panel_socket_w / 2;
+    + ac_connector_x() - sub_panel_socket_w / 2;
 box_inner_x = wall_t;
 box_inner_y = wall_t;
 internal_psu_x = 70;
@@ -907,7 +918,7 @@ module positive_plate_writings(
 ) {
     bfont = 8;
     sfont = 5;
-    x1 = outlet_feature_x;
+    x1 = ac_connector_x();
     y1 = 50;
 
     x2 = x1;
@@ -920,16 +931,18 @@ module positive_plate_writings(
         translate([0, y_line, 0])
             write_text(detail_a, sfont, -write_t);
     }
-    translate([outlet_toggle_x + toggle_label_x_offset, outlet_spacing / 2, 0])
-        toggle_state_labels();
+    if (!auto_only)
+        translate([outlet_toggle_x + toggle_label_x_offset, outlet_spacing / 2, 0])
+            toggle_state_labels();
 
     translate([x2, y2, plate_t]) {
         write_text(device_b, bfont, -write_t);
         translate([0, y_line, 0])
             write_text(detail_b, sfont, -write_t);
     }
-    translate([outlet_toggle_x + toggle_label_x_offset, -outlet_spacing / 2, 0])
-        toggle_state_labels();
+    if (!auto_only)
+        translate([outlet_toggle_x + toggle_label_x_offset, -outlet_spacing / 2, 0])
+            toggle_state_labels();
 }
 
 module outlet_cover_positive() {
@@ -978,12 +991,13 @@ module negative_screw_hole() {
 module outlet_cover_negative(include_revision = true) {
     // outlet openings
     for (y = [-outlet_spacing / 2, outlet_spacing / 2])
-        translate([outlet_feature_x, y, plate_t / 2])
+        translate([ac_connector_x(), y, plate_t / 2])
             negative_roundish_outlet();
 
-    for (y = [-outlet_spacing / 2, outlet_spacing / 2])
-        translate([outlet_toggle_x, y, 0])
-            screw_hole(toggle_hole_d);
+    if (!auto_only)
+        for (y = [-outlet_spacing / 2, outlet_spacing / 2])
+            translate([outlet_toggle_x, y, 0])
+                screw_hole(toggle_hole_d);
 
     if (include_revision)
         negative_plate_writings();
@@ -1154,7 +1168,7 @@ module sub_panel_socket_bottom_rim_relief_negative() {
 
     for (x = [left_ac_x, right_ac_x])
         translate([
-            x + outlet_feature_x - sub_panel_socket_rim_relief_w / 2,
+            x + ac_connector_x() - sub_panel_socket_rim_relief_w / 2,
             sub_panel_socket_rim_relief_y0,
             sub_panel_base_h - 0.1
         ])
@@ -1165,6 +1179,23 @@ module sub_panel_socket_bottom_rim_relief_negative() {
             ]);
 }
 
+module sub_panel_socket_usb_rib_relief_negative() {
+    lip_h = sub_panel_h - sub_panel_base_h;
+
+    for (x = [left_ac_x, right_ac_x])
+        translate([
+            x + ac_connector_x() - sub_panel_socket_rim_relief_w / 2,
+            sub_panel_usb_support_rib_y
+                - sub_panel_usb_support_rib_w / 2 - boolean_shim,
+            sub_panel_base_h - boolean_shim
+        ])
+            cube([
+                sub_panel_socket_rim_relief_w,
+                sub_panel_usb_support_rib_w + 2 * boolean_shim,
+                lip_h + 2 * boolean_shim
+            ]);
+}
+
 module sub_panel_barrel_channel_negative() {
     translate([dc_connector_x(), 0, 0]) {
         if (dc_connector_type == "xt60")
@@ -1172,8 +1203,9 @@ module sub_panel_barrel_channel_negative() {
         else
             screw_hole(barrel_jack_hole_d);
     }
-    translate([dc_toggle_x(), 0, 0])
-        rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
+    if (!auto_only)
+        translate([dc_toggle_x(), 0, 0])
+            rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
 }
 
 module sub_panel_usb_screw_negative() {
@@ -1412,17 +1444,19 @@ module sub_panel_c13_bonding_negative() {
 
 module sub_panel_8ch_negative() {
     sub_panel_socket_bottom_rim_relief_negative();
+    sub_panel_socket_usb_rib_relief_negative();
 
     for (x = [left_ac_x, right_ac_x]) {
-        translate([x + outlet_feature_x, ac_row_y, plate_t / 2])
+        translate([x + ac_connector_x(), ac_row_y, plate_t / 2])
             sub_panel_socket_negative();
         for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
-            translate([x + outlet_feature_x, ac_row_y + y, 0])
+            translate([x + ac_connector_x(), ac_row_y + y, 0])
                 screw_hole(screw_d);
 
-        for (y = [-outlet_spacing / 2, outlet_spacing / 2])
-            translate([x + outlet_toggle_x, ac_row_y + y, 0])
-                rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
+        if (!auto_only)
+            for (y = [-outlet_spacing / 2, outlet_spacing / 2])
+                translate([x + outlet_toggle_x, ac_row_y + y, 0])
+                    rect_cutout(sub_panel_switch_w, sub_panel_switch_h);
     }
 
     for (i = [0:3])
@@ -1542,8 +1576,9 @@ module barrel_channel_negative() {
         else
             screw_hole(barrel_jack_hole_d);
     }
-    translate([dc_toggle_x(), 0, 0])
-        screw_hole(toggle_hole_d);
+    if (!auto_only)
+        translate([dc_toggle_x(), 0, 0])
+            screw_hole(toggle_hole_d);
 
     translate([barrel_group_x, barrel_group_y, 0])
         label_pocket(barrel_group_w, barrel_group_h);
@@ -1575,10 +1610,11 @@ module dc_connector_panel_unit(device = "PH Up", detail = "CH5 GP17 12V DC", inc
             barrel_revision_negative();
     }
 
-    translate([barrel_label_x, -barrel_channel_h / 2 + 11, 0])
+    translate([dc_label_x(), -barrel_channel_h / 2 + 11, 0])
         flush_two_line_label(device, detail, 5.3, 4.1, 6);
-    translate([dc_toggle_x() + toggle_label_x_offset, 0, 0])
-        toggle_state_labels();
+    if (!auto_only)
+        translate([dc_toggle_x() + toggle_label_x_offset, 0, 0])
+            toggle_state_labels();
 
     if (include_revision)
         translate([0, dc_connector_panel_revision_y, 0])
@@ -1711,12 +1747,19 @@ module relay_board_keepout() {
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
 function dc_channel_y(i) = dc_grid_y - floor(i / 2) * dc_row_spacing;
 function dc_toggle_x() = barrel_toggle_x + dc_toggle_x_extra;
-function dc_connector_x() = dc_connector_type == "xt60"
-    ? dc_toggle_x() - xt60_switch_center_spacing
-    : barrel_jack_x;
+function ac_connector_x() = auto_only
+    ? (outlet_feature_x + outlet_toggle_x) / 2
+    : manual_ac_connector_x;
+function dc_connector_x() = auto_only
+    ? barrel_group_x
+    : (dc_connector_type == "xt60"
+        ? dc_toggle_x() - xt60_switch_center_spacing
+        : barrel_jack_x);
+function dc_label_x() = auto_only ? dc_connector_x() : manual_dc_label_x;
 
 assert(
-    dc_connector_type != "xt60"
+    auto_only
+        || dc_connector_type != "xt60"
         || abs((dc_toggle_x() - dc_connector_x()) - xt60_switch_center_spacing) < 0.001,
     "XT60-to-switch clearance does not match the measured hardware envelopes"
 );
@@ -1763,12 +1806,13 @@ module top_panel_8ch(include_revision = true) {
             positive_plate_writings(ac_devices[2], ac_details[2], ac_devices[3], ac_details[3]);
 
         for (i = [0:3])
-            translate([dc_channel_x(i) + barrel_label_x, dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
+            translate([dc_channel_x(i) + dc_label_x(), dc_channel_y(i) - barrel_channel_h / 2 + 10, 0])
                 flush_two_line_label(dc_devices[i], dc_details[i], 5.3, 4.1, 6);
 
-        for (i = [0:3])
-            translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
-                toggle_state_labels();
+        if (!auto_only)
+            for (i = [0:3])
+                translate([dc_channel_x(i) + dc_toggle_x() + toggle_label_x_offset, dc_channel_y(i), 0])
+                    toggle_state_labels();
 
         translate([service_com_x, service_bottom_y, 0])
             flush_label("COM", 5);
