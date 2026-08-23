@@ -1799,6 +1799,38 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn(
             "x+ac_connector_x()-sub_panel_socket_rim_relief_w/2", compact
         )
+        self.assertIn("sub_panel_socket_rib_relief_d=15;", compact)
+        self.assertIn(
+            "sub_panel_socket_lower_screw_y=ac_row_y-sub_panel_socket_screw_spacing/2;",
+            compact,
+        )
+        self.assertIn(
+            "sub_panel_socket_upper_screw_y=ac_row_y+sub_panel_socket_screw_spacing/2;",
+            compact,
+        )
+        bottom_relief = compact_scad(
+            scad_module_body(source, "sub_panel_socket_bottom_rim_relief_negative")
+        )
+        usb_relief = compact_scad(
+            scad_module_body(source, "sub_panel_socket_usb_rib_relief_negative")
+        )
+        self.assertIn(
+            "sub_panel_socket_rim_relief_y0",
+            bottom_relief,
+        )
+        self.assertIn("sub_panel_socket_rib_relief_d+boolean_shim", bottom_relief)
+        self.assertIn("sub_panel_socket_upper_screw_y", usb_relief)
+        self.assertIn("sub_panel_socket_rib_relief_d+boolean_shim", usb_relief)
+        self.assertIn("modulesub_panel_ac_upper_rib_positive()", compact)
+        upper_rib = compact_scad(
+            scad_module_body(source, "sub_panel_ac_upper_rib_positive")
+        )
+        self.assertIn(
+            "sub_panel_socket_upper_screw_y+sub_panel_socket_rib_relief_d",
+            upper_rib,
+        )
+        self.assertIn("top_panel_w-2*sub_panel_wall", upper_rib)
+        self.assertIn("sub_panel_ac_upper_rib_positive();", compact)
         self.assertIn(
             "sub_panel_socket_usb_rib_relief_negative();", sub_panel
         )

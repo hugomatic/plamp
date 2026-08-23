@@ -492,7 +492,7 @@ sub_panel_wall = 10;
 sub_panel_usb_hole_bridge =
     (usb_c_screw_spacing - sub_panel_usb_c_cutout_w - usb_c_screw_d) / 2;
 sub_panel_socket_rim_relief_w = sub_panel_socket_w;
-sub_panel_socket_rim_relief_d = sub_panel_wall / 2;
+sub_panel_socket_rib_relief_d = 15;
 sub_panel_base_h = 5;
 sub_panel_h = 10;
 sub_panel_print_h = max(sub_panel_h, sub_panel_base_h + usb_c_riser_h);
@@ -677,10 +677,14 @@ ac_socket_screw_cutters_below_separators =
     ac_socket_screw_cutter_top_y <= dc_region_bottom_y;
 content_bottom_y = ac_row_y - (screw_spacing / 2 - 13) - outlet_group_h / 2;
 layout_offset_y = panel_margin - content_bottom_y;
-sub_panel_socket_rim_relief_y0 =
-    -layout_offset_y + sub_panel_wall - sub_panel_socket_rim_relief_d;
+sub_panel_socket_lower_screw_y =
+    ac_row_y - sub_panel_socket_screw_spacing / 2;
+sub_panel_socket_upper_screw_y =
+    ac_row_y + sub_panel_socket_screw_spacing / 2;
+sub_panel_socket_rim_relief_y0 = sub_panel_socket_lower_screw_y
+    - sub_panel_socket_rib_relief_d;
 socket_rim_relief_top_y = sub_panel_socket_rim_relief_y0
-    + sub_panel_socket_rim_relief_d + 0.1;
+    + sub_panel_socket_rib_relief_d + 0.1;
 socket_rim_relief_below_separators =
     socket_rim_relief_top_y <= dc_region_bottom_y;
 c13_hardware_half_w = max(c13_cutout_w / 2, c13_screw_spacing / 2 + c13_screw_d / 2);
@@ -1033,6 +1037,20 @@ module sub_panel_usb_support_rib_positive() {
         ]);
 }
 
+module sub_panel_ac_upper_rib_positive() {
+    translate([
+        sub_panel_wall,
+        layout_offset_y + sub_panel_socket_upper_screw_y
+            + sub_panel_socket_rib_relief_d,
+        sub_panel_base_h
+    ])
+        cube([
+            top_panel_w - 2 * sub_panel_wall,
+            sub_panel_usb_support_rib_w,
+            sub_panel_usb_support_rib_h
+        ]);
+}
+
 module sub_panel_usb_risers_positive() {
     for (x = [-usb_c_screw_spacing / 2, usb_c_screw_spacing / 2])
         translate([
@@ -1130,6 +1148,8 @@ module sub_panel_8ch_positive() {
         }
 
         sub_panel_usb_support_rib_positive();
+        if (auto_only)
+            sub_panel_ac_upper_rib_positive();
         sub_panel_separator_ribs_positive();
         sub_panel_ac_bonding_rib_positive();
         sub_panel_xt60_bonding_positive();
@@ -1182,7 +1202,7 @@ module sub_panel_socket_bottom_rim_relief_negative() {
         ])
             cube([
                 sub_panel_socket_rim_relief_w,
-                sub_panel_socket_rim_relief_d + 0.1,
+                sub_panel_socket_rib_relief_d + boolean_shim,
                 lip_h + 0.2
             ]);
 }
@@ -1193,13 +1213,12 @@ module sub_panel_socket_usb_rib_relief_negative() {
     for (x = [left_ac_x, right_ac_x])
         translate([
             x + ac_connector_x() - sub_panel_socket_rim_relief_w / 2,
-            sub_panel_usb_support_rib_y
-                - sub_panel_usb_support_rib_w / 2 - boolean_shim,
+            sub_panel_socket_upper_screw_y,
             sub_panel_base_h - boolean_shim
         ])
             cube([
                 sub_panel_socket_rim_relief_w,
-                sub_panel_usb_support_rib_w + 2 * boolean_shim,
+                sub_panel_socket_rib_relief_d + boolean_shim,
                 lip_h + 2 * boolean_shim
             ]);
 }
