@@ -505,6 +505,10 @@ sub_panel_revision_font = 4;
 sub_panel_bonding_tower_d = 11;
 sub_panel_bonding_nut_w = panel_nut_entry_w;
 sub_panel_bonding_nut_h = panel_nut_slot_h;
+sub_panel_bonding_nut_z = 2;
+sub_panel_bonding_screw_length = 12;
+sub_panel_bonding_nut_engagement = sub_panel_bonding_nut_h;
+sub_panel_bonding_screw_tip_protrusion = 1;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
     - 2 * panel_nut_entry_detent;
 top_nut_near_face_depth = plate_t + sub_panel_h
@@ -782,10 +786,21 @@ assert(service_region_left_x == c13_region_left_x
     "service region must align with the C13 rounded region");
 assert(service_region_left_x - dc_region_right_x == panel_region_gap,
     "service region must retain the 2 mm DC gap");
-assert(sub_panel_base_h + sub_panel_bonding_nut_h
+assert(sub_panel_bonding_nut_z + sub_panel_bonding_nut_h
         + sub_panel_bonding_nut_w / 2 * tan(panel_nut_roof_angle)
         <= sub_panel_h,
     "panel bonding nut catcher roof must remain inside the sub-panel");
+assert(abs(
+        sub_panel_bonding_screw_length
+            - (plate_t + sub_panel_h - sub_panel_bonding_nut_z)
+            - sub_panel_bonding_screw_tip_protrusion
+    ) < 0.000001,
+    "M3x12 bonding screw must extend 1 mm beyond the captured nut");
+assert(sub_panel_bonding_screw_length
+        - (plate_t + sub_panel_h
+            - sub_panel_bonding_nut_z - sub_panel_bonding_nut_h)
+        >= sub_panel_bonding_nut_engagement,
+    "M3x12 bonding screw must fully engage the captured nut");
 assert(sub_panel_bonding_throat_w > m3_nut_across_flats,
     "panel bonding nut entry must admit the calibrated M3 nut");
 assert(c13_screw_spacing / 2 + sub_panel_bonding_tower_d / 2
@@ -1420,7 +1435,7 @@ module side_loaded_panel_nut_trap_negative(
 }
 
 module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
-    translate([0, 0, sub_panel_base_h])
+    translate([0, 0, sub_panel_bonding_nut_z])
         side_loaded_panel_nut_trap_negative(
             mouth_direction,
             opening_edge_distance

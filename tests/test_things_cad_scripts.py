@@ -2076,11 +2076,16 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "sub_panel_bonding_tower_d=11;",
             "sub_panel_bonding_nut_w=panel_nut_entry_w;",
             "sub_panel_bonding_nut_h=panel_nut_slot_h;",
+            "sub_panel_bonding_nut_z=2;",
+            "sub_panel_bonding_screw_length=12;",
+            "sub_panel_bonding_nut_engagement=sub_panel_bonding_nut_h;",
+            "sub_panel_bonding_screw_tip_protrusion=1;",
         ):
             self.assertIn(definition, compact)
 
         self.assertIn("d=sub_panel_bonding_tower_d", tower)
         self.assertIn("side_loaded_panel_nut_trap_negative(", nut)
+        self.assertIn("translate([0,0,sub_panel_bonding_nut_z])", nut)
         self.assertNotIn("cylinder(", nut)
         self.assertIn("translate([0,0,-boolean_shim])", screw)
         self.assertIn("h=sub_panel_h+2*boolean_shim", screw)
