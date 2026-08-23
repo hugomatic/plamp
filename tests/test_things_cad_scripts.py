@@ -1806,6 +1806,24 @@ class ThingsCadScriptsTest(unittest.TestCase):
             "sub_panel_socket_bottom_rim_relief_negative();", sub_panel
         )
 
+    def test_plamp8_auto_only_has_measured_service_envelopes(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        for declaration in (
+            "relay_h=18;",
+            "ac_harness_depth=48;",
+            "auto_vertical_clearance=auto_wall_z_height-plate_t-relay_h-"
+            "ac_harness_depth;",
+            "assert(auto_vertical_clearance>=6",
+            "moduleac_harness_keepout()",
+            "modulext60_removable_assembly_keepout()",
+        ):
+            self.assertIn(declaration, compact)
+
+        assembly = compact_scad(scad_module_body(source, "internal_components"))
+        self.assertIn("ac_harness_keepout();", assembly)
+        self.assertIn("xt60_removable_assembly_keepout();", assembly)
+
     def test_plamp8_sub_panel_separator_ribs_follow_region_bounds(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
         compact = compact_scad(source)

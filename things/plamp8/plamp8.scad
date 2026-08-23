@@ -354,7 +354,15 @@ converter_mount_chamfer_d = screw_chamfer_d(converter_screw_size);
 // Calibrated from footprint test print: +0.66 mm long side, +0.43 mm short side.
 relay_w = 145.66;
 relay_d = 90.43;
-relay_h = 40;
+relay_h = 18;
+ac_harness_depth = 48;
+xt60_service_depth = 24;
+auto_vertical_clearance =
+    auto_wall_z_height - plate_t - relay_h - ac_harness_depth;
+assert(
+    auto_vertical_clearance >= 6,
+    "auto-only relay-to-AC-harness clearance fell below 6 mm"
+);
 relay_mount_hole_d = screw_clearance_d(relay_screw_size);
 relay_mount_x = 135;
 relay_mount_y = 70;
@@ -1742,6 +1750,26 @@ module relay_board_keepout() {
         for (x = [-relay_mount_x / 2, relay_mount_x / 2], y = [-relay_mount_y / 2, relay_mount_y / 2])
             translate([x, y, relay_h + 1])
                 cylinder(h = 2, d = relay_mount_hole_d);
+}
+
+module ac_harness_keepout() {
+    color([0.85, 0.35, 0.1, 0.25])
+        translate([0, 0, -ac_harness_depth / 2])
+            cube([
+                sub_panel_socket_w,
+                sub_panel_socket_h,
+                ac_harness_depth
+            ], center = true);
+}
+
+module xt60_removable_assembly_keepout() {
+    color([0.95, 0.75, 0.1, 0.25])
+        translate([0, 0, -xt60_service_depth / 2])
+            cube([
+                xt60_cutout_w,
+                xt60_cutout_h,
+                xt60_service_depth
+            ], center = true);
 }
 
 function dc_channel_x(i) = dc_grid_x + (i % 2) * dc_col_spacing;
@@ -3882,6 +3910,25 @@ module internal_components(show_psu = true, show_dc_dc = true, show_relay = true
             translate([internal_relay_x, internal_relay_y, -box_h + wall_t])
                 rotate([0, 0, internal_relay_rot_z])
                     relay_board_keepout();
+
+        if (auto_only && $preview) {
+            for (x = [left_ac_x, right_ac_x], y = [-outlet_spacing / 2, outlet_spacing / 2])
+                translate([
+                    layout_offset_x + x + ac_connector_x() - top_panel_w / 2,
+                    layout_offset_y + ac_row_y + y - top_panel_h / 2,
+                    -plate_t
+                ])
+                    ac_harness_keepout();
+
+            for (i = [0:3])
+                translate([
+                    layout_offset_x + dc_channel_x(i) + dc_connector_x()
+                        - top_panel_w / 2,
+                    layout_offset_y + dc_channel_y(i) - top_panel_h / 2,
+                    -plate_t
+                ])
+                    xt60_removable_assembly_keepout();
+        }
     }
 }
 
