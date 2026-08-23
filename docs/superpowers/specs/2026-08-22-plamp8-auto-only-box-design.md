@@ -41,9 +41,18 @@ When auto-only mode is enabled:
 - center each of the four XT60 openings within its former connector-and-toggle channel area;
 - keep connector mounting holes, retention geometry, and channel ordering unchanged.
 
+The sub-panel USB support rib must be relieved directly above each AC
+socket, matching the existing lower socket-rim relief. Each upper relief
+follows the selected AC connector center, removes the rib across the socket
+envelope, and leaves the rib intact between and around sockets. This applies
+to both control styles so socket removal and wiring access do not depend on
+whether toggles are fitted.
+
 Centering is derived from each existing channel region, not from the whole panel. This preserves equal channel spacing and makes the AC and DC layouts visually consistent.
 
-When auto-only mode is disabled, the current 128 mm enclosure, connector locations, toggles, pockets, and labels must remain unchanged.
+When auto-only mode is disabled, the current 128 mm enclosure, connector
+locations, toggles, pockets, and labels remain unchanged. The new upper
+AC-socket relief is the sole geometry change shared with manual mode.
 
 ## Height And Clearance
 
@@ -97,6 +106,7 @@ Render both auto-only products through the managed CAD workflow. Inspect the com
 - centered XT60 connectors and labels;
 - absence of toggle holes, switch pockets, and state labels;
 - unchanged connector retention and fastener access;
+- lower socket-rim and upper USB-support-rib relief aligned to every AC socket;
 - relay, AC harness, and XT60 wiring-envelope clearance;
 - top-panel removal and XT60 assembly removal without trapped wiring.
 
