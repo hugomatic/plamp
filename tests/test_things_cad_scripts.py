@@ -32,6 +32,48 @@ def run(cmd, cwd, **kwargs):
 
 
 class ThingsCadScriptsTest(unittest.TestCase):
+    def test_camjam_bar_hook_catalog_and_form_contract(self):
+        model_path = (
+            REPO_ROOT / "things" / "camjam_bar_hook" / "camjam_bar_hook.cad.json"
+        )
+        model = load_model("camjam_bar_hook", model_path, REPO_ROOT)
+        self.assertEqual(
+            tuple(model.sets),
+            ("hook_core", "bar_fit_coupon", "insert_fit_coupon", "assembly"),
+        )
+        self.assertTrue(model.sets["hook_core"].printable)
+        self.assertTrue(model.sets["bar_fit_coupon"].printable)
+        self.assertTrue(model.sets["insert_fit_coupon"].printable)
+        self.assertFalse(model.sets["assembly"].printable)
+
+        system = load_system(
+            "plamp", REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT
+        )
+        self.assertIn("camjam_bar_hook", system.models)
+
+        source = model.source_path.read_text(encoding="utf-8")
+        compact = compact_scad(source)
+        for definition in (
+            "bar_d=26;",
+            "saddle_d=29;",
+            "hook_width_y=24;",
+            "core_radial_t=8;",
+            "insert_od=10.5;",
+            "insert_length=12;",
+            "m5_clearance_d=5.5;",
+            "neck_od=15;",
+        ):
+            self.assertIn(definition, compact)
+        self.assertIn('revision_string="dev";', compact)
+        self.assertIn("modulecamjam_sweep_keepout", compact)
+        self.assertIn("modulehook_core_positive", compact)
+        self.assertIn("modulehook_core_negative", compact)
+        self.assertIn("difference(){hook_core_positive();hook_core_negative();}", compact)
+        self.assertIn('if(set=="hook_core")', compact)
+        self.assertIn('elseif(set=="bar_fit_coupon")', compact)
+        self.assertIn('elseif(set=="insert_fit_coupon")', compact)
+        self.assertIn('elseif(set=="assembly")', compact)
+
     def test_repository_assemblies_are_not_printable(self):
         assembly_sets = {
             "plamp8": ("", "assembly", "wall_corner_fastener_assembly"),
