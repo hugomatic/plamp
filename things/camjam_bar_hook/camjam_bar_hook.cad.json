@@ -1,0 +1,24 @@
+{
+  "schema": "plamp-cad-model/1",
+  "name": "camjam_bar_hook",
+  "source": "camjam_bar_hook.scad",
+  "description": "Open gravity hook joining a CamJam Ring to a 26 mm bar",
+  "sets": {
+    "hook_core": {
+      "description": "Printable PETG hook form",
+      "slicing": {"orientation": "as-exported", "supports": "forbidden"}
+    },
+    "bar_fit_coupon": {
+      "description": "Short saddle and throat fit coupon",
+      "slicing": {"orientation": "as-exported", "supports": "forbidden"}
+    },
+    "insert_fit_coupon": {
+      "description": "Three-hole coarse insert fit coupon",
+      "slicing": {"orientation": "as-exported", "supports": "forbidden"}
+    },
+    "assembly": {
+      "description": "Hook, bar, insert, CamJam ring, and sweep preview",
+      "printable": false
+    }
+  }
+}

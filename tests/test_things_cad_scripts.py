@@ -47,11 +47,13 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertFalse(model.sets["assembly"].printable)
 
         system = load_system(
-            "plamp", REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT
+            REPO_ROOT / "cad" / "plamp.system.cad.json", REPO_ROOT
         )
         self.assertIn("camjam_bar_hook", system.models)
 
-        source = model.source_path.read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "things" / "camjam_bar_hook" / "camjam_bar_hook.scad"
+        ).read_text(encoding="utf-8")
         compact = compact_scad(source)
         for definition in (
             "bar_d=26;",
@@ -154,7 +156,7 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertEqual(
             tuple(system.models), (
                 "plamp8", "iharvest_cover", "plamp_stand",
-                "peristaltic_pump_stand",
+                "peristaltic_pump_stand", "camjam_bar_hook",
             )
         )
         self.assertEqual(system.default_product, "split-box")
