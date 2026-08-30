@@ -69,6 +69,46 @@ class FakeSerial:
 
 
 class ConfigApiTests(unittest.TestCase):
+    def test_network_summary_includes_tailscale_interface(self):
+        def fake_run_command(args, **_kwargs):
+            if args[:5] == ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev"]:
+                return 0, "wlan0:wifi:connected:totonet\ntailscale0:tun:connected:tailscale0", ""
+            if args == ["ip", "-o", "-4", "addr", "show", "dev", "wlan0"]:
+                return 0, "3: wlan0 inet 192.168.68.56/22 brd 192.168.71.255 scope global wlan0", ""
+            if args == ["ip", "-o", "-4", "addr", "show", "dev", "tailscale0"]:
+                return 0, "4: tailscale0 inet 100.99.116.60/32 scope global tailscale0", ""
+            if args == ["iwgetid", "-r", "wlan0"]:
+                return 0, "totonet", ""
+            return 1, "", ""
+
+        with patch.object(server, "run_command", side_effect=fake_run_command):
+            networks = server.network_summary()
+
+        self.assertEqual(
+            networks,
+            [
+                {
+                    "device": "wlan0",
+                    "type": "wifi",
+                    "state": "connected",
+                    "ipv4": "192.168.68.56",
+                    "network": "WiFi, SSID: totonet",
+                    "connection": "totonet",
+                    "ssid": "totonet",
+                    "scope": "lan",
+                },
+                {
+                    "device": "tailscale0",
+                    "type": "tun",
+                    "state": "connected",
+                    "ipv4": "100.99.116.60",
+                    "network": "Tailscale",
+                    "connection": "tailscale0",
+                    "scope": "tailscale",
+                },
+            ],
+        )
+
     def test_web_config_writes_contend_on_cross_process_config_lock(self):
         writers = (
             lambda: server.put_config({"controllers": {}, "cameras": {}}),

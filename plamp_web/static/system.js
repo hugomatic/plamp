@@ -66,6 +66,14 @@
     return preview || suffix ? `yes: ${preview}${suffix}` : "yes";
   }
 
+  function networkAddresses(network, scope) {
+    if (!Array.isArray(network)) return "-";
+    const addresses = network
+      .filter((item) => item && item.scope === scope && item.ipv4)
+      .map((item) => String(item.ipv4));
+    return [...new Set(addresses)].join(", ") || "-";
+  }
+
   function cameraName(item) {
     if (item.connector) return String(item.connector);
     if (item.index !== null && item.index !== undefined) return `cam${item.index}`;
@@ -120,6 +128,7 @@
     const storage = system.storage && typeof system.storage === "object" ? system.storage : {};
     const log = system.log && typeof system.log === "object" ? system.log : {};
     const worker = system.camera_worker && typeof system.camera_worker === "object" ? system.camera_worker : {};
+    const network = Array.isArray(host.network) ? host.network : [];
     const hostname = String(host.hostname || "");
     document.getElementById("system-heading").textContent = `${hostname || "Plamp"} System`;
     document.querySelector("#host-clock span").textContent = valueText(hostTime.display);
@@ -127,7 +136,10 @@
     const osDisplay = `${valueText(software.os_name, "unknown")} ${valueText(software.os_version, "unknown")}; arch ${valueText(software.os_arch, "unknown")}`;
     const userDisplay = `${valueText(software.user_name, "unknown")}; sudoer ${software.user_is_sudoer ? "yes" : "no"}; serial ${software.user_has_serial_access ? "yes" : "no"}; video ${software.user_has_video_access ? "yes" : "no"}`;
     renderFacts("system-info", [
-      ["Hostname", hostname], ["Host time", hostTime.display], ["Operating system", osDisplay], ["User name", userDisplay], ["Computer hardware model", valueText(host.hardware_model, "unknown")],
+      ["Hostname", hostname],
+      ["LAN address", networkAddresses(network, "lan")],
+      ["Tailscale address", networkAddresses(network, "tailscale")],
+      ["Host time", hostTime.display], ["Operating system", osDisplay], ["User name", userDisplay], ["Computer hardware model", valueText(host.hardware_model, "unknown")],
     ]);
 
     const commitTime = valueText(software.git_commit_timestamp, "unknown");
