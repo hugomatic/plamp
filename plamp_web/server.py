@@ -1440,14 +1440,17 @@ def network_summary() -> list[dict[str, Any]]:
     if rc == 0:
         for line in out.splitlines():
             fields = split_nmcli_line(line)
-            if len(fields) < 4 or fields[1] not in {"wifi", "ethernet"}:
+            if len(fields) < 4:
                 continue
 
             device = fields[0]
             kind = fields[1]
+            is_tailscale = device.startswith("tailscale")
+            if kind not in {"wifi", "ethernet"} and not is_tailscale:
+                continue
             state = fields[2]
             connection = fields[3] or None
-            label = "LAN cable" if kind == "ethernet" else "WiFi"
+            label = "Tailscale" if is_tailscale else "LAN cable" if kind == "ethernet" else "WiFi"
 
             item: dict[str, Any] = {
                 "device": device,
@@ -1455,6 +1458,7 @@ def network_summary() -> list[dict[str, Any]]:
                 "state": state,
                 "ipv4": device_ipv4(device),
                 "network": label,
+                "scope": "tailscale" if is_tailscale else "lan",
             }
             if connection:
                 item["connection"] = connection

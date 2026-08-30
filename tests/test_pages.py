@@ -103,6 +103,9 @@ class PageRenderTests(unittest.TestCase):
             self.assertIn(f"<h2>{heading}</h2>", html)
         self.assertIn("PlampWeb.loadSystem()", script)
         self.assertIn("function renderSystem(system)", script)
+        self.assertIn('function networkAddresses(network, scope)', script)
+        self.assertIn('["LAN address", networkAddresses(network, "lan")]', script)
+        self.assertIn('["Tailscale address", networkAddresses(network, "tailscale")]', script)
         for injected_value in ("sprout", "octo_relay", "/home/hugo", "5d98690", "plamp-web started"):
             self.assertNotIn(injected_value, html)
 
