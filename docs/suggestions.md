@@ -33,6 +33,10 @@ Still wanted:
 - Improve schedule-apply responses so their returned `current_value` cannot be
   mistaken for a fresh post-apply hardware report. The caller should receive or
   explicitly request verified post-apply state.
+- Port the Garden channel widget's useful operational presentation back to
+  Plamp without importing React, Tailwind, Vite, or TanStack Query. Extract or
+  reproduce the live-state adapter and SVG schedule signal as a small plain
+  JavaScript module so Plamp's built-in dashboard remains dependency-light.
 
 - Define a reusable project-tooling convention for future repositories:
   `<project>` for human-facing workflows, optional domain commands such as
