@@ -673,9 +673,8 @@
         let configurableCount = items.length;
         for (const item of items) {
           const channel = item.channel;
-          const disabled = channel.default_editor === "disabled";
-          const hidden = channel.default_editor === "hidden";
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
+          const enabled = event.enabled === true;
           const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
           const step = currentTimerStep(event, messageAge);
           const value = Number(event.current_value ?? 0);
@@ -691,27 +690,28 @@
           name.textContent = channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
-          badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));
+          badge.textContent = enabled ? (isOn ? "ON" : "OFF") : "DISABLED";
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale");
+          meta.textContent = enabled
+            ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale")
+            : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | disabled" + (ok ? "" : " | stale");
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
           fill.className = "timer-fill" + (isOn ? "" : " off");
           fill.style.width = percent + "%";
           bar.append(fill);
-          card.append(top, meta, bar);
-          if (!hidden || isEditing) {
-            devicesGrid.append(card);
-            if (isEditing) {
-              const editor = document.createElement("div");
-              editor.innerHTML = scheduleEditorBlock(role, channel, event);
-              const block = editor.firstElementChild;
-              if (block) {
-                card.append(block);
-              }
+          card.append(top, meta);
+          if (enabled && step) card.append(bar);
+          devicesGrid.append(card);
+          if (isEditing) {
+            const editor = document.createElement("div");
+            editor.innerHTML = scheduleEditorBlock(role, channel, event);
+            const block = editor.firstElementChild;
+            if (block) {
+              card.append(block);
             }
           }
         }

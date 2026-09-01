@@ -82,6 +82,25 @@ class TimerScheduleTests(unittest.TestCase):
 
         self.assertEqual(state["devices"][0]["current_t"], 247)
 
+    def test_compile_controller_state_reanchors_daily_window_to_host_time(self):
+        channels = [{
+            "id": "lights", "pin": 2, "type": "gpio", "programming": "enabled",
+            "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "23:00"},
+        }]
+
+        state = compile_controller_state(
+            channels,
+            report_every=10,
+            now=time(11, 30),
+            live_devices=[{
+                "id": "lights", "pin": 2, "type": "gpio", "enabled": True,
+                "cycle_t": 23400, "current_value": 1,
+                "pattern": [{"val": 1, "dur": 61200}, {"val": 0, "dur": 25200}],
+            }],
+        )
+
+        self.assertEqual(state["devices"][0]["current_t"], 19800)
+
     def test_compile_controller_state_applies_events_start_at_seconds_directly(self):
         events = [
             {"val": 1, "dur": 4},

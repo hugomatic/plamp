@@ -574,14 +574,17 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("color: #111;", html)
         self.assertIn("font: inherit;", html)
 
-    def test_timer_dashboard_renders_disabled_and_hidden_channels_in_editor_flow(self):
+    def test_timer_dashboard_uses_live_state_and_keeps_saved_modes_in_editor_only(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
-        self.assertIn('const disabled = channel.default_editor === "disabled";', html)
-        self.assertIn('const hidden = channel.default_editor === "hidden";', html)
-        self.assertIn('badge.textContent = hidden ? "HIDDEN" : (disabled ? "DISABLED" : (isOn ? "ON" : "OFF"));', html)
+        self.assertIn('const enabled = event.enabled === true;', html)
+        self.assertIn('badge.textContent = enabled ? (isOn ? "ON" : "OFF") : "DISABLED";', html)
+        self.assertIn('meta.textContent = enabled', html)
+        self.assertIn('if (enabled && step) card.append(bar);', html)
+        self.assertNotIn('channel.default_editor === "disabled"', html)
+        self.assertNotIn('channel.default_editor === "hidden"', html)
         self.assertIn('const isEditing = ok && activeEditor && activeEditor.role === role;', html)
-        self.assertIn('if (!hidden || isEditing) {', html)
+        self.assertIn('devicesGrid.append(card);', html)
         self.assertIn('if (configurableCount > 0) {', html)
         self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role));', html)
         self.assertIn('actions.textContent = "No configured device schedules.";', html)

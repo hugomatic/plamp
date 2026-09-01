@@ -262,7 +262,7 @@ def compile_controller_state(
         else:
             raise ValueError(f"channel {channel_id} has unsupported schedule kind: {kind}")
         live_device = live_by_pin.get(device["pin"])
-        if isinstance(live_device, dict) and live_device.get("pattern") == device["pattern"]:
+        if kind != "daily_window" and isinstance(live_device, dict) and live_device.get("pattern") == device["pattern"]:
             raw_cycle = live_device.get("cycle_t", live_device.get("elapsed_t"))
             try:
                 cycle_t = int(raw_cycle)
