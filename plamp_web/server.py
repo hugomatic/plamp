@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from plamp.camera import CameraError, capture_camera
 from plamp.config import ConfigError, load_config as read_config_file, save_config as write_config_file
-from plamp.controller_add import add_controller
+from plamp.controller_add import add_controller, display_device_id
 from plamp.context import resolve_context
 from plamp.locks import LockTimeout, exclusive_lock
 from plamp.pico_firmware import firmware_revision, render_scheduler_firmware
@@ -146,6 +146,54 @@ def read_log_tail(max_lines: int = 200) -> str:
         return ""
     lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
     return "\n".join(lines[-max_lines:]) + ("\n" if lines else "")
+
+
+def parse_pulse_command(text: str) -> tuple[int, int, int] | None:
+    parts = str(text).strip().split()
+    if not parts or parts[0] != "p":
+        return None
+    try:
+        if len(parts) == 3:
+            pin = int(parts[1])
+            seconds = int(parts[2])
+            return pin, 1, seconds
+        if len(parts) == 4:
+            pin = int(parts[1])
+            value = int(parts[2])
+            seconds = int(parts[3])
+            if value not in (0, 1):
+                return None
+            return pin, value, seconds
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def channel_name_for_pin(role: str, pin: int) -> str | None:
+    try:
+        devices = scheduler_devices_for_controller(load_config(), role)
+    except Exception:
+        return None
+    for device_id, device in devices.items():
+        if not isinstance(device, dict):
+            continue
+        try:
+            device_pin = int(device.get("pin"))
+        except (TypeError, ValueError):
+            continue
+        if device_pin == pin:
+            return display_device_id(device_id)
+    return None
+
+
+def format_pico_tx_log(role: str, text: str, *, channel_name: str | None = None) -> str:
+    parsed = parse_pulse_command(text)
+    if parsed is None:
+        return f"pico-cmd tx role={role} cmd={text!r}"
+    pin, value, seconds = parsed
+    state = "ON" if value else "OFF"
+    channel = channel_name or f"pin {pin}"
+    return f"pico pulse role={role} channel={channel} pin={pin} {state} for {seconds}s"
 
 
 def run_plampctl_action(*args: str) -> dict[str, Any]:
@@ -867,7 +915,11 @@ class PicoMonitor:
         if not journal:
             return entry
         if direction == "tx":
-            LOGGER.info("pico-cmd tx role=%s cmd=%r", self.role, text)
+            channel_name = None
+            parsed = parse_pulse_command(text)
+            if parsed is not None:
+                channel_name = channel_name_for_pin(self.role, parsed[0])
+            LOGGER.info("%s", format_pico_tx_log(self.role, text, channel_name=channel_name))
         elif direction == "rx":
             LOGGER.info("pico-cmd rx role=%s text=%r", self.role, text)
         else:
