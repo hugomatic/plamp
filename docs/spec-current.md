@@ -119,15 +119,19 @@ reports never upgrade firmware, and ordinary schedule changes do not reset USB.
 Scheduler protocol 3 persists and reports each base device's required `enabled`
 state. Scheduler state and controller configuration accept only `gpio`; a PWM
 state, report, or configuration is rejected and is never converted or migrated.
-The Pico itself enforces disabled GPIO outputs by driving them to zero, freezing
-their schedule phase, preserving the disabled state after reboot, and rejecting
-pulse requests. Disabling a channel with an active pulse cancels that overlay and
-drives the output off immediately. Disabled base devices remain present in
-complete reports with `enabled: false` and `current_value: 0`.
+The Pico itself enforces disabled GPIO base schedules by driving them to zero,
+freezing their schedule phase, and preserving the disabled state after reboot.
+A bounded timed overlay may force either ON or OFF independently of that saved
+schedule. Disabling a channel does not cancel an active overlay; when the overlay
+expires, the output returns to the current base schedule, or OFF when that schedule
+is disabled. Disabled base devices remain present in complete reports with
+`enabled: false`; `current_value` reports the effective physical output, including
+any active overlay.
 
 `pico_scheduler` is the only implemented firmware family. Dosing pumps attached
-to Plamp8 use bounded GPIO pulses requested by a human, host algorithm, or
-agent; the Pico ends each pulse locally and restores the configured base state.
+to Plamp8 use bounded GPIO ON/OFF overrides requested by a human, host algorithm,
+or agent; the Pico ends each override locally and restores the configured base
+state.
 A future pH, EC, or PPM measurement MCU requires a separate hardware-backed
 protocol design rather than a placeholder family.
 

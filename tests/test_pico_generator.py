@@ -35,16 +35,16 @@ class PicoGeneratorTests(unittest.TestCase):
         firmware.output.truncate()
         return firmware
 
-    def test_generated_scheduler_rejects_pulse_when_physical_pin_is_on(self):
+    def test_generated_scheduler_can_force_physical_pin_off(self):
         firmware = self.firmware_runtime(
             current_t=6,
             pattern=[{"val": 0, "dur": 5}, {"val": 1, "dur": 10}],
         )
 
-        firmware.call("handle_command", "p 21 5")
+        firmware.call("handle_command", "p 21 0 5")
 
-        self.assertEqual(len(firmware.runtime.devices), 1)
-        self.assertIn("pulse pin is already on", firmware.output.getvalue())
+        self.assertEqual(len(firmware.runtime.devices), 2)
+        self.assertEqual(firmware.pins[21].value(), 0)
 
     def test_pulse_expiry_uses_schedule_state_after_transition(self):
         firmware = self.firmware_runtime(
@@ -54,7 +54,7 @@ class PicoGeneratorTests(unittest.TestCase):
         scheduled = firmware.runtime.devices[0]
 
         with redirect_stdout(io.StringIO()):
-            firmware.runtime.pulse_device(scheduled, 2)
+            firmware.runtime.pulse_device(scheduled, 1, 2)
             firmware.runtime.tick(2)
 
         self.assertEqual(firmware.runtime.devices, [scheduled])

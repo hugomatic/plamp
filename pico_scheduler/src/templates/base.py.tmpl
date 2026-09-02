@@ -170,8 +170,7 @@ def replace_devices(replacement):
     replacement_by_pin = {{device["pin"]: device for device in replacement}}
     overlays = [
         overlay for overlay in overlays
-        if (replacement_by_pin.get(overlay["pin"]) is not None
-                and replacement_by_pin[overlay["pin"]]["enabled"])
+        if replacement_by_pin.get(overlay["pin"]) is not None
     ]
     for device in devices:
         if not device.get("overlay"):
@@ -206,6 +205,9 @@ def report_item(device, current_value=None):
     }}
     if not device.get("overlay"):
         item["enabled"] = device["enabled"]
+    else:
+        item["target_value"] = device["pattern"][0]["val"]
+        item["remaining_t"] = max(0, device["total_t"] - device["elapsed_t"])
     if "id" in device:
         item["id"] = device["id"]
     return item
@@ -278,18 +280,23 @@ def device_for_pin(pin):
     return None
 
 
-def pulse_device(device, seconds):
+def pulse_device(device, value, seconds):
+    global devices
     pulse = {{
         "type": "gpio",
         "pin": device["pin"],
         "overlay": True,
         "elapsed_t": 0,
         "reschedule": 0,
-        "pattern": [{{"val": 1, "dur": seconds}}],
+        "pattern": [{{"val": value, "dur": seconds}}],
         "total_t": seconds,
         "output": device["output"],
         "last_value": None,
     }}
+    devices = [
+        active for active in devices
+        if not (active.get("overlay") and active["pin"] == device["pin"])
+    ]
     devices.append(pulse)
     apply()
     report()
@@ -304,27 +311,25 @@ def handle_command(line):
         report()
         return
     parts = line.split()
-    if parts[0] == "p" and len(parts) == 3:
+    if parts[0] == "p" and len(parts) in (3, 4):
         try:
             pin = int(parts[1])
-            seconds = int(parts[2])
+            value = 1 if len(parts) == 3 else int(parts[2])
+            seconds = int(parts[2] if len(parts) == 3 else parts[3])
         except Exception:
             error("invalid pulse command")
             return
         if seconds <= 0:
             error("pulse seconds must be > 0")
             return
+        if value not in (0, 1):
+            error("pulse value must be 0 or 1")
+            return
         device = device_for_pin(pin)
         if device is None:
             error("unknown pulse pin")
             return
-        if not device["enabled"]:
-            error("pulse pin is disabled")
-            return
-        if device["output"].value() == 1:
-            error("pulse pin is already on")
-            return
-        pulse_device(device, seconds)
+        pulse_device(device, value, seconds)
         return
     try:
         message = json.loads(line)

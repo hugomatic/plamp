@@ -171,6 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
     timer_pulse = pico_scheduler_subparsers.add_parser("pulse")
     timer_pulse.add_argument("controller")
     timer_pulse.add_argument("pin", type=int)
+    timer_pulse.add_argument("--state", choices=("on", "off"), default="on")
     timer_pulse.add_argument("--seconds", type=int, default=5)
     timer_pulse.set_defaults(timer_action="pulse")
 
@@ -182,6 +183,12 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("channel_id")
     schedule.add_argument("payload")
     schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
+
+    schedule_enabled = channel_subparsers.add_parser("set-enabled")
+    schedule_enabled.add_argument("controller")
+    schedule_enabled.add_argument("channel_id")
+    schedule_enabled.add_argument("enabled", choices=("true", "false"))
+    schedule_enabled.set_defaults(timer_action="channels", channel_action="set-enabled")
 
     pics = subparsers.add_parser("pics")
     pic_subparsers = pics.add_subparsers(dest="pics_action", required=True)
@@ -331,12 +338,21 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
         )
         return _normalize_pico_scheduler_response(response)
 
+    if args.timer_action == "channels" and args.channel_action == "set-enabled":
+        response = request_json(
+            "POST",
+            base_url,
+            f"/api/controllers/{args.controller}/channels/{args.channel_id}/schedule-enabled",
+            {"enabled": args.enabled == "true"},
+        )
+        return _normalize_pico_scheduler_response(response)
+
     if args.timer_action == "pulse":
         response = request_json(
             "POST",
             base_url,
             f"/api/controllers/{args.controller}/pins/{args.pin}/pulse",
-            {"seconds": args.seconds},
+            {"seconds": args.seconds, "value": 1 if args.state == "on" else 0},
         )
         return _normalize_pico_scheduler_response(response)
 

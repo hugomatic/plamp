@@ -33,6 +33,17 @@
     .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
     .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
     .timer-fill.off { background: #888; }
+    .timer-trace { display: grid; gap: .2rem; margin-top: .55rem; }
+    .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 2.2rem minmax(0, 1fr); }
+    .timer-trace-row span { color: #666; font-size: .75rem; }
+    .timer-trace-row svg { background: #f1f3f4; border-radius: 3px; display: block; height: 22px; width: 100%; }
+    .timer-trace-row path { fill: none; stroke: #3b7f4a; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .timer-override-actions { margin-top: .55rem; }
+    #timer-override-dialog { border: 1px solid #777; border-radius: 8px; max-width: min(30rem, calc(100vw - 2rem)); }
+    #timer-override-dialog::backdrop { background: rgb(0 0 0 / .35); }
+    #timer-override-dialog form { display: grid; gap: .75rem; }
+    .override-duration { align-items: end; display: flex; gap: .5rem; }
+    .override-duration label { display: grid; gap: .25rem; }
     .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
     .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
     .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
@@ -65,6 +76,24 @@
   <p class="host-clock">Host time: <span id="host-clock">--:--</span></p>
   <p id="timer-stream-status">Connecting...</p>
   <div id="timer-status-board" class="status-board">Waiting for timer report...</div>
+
+  <dialog id="timer-override-dialog">
+    <form method="dialog">
+      <h2 id="override-title">Output override</h2>
+      <p id="override-state"></p>
+      <div class="override-duration">
+        <label>Duration <input id="override-duration" type="number" min="1" step="1" value="10" required></label>
+        <label>Unit <select id="override-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option></select></label>
+      </div>
+      <div>
+        <button id="override-on" type="button">Pulse ON</button>
+        <button id="override-off" type="button">Pulse OFF</button>
+      </div>
+      <button id="override-schedule" type="button"></button>
+      <p id="override-message" aria-live="polite"></p>
+      <button value="cancel">Close</button>
+    </form>
+  </dialog>
 
   <h2>Camera</h2>
   <section class="camera-panel" aria-label="Camera captures">
@@ -118,6 +147,14 @@
     const cameraCapturePrev = document.getElementById("camera-capture-prev");
     const cameraCaptureNext = document.getElementById("camera-capture-next");
     const cameraCapturePageStatus = document.getElementById("camera-capture-page-status");
+    const timerOverrideDialog = document.getElementById("timer-override-dialog");
+    const overrideTitle = document.getElementById("override-title");
+    const overrideState = document.getElementById("override-state");
+    const overrideDuration = document.getElementById("override-duration");
+    const overrideUnit = document.getElementById("override-unit");
+    const overrideMessage = document.getElementById("override-message");
+    const overrideSchedule = document.getElementById("override-schedule");
+    const TIMER_TRACE_HORIZONS = [["1m", 60], ["1h", 3600], ["24h", 86400]];
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
@@ -131,6 +168,7 @@
     const cameraCapturePageSize = 30;
     let selectedCameraImageUrl = "";
     let activeEditor = null;
+    let activeOverride = null;
     let pendingTimerRender = false;
 
     function populateCameraSelectors(cameraIds) {
@@ -324,6 +362,104 @@
         message?.devices,
       ];
       return candidates.find((devices) => Array.isArray(devices)) || [];
+    }
+
+    function timerOverlaysFromMessage(message) {
+      const candidates = [
+        message?.telemetry?.last_report?.content?.overlays,
+        message?.telemetry?.report?.content?.overlays,
+        message?.telemetry?.content?.overlays,
+        message?.report?.content?.overlays,
+        message?.last_report?.content?.overlays,
+        message?.content?.overlays,
+        message?.overlays,
+      ];
+      return candidates.find((overlays) => Array.isArray(overlays)) || [];
+    }
+
+    function baseTimerValueAt(event, secondsFromReport) {
+      const step = currentTimerStep(event, secondsFromReport);
+      return Number(step?.step?.val ?? 0) > 0;
+    }
+
+    function effectiveTimerValueAt(event, overlay, messageAge, futureSeconds) {
+      const overlayRemaining = Math.max(0, Number(overlay?.remaining_t ?? 0) - messageAge);
+      if (overlayRemaining > futureSeconds) return Number(overlay.target_value ?? 1) > 0;
+      if (event.enabled !== true) return false;
+      return baseTimerValueAt(event, messageAge + futureSeconds);
+    }
+
+    function timerTracePath(event, overlay, messageAge, horizon, width = 240) {
+      const highY = 4;
+      const lowY = 18;
+      let previous = effectiveTimerValueAt(event, overlay, messageAge, 0);
+      let path = `M 0 ${previous ? highY : lowY}`;
+      for (let x = 1; x <= width; x += 1) {
+        const futureSeconds = horizon * x / width;
+        const value = effectiveTimerValueAt(event, overlay, messageAge, futureSeconds);
+        if (value !== previous) {
+          path += ` L ${x} ${previous ? highY : lowY} L ${x} ${value ? highY : lowY}`;
+          previous = value;
+        }
+      }
+      return path + ` L ${width} ${previous ? highY : lowY}`;
+    }
+
+    function timerTraceSvg(event, overlay, messageAge) {
+      return TIMER_TRACE_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Effective output for next ${label}"><path d="${timerTracePath(event, overlay, messageAge, horizon)}"></path></svg></div>`).join("");
+    }
+
+    function openTimerOverride(role, channel, event, overlay) {
+      activeOverride = {role, channel, event, overlay};
+      const enabled = event.enabled === true;
+      const currentValue = Number(event.current_value ?? 0) > 0 ? "ON" : "OFF";
+      overrideTitle.textContent = channel.name + " override";
+      overrideState.textContent = `Output ${currentValue}; schedule ${enabled ? "enabled" : "disabled"}.`;
+      overrideSchedule.textContent = enabled ? "Disable schedule" : "Re-enable saved schedule";
+      overrideMessage.textContent = "";
+      timerOverrideDialog.showModal();
+      overrideDuration.focus();
+    }
+
+    function overrideSeconds() {
+      const seconds = Number(overrideDuration.value) * Number(overrideUnit.value);
+      if (!Number.isInteger(seconds) || seconds <= 0) throw new Error("Enter a positive whole-number duration.");
+      return seconds;
+    }
+
+    async function overrideRequest(url, payload) {
+      overrideMessage.textContent = "Applying…";
+      const response = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)});
+      const text = await response.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (error) {}
+      if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
+      overrideMessage.textContent = "Applied; waiting for live report…";
+      return data;
+    }
+
+    async function sendTimedOverride(value) {
+      if (!activeOverride) return;
+      try {
+        const {role, channel} = activeOverride;
+        const seconds = overrideSeconds();
+        await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/pulse`, {seconds, value});
+      } catch (error) {
+        overrideMessage.textContent = String(error.message || error);
+      }
+    }
+
+    async function toggleOverrideSchedule() {
+      if (!activeOverride) return;
+      const {role, channel, event} = activeOverride;
+      const enabled = event.enabled !== true;
+      const action = enabled ? "re-enable the saved schedule" : "disable the schedule and turn the output off after any active override";
+      if (!window.confirm(`Are you sure you want to ${action} for ${channel.name}?`)) return;
+      try {
+        await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/schedule-enabled`, {enabled});
+      } catch (error) {
+        overrideMessage.textContent = String(error.message || error);
+      }
     }
 
     function statusNode(message) {
@@ -639,6 +775,8 @@
         const health = timerStatuses.get(role);
         const ok = health?.ok === true;
         const devices = timerDevicesFromMessage(message);
+        const overlays = timerOverlaysFromMessage(message);
+        const overlayByPin = new Map(overlays.map((overlay) => [Number(overlay.pin), overlay]));
         const channels = timerChannels[role] || [];
         const liveByPin = new Map();
         for (const device of devices) {
@@ -676,6 +814,9 @@
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
           const enabled = event.enabled === true;
           const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
+          const overlay = overlayByPin.get(Number(channel.pin ?? event.pin));
+          const overlayTarget = Number(overlay?.target_value ?? 1) > 0;
+          const overlayRemaining = Math.max(0, Number(overlay?.remaining_t ?? 0) - messageAge);
           const step = currentTimerStep(event, messageAge);
           const value = Number(event.current_value ?? 0);
           const isOn = value > 0;
@@ -690,13 +831,14 @@
           name.textContent = channel.name;
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
-          badge.textContent = enabled ? (isOn ? "ON" : "OFF") : "DISABLED";
+          badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : enabled ? (isOn ? "ON" : "OFF") : "DISABLED";
           top.append(name, badge);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
           meta.textContent = enabled
             ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale")
             : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | disabled" + (ok ? "" : " | stale");
+          if (overlay) meta.textContent += ` | override ${overlayTarget ? "ON" : "OFF"} for ${formatDuration(overlayRemaining)}`;
           const bar = document.createElement("div");
           bar.className = "timer-bar";
           const fill = document.createElement("div");
@@ -705,6 +847,21 @@
           bar.append(fill);
           card.append(top, meta);
           if (enabled && step) card.append(bar);
+          const trace = document.createElement("div");
+          trace.className = "timer-trace";
+          trace.innerHTML = timerTraceSvg(event, overlay, messageAge);
+          card.append(trace);
+          if ((channel.type || event.type) === "gpio") {
+            const overrideActions = document.createElement("div");
+            overrideActions.className = "timer-override-actions";
+            const override = document.createElement("button");
+            override.type = "button";
+            override.textContent = "Override…";
+            override.disabled = !ok;
+            override.addEventListener("click", () => openTimerOverride(role, channel, event, overlay));
+            overrideActions.append(override);
+            card.append(overrideActions);
+          }
           devicesGrid.append(card);
           if (isEditing) {
             const editor = document.createElement("div");
@@ -760,7 +917,7 @@
       }
       restoreEditorFocus(focusState);
       if (!rendered) {
-        timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in data/config.json.";
+        timerBoard.textContent = timerRoles.length ? "Waiting for timer reports..." : "No timers configured in $PLAMP_DATA_DIR/config.json.";
       }
     }
 
@@ -959,6 +1116,10 @@
       stopPageAutoRefresh();
       captureCameraImage();
     });
+    document.getElementById("override-on").addEventListener("click", () => sendTimedOverride(1));
+    document.getElementById("override-off").addEventListener("click", () => sendTimedOverride(0));
+    overrideSchedule.addEventListener("click", toggleOverrideSchedule);
+    timerOverrideDialog.addEventListener("close", () => { activeOverride = null; });
     cameraCaptureList.addEventListener("click", stopPageAutoRefresh);
     cameraCaptureFilter.addEventListener("change", () => {
       stopPageAutoRefresh();

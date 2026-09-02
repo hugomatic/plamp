@@ -418,25 +418,45 @@ class PlampCliTimerTests(unittest.TestCase):
         )
 
     @patch("plamp_cli.main.request_json")
-    def test_pico_scheduler_pulse_posts_pin_duration(self, request_json):
-        request_json.return_value = {"controller": "pump_lights", "pin": 21, "seconds": 5, "success": True}
+    def test_pico_scheduler_pulse_posts_pin_value_and_duration(self, request_json):
+        request_json.return_value = {"controller": "pump_lights", "pin": 21, "seconds": 5, "value": 0, "success": True}
         stdout = StringIO()
         stderr = StringIO()
 
         code = main(
-            ["pico-scheduler", "pulse", "pump_lights", "21", "--seconds", "5"],
+            ["pico-scheduler", "pulse", "pump_lights", "21", "--state", "off", "--seconds", "5"],
             stdout=stdout,
             stderr=stderr,
         )
 
         self.assertEqual(code, 0)
-        self.assertEqual(stdout.getvalue(), '{"controller": "pump_lights", "pin": 21, "seconds": 5, "success": true}\n')
+        self.assertEqual(stdout.getvalue(), '{"controller": "pump_lights", "pin": 21, "seconds": 5, "success": true, "value": 0}\n')
         self.assertEqual(stderr.getvalue(), "")
         request_json.assert_called_once_with(
             "POST",
             "http://127.0.0.1:8000",
             "/api/controllers/pump_lights/pins/21/pulse",
-            {"seconds": 5},
+            {"seconds": 5, "value": 0},
+        )
+
+    @patch("plamp_cli.main.request_json")
+    def test_pico_scheduler_channels_set_enabled_posts_boolean(self, request_json):
+        request_json.return_value = {
+            "controller": "plamp8", "channel": "agitator", "enabled": True, "success": True,
+        }
+
+        code = main(
+            ["pico-scheduler", "channels", "set-enabled", "plamp8", "agitator", "true"],
+            stdout=StringIO(),
+            stderr=StringIO(),
+        )
+
+        self.assertEqual(code, 0)
+        request_json.assert_called_once_with(
+            "POST",
+            "http://127.0.0.1:8000",
+            "/api/controllers/plamp8/channels/agitator/schedule-enabled",
+            {"enabled": True},
         )
 
     @patch("plamp_cli.main.request_json")

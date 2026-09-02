@@ -488,7 +488,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("channel.editor = structuredClone(device.editor);", html)
         self.assertIn("syncSavedEditorMetadata(role, block, controller.settings.devices[channelId]);", html)
 
-    def test_timer_dashboard_keeps_manual_controls_off_cards(self):
+    def test_timer_dashboard_keeps_diagnostic_controls_off_cards(self):
         html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
@@ -506,6 +506,48 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('textContent = "Report now";', html)
         self.assertNotIn('textContent = "Refresh log";', html)
         self.assertNotIn('textContent = "Pico";', html)
+
+    def test_timer_dashboard_offers_timed_override_and_schedule_toggle(self):
+        html = static_timer_dashboard(
+            ["pump_lights"],
+            "12h",
+            {"pump_lights": [{"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "programming": "enabled"}]},
+            0,
+        )
+
+        self.assertIn('id="timer-override-dialog"', html)
+        self.assertIn('override.textContent = "Override…";', html)
+        self.assertIn('openTimerOverride(role, channel, event, overlay)', html)
+        self.assertIn('id="override-duration"', html)
+        self.assertIn('id="override-unit"', html)
+        self.assertIn('id="override-on"', html)
+        self.assertIn('id="override-off"', html)
+        self.assertIn('sendTimedOverride(1)', html)
+        self.assertIn('sendTimedOverride(0)', html)
+        self.assertIn('/pulse`, {seconds, value})', html)
+        self.assertIn('/channels/${encodeURIComponent(channel.id)}/pulse`', html)
+        self.assertIn('/channels/${encodeURIComponent(channel.id)}/schedule-enabled`', html)
+        self.assertIn('/schedule-enabled`, {enabled})', html)
+        self.assertIn('enabled ? "Disable schedule" : "Re-enable saved schedule"', html)
+
+    def test_timer_dashboard_renders_effective_schedule_traces(self):
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn('const TIMER_TRACE_HORIZONS = [["1m", 60], ["1h", 3600], ["24h", 86400]];', html)
+        self.assertIn("function timerOverlaysFromMessage(message) {", html)
+        self.assertIn("function effectiveTimerValueAt(event, overlay, messageAge, futureSeconds) {", html)
+        self.assertIn("if (overlayRemaining > futureSeconds) return Number(overlay.target_value ?? 1) > 0;", html)
+        self.assertIn("if (event.enabled !== true) return false;", html)
+        self.assertIn("function timerTraceSvg(event, overlay, messageAge) {", html)
+        self.assertIn('trace.className = "timer-trace";', html)
+        self.assertIn('trace.innerHTML = timerTraceSvg(event, overlay, messageAge);', html)
+
+    def test_timer_dashboard_labels_active_on_and_off_overrides(self):
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
+
+        self.assertIn("const overlay = overlayByPin.get(Number(channel.pin ?? event.pin));", html)
+        self.assertIn('badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}`', html)
+        self.assertIn('` | override ${overlayTarget ? "ON" : "OFF"} for ${formatDuration(overlayRemaining)}`', html)
 
     def test_timer_dashboard_page_includes_camera_capture_and_gallery_controls(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -578,7 +620,7 @@ class PageRenderTests(unittest.TestCase):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
         self.assertIn('const enabled = event.enabled === true;', html)
-        self.assertIn('badge.textContent = enabled ? (isOn ? "ON" : "OFF") : "DISABLED";', html)
+        self.assertIn('badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : enabled ? (isOn ? "ON" : "OFF") : "DISABLED";', html)
         self.assertIn('meta.textContent = enabled', html)
         self.assertIn('if (enabled && step) card.append(bar);', html)
         self.assertNotIn('channel.default_editor === "disabled"', html)

@@ -14,12 +14,15 @@ Completed in `9fdf661`:
 - Do not hide operational state merely because a channel has
   `visibility: hidden` in its saved editor settings.
 
-Still wanted:
+Completed on `feature/timed-output-overrides`:
 
-- Add a clear **Stop** operation distinct from **Pulse**. Decide whether Stop
-  persistently disables the channel (preferred for safety) or installs a
-  temporary force-OFF override, then expose and verify it through firmware,
-  REST, CLI, and web UI.
+- Treat Pulse as a bounded timed output override with an explicit ON or OFF
+  target. Keep schedule enable/disable independent, and expose override plus
+  schedule controls on each GPIO card.
+- Show dependency-free 1m, 1h, and 24h SVG traces of effective output state,
+  including active overrides and disabled schedules.
+
+Still wanted:
 - Add a `plamp-cli` command for applying/rescheduling a controller so routine
   workflows do not require raw `curl` against
   `POST /api/controllers/{controller}/apply`.
@@ -33,11 +36,6 @@ Still wanted:
 - Improve schedule-apply responses so their returned `current_value` cannot be
   mistaken for a fresh post-apply hardware report. The caller should receive or
   explicitly request verified post-apply state.
-- Port the Garden channel widget's useful operational presentation back to
-  Plamp without importing React, Tailwind, Vite, or TanStack Query. Extract or
-  reproduce the live-state adapter and SVG schedule signal as a small plain
-  JavaScript module so Plamp's built-in dashboard remains dependency-light.
-
 - Define a reusable project-tooling convention for future repositories:
   `<project>` for human-facing workflows, optional domain commands such as
   `<project> cad`, and `<project>ctl` for packaging, deployment, services,

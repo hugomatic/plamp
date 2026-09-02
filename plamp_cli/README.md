@@ -122,7 +122,8 @@ active because access is serialized through shared locks.
 
 Complete scheduler states and protocol 3 reports require `enabled` on every base
 device. Only `gpio` is supported; PWM state, reports, and configuration fail
-validation and are never converted. The Pico enforces disabled channels by holding
-GPIO output at zero, freezing schedule phase, preserving the disabled state across
-reboot, and rejecting pulses; complete reports still include the disabled device
-and its zero value.
+validation and are never converted. The Pico enforces disabled base schedules by
+holding GPIO output at zero, freezing schedule phase, and preserving the disabled
+state across reboot. Timed ON/OFF overrides remain available on disabled channels;
+on expiry they return to OFF. Complete reports include disabled devices and report
+their effective output value.

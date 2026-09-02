@@ -1407,13 +1407,14 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
             ):
-                result = server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 7})
+                result = server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 7, "value": 0})
 
-        self.assertEqual(monitor.sent_commands, ["p 21 7"])
+        self.assertEqual(monitor.sent_commands, ["p 21 0 7"])
         self.assertEqual(result["pin"], 21)
         self.assertEqual(result["seconds"], 7)
+        self.assertEqual(result["value"], 0)
 
-    def test_post_controller_channel_pulse_rejects_reported_on_channel(self):
+    def test_post_controller_channel_pulse_can_replace_reported_on_channel(self):
         monitor = DummyMonitor(
             "abc",
             {"type": "report", "content": {"devices": [{"id": "pump", "pin": 21, "type": "gpio", "current_value": 1}]}},
@@ -1430,12 +1431,12 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "CONFIG_FILE", config_file),
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
             ):
-                with self.assertRaises(HTTPException) as raised:
-                    server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 7})
+                result = server.post_controller_channel_pulse(
+                    "pump_lights", "pump", {"seconds": 7, "value": 0}
+                )
 
-        self.assertEqual(raised.exception.status_code, 409)
-        self.assertIn("pin 21 is already on", str(raised.exception.detail))
-        self.assertEqual(monitor.sent_commands, [])
+        self.assertTrue(result["success"])
+        self.assertEqual(monitor.sent_commands, ["p 21 0 7"])
 
     def test_pulse_schedules_completion_report(self):
         monitor = DummyMonitor("abc")
@@ -1453,7 +1454,7 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
                 patch.object(server.threading, "Timer", return_value=timer) as timer_factory,
             ):
-                server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 5})
+                server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 5, "value": 1})
 
         timer_factory.assert_called_once()
         self.assertEqual(timer_factory.call_args.args[0], 5.1)
@@ -1461,29 +1462,6 @@ class ConfigApiTests(unittest.TestCase):
         self.assertTrue(monitor.woken)
         self.assertTrue(timer.daemon)
         timer.start.assert_called_once_with()
-
-    def test_rejected_pulse_schedules_no_report(self):
-        monitor = DummyMonitor(
-            "abc",
-            {"type": "report", "content": {"devices": [{"id": "pump", "pin": 21, "type": "gpio", "current_value": 1}]}},
-        )
-        config = {
-            "controllers": {
-                "pump_lights": self.scheduler_controller(serial="abc", devices={"pump": self.scheduled_output(21)})
-            },
-            "cameras": {},
-        }
-        with tempfile.TemporaryDirectory() as tmp:
-            config_file = self.make_config(Path(tmp), config)
-            with (
-                patch.object(server, "CONFIG_FILE", config_file),
-                patch.object(server, "get_or_start_monitor", return_value=monitor),
-                patch.object(server.threading, "Timer") as timer_factory,
-            ):
-                with self.assertRaises(HTTPException):
-                    server.post_controller_channel_pulse("pump_lights", "pump", {"seconds": 5})
-
-        timer_factory.assert_not_called()
 
     def test_post_controller_pin_pulse_sends_configured_gpio_pin_and_duration(self):
         monitor = DummyMonitor("abc")
@@ -1506,9 +1484,9 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "get_or_start_monitor", return_value=monitor),
                 patch.object(server.threading, "Timer", return_value=Mock()) as timer_factory,
             ):
-                result = server.post_controller_pin_pulse("pump_lights", 23, {"seconds": 7})
+                result = server.post_controller_pin_pulse("pump_lights", 23, {"seconds": 7, "value": 1})
 
-        self.assertEqual(monitor.sent_commands, ["p 23 7"])
+        self.assertEqual(monitor.sent_commands, ["p 23 1 7"])
         self.assertEqual(result["pin"], 23)
         self.assertEqual(result["seconds"], 7)
         self.assertEqual(result["channel"], "hidden")
@@ -1725,6 +1703,42 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 422)
         save_schedule.assert_not_called()
+
+    def test_post_controller_channel_schedule_enabled_reuses_saved_schedule(self):
+        controller = self.scheduler_controller(
+            serial="abc",
+            devices={"agitator": self.scheduled_output(19, programming="disabled")},
+        )
+        config = server.config_view({"controllers": {"plamp8": controller}, "cameras": {}})
+        applied = {
+            "success": True,
+            "message": "schedule verified, saved, and applied",
+            "state": {"devices": [{"id": "agitator", "enabled": True}]},
+        }
+
+        with (
+            patch.object(server, "load_config", return_value=config),
+            patch.object(server, "post_controller_schedule", return_value=applied) as apply,
+        ):
+            response = server.post_controller_channel_schedule_enabled(
+                "plamp8", "agitator", {"enabled": True}
+            )
+
+        proposed = apply.call_args.args[1]
+        self.assertEqual(
+            proposed["settings"]["devices"]["agitator"]["programming"],
+            "enabled",
+        )
+        self.assertEqual(response["enabled"], True)
+        self.assertEqual(response["state"], applied["state"])
+
+    def test_post_controller_channel_schedule_enabled_requires_boolean(self):
+        with self.assertRaises(HTTPException) as raised:
+            server.post_controller_channel_schedule_enabled(
+                "plamp8", "agitator", {"enabled": "yes"}
+            )
+
+        self.assertEqual(raised.exception.status_code, 422)
 
     def test_configured_time_format_reads_top_level_value_from_raw_config(self):
         with tempfile.TemporaryDirectory() as tmp:

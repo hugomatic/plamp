@@ -231,14 +231,15 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("command too long", errors[0]["content"])
 
-    def test_pulse_rejected_while_pin_is_on(self):
+    def test_timed_off_override_forces_on_pin_off(self):
         firmware = self.harness()
         firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=1)]}})
 
-        firmware.call("handle_command", "p 2 5")
+        firmware.call("handle_command", "p 2 0 5")
 
-        self.assertEqual(len(firmware.runtime.devices), 1)
-        self.assertIn("already on", firmware.messages()[-1]["content"])
+        self.assertEqual(len(firmware.runtime.devices), 2)
+        self.assertEqual(firmware.pins[2].value(), 0)
+        self.assertEqual(firmware.messages()[-1]["content"]["overlays"][0]["current_value"], 0)
 
     def test_disabled_gpio_is_off_and_phase_does_not_advance(self):
         firmware = self.harness()
@@ -257,18 +258,20 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertFalse(reported["enabled"])
         self.assertEqual(reported["current_value"], 0)
 
-    def test_disabled_gpio_rejects_pulse(self):
+    def test_disabled_schedule_allows_timed_on_override(self):
         firmware = self.harness()
         firmware.call("handle_message", {
             "type": "configure", "content": {"devices": [gpio(value=0, enabled=False)]},
         })
 
-        firmware.call("handle_command", "p 2 5")
+        firmware.call("handle_command", "p 2 1 5")
 
+        self.assertEqual(firmware.pins[2].value(), 1)
+        firmware.call("tick", 5)
+        firmware.call("apply")
         self.assertEqual(firmware.pins[2].value(), 0)
-        self.assertIn("disabled", firmware.messages()[-1]["content"])
 
-    def test_disabling_pin_cancels_active_pulse_and_turns_it_off(self):
+    def test_disabling_schedule_preserves_active_override_then_returns_off(self):
         firmware = self.harness()
         firmware.call("handle_message", {
             "type": "configure", "content": {"devices": [gpio(value=0)]},
@@ -280,7 +283,23 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
             "content": {"devices": [gpio(value=1, current_t=3, enabled=False)]},
         })
 
+        self.assertEqual(len(firmware.runtime.devices), 2)
+        self.assertEqual(firmware.pins[2].value(), 1)
+        firmware.call("tick", 5)
+        firmware.call("apply")
         self.assertEqual(len(firmware.runtime.devices), 1)
+        self.assertEqual(firmware.pins[2].value(), 0)
+
+    def test_new_override_replaces_existing_override_on_same_pin(self):
+        firmware = self.harness()
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [gpio(value=0)]}})
+        firmware.call("handle_command", "p 2 1 30")
+
+        firmware.call("handle_command", "p 2 0 10")
+
+        overlays = [device for device in firmware.runtime.devices if device.get("overlay")]
+        self.assertEqual(len(overlays), 1)
+        self.assertEqual(overlays[0]["pattern"], [{"val": 0, "dur": 10}])
         self.assertEqual(firmware.pins[2].value(), 0)
 
     def test_pulse_completion_restores_configured_base_device(self):
