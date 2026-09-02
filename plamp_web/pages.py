@@ -489,9 +489,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
     .timer-value.on {{ background: #d9f7d9; }}
     .timer-value.off {{ background: #eee; }}
     .timer-meta {{ color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }}
-    .timer-bar {{ background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }}
-    .timer-fill {{ background: #3b7f4a; height: 100%; width: 0; }}
-    .timer-fill.off {{ background: #888; }}
   </style>
 </head>
 <body>
@@ -1054,7 +1051,6 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         const step = currentTimerStep(device);
         const value = Number(step?.step?.val ?? device.current_value ?? 0);
         const isOn = value > 0;
-        const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
 
         const card = document.createElement("div");
         card.className = "timer-card";
@@ -1073,14 +1069,7 @@ def render_api_test_page(roles: list[str], default_role: str, default_payload: s
         meta.className = "timer-meta";
         meta.textContent = "pin " + (device.pin ?? "?") + " | " + (device.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?");
 
-        const bar = document.createElement("div");
-        bar.className = "timer-bar";
-        const fill = document.createElement("div");
-        fill.className = "timer-fill" + (isOn ? "" : " off");
-        fill.style.width = percent + "%";
-        bar.append(fill);
-
-        card.append(top, meta, bar);
+        card.append(top, meta);
         board.append(card);
       }}
     }}

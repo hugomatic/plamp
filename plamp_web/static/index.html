@@ -17,7 +17,7 @@
     .controller-card { border: 1px solid #bbb; border-radius: 8px; display: grid; gap: .75rem; padding: .9rem; }
     .controller-card-error { background: #eee; border-color: #999; color: #555; }
     .controller-card-error button { background: #e5e5e5; color: #777; }
-    .controller-card-error .timer-value, .controller-card-error .timer-bar, .controller-card-error .timer-fill { background: #ccc; }
+    .controller-card-error .timer-value { background: #ccc; }
     .controller-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .controller-name { font-size: 1.1rem; font-weight: 700; }
     .controller-devices { display: grid; gap: .75rem; }
@@ -30,9 +30,6 @@
     .timer-value.on { background: #d9f7d9; }
     .timer-value.off { background: #eee; }
     .timer-meta { color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }
-    .timer-bar { background: #eee; border-radius: 6px; height: .65rem; overflow: hidden; }
-    .timer-fill { background: #3b7f4a; height: 100%; width: 0; }
-    .timer-fill.off { background: #888; }
     .timer-trace { display: grid; gap: .2rem; margin-top: .55rem; }
     .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 2.2rem minmax(0, 1fr); }
     .timer-trace-row span { color: #666; font-size: .75rem; }
@@ -820,7 +817,6 @@
           const step = currentTimerStep(event, messageAge);
           const value = Number(event.current_value ?? 0);
           const isOn = value > 0;
-          const percent = step ? Math.max(0, Math.min(100, (step.elapsed / step.duration) * 100)) : 0;
           const card = document.createElement("div");
           card.className = "timer-card";
           card.classList.toggle("timer-card-stale", !ok);
@@ -839,14 +835,7 @@
             ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale")
             : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | disabled" + (ok ? "" : " | stale");
           if (overlay) meta.textContent += ` | override ${overlayTarget ? "ON" : "OFF"} for ${formatDuration(overlayRemaining)}`;
-          const bar = document.createElement("div");
-          bar.className = "timer-bar";
-          const fill = document.createElement("div");
-          fill.className = "timer-fill" + (isOn ? "" : " off");
-          fill.style.width = percent + "%";
-          bar.append(fill);
           card.append(top, meta);
-          if (enabled && step) card.append(bar);
           const trace = document.createElement("div");
           trace.className = "timer-trace";
           trace.innerHTML = timerTraceSvg(event, overlay, messageAge);
