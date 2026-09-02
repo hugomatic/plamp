@@ -322,11 +322,13 @@ class ConfigApiTests(unittest.TestCase):
                 patch.object(server, "set_app_revision") as set_app_revision,
                 patch.object(server, "git_output", return_value="ebaf545") as git_output,
             ):
-                server.startup()
+                with self.assertLogs("plamp_web", level="INFO") as logged:
+                    server.startup()
 
             self.assertEqual(server.APP_REVISION, "ebaf545")
             set_app_revision.assert_called_once_with("ebaf545")
             git_output.assert_called_once_with(["git", "rev-parse", "--short", "HEAD"], repo_root=server.REPO_ROOT)
+            self.assertTrue(any("plamp-web started revision=ebaf545" in line for line in logged.output))
         finally:
             server.APP_REVISION = previous_revision
 

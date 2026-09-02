@@ -90,6 +90,7 @@ def startup() -> None:
     set_app_revision(APP_REVISION)
     ensure_data_dir()
     configure_logging()
+    LOGGER.info("plamp-web started revision=%s", APP_REVISION)
     start_configured_monitors()
     start_usb_observer()
     get_or_start_camera_worker()
