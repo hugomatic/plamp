@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 import unittest
 from pathlib import Path
@@ -369,6 +370,104 @@ class CameraCaptureTests(unittest.TestCase):
                         camera_id="rpicam_cam0",
                     )
             self.assertEqual(cm.exception.status_code, 502)
+
+    def test_start_failure_logs_camera_failed_to_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = root / "data" / "config.json"
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
+
+            class FakePicamera2:
+                def create_still_configuration(self) -> dict[str, str]:
+                    return {"mode": "still"}
+
+                def configure(self, config: dict[str, str]) -> None:
+                    pass
+
+                def set_controls(self, controls: dict[str, object]) -> None:
+                    pass
+
+                def start(self) -> None:
+                    raise RuntimeError("no device")
+
+                def capture_file(self, path: str) -> None:
+                    raise AssertionError("capture_file should not run")
+
+                def stop(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            with patch("plamp_web.camera_capture.load_picamera2_class", return_value=FakePicamera2):
+                with self.assertLogs("plamp_web.camera_capture", level="WARNING") as logged:
+                    with self.assertRaisesRegex(CameraCaptureError, "camera capture failed"):
+                        capture_camera_image(
+                            repo_root=root,
+                            data_dir=root / "data",
+                            config_file=config_file,
+                            camera_id="rpicam_cam0",
+                        )
+            self.assertTrue(any("Camera failed to start" in line for line in logged.output))
+
+    def test_capture_failure_logs_warning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = root / "data" / "config.json"
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/grow/grows/grow-basil/captures"}})
+
+            class FakePicamera2:
+                def create_still_configuration(self) -> dict[str, str]:
+                    return {"mode": "still"}
+
+                def configure(self, config: dict[str, str]) -> None:
+                    pass
+
+                def set_controls(self, controls: dict[str, object]) -> None:
+                    pass
+
+                def start(self) -> None:
+                    pass
+
+                def capture_file(self, path: str) -> None:
+                    raise RuntimeError("sensor timeout")
+
+                def stop(self) -> None:
+                    pass
+
+                def close(self) -> None:
+                    pass
+
+            with patch("plamp_web.camera_capture.load_picamera2_class", return_value=FakePicamera2):
+                with self.assertLogs("plamp_web.camera_capture", level="WARNING") as logged:
+                    with self.assertRaisesRegex(CameraCaptureError, "camera capture failed"):
+                        capture_camera_image(
+                            repo_root=root,
+                            data_dir=root / "data",
+                            config_file=config_file,
+                            camera_id="rpicam_cam0",
+                        )
+            self.assertTrue(any("camera capture failed" in line for line in logged.output))
+
+
+class ConfigureLoggingTests(unittest.TestCase):
+    def test_configure_logging_raises_picamera2_to_warning(self):
+        from plamp_web import server
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_file = Path(tmp) / "plamp.log"
+            picamera_logger = logging.getLogger("picamera2")
+            previous_level = picamera_logger.level
+            try:
+                picamera_logger.setLevel(logging.NOTSET)
+                with patch.object(server, "LOG_FILE", log_file), patch.object(server, "DATA_DIR", Path(tmp)):
+                    server.configure_logging()
+                    self.assertEqual(picamera_logger.level, logging.WARNING)
+                    picamera_logger.setLevel(logging.INFO)
+                    server.configure_logging()
+                    self.assertEqual(picamera_logger.level, logging.WARNING)
+            finally:
+                picamera_logger.setLevel(previous_level)
 
 
 if __name__ == "__main__":

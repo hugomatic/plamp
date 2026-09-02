@@ -4,6 +4,7 @@ import base64
 import binascii
 import importlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -24,6 +25,7 @@ REPO_ROOT = RUNTIME_CONTEXT.root
 DATA_DIR = RUNTIME_CONTEXT.data_dir
 CONFIG_FILE = RUNTIME_CONTEXT.config_file
 GROWS_DIR = DATA_DIR / "grow" / "grows"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -135,6 +137,7 @@ def capture_with_picamera2(
     try:
         picamera = camera_class()
     except Exception as exc:
+        LOGGER.warning("Camera failed to start: %s", exc)
         raise CameraCaptureError(f"camera capture failed: {exc}", status_code=502) from exc
     temp_file = tempfile.NamedTemporaryFile(
         prefix=f"{sanitize_capture_fragment(camera_id)}-",
@@ -156,7 +159,11 @@ def capture_with_picamera2(
         if controls and hasattr(picamera, "set_controls"):
             picamera.set_controls(controls)
         if hasattr(picamera, "start"):
-            picamera.start()
+            try:
+                picamera.start()
+            except Exception as exc:
+                LOGGER.warning("Camera failed to start: %s", exc)
+                raise CameraCaptureError(f"camera capture failed: {exc}", status_code=502) from exc
         if (
             isinstance(autofocus_mode, str)
             and autofocus_mode in {"auto", "continuous", "manual"}
@@ -172,6 +179,7 @@ def capture_with_picamera2(
     except CameraCaptureError:
         raise
     except Exception as exc:
+        LOGGER.warning("camera capture failed: %s", exc)
         raise CameraCaptureError(f"camera capture failed: {exc}", status_code=502) from exc
     finally:
         try:

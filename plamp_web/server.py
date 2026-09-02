@@ -127,13 +127,17 @@ def configure_logging() -> None:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger()
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    has_file_handler = False
     for handler in root.handlers:
         if getattr(handler, "baseFilename", None) == str(LOG_FILE):
-            return
-    handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3)
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
-    root.setLevel(logging.INFO)
+            has_file_handler = True
+            break
+    if not has_file_handler:
+        handler = logging.handlers.RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3)
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        root.setLevel(logging.INFO)
+    logging.getLogger("picamera2").setLevel(logging.WARNING)
 
 
 def read_log_tail(max_lines: int = 200) -> str:
