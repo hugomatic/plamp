@@ -12,12 +12,12 @@ from pico_scheduler.src.generator import GeneratorOptions, generate_main_py
 from plamp.scheduler_state import report_matches_state
 
 
-def gpio(pin=2, value=1, current_t=0, *, enabled=True):
+def gpio(pin=2, value=1, current_t=0, *, mode="scheduled"):
     return {
         "id": "lights",
         "type": "gpio",
         "pin": pin,
-        "enabled": enabled,
+        "mode": mode,
         "current_t": current_t,
         "reschedule": 1,
         "pattern": [{"val": value, "dur": 10}],
@@ -111,7 +111,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.messages()[-1]["type"], "report")
         self.assertEqual(
             firmware.messages()[-1]["content"]["firmware"],
-            {"name": "pico_scheduler", "revision": "abc1234", "protocol": 3},
+            {"name": "pico_scheduler", "revision": "abc1234", "protocol": 4},
         )
 
     def test_invalid_duplicate_pin_does_not_change_persistence_or_outputs(self):
@@ -135,7 +135,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
             "id": "fan",
             "type": "pwm",
             "pin": 3,
-            "enabled": True,
+            "mode": "scheduled",
             "current_t": 0,
             "reschedule": 1,
             "pattern": [{"val": 1234, "dur": 10}],
@@ -184,7 +184,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         root = Path(self.temp.name)
         (root / "state-a.json").write_text(json.dumps({
             "generation": 1,
-            "devices": [gpio(value=1, current_t=7, enabled=False)],
+            "devices": [gpio(value=1, current_t=7, mode="ready")],
         }))
 
         firmware = self.harness()
@@ -245,7 +245,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         firmware = self.harness()
         firmware.call("handle_message", {
             "type": "configure",
-            "content": {"devices": [gpio(value=1, current_t=4, enabled=False)]},
+            "content": {"devices": [gpio(value=1, current_t=4, mode="ready")]},
         })
 
         self.assertEqual(firmware.pins[2].value(), 0)
@@ -255,13 +255,13 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.runtime.devices[0]["elapsed_t"], 4)
         self.assertEqual(firmware.pins[2].value(), 0)
         reported = firmware.messages()[-1]["content"]["devices"][0]
-        self.assertFalse(reported["enabled"])
+        self.assertEqual(reported["mode"], "ready")
         self.assertEqual(reported["current_value"], 0)
 
     def test_disabled_schedule_allows_timed_on_override(self):
         firmware = self.harness()
         firmware.call("handle_message", {
-            "type": "configure", "content": {"devices": [gpio(value=0, enabled=False)]},
+            "type": "configure", "content": {"devices": [gpio(value=0, mode="ready")]},
         })
 
         firmware.call("handle_command", "p 2 1 5")
@@ -280,7 +280,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
 
         firmware.call("handle_message", {
             "type": "configure",
-            "content": {"devices": [gpio(value=1, current_t=3, enabled=False)]},
+            "content": {"devices": [gpio(value=1, current_t=3, mode="ready")]},
         })
 
         self.assertEqual(len(firmware.runtime.devices), 2)
@@ -340,7 +340,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         inactive_path = firmware.paths[1]
         proposal = {
             "devices": [{"id": "fan", "type": "pwm", "pin": 2, "current_t": 0,
-                         "enabled": True, "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}]}]
+                         "mode": "scheduled", "reschedule": 1, "pattern": [{"val": 1234, "dur": 10}]}]
         }
 
         firmware.call("handle_message", {"type": "configure", "content": proposal})
@@ -359,7 +359,7 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         firmware.call("handle_command", "p 2 2")
         proposal = {
             "devices": [{"id": "lights", "type": "gpio", "pin": 2, "current_t": 0,
-                         "enabled": True, "reschedule": 1,
+                         "mode": "scheduled", "reschedule": 1,
                          "pattern": [{"val": 0, "dur": 2}, {"val": 1, "dur": 8}]}]
         }
 

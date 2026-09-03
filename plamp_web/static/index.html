@@ -29,13 +29,17 @@
     .timer-value { border-radius: 6px; padding: .15rem .45rem; }
     .timer-value.on { background: #d9f7d9; }
     .timer-value.off { background: #eee; }
+    .timer-mode { border-radius: 6px; padding: .15rem .45rem; background: #e8eef7; color: #1f3b63; }
+    .timer-mode.ready { background: #f7e8e8; color: #7a2e2e; }
+    .timer-badges { align-items: center; display: flex; flex-wrap: wrap; gap: .35rem; }
     .timer-meta { color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }
     .timer-trace { display: grid; gap: .2rem; margin-top: .55rem; }
-    .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 2.2rem minmax(0, 1fr); }
+    .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 4.6rem minmax(0, 1fr); }
     .timer-trace-row span { color: #666; font-size: .75rem; }
     .timer-trace-row svg { background: #f1f3f4; border-radius: 3px; display: block; height: 22px; width: 100%; }
     .timer-trace-row path { fill: none; stroke: #3b7f4a; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
-    .timer-override-actions { margin-top: .55rem; }
+    .timer-trace.history .timer-trace-row path { stroke: #b42318; }
+    .timer-override-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .55rem; }
     #timer-override-dialog { border: 1px solid #777; border-radius: 8px; max-width: min(30rem, calc(100vw - 2rem)); }
     #timer-override-dialog::backdrop { background: rgb(0 0 0 / .35); }
     #timer-override-dialog form { display: grid; gap: .75rem; }
@@ -76,7 +80,7 @@
 
   <dialog id="timer-override-dialog">
     <form method="dialog">
-      <h2 id="override-title">Output override</h2>
+      <h2 id="override-title">Pulse</h2>
       <p id="override-state"></p>
       <div class="override-duration">
         <label>Duration <input id="override-duration" type="number" min="1" step="1" value="10" required></label>
@@ -86,7 +90,6 @@
         <button id="override-on" type="button">Pulse ON</button>
         <button id="override-off" type="button">Pulse OFF</button>
       </div>
-      <button id="override-schedule" type="button"></button>
       <p id="override-message" aria-live="polite"></p>
       <button value="cancel">Close</button>
     </form>
@@ -150,13 +153,14 @@
     const overrideDuration = document.getElementById("override-duration");
     const overrideUnit = document.getElementById("override-unit");
     const overrideMessage = document.getElementById("override-message");
-    const overrideSchedule = document.getElementById("override-schedule");
-    const TIMER_TRACE_HORIZONS = [["1m", 60], ["1h", 3600], ["24h", 86400]];
+    const TIMER_FORECAST_HORIZONS = [["next min", 60], ["next hour", 3600], ["next 24h", 86400]];
+    const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last day", 86400], ["last month", 30 * 86400]];
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
     const timerStatuses = new Map();
     const timerMessageTimes = new Map();
+    const pulseHistoryByRole = new Map();
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
@@ -379,10 +383,19 @@
       return Number(step?.step?.val ?? 0) > 0;
     }
 
+    function deviceMode(event, channel) {
+      const raw = event?.mode ?? channel?.programming ?? channel?.default_editor;
+      if (raw === "ready" || raw === "disabled") return "ready";
+      if (raw === "scheduled" || raw === "enabled" || raw === "cycle" || raw === "clock_window") return "scheduled";
+      if (event?.enabled === false) return "ready";
+      if (event?.enabled === true) return "scheduled";
+      return "scheduled";
+    }
+
     function effectiveTimerValueAt(event, overlay, messageAge, futureSeconds) {
       const overlayRemaining = Math.max(0, Number(overlay?.remaining_t ?? 0) - messageAge);
       if (overlayRemaining > futureSeconds) return Number(overlay.target_value ?? 1) > 0;
-      if (event.enabled !== true) return false;
+      if (deviceMode(event) === "ready") return false;
       return baseTimerValueAt(event, messageAge + futureSeconds);
     }
 
@@ -402,17 +415,64 @@
       return path + ` L ${width} ${previous ? highY : lowY}`;
     }
 
-    function timerTraceSvg(event, overlay, messageAge) {
-      return TIMER_TRACE_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Effective output for next ${label}"><path d="${timerTracePath(event, overlay, messageAge, horizon)}"></path></svg></div>`).join("");
+    function historyValueAt(pulses, ageSeconds) {
+      const instant = Date.now() - ageSeconds * 1000;
+      let value = 0;
+      let bestStart = Number.NEGATIVE_INFINITY;
+      for (const pulse of pulses) {
+        const start = Date.parse(pulse.started_at);
+        const end = Date.parse(pulse.ended_at);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+        if (start <= instant && instant < end && start >= bestStart) {
+          bestStart = start;
+          value = Number(pulse.value ?? 0);
+        }
+      }
+      return value > 0;
     }
 
-    function openTimerOverride(role, channel, event, overlay) {
-      activeOverride = {role, channel, event, overlay};
-      const enabled = event.enabled === true;
+    function historyTracePath(pulses, horizon, width = 240) {
+      const highY = 4;
+      const lowY = 18;
+      let previous = historyValueAt(pulses, horizon);
+      let path = `M 0 ${previous ? highY : lowY}`;
+      for (let x = 1; x <= width; x += 1) {
+        const ageSeconds = horizon * (1 - x / width);
+        const value = historyValueAt(pulses, ageSeconds);
+        if (value !== previous) {
+          path += ` L ${x} ${previous ? highY : lowY} L ${x} ${value ? highY : lowY}`;
+          previous = value;
+        }
+      }
+      return path + ` L ${width} ${previous ? highY : lowY}`;
+    }
+
+    function timerTraceSvg(event, overlay, messageAge, mode, pulses) {
+      if (mode === "ready") {
+        return TIMER_HISTORY_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Pulse usage for ${label}"><path d="${historyTracePath(pulses, horizon)}"></path></svg></div>`).join("");
+      }
+      return TIMER_FORECAST_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Effective output for ${label}"><path d="${timerTracePath(event, overlay, messageAge, horizon)}"></path></svg></div>`).join("");
+    }
+
+    async function refreshPulseHistory(role) {
+      try {
+        const response = await fetch(`/api/controllers/${encodeURIComponent(role)}/pulse-history`);
+        const text = await response.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (error) {}
+        if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
+        pulseHistoryByRole.set(role, Array.isArray(data?.pulses) ? data.pulses : []);
+      } catch (error) {
+        if (!pulseHistoryByRole.has(role)) pulseHistoryByRole.set(role, []);
+      }
+    }
+
+    function openTimerOverride(role, channel, event, overlay, preferredValue) {
+      activeOverride = {role, channel, event, overlay, preferredValue};
+      const mode = deviceMode(event, channel);
       const currentValue = Number(event.current_value ?? 0) > 0 ? "ON" : "OFF";
-      overrideTitle.textContent = channel.name + " override";
-      overrideState.textContent = `Output ${currentValue}; schedule ${enabled ? "enabled" : "disabled"}.`;
-      overrideSchedule.textContent = enabled ? "Disable schedule" : "Re-enable saved schedule";
+      overrideTitle.textContent = preferredValue ? "Pulse ON" : "Pulse OFF";
+      overrideState.textContent = `Output ${currentValue}; mode ${mode.toUpperCase()}.`;
       overrideMessage.textContent = "";
       timerOverrideDialog.showModal();
       overrideDuration.focus();
@@ -441,19 +501,8 @@
         const {role, channel} = activeOverride;
         const seconds = overrideSeconds();
         await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/pulse`, {seconds, value});
-      } catch (error) {
-        overrideMessage.textContent = String(error.message || error);
-      }
-    }
-
-    async function toggleOverrideSchedule() {
-      if (!activeOverride) return;
-      const {role, channel, event} = activeOverride;
-      const enabled = event.enabled !== true;
-      const action = enabled ? "re-enable the saved schedule" : "disable the schedule and turn the output off after any active override";
-      if (!window.confirm(`Are you sure you want to ${action} for ${channel.name}?`)) return;
-      try {
-        await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/schedule-enabled`, {enabled});
+        await refreshPulseHistory(role);
+        renderTimerStatus(true);
       } catch (error) {
         overrideMessage.textContent = String(error.message || error);
       }
@@ -626,7 +675,9 @@
     function scheduleEditorBlock(role, channel, event) {
       const cycleValues = cycleEditorValues(channel, event);
       const clock = clockValuesForEvent(channel, event);
-      const mode = ["cycle", "clock_window", "disabled", "hidden"].includes(channel.default_editor) ? channel.default_editor : "cycle";
+      const mode = ["cycle", "clock_window", "ready", "hidden"].includes(channel.default_editor)
+        ? channel.default_editor
+        : (channel.default_editor === "disabled" ? "ready" : "cycle");
       return `
         <section class="device-schedule-editor" data-channel-id="${escapeHtml(channel.id)}" data-channel-pin="${escapeHtml(channel.pin ?? "")}" data-channel-type="${escapeHtml(channel.type || "gpio")}" data-channel-order="${escapeHtml(channel.display_order ?? 0)}">
           <div class="timer-top"><strong>${escapeHtml(channel.name)}</strong><span class="editor-note">${escapeHtml(role)} / pin ${escapeHtml(channel.pin ?? "?")} / ${escapeHtml(channel.type || "gpio")}</span></div>
@@ -635,8 +686,8 @@
               <select class="editor-mode" name="mode-${escapeHtml(channel.id)}">
                 <option value="cycle"${mode === "cycle" ? " selected" : ""}>Cycle set</option>
                 <option value="clock_window"${mode === "clock_window" ? " selected" : ""}>24h set</option>
-                <option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>
-                <option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>
+                <option value="ready"${mode === "ready" ? " selected" : ""}>Ready</option>
+                <option value="hidden"${mode === "hidden" ? " selected" : ""}>Hidden</option>
               </select>
             </label>
           </div>
@@ -711,7 +762,7 @@
           device.output_type = block.dataset.channelType || "gpio";
           device.display_order = Number(block.dataset.channelOrder || 0);
           device.visibility = mode === "hidden" ? "hidden" : "visible";
-          device.programming = mode === "disabled" ? "disabled" : "enabled";
+          device.programming = mode === "ready" ? "ready" : "scheduled";
           const existingEditor = structuredClone(device.editor || {});
           if (mode === "cycle") {
             const cycleUnit = block.querySelector(".editor-cycle-unit").value;
@@ -726,7 +777,7 @@
               on_time: block.querySelector(".editor-on-time").value || existingEditor.on_time || "06:00",
               off_time: block.querySelector(".editor-off-time").value || existingEditor.off_time || "18:00",
             };
-          } else if (mode === "disabled" || mode === "hidden") {
+          } else if (mode === "ready" || mode === "hidden") {
             device.editor = existingEditor.kind ? existingEditor : {kind: "cycle", on_seconds: 60, off_seconds: 60, start_at_seconds: 0};
           } else {
             device.editor = existingEditor;
@@ -809,7 +860,7 @@
         for (const item of items) {
           const channel = item.channel;
           const event = item.event || {id: channel.id, pin: channel.pin, type: channel.type || "gpio"};
-          const enabled = event.enabled === true;
+          const mode = deviceMode(event, channel);
           const messageAge = ok && item.event ? Math.floor((Date.now() - (timerMessageTimes.get(role) || Date.now())) / 1000) : 0;
           const overlay = overlayByPin.get(Number(channel.pin ?? event.pin));
           const overlayTarget = Number(overlay?.target_value ?? 1) > 0;
@@ -825,30 +876,43 @@
           const name = document.createElement("span");
           name.className = "timer-name";
           name.textContent = channel.name;
+          const badges = document.createElement("div");
+          badges.className = "timer-badges";
+          const modeBadge = document.createElement("span");
+          modeBadge.className = "timer-mode" + (mode === "ready" ? " ready" : "");
+          modeBadge.textContent = mode === "ready" ? "READY" : "SCHEDULED";
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
-          badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : enabled ? (isOn ? "ON" : "OFF") : "DISABLED";
-          top.append(name, badge);
+          badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : (isOn ? "ON" : "OFF");
+          badges.append(modeBadge, badge);
+          top.append(name, badges);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
-          meta.textContent = enabled
+          meta.textContent = mode === "scheduled"
             ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale")
-            : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | disabled" + (ok ? "" : " | stale");
+            : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | ready" + (ok ? "" : " | stale");
           if (overlay) meta.textContent += ` | override ${overlayTarget ? "ON" : "OFF"} for ${formatDuration(overlayRemaining)}`;
           card.append(top, meta);
           const trace = document.createElement("div");
-          trace.className = "timer-trace";
-          trace.innerHTML = timerTraceSvg(event, overlay, messageAge);
+          trace.className = "timer-trace" + (mode === "ready" ? " history" : "");
+          const channelPulses = (pulseHistoryByRole.get(role) || []).filter((pulse) => pulse.channel_id === channel.id || Number(pulse.pin) === Number(channel.pin));
+          if (mode === "ready" && !pulseHistoryByRole.has(role)) refreshPulseHistory(role).then(() => renderTimerStatus(true));
+          trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses);
           card.append(trace);
           if ((channel.type || event.type) === "gpio") {
             const overrideActions = document.createElement("div");
             overrideActions.className = "timer-override-actions";
-            const override = document.createElement("button");
-            override.type = "button";
-            override.textContent = "Override…";
-            override.disabled = !ok;
-            override.addEventListener("click", () => openTimerOverride(role, channel, event, overlay));
-            overrideActions.append(override);
+            const pulseOn = document.createElement("button");
+            pulseOn.type = "button";
+            pulseOn.textContent = "Pulse ON";
+            pulseOn.disabled = !ok;
+            pulseOn.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
+            const pulseOff = document.createElement("button");
+            pulseOff.type = "button";
+            pulseOff.textContent = "Pulse OFF";
+            pulseOff.disabled = !ok;
+            pulseOff.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 0));
+            overrideActions.append(pulseOn, pulseOff);
             card.append(overrideActions);
           }
           devicesGrid.append(card);
@@ -869,7 +933,7 @@
           const actions = document.createElement("div");
           actions.className = "controller-actions controller-actions-editing";
           actions.innerHTML = `
-            <button type="submit">Apply schedule</button>
+            <button type="submit">Apply program</button>
             <button type="button" name="cancel">Close</button>
             <span class="editor-message" aria-live="polite"></span>
           `;
@@ -888,7 +952,7 @@
           if (configurableCount > 0) {
             const edit = document.createElement("button");
             edit.type = "button";
-            edit.textContent = "Edit schedule";
+            edit.textContent = "Reprogram";
             edit.disabled = !ok;
             edit.addEventListener("click", () => openControllerScheduleEditor(role));
             actions.append(edit);
@@ -1107,7 +1171,6 @@
     });
     document.getElementById("override-on").addEventListener("click", () => sendTimedOverride(1));
     document.getElementById("override-off").addEventListener("click", () => sendTimedOverride(0));
-    overrideSchedule.addEventListener("click", toggleOverrideSchedule);
     timerOverrideDialog.addEventListener("close", () => { activeOverride = null; });
     cameraCaptureList.addEventListener("click", stopPageAutoRefresh);
     cameraCaptureFilter.addEventListener("change", () => {

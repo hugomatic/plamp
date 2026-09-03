@@ -20,7 +20,7 @@ STATE = {
             "id": "lights",
             "type": "gpio",
             "pin": 2,
-            "enabled": True,
+            "mode": "scheduled",
             "current_t": 0,
             "reschedule": 1,
             "pattern": [{"val": 1, "dur": 10}],
@@ -343,8 +343,8 @@ class DirectCliTests(unittest.TestCase):
 
             result = {
                 "report": {"type": "report", "content": {"devices": []}},
-                "previous_identity": {"revision": "old", "protocol": 3, "name": "pico_scheduler"},
-                "identity": {"revision": "new", "protocol": 3, "name": "pico_scheduler"},
+                "previous_identity": {"revision": "old", "protocol": 4, "name": "pico_scheduler"},
+                "identity": {"revision": "new", "protocol": 4, "name": "pico_scheduler"},
             }
             rc = main(
                 ["pico", "upgrade", "tower", "-"],
@@ -367,7 +367,7 @@ class DirectCliTests(unittest.TestCase):
             result = {
                 "report": {"type": "report", "content": {"devices": []}},
                 "previous_identity": None,
-                "identity": {"revision": "new", "protocol": 3, "name": "pico_scheduler"},
+                "identity": {"revision": "new", "protocol": 4, "name": "pico_scheduler"},
             }
 
             rc = main(

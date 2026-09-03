@@ -184,11 +184,18 @@ def build_parser() -> argparse.ArgumentParser:
     schedule.add_argument("payload")
     schedule.set_defaults(timer_action="channels", channel_action="set-schedule")
 
-    schedule_enabled = channel_subparsers.add_parser("set-enabled")
+    schedule_enabled = channel_subparsers.add_parser("set-mode")
     schedule_enabled.add_argument("controller")
     schedule_enabled.add_argument("channel_id")
-    schedule_enabled.add_argument("enabled", choices=("true", "false"))
-    schedule_enabled.set_defaults(timer_action="channels", channel_action="set-enabled")
+    schedule_enabled.add_argument("mode", choices=("scheduled", "ready"))
+    schedule_enabled.set_defaults(timer_action="channels", channel_action="set-mode")
+
+    # Backward-compatible alias
+    schedule_enabled_alias = channel_subparsers.add_parser("set-enabled")
+    schedule_enabled_alias.add_argument("controller")
+    schedule_enabled_alias.add_argument("channel_id")
+    schedule_enabled_alias.add_argument("enabled", choices=("true", "false"))
+    schedule_enabled_alias.set_defaults(timer_action="channels", channel_action="set-enabled")
 
     pics = subparsers.add_parser("pics")
     pic_subparsers = pics.add_subparsers(dest="pics_action", required=True)
@@ -338,12 +345,16 @@ def _handle_timers(args: argparse.Namespace, base_url: str) -> object:
         )
         return _normalize_pico_scheduler_response(response)
 
-    if args.timer_action == "channels" and args.channel_action == "set-enabled":
+    if args.timer_action == "channels" and args.channel_action in {"set-mode", "set-enabled"}:
+        if args.channel_action == "set-mode":
+            payload = {"mode": args.mode}
+        else:
+            payload = {"mode": "scheduled" if args.enabled == "true" else "ready"}
         response = request_json(
             "POST",
             base_url,
             f"/api/controllers/{args.controller}/channels/{args.channel_id}/schedule-enabled",
-            {"enabled": args.enabled == "true"},
+            payload,
         )
         return _normalize_pico_scheduler_response(response)
 

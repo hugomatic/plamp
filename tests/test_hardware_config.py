@@ -46,9 +46,9 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(controller["payload"]["report_every"], 2)
         self.assertEqual([device["pin"] for device in controller["payload"]["devices"]], [21, 20, 14])
         self.assertEqual(devices["ch1"]["visibility"], "hidden")
-        self.assertEqual(devices["ch1"]["programming"], "disabled")
+        self.assertEqual(devices["ch1"]["programming"], "ready")
         self.assertEqual(devices["ch2"]["visibility"], "visible")
-        self.assertEqual(devices["ch2"]["programming"], "disabled")
+        self.assertEqual(devices["ch2"]["programming"], "ready")
         self.assertNotIn("label", devices["ch8"])
         self.assertEqual(devices["ch8"]["editor"], {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0})
 
@@ -104,12 +104,12 @@ class HardwareConfigTests(unittest.TestCase):
             "ctrl_a": {"settings": {"devices": {
                 "pump": {
                     "pin": 2,
-                    "programming": "enabled",
+                    "programming": "scheduled",
                     "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20},
                 },
                 "lights": {
                     "pin": 3,
-                    "programming": "disabled",
+                    "programming": "ready",
                     "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1},
                 },
             }}},
@@ -118,8 +118,8 @@ class HardwareConfigTests(unittest.TestCase):
         self.assertEqual(
             controller["payload"]["devices"],
             [
-                {"pin": 2, "type": "gpio", "enabled": True, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]},
-                {"pin": 3, "type": "gpio", "enabled": False, "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]},
+                {"pin": 2, "type": "gpio", "mode": "scheduled", "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]},
+                {"pin": 3, "type": "gpio", "mode": "ready", "pattern": [{"val": 1, "dur": 1}, {"val": 0, "dur": 1}]},
             ],
         )
 
@@ -151,7 +151,7 @@ class HardwareConfigTests(unittest.TestCase):
                     "type": "scheduled_output",
                     "config": {"pin": 3, "output_type": "gpio", "display_order": 0, "visibility": "visible"},
                     "settings": {
-                        "programming": "enabled",
+                        "programming": "scheduled",
                         "schedule": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0},
                     },
                 }
@@ -182,7 +182,7 @@ class HardwareConfigTests(unittest.TestCase):
                         {
                             "pin": 3,
                             "type": "pwm",
-                            "enabled": True,
+                            "mode": "scheduled",
                             "pattern": [{"val": 1, "dur": 10}],
                         }
                     ]
@@ -239,18 +239,18 @@ class HardwareConfigTests(unittest.TestCase):
                 "disabled_pump": {
                     "type": "scheduled_output",
                     "config": {"pin": 3},
-                    "settings": {"programming": "disabled"},
+                    "settings": {"programming": "ready"},
                 },
                 "hidden_light": {
                     "type": "scheduled_output",
                     "config": {"pin": 4, "visibility": "hidden"},
-                    "settings": {"programming": "disabled"},
+                    "settings": {"programming": "ready"},
                 },
             },
             "ctrl_a",
             "pico_scheduler",
         )
-        self.assertEqual(devices["disabled_pump"]["settings"]["programming"], "disabled")
+        self.assertEqual(devices["disabled_pump"]["settings"]["programming"], "ready")
         self.assertEqual(devices["hidden_light"]["config"]["visibility"], "hidden")
 
     def test_validate_controller_devices_rejects_duplicate_pin_per_controller(self):
@@ -427,7 +427,7 @@ class HardwareConfigTests(unittest.TestCase):
                     "type": "pico_scheduler",
                     "payload": {
                         "report_every": 10,
-                        "devices": [{"pin": 3, "type": "gpio", "enabled": True, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                        "devices": [{"pin": 3, "type": "gpio", "mode": "scheduled", "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
                     },
                     "settings": {
                         "devices": {
@@ -436,7 +436,7 @@ class HardwareConfigTests(unittest.TestCase):
                                 "output_type": "gpio",
                                 "display_order": 0,
                                 "visibility": "visible",
-                                "programming": "enabled",
+                                "programming": "scheduled",
                                 "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0},
                             }
                         }
@@ -454,7 +454,7 @@ class HardwareConfigTests(unittest.TestCase):
                     "output_type": "gpio",
                     "display_order": 0,
                     "visibility": "visible",
-                    "programming": "enabled",
+                    "programming": "scheduled",
                     "editor": {"kind": "cycle", "on_seconds": 10, "off_seconds": 20, "start_at_seconds": 0},
                 }
             },

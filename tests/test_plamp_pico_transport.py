@@ -54,7 +54,7 @@ class FakeSerial:
 
 class PicoTransportTests(unittest.TestCase):
     CONFIGURED_STATE = {"devices": [{
-        "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0,
+        "id": "lights", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 0,
         "reschedule": 1, "pattern": [{"val": 1, "dur": 10}],
     }]}
     MATCHING_REPORT = b'{"type":"report","content":{"devices":[{"id":"lights","type":"gpio","pin":2,"enabled":true,"elapsed_t":0,"cycle_t":0,"current_value":1,"reschedule":1,"pattern":[{"val":1,"dur":10}]}]}}\n'

@@ -18,14 +18,14 @@ from plamp.config import atomic_write_json as real_atomic_write_json
 
 
 EXPECTED = [
-    (21, "ph_up", False),
-    (20, "ph_down", False),
-    (19, "agitator", False),
-    (18, "nutrients", False),
-    (17, "pump", True),
-    (16, "fan", True),
-    (15, "lights_1", True),
-    (14, "lights_2", True),
+    (21, "ph_up", "ready"),
+    (20, "ph_down", "ready"),
+    (19, "agitator", "ready"),
+    (18, "nutrients", "ready"),
+    (17, "pump", "scheduled"),
+    (16, "fan", "scheduled"),
+    (15, "lights_1", "scheduled"),
+    (14, "lights_2", "scheduled"),
 ]
 
 EXPECTED_REVISION = "generated-rev"
@@ -60,7 +60,7 @@ def protocol_2_report():
     }
 
 
-def protocol_3_report(*, revision=EXPECTED_REVISION, name="pico_scheduler", protocol=3):
+def protocol_3_report(*, revision=EXPECTED_REVISION, name="pico_scheduler", protocol=4):
     report = {
         "type": "report",
         "content": {
@@ -69,16 +69,16 @@ def protocol_3_report(*, revision=EXPECTED_REVISION, name="pico_scheduler", prot
             "overlays": [],
         },
     }
-    for index, (pin, device_id, enabled) in enumerate(EXPECTED):
+    for index, (pin, device_id, mode) in enumerate(EXPECTED):
         report["content"]["devices"].append(
             {
                 "id": device_id,
                 "type": "gpio",
                 "pin": pin,
-                "enabled": enabled,
+                "mode": mode,
                 "elapsed_t": index + 5,
                 "cycle_t": index + 5,
-                "current_value": 0 if not enabled else 1,
+                "current_value": 0 if mode == "ready" else 1,
                 "reschedule": 1,
                 "pattern": [
                     {"val": 1, "dur": index + 10},
@@ -310,7 +310,7 @@ class ControllerAddTests(unittest.TestCase):
     def test_provision_rejects_upgraded_report_with_wrong_firmware_family_or_protocol(self):
         for upgraded_report, error in (
             (protocol_3_report(name="pico_doser"), "pico_scheduler"),
-            (protocol_3_report(protocol=4), "unsupported firmware protocol"),
+            (protocol_3_report(protocol=5), "unsupported firmware protocol"),
         ):
             with self.subTest(firmware=upgraded_report["content"]["firmware"]):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -607,7 +607,7 @@ class ControllerAddTests(unittest.TestCase):
         state = provisioned_plamp8_state(protocol_2_report())
 
         self.assertEqual(
-            [(item["pin"], item["id"], item["enabled"]) for item in state["devices"]],
+            [(item["pin"], item["id"], item["mode"]) for item in state["devices"]],
             EXPECTED,
         )
         self.assertEqual(
@@ -639,7 +639,7 @@ class ControllerAddTests(unittest.TestCase):
             provisioned_plamp8_state(report)
 
     def test_preview_imports_compatible_protocol_3_report(self):
-        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3)
+        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4)
 
         preview = preview_controller_add("tower", "PICO-1", protocol_3_report(), expected)
 
@@ -654,7 +654,7 @@ class ControllerAddTests(unittest.TestCase):
     def test_preview_provisions_protocol_2_report(self):
         preview = preview_controller_add(
             "tower", "PICO-1", protocol_2_report(),
-            FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3),
+            FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4),
         )
 
         self.assertEqual(preview["action"], "provision")
@@ -663,15 +663,15 @@ class ControllerAddTests(unittest.TestCase):
             preview["observed_identity"],
             {"name": "pico_scheduler", "revision": "legacy-rev", "protocol": 2},
         )
-        self.assertIsNone(preview["before"][0]["enabled"])
+        self.assertIsNone(preview["before"][0]["mode"])
 
     def test_preview_requires_firmware_identity_and_supported_scheduler_protocol(self):
-        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3)
+        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4)
         unidentified = protocol_2_report()
         del unidentified["content"]["firmware"]
         foreign = protocol_2_report()
         foreign["content"]["firmware"]["name"] = "pico_doser"
-        unsupported = protocol_3_report(protocol=4)
+        unsupported = protocol_3_report(protocol=5)
 
         for report, message in (
             (unidentified, "firmware identity"),
@@ -683,21 +683,21 @@ class ControllerAddTests(unittest.TestCase):
                     preview_controller_add("tower", "PICO-1", report, expected)
 
     def test_protocol_3_revision_or_profile_mismatch_requires_provision(self):
-        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3)
+        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4)
         wrong_revision = protocol_3_report(revision="old-rev")
         wrong_id = protocol_3_report()
         wrong_id["content"]["devices"][0]["id"] = "one"
-        wrong_enabled = protocol_3_report()
-        wrong_enabled["content"]["devices"][0]["enabled"] = True
+        wrong_mode = protocol_3_report()
+        wrong_mode["content"]["devices"][0]["mode"] = "scheduled"
 
-        for report in (wrong_revision, wrong_id, wrong_enabled):
+        for report in (wrong_revision, wrong_id, wrong_mode):
             with self.subTest(report=report):
                 preview = preview_controller_add("tower", "PICO-1", report, expected)
                 self.assertEqual(preview["action"], "provision")
                 self.assertTrue(preview["requires_reset"])
 
     def test_preview_rejects_incomplete_or_pwm_report(self):
-        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3)
+        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4)
         incomplete = protocol_3_report()
         del incomplete["content"]["devices"][0]["pattern"]
         pwm = protocol_3_report()
@@ -709,7 +709,7 @@ class ControllerAddTests(unittest.TestCase):
             preview_controller_add("tower", "PICO-1", pwm, expected)
 
     def test_preview_rejects_invalid_complete_report_fields(self):
-        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3)
+        expected = FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4)
         invalid_elapsed = protocol_3_report()
         invalid_elapsed["content"]["devices"][0]["elapsed_t"] = "five"
         invalid_value = protocol_3_report()
@@ -729,12 +729,12 @@ class ControllerAddTests(unittest.TestCase):
         report = protocol_3_report()
         report["content"]["devices"][0]["current_value"] = 1
 
-        with self.assertRaisesRegex(ValueError, "disabled current_value.*0"):
+        with self.assertRaisesRegex(ValueError, "ready current_value.*0"):
             preview_controller_add(
                 "tower",
                 "PICO-1",
                 report,
-                FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 3),
+                FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4),
             )
 
     def test_controller_config_from_report_converts_semantic_devices_and_editors(self):
@@ -761,7 +761,7 @@ class ControllerAddTests(unittest.TestCase):
             "output_type": "gpio",
             "display_order": 0,
             "visibility": "visible",
-            "programming": "disabled",
+            "programming": "ready",
             "editor": {
                 "kind": "events",
                 "events": [
@@ -772,7 +772,7 @@ class ControllerAddTests(unittest.TestCase):
                 "start_at_seconds": 42,
             },
         })
-        self.assertEqual(devices["pump"]["programming"], "enabled")
+        self.assertEqual(devices["pump"]["programming"], "scheduled")
         self.assertEqual(devices["pump"]["editor"], {"kind": "cycle", "on_seconds": 14, "off_seconds": 24, "start_at_seconds": 9})
         self.assertNotIn("label", devices["pump"])
 

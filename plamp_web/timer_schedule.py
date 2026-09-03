@@ -61,14 +61,20 @@ def channel_metadata_for_role(role: str, config: dict[str, Any], state: dict[str
         if pin < 0 or pin > 29:
             raise ValueError(f"device {device_id} pin must be in range 0..29")
         visibility = device.get("visibility", "visible")
-        programming = device.get("programming", "enabled")
+        raw_programming = device.get("programming", "scheduled")
+        if raw_programming in {"disabled", "ready"}:
+            programming = "ready"
+        elif raw_programming in {"enabled", "scheduled"}:
+            programming = "scheduled"
+        else:
+            programming = raw_programming
         schedule = device.get("editor", {})
         kind = schedule.get("kind", "cycle") if isinstance(schedule, dict) else "cycle"
         default_editor = "clock_window" if kind == "daily_window" else "cycle"
         if visibility == "hidden":
             default_editor = "hidden"
-        elif programming == "disabled":
-            default_editor = "disabled"
+        elif programming == "ready":
+            default_editor = "ready"
         live_device = live_by_pin.get(pin)
         payload_device = payload_by_pin.get(pin)
         event_type = _require_gpio(device.get("output_type", "gpio"), f"device {device_id}")
@@ -216,11 +222,16 @@ def _resync_unedited_device(device: dict[str, Any], live_device: dict[str, Any] 
 
 
 def _new_channel_device(channel: dict[str, Any], channel_id: str) -> dict[str, Any]:
+    programming = channel.get("programming", "scheduled")
+    if programming in {"disabled", "ready"}:
+        mode = "ready"
+    else:
+        mode = "scheduled"
     return {
         "id": channel_id,
         "type": _require_gpio(channel.get("type", "gpio"), f"channel {channel_id}"),
         "pin": channel.get("pin"),
-        "enabled": channel.get("programming", "enabled") != "disabled",
+        "mode": mode,
         "current_t": 0,
         "reschedule": 1,
     }

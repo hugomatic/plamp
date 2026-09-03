@@ -88,7 +88,6 @@
 
   function isPulseEligible(device, source) {
     return source === "configured"
-      && device.programming !== "disabled"
       && (device.output_type || "gpio") === "gpio";
   }
 
@@ -118,9 +117,12 @@
         row.append(cell);
       }
       const status = document.createElement("td");
-      const disabled = source === "configured" ? device.programming === "disabled" : device.enabled === false;
-      if (disabled) status.textContent = "Disabled";
-      else status.textContent = source === "configured" ? "Enabled" : (device.enabled === true ? "Enabled (observed)" : "Observed");
+      const mode = source === "configured"
+        ? (device.programming === "ready" || device.programming === "disabled" ? "ready" : "scheduled")
+        : (device.mode === "ready" || device.enabled === false ? "ready" : (device.mode === "scheduled" || device.enabled === true ? "scheduled" : "observed"));
+      if (mode === "ready") status.textContent = source === "configured" ? "Ready" : "Ready (observed)";
+      else if (mode === "scheduled") status.textContent = source === "configured" ? "Scheduled" : "Scheduled (observed)";
+      else status.textContent = "Observed";
       row.append(status);
       const actionCell = document.createElement("td");
       if (isPulseEligible(device, source)) {

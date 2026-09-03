@@ -12,7 +12,7 @@ from plamp.scheduler_state import (
 STATE = {
     "report_every": 5,
     "devices": [{
-        "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 7,
+        "id": "lights", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 7,
         "reschedule": 1,
         "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
     }],
@@ -20,19 +20,43 @@ STATE = {
 
 
 class SchedulerStateTests(unittest.TestCase):
+    def test_expected_firmware_protocol_is_4(self):
+        self.assertEqual(EXPECTED_FIRMWARE_PROTOCOL, 4)
+
     def test_normalizes_complete_state_without_host_poll_setting(self):
         self.assertEqual(normalize_scheduler_state(STATE), {"devices": STATE["devices"]})
+
+    def test_migrates_legacy_enabled_true_to_scheduled(self):
+        raw = {
+            "devices": [{
+                "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "current_t": 7,
+                "reschedule": 1,
+                "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+            }],
+        }
+        self.assertEqual(normalize_scheduler_state(raw)["devices"][0]["mode"], "scheduled")
+        self.assertNotIn("enabled", normalize_scheduler_state(raw)["devices"][0])
+
+    def test_migrates_legacy_enabled_false_to_ready(self):
+        raw = {
+            "devices": [{
+                "id": "pump", "type": "gpio", "pin": 3, "enabled": False, "current_t": 0,
+                "reschedule": 1,
+                "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
+            }],
+        }
+        self.assertEqual(normalize_scheduler_state(raw)["devices"][0]["mode"], "ready")
 
     def test_rejects_duplicate_pin_before_returning_state(self):
         raw = {"devices": [STATE["devices"][0], dict(STATE["devices"][0], id="pump")]}
         with self.assertRaisesRegex(ValueError, "duplicate pin: 2"):
             normalize_scheduler_state(raw)
 
-    def test_rejects_device_without_enabled(self):
+    def test_rejects_device_without_mode_or_enabled(self):
         device = dict(STATE["devices"][0])
-        del device["enabled"]
+        del device["mode"]
 
-        with self.assertRaisesRegex(ValueError, "enabled must be a boolean"):
+        with self.assertRaisesRegex(ValueError, "mode"):
             normalize_scheduler_state({"devices": [device]})
 
     def test_rejects_pwm_state_instead_of_converting_it(self):
@@ -43,7 +67,7 @@ class SchedulerStateTests(unittest.TestCase):
 
     def test_reads_firmware_identity_from_report(self):
         report = {"type": "report", "content": {
-            "firmware": {"name": "pico_scheduler", "revision": "abc1234", "protocol": 3},
+            "firmware": {"name": "pico_scheduler", "revision": "abc1234", "protocol": 4},
             "devices": [],
         }}
         self.assertEqual(
@@ -56,23 +80,23 @@ class SchedulerStateTests(unittest.TestCase):
 
     def test_report_comparison_ignores_runtime_elapsed_fields(self):
         report = {"type": "report", "content": {"devices": [{
-            "id": "lights", "type": "gpio", "pin": 2, "enabled": True, "elapsed_t": 19,
+            "id": "lights", "type": "gpio", "pin": 2, "mode": "scheduled", "elapsed_t": 19,
             "cycle_t": 19, "current_value": 0, "reschedule": 1,
             "pattern": STATE["devices"][0]["pattern"],
         }]}}
         self.assertTrue(report_matches_state(report, STATE))
 
-    def test_report_comparison_includes_enabled(self):
+    def test_report_comparison_includes_mode(self):
         report = {"type": "report", "content": {"devices": [
-            dict(STATE["devices"][0], enabled=False, elapsed_t=7, cycle_t=7, current_value=0)
+            dict(STATE["devices"][0], mode="ready", elapsed_t=7, cycle_t=7, current_value=0)
         ]}}
 
         self.assertFalse(report_matches_state(report, STATE))
 
-    def test_report_comparison_rejects_integer_enabled_as_boolean(self):
+    def test_report_comparison_rejects_invalid_mode(self):
         report = {"type": "report", "content": {"devices": [{
             **STATE["devices"][0],
-            "enabled": 1,
+            "mode": "enabled",
             "elapsed_t": 7,
             "cycle_t": 7,
             "current_value": 1,
@@ -80,12 +104,12 @@ class SchedulerStateTests(unittest.TestCase):
 
         self.assertFalse(report_matches_state(report, STATE))
 
-    def test_report_comparison_requires_disabled_device_to_report_integer_zero(self):
-        disabled = {
-            "devices": [{**STATE["devices"][0], "enabled": False}],
+    def test_report_comparison_requires_ready_device_to_report_integer_zero(self):
+        ready = {
+            "devices": [{**STATE["devices"][0], "mode": "ready"}],
         }
         base = {
-            **disabled["devices"][0],
+            **ready["devices"][0],
             "elapsed_t": 7,
             "cycle_t": 7,
         }
@@ -95,12 +119,13 @@ class SchedulerStateTests(unittest.TestCase):
                 report = {"type": "report", "content": {"devices": [
                     {**base, "current_value": current_value}
                 ]}}
-                self.assertFalse(report_matches_state(report, disabled))
+                self.assertFalse(report_matches_state(report, ready))
 
         missing = {"type": "report", "content": {"devices": [base]}}
-        self.assertFalse(report_matches_state(missing, disabled))
+        self.assertFalse(report_matches_state(missing, ready))
+        ok = {"type": "report", "content": {"devices": [{**base, "current_value": 0}]}}
+        self.assertTrue(report_matches_state(ok, ready))
 
-        report = {"type": "report", "content": {"devices": [
-            {**base, "current_value": 0}
-        ]}}
-        self.assertTrue(report_matches_state(report, disabled))
+
+if __name__ == "__main__":
+    unittest.main()

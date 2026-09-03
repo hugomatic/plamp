@@ -38,9 +38,9 @@ def normalize_state(raw):
     for index, source in enumerate(raw["devices"]):
         if not isinstance(source, dict):
             raise ValueError("device %s must be an object" % index)
-        allowed = {{"id", "type", "pin", "enabled", "current_t", "reschedule", "pattern"}}
-        required = {{"type", "pin", "enabled", "current_t", "reschedule", "pattern"}}
-        if set(source) - allowed or not required <= set(source):
+        allowed = {{"id", "type", "pin", "mode", "enabled", "current_t", "reschedule", "pattern"}}
+        required_core = {{"type", "pin", "current_t", "reschedule", "pattern"}}
+        if set(source) - allowed or not required_core <= set(source):
             raise ValueError("device %s has invalid fields" % index)
         device_type = source["type"]
         if device_type != "gpio":
@@ -57,9 +57,12 @@ def normalize_state(raw):
                 raise ValueError("duplicate device id: %s" % device_id)
             ids.add(device_id)
         current_t = _integer(source["current_t"], "device %s current_t" % index, 0)
-        enabled = source["enabled"]
-        if not isinstance(enabled, bool):
-            raise ValueError("device %s enabled must be a boolean" % index)
+        mode = source.get("mode")
+        enabled = source.get("enabled")
+        if mode is None and isinstance(enabled, bool):
+            mode = "scheduled" if enabled else "ready"
+        if mode not in ("scheduled", "ready"):
+            raise ValueError("device %s mode must be scheduled or ready" % index)
         reschedule = _integer(source["reschedule"], "device %s reschedule" % index, 0, 1)
         source_pattern = source["pattern"]
         if not isinstance(source_pattern, list) or not source_pattern:
@@ -74,7 +77,7 @@ def normalize_state(raw):
         item = {{
             "type": device_type,
             "pin": pin,
-            "enabled": enabled,
+            "mode": mode,
             "current_t": current_t,
             "reschedule": reschedule,
             "pattern": pattern,
@@ -146,7 +149,7 @@ def build_outputs(state):
             "type": source["type"],
             "pin": source["pin"],
             "overlay": False,
-            "enabled": source["enabled"],
+            "mode": source["mode"],
             "elapsed_t": source["current_t"],
             "reschedule": source["reschedule"],
             "pattern": source["pattern"],
@@ -204,7 +207,7 @@ def report_item(device, current_value=None):
             "current_value": device["last_value"] if current_value is None else current_value,
     }}
     if not device.get("overlay"):
-        item["enabled"] = device["enabled"]
+        item["mode"] = device["mode"]
     else:
         item["target_value"] = device["pattern"][0]["val"]
         item["remaining_t"] = max(0, device["total_t"] - device["elapsed_t"])
@@ -236,7 +239,7 @@ def report():
 def apply():
     changed = False
     for device in devices:
-        if not device.get("overlay") and not device["enabled"]:
+        if not device.get("overlay") and device["mode"] != "scheduled":
             value = 0
         else:
             cycle_t = device["elapsed_t"] % device["total_t"] if device["reschedule"] else device["elapsed_t"]
@@ -373,7 +376,7 @@ def tick(dt):
         return
     remove = []
     for device in devices:
-        if not device.get("overlay") and not device["enabled"]:
+        if not device.get("overlay") and device["mode"] != "scheduled":
             continue
         device["elapsed_t"] += dt
         if not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:

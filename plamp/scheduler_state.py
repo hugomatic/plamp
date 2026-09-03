@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
-EXPECTED_FIRMWARE_PROTOCOL = 3
+EXPECTED_FIRMWARE_PROTOCOL = 4
+DEVICE_MODES = frozenset({"scheduled", "ready"})
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,22 @@ def _integer(value: Any, label: str, *, minimum: int, maximum: int | None = None
     return value
 
 
+def _device_mode(source: dict[str, Any], index: int) -> str:
+    mode = source.get("mode")
+    enabled = source.get("enabled")
+    if mode is not None:
+        if mode not in DEVICE_MODES:
+            raise ValueError(f"device {index} mode must be scheduled or ready")
+        if enabled is not None and isinstance(enabled, bool):
+            legacy = "scheduled" if enabled else "ready"
+            if legacy != mode:
+                raise ValueError(f"device {index} mode conflicts with enabled")
+        return mode
+    if isinstance(enabled, bool):
+        return "scheduled" if enabled else "ready"
+    raise ValueError(f"device {index} mode must be scheduled or ready")
+
+
 def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
     """Return only Pico-owned state or raise ValueError before side effects."""
     if not isinstance(raw, dict) or set(raw) - {"devices", "report_every"}:
@@ -29,15 +46,15 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
     for index, source in enumerate(raw["devices"]):
         if not isinstance(source, dict):
             raise ValueError(f"device {index} must be an object")
-        allowed = {"id", "type", "pin", "enabled", "current_t", "reschedule", "pattern"}
-        required = {"type", "pin", "enabled", "current_t", "reschedule", "pattern"}
+        allowed = {"id", "type", "pin", "mode", "enabled", "current_t", "reschedule", "pattern"}
         if set(source) - allowed:
             raise ValueError(f"device {index} has invalid fields")
-        enabled = source.get("enabled")
-        if not isinstance(enabled, bool):
-            raise ValueError(f"device {index} enabled must be a boolean")
-        if not required <= set(source):
+        mode = _device_mode(source, index)
+        required_core = {"type", "pin", "current_t", "reschedule", "pattern"}
+        if not required_core <= set(source):
             raise ValueError(f"device {index} has invalid fields")
+        if "mode" not in source and "enabled" not in source:
+            raise ValueError(f"device {index} mode must be scheduled or ready")
         device_type = source["type"]
         if device_type != "gpio":
             raise ValueError(f"device {index} has unsupported type: {device_type}")
@@ -63,7 +80,7 @@ def normalize_scheduler_state(raw: Any) -> dict[str, Any]:
             value = _integer(source_step["val"], f"device {index} pattern {step_index} val", minimum=0, maximum=1)
             duration = _integer(source_step["dur"], f"device {index} pattern {step_index} dur", minimum=1)
             pattern.append({"val": value, "dur": duration})
-        item = {"type": device_type, "pin": pin, "enabled": enabled, "current_t": current_t,
+        item = {"type": device_type, "pin": pin, "mode": mode, "current_t": current_t,
                 "reschedule": reschedule, "pattern": pattern}
         if device_id is not None:
             item["id"] = device_id
@@ -93,18 +110,24 @@ def report_matches_state(report: Any, state: Any) -> bool:
     devices = content.get("devices") if isinstance(content, dict) else None
     if not isinstance(devices, list) or len(devices) != len(expected):
         return False
-    fields = ("id", "type", "pin", "enabled", "reschedule", "pattern")
+    fields = ("id", "type", "pin", "mode", "reschedule", "pattern")
     observed_state = []
     for item in devices:
         if not isinstance(item, dict):
             return False
-        if item.get("enabled") is False and (
+        mode = item.get("mode")
+        if mode is None and isinstance(item.get("enabled"), bool):
+            mode = "scheduled" if item["enabled"] else "ready"
+        if mode == "ready" and (
             type(item.get("current_value")) is not int
             or item["current_value"] != 0
         ):
             return False
+        observed = {key: item[key] for key in fields if key in item}
+        if "mode" not in observed and mode in DEVICE_MODES:
+            observed["mode"] = mode
         observed_state.append({
-            **{key: item[key] for key in fields if key in item},
+            **observed,
             "current_t": 0,
         })
     try:

@@ -85,11 +85,10 @@ class PageRenderTests(unittest.TestCase):
         script = static_text("controller.js")
 
         self.assertIn('source === "configured"', script)
-        self.assertIn('device.programming !== "disabled"', script)
         self.assertIn('(device.output_type || "gpio") === "gpio"', script)
         self.assertIn('useButton.textContent = "Use"', script)
-        self.assertIn('status.textContent = "Disabled"', script)
-        self.assertIn('device.enabled === true ? "Enabled (observed)"', script)
+        self.assertIn('status.textContent = source === "configured" ? "Ready" : "Ready (observed)"', script)
+        self.assertIn('status.textContent = source === "configured" ? "Scheduled" : "Scheduled (observed)"', script)
         self.assertNotIn("channel.label", script)
 
     def test_system_static_client_uses_rest_without_injected_state(self):
@@ -327,9 +326,9 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("activeEditor = {role};", html)
         self.assertIn("stopPageAutoRefresh();", html)
         self.assertIn('controllerCard.dataset.role = role;', html)
-        self.assertIn('edit.textContent = "Edit schedule";', html)
+        self.assertIn('edit.textContent = "Reprogram";', html)
         self.assertIn('edit.addEventListener("click", () => openControllerScheduleEditor(role));', html)
-        self.assertIn('button type="submit">Apply schedule</button>', html)
+        self.assertIn('button type="submit">Apply program</button>', html)
         self.assertIn('button type="button" name="cancel">Close</button>', html)
         self.assertNotIn("Edit octo_relay schedule", html)
         self.assertIn('const form = timerBoard.querySelector("#timer-schedule-form");', html)
@@ -345,8 +344,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('actions.querySelector(\'[name="cancel"]\').addEventListener("click", () => { activeEditor = null; renderTimerStatus(true); });', html)
         self.assertIn('controllerCard.classList.add("controller-card-editing");', html)
         self.assertIn('class="editor-cycle-unit"', html)
-        self.assertIn('<option value="disabled"${mode === "disabled" ? " selected" : ""}>disabled</option>', html)
-        self.assertIn('<option value="hidden"${mode === "hidden" ? " selected" : ""}>hidden</option>', html)
+        self.assertIn('<option value="ready"${mode === "ready" ? " selected" : ""}>Ready</option>', html)
+        self.assertIn('<option value="hidden"${mode === "hidden" ? " selected" : ""}>Hidden</option>', html)
         self.assertIn('message?.telemetry?.last_report?.content?.devices,', html)
         self.assertIn('message?.telemetry?.report?.content?.devices,', html)
         self.assertIn('const source = new EventSource(`/api/controllers/${encodeURIComponent(role)}?stream=true`);', html)
@@ -511,13 +510,15 @@ class PageRenderTests(unittest.TestCase):
         html = static_timer_dashboard(
             ["pump_lights"],
             "12h",
-            {"pump_lights": [{"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "programming": "enabled"}]},
+            {"pump_lights": [{"id": "pump", "name": "Pump", "pin": 21, "type": "gpio", "programming": "scheduled"}]},
             0,
         )
 
         self.assertIn('id="timer-override-dialog"', html)
-        self.assertIn('override.textContent = "Override…";', html)
-        self.assertIn('openTimerOverride(role, channel, event, overlay)', html)
+        self.assertIn('pulseOn.textContent = "Pulse ON";', html)
+        self.assertIn('pulseOff.textContent = "Pulse OFF";', html)
+        self.assertIn('openTimerOverride(role, channel, event, overlay, 1)', html)
+        self.assertIn('openTimerOverride(role, channel, event, overlay, 0)', html)
         self.assertIn('id="override-duration"', html)
         self.assertIn('id="override-unit"', html)
         self.assertIn('id="override-on"', html)
@@ -526,21 +527,23 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('sendTimedOverride(0)', html)
         self.assertIn('/pulse`, {seconds, value})', html)
         self.assertIn('/channels/${encodeURIComponent(channel.id)}/pulse`', html)
-        self.assertIn('/channels/${encodeURIComponent(channel.id)}/schedule-enabled`', html)
-        self.assertIn('/schedule-enabled`, {enabled})', html)
-        self.assertIn('enabled ? "Disable schedule" : "Re-enable saved schedule"', html)
+        self.assertNotIn('/channels/${encodeURIComponent(channel.id)}/schedule-enabled`', html)
+        self.assertNotIn('Disable schedule', html)
+        self.assertNotIn('Re-enable saved schedule', html)
 
     def test_timer_dashboard_renders_effective_schedule_traces(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('const TIMER_TRACE_HORIZONS = [["1m", 60], ["1h", 3600], ["24h", 86400]];', html)
+        self.assertIn('const TIMER_FORECAST_HORIZONS = [["next min", 60], ["next hour", 3600], ["next 24h", 86400]];', html)
+        self.assertIn('const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last day", 86400], ["last month", 30 * 86400]];', html)
         self.assertIn("function timerOverlaysFromMessage(message) {", html)
         self.assertIn("function effectiveTimerValueAt(event, overlay, messageAge, futureSeconds) {", html)
         self.assertIn("if (overlayRemaining > futureSeconds) return Number(overlay.target_value ?? 1) > 0;", html)
-        self.assertIn("if (event.enabled !== true) return false;", html)
-        self.assertIn("function timerTraceSvg(event, overlay, messageAge) {", html)
-        self.assertIn('trace.className = "timer-trace";', html)
-        self.assertIn('trace.innerHTML = timerTraceSvg(event, overlay, messageAge);', html)
+        self.assertIn('if (deviceMode(event) === "ready") return false;', html)
+        self.assertIn("function timerTraceSvg(event, overlay, messageAge, mode, pulses) {", html)
+        self.assertIn('trace.className = "timer-trace"', html)
+        self.assertIn('trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses);', html)
+        self.assertIn('/pulse-history', html)
 
     def test_timer_dashboard_labels_active_on_and_off_overrides(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
@@ -617,14 +620,15 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("font: inherit;", html)
 
     def test_timer_dashboard_uses_live_state_and_keeps_saved_modes_in_editor_only(self):
-        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "disabled"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
+        html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": [{"id": "pump", "pin": 3, "type": "gpio", "default_editor": "ready"}, {"id": "lights", "pin": 4, "type": "gpio", "default_editor": "hidden"}]}, 0)
 
-        self.assertIn('const enabled = event.enabled === true;', html)
-        self.assertIn('badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : enabled ? (isOn ? "ON" : "OFF") : "DISABLED";', html)
-        self.assertIn('meta.textContent = enabled', html)
+        self.assertIn('const mode = deviceMode(event, channel);', html)
+        self.assertIn('modeBadge.textContent = mode === "ready" ? "READY" : "SCHEDULED";', html)
+        self.assertIn('badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : (isOn ? "ON" : "OFF");', html)
+        self.assertIn('meta.textContent = mode === "scheduled"', html)
         self.assertNotIn('card.append(bar)', html)
         self.assertNotIn('timer-bar', html)
-        self.assertNotIn('channel.default_editor === "disabled"', html)
+        self.assertIn('channel.default_editor === "disabled" ? "ready"', html)
         self.assertNotIn('channel.default_editor === "hidden"', html)
         self.assertIn('const isEditing = ok && activeEditor && activeEditor.role === role;', html)
         self.assertIn('devicesGrid.append(card);', html)

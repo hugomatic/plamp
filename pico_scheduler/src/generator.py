@@ -22,6 +22,6 @@ def generate_main_py(
 ) -> str:
     return _template("base.py.tmpl").format(
         firmware_revision=json.dumps(firmware_revision),
-        firmware_protocol=3,
+        firmware_protocol=4,
         loop_sleep_ms=options.loop_sleep_ms,
     ).rstrip() + "\n"

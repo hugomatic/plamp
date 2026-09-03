@@ -372,7 +372,7 @@ class ConfigApiTests(unittest.TestCase):
         )
 
     def scheduler_apply_result(self, *, upgraded: bool = False):
-        identity = server.FirmwareIdentity("pico_scheduler", "newrev", 3)
+        identity = server.FirmwareIdentity("pico_scheduler", "newrev", 4)
         return SimpleNamespace(
             report={"type": "report", "content": {"firmware": server.identity_payload(identity), "devices": []}},
             port="/dev/ttyACM0", upgraded=upgraded, previous_identity=None,
@@ -642,7 +642,7 @@ class ConfigApiTests(unittest.TestCase):
                     {
                         "pin": 3,
                         "type": "gpio",
-                        "enabled": True,
+                        "mode": "scheduled",
                         "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
                     }
                 ],
@@ -656,7 +656,7 @@ class ConfigApiTests(unittest.TestCase):
                         "icon": "pump",
                         "display_order": 0,
                         "visibility": "visible",
-                        "programming": "enabled",
+                        "programming": "scheduled",
                         "editor": {
                             "kind": "cycle",
                             "on_seconds": 90,
@@ -716,7 +716,7 @@ class ConfigApiTests(unittest.TestCase):
                         {
                             "pin": 3,
                             "type": "gpio",
-                            "enabled": True,
+                            "mode": "scheduled",
                             "pattern": [{"val": 1, "dur": 90}, {"val": 0, "dur": 810}],
                         }
                     ],
@@ -730,7 +730,7 @@ class ConfigApiTests(unittest.TestCase):
                             "icon": "pump",
                             "display_order": 0,
                             "visibility": "visible",
-                            "programming": "enabled",
+                            "programming": "scheduled",
                             "editor": {
                                 "kind": "cycle",
                                 "on_seconds": 90,
@@ -757,7 +757,7 @@ class ConfigApiTests(unittest.TestCase):
                                         "pin": 3,
                                         "display_order": 0,
                                         "visibility": "visible",
-                                        "programming": "enabled",
+                                        "programming": "scheduled",
                                         "editor": {"kind": "cycle"},
                                     }
                                 }
@@ -777,7 +777,7 @@ class ConfigApiTests(unittest.TestCase):
                             "type": "pico_scheduler",
                             "payload": {
                                 "report_every": 10,
-                                "devices": [{"pin": 3, "type": "gpio", "enabled": True, "pattern": []}],
+                                "devices": [{"pin": 3, "type": "gpio", "mode": "scheduled", "pattern": []}],
                             },
                             "settings": {"devices": {}},
                         }
@@ -796,8 +796,8 @@ class ConfigApiTests(unittest.TestCase):
                             "payload": {
                                 "report_every": 10,
                                 "devices": [
-                                    {"pin": 3, "type": "gpio", "enabled": True, "pattern": []},
-                                    {"pin": 3, "type": "gpio", "enabled": True, "pattern": []},
+                                    {"pin": 3, "type": "gpio", "mode": "scheduled", "pattern": []},
+                                    {"pin": 3, "type": "gpio", "mode": "scheduled", "pattern": []},
                                 ],
                             },
                             "settings": {
@@ -806,7 +806,7 @@ class ConfigApiTests(unittest.TestCase):
                                         "pin": 3,
                                         "display_order": 0,
                                         "visibility": "visible",
-                                        "programming": "enabled",
+                                        "programming": "scheduled",
                                         "editor": {"kind": "cycle"},
                                     }
                                 }
@@ -869,7 +869,7 @@ class ConfigApiTests(unittest.TestCase):
                 json.dumps(
                     {
                         "report_every": 10,
-                        "devices": [{"type": "gpio", "pin": 3, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
+                        "devices": [{"type": "gpio", "pin": 3, "mode": "scheduled", "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}],
                     }
                 ),
                 encoding="utf-8",
@@ -899,7 +899,7 @@ class ConfigApiTests(unittest.TestCase):
                 with self.assertRaises(HTTPException) as raised:
                     server.put_controller(
                         "pump_lights",
-                        {"devices": [{"id": "new", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]},
+                        {"devices": [{"id": "new", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]},
                     )
 
             self.assertEqual(state_path.read_bytes(), original)
@@ -1239,7 +1239,7 @@ class ConfigApiTests(unittest.TestCase):
                     "id": "test_pin",
                     "type": "gpio",
                     "pin": 25,
-                    "enabled": True,
+                    "mode": "scheduled",
                     "current_t": 3,
                     "reschedule": 1,
                     "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1340,7 +1340,7 @@ class ConfigApiTests(unittest.TestCase):
                                 "id": "pump",
                                 "type": "gpio",
                                 "pin": 2,
-                                "enabled": True,
+                                "mode": "scheduled",
                                 "current_t": 0,
                                 "reschedule": 1,
                                 "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1357,7 +1357,7 @@ class ConfigApiTests(unittest.TestCase):
                         "id": "pump",
                         "type": "gpio",
                         "pin": 2,
-                        "enabled": True,
+                        "mode": "scheduled",
                         "current_t": 5,
                         "reschedule": 1,
                         "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}],
@@ -1530,8 +1530,8 @@ class ConfigApiTests(unittest.TestCase):
         state = {
             "report_every": 1,
             "devices": [
-                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
-                {"id": "runtime-fan", "type": "gpio", "pin": 3, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-lamp", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
+                {"id": "runtime-fan", "type": "gpio", "pin": 3, "mode": "scheduled", "current_t": 2, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 50}]},
             ],
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -1567,7 +1567,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}
+                        {"role": "sprouter", "id": "lamp", "name": "Lamp", "pin": 2, "type": "gpio", "default_editor": "clock_window", "visibility": "visible", "programming": "scheduled", "display_order": 0, "editor": {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"}}
                     ]
                 },
                 "time_format": "12h",
@@ -1579,7 +1579,7 @@ class ConfigApiTests(unittest.TestCase):
                 "roles": ["sprouter"],
                 "channels": {
                     "sprouter": [
-                        {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "enabled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
+                        {"role": "sprouter", "id": "fan", "name": "Fan", "pin": 3, "type": "gpio", "default_editor": "cycle", "visibility": "visible", "programming": "scheduled", "display_order": 0, "editor": {"kind": "cycle", "on_seconds": 1, "off_seconds": 1, "start_at_seconds": 0}}
                     ]
                 },
                 "time_format": "12h",
@@ -1623,7 +1623,7 @@ class ConfigApiTests(unittest.TestCase):
         applied = {
             "controller": "sprouter", "success": True,
             "message": "schedule verified, saved, and applied",
-            "firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3},
+            "firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4},
             "firmware_upgraded": False,
         }
         with (
@@ -1709,13 +1709,13 @@ class ConfigApiTests(unittest.TestCase):
     def test_post_controller_channel_schedule_enabled_reuses_saved_schedule(self):
         controller = self.scheduler_controller(
             serial="abc",
-            devices={"agitator": self.scheduled_output(19, programming="disabled")},
+            devices={"agitator": self.scheduled_output(19, programming="ready")},
         )
         config = server.config_view({"controllers": {"plamp8": controller}, "cameras": {}})
         applied = {
             "success": True,
             "message": "schedule verified, saved, and applied",
-            "state": {"devices": [{"id": "agitator", "enabled": True}]},
+            "state": {"devices": [{"id": "agitator", "mode": "scheduled"}]},
         }
 
         with (
@@ -1723,21 +1723,21 @@ class ConfigApiTests(unittest.TestCase):
             patch.object(server, "post_controller_schedule", return_value=applied) as apply,
         ):
             response = server.post_controller_channel_schedule_enabled(
-                "plamp8", "agitator", {"enabled": True}
+                "plamp8", "agitator", {"mode": "scheduled"}
             )
 
         proposed = apply.call_args.args[1]
         self.assertEqual(
             proposed["settings"]["devices"]["agitator"]["programming"],
-            "enabled",
+            "scheduled",
         )
-        self.assertEqual(response["enabled"], True)
+        self.assertEqual(response["mode"], "scheduled")
         self.assertEqual(response["state"], applied["state"])
 
     def test_post_controller_channel_schedule_enabled_requires_boolean(self):
         with self.assertRaises(HTTPException) as raised:
             server.post_controller_channel_schedule_enabled(
-                "plamp8", "agitator", {"enabled": "yes"}
+                "plamp8", "agitator", {"mode": "yes"}
             )
 
         self.assertEqual(raised.exception.status_code, 422)
@@ -1842,7 +1842,7 @@ class ConfigApiTests(unittest.TestCase):
                     {
                         "report_every": 1,
                         "devices": [
-                            {"id": "pump", "type": "gpio", "pin": 2, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
+                            {"id": "pump", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}, {"val": 0, "dur": 20}]}
                         ],
                     }
                 ),
@@ -1851,7 +1851,7 @@ class ConfigApiTests(unittest.TestCase):
             stale_live = {
                 "report_every": 1,
                 "devices": [
-                    {"id": "test_pin", "type": "gpio", "pin": 25, "enabled": True, "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
+                    {"id": "test_pin", "type": "gpio", "pin": 25, "mode": "scheduled", "current_t": 0, "reschedule": 1, "pattern": [{"val": 1, "dur": 12}, {"val": 0, "dur": 5}]}
                 ],
             }
             with (
@@ -1936,11 +1936,11 @@ class ConfigApiTests(unittest.TestCase):
                 "start_at_seconds": 0,
             }
             result = SimpleNamespace(
-                report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
+                report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4}, "devices": []}},
                 port="/dev/ttyACM0",
                 upgraded=False,
-                previous_identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3),
-                identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3),
+                previous_identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=4),
+                identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=4),
                 raw_lines=(b'{"type":"report"}\n',),
             )
             monitor = SimpleNamespace(
@@ -1987,7 +1987,7 @@ class ConfigApiTests(unittest.TestCase):
         })
         proposed_controller = self.scheduler_controller(
             serial="abc",
-            devices={"circulation_pump": self.scheduled_output(2, programming="disabled")},
+            devices={"circulation_pump": self.scheduled_output(2, programming="ready")},
         )
         proposed_controller["devices"]["circulation_pump"]["settings"]["schedule"].update({
             "on_seconds": 300,
@@ -2009,7 +2009,7 @@ class ConfigApiTests(unittest.TestCase):
                     "id": "pump",
                     "type": "gpio",
                     "pin": 2,
-                    "enabled": True,
+                    "mode": "scheduled",
                     "cycle_t": 247,
                     "reschedule": 1,
                     "pattern": pattern,
@@ -2039,7 +2039,7 @@ class ConfigApiTests(unittest.TestCase):
         monitor.require_fresh_report.assert_called_once()
         proposed_state = apply.call_args.kwargs["proposed_state"]
         self.assertEqual(proposed_state["devices"][0]["id"], "circulation_pump")
-        self.assertFalse(proposed_state["devices"][0]["enabled"])
+        self.assertEqual(proposed_state["devices"][0]["mode"], "ready")
         self.assertEqual(proposed_state["devices"][0]["current_t"], 247)
         self.assertEqual(proposed_state["devices"][0]["pattern"], pattern)
 
@@ -2066,8 +2066,8 @@ class ConfigApiTests(unittest.TestCase):
         configure.assert_not_called()
 
     def test_controller_schedule_upgrades_current_state_before_proposal(self):
-        current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "enabled": True, "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
-        proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "enabled": True, "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
+        current = {"report_every": 10, "devices": [{"id": "old", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 1, "reschedule": 1, "pattern": [{"val": 1, "dur": 10}]}]}
+        proposed_state = {"report_every": 10, "devices": [{"id": "new", "type": "gpio", "pin": 2, "mode": "scheduled", "current_t": 2, "reschedule": 1, "pattern": [{"val": 0, "dur": 20}]}]}
         operation = Mock()
         upgraded = SimpleNamespace(message={"type": "report"}, port="/dev/ttyACM0", raw_lines=())
         upgraded_state = []
@@ -2083,9 +2083,9 @@ class ConfigApiTests(unittest.TestCase):
             require_fresh_report=Mock(return_value={"type": "report", "content": {"devices": []}}),
         )
         result = SimpleNamespace(
-            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": proposed_state["devices"]}},
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4}, "devices": proposed_state["devices"]}},
             port="/dev/ttyACM0", upgraded=True, previous_identity=None,
-            identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=3), raw_lines=(),
+            identity=SimpleNamespace(name="pico_scheduler", revision="newrev", protocol=4), raw_lines=(),
         )
 
         def apply_transaction(**kwargs):
@@ -2364,11 +2364,11 @@ class ConfigApiTests(unittest.TestCase):
 
     def test_pico_monitor_reports_firmware_currency_without_upgrading(self):
         monitor = server.PicoMonitor("pump_lights", "abc")
-        expected = server.FirmwareIdentity("pico_scheduler", "newrev", 3)
+        expected = server.FirmwareIdentity("pico_scheduler", "newrev", 4)
         reports = [
             {"type": "report", "content": {"devices": []}},
-            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "oldrev", "protocol": 3}, "devices": []}},
-            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "oldrev", "protocol": 4}, "devices": []}},
+            {"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4}, "devices": []}},
         ]
 
         with (
@@ -2389,7 +2389,7 @@ class ConfigApiTests(unittest.TestCase):
         self.assertTrue(all(status["ok"] and status["status"] == "OK" for status in statuses))
         self.assertEqual(statuses[0]["firmware"], {
             "current": False,
-            "expected": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3},
+            "expected": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4},
             "observed": None,
         })
         self.assertFalse(statuses[1]["firmware"]["current"])
@@ -2403,9 +2403,9 @@ class ConfigApiTests(unittest.TestCase):
             record_apply_result=Mock(), update_health=Mock(),
         )
         result = SimpleNamespace(
-            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 3}, "devices": []}},
+            report={"type": "report", "content": {"firmware": {"name": "pico_scheduler", "revision": "newrev", "protocol": 4}, "devices": []}},
             port="/dev/ttyACM0", upgraded=False, previous_identity=None,
-            identity=server.FirmwareIdentity("pico_scheduler", "newrev", 3), raw_lines=(),
+            identity=server.FirmwareIdentity("pico_scheduler", "newrev", 4), raw_lines=(),
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

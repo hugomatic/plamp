@@ -19,7 +19,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +194,113 @@ def format_pico_tx_log(role: str, text: str, *, channel_name: str | None = None)
     state = "ON" if value else "OFF"
     channel = channel_name or f"pin {pin}"
     return f"pico pulse role={role} channel={channel} pin={pin} {state} for {seconds}s"
+
+
+_LOG_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d+")
+_PULSE_DRESSED_RE = re.compile(
+    r"pico pulse role=(?P<role>\S+) channel=(?P<channel>.+?) pin=(?P<pin>\d+) (?P<state>ON|OFF) for (?P<seconds>\d+)s"
+)
+_PULSE_LEGACY_TX_RE = re.compile(
+    r"pico-cmd tx role=(?P<role>\S+) cmd='(?P<cmd>p [^']+)'"
+)
+
+
+def parse_pulse_history_lines(
+    lines: list[str],
+    *,
+    role: str,
+    since: datetime,
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in lines:
+        ts_match = _LOG_TS_RE.match(line)
+        if not ts_match:
+            continue
+        started = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S")
+        if started < since:
+            continue
+        dressed = _PULSE_DRESSED_RE.search(line)
+        if dressed and dressed.group("role") == role:
+            events.append(
+                {
+                    "started_at": started.isoformat(timespec="seconds"),
+                    "pin": int(dressed.group("pin")),
+                    "value": 1 if dressed.group("state") == "ON" else 0,
+                    "seconds": int(dressed.group("seconds")),
+                }
+            )
+            continue
+        legacy = _PULSE_LEGACY_TX_RE.search(line)
+        if not legacy or legacy.group("role") != role:
+            continue
+        parsed = parse_pulse_command(legacy.group("cmd"))
+        if parsed is None:
+            continue
+        pin, value, seconds = parsed
+        events.append(
+            {
+                "started_at": started.isoformat(timespec="seconds"),
+                "pin": pin,
+                "value": value,
+                "seconds": seconds,
+            }
+        )
+    return events
+
+
+def iter_pulse_log_paths(log_file: Path | None = None) -> list[Path]:
+    base = LOG_FILE if log_file is None else log_file
+    paths = [base]
+    for index in range(1, 4):
+        paths.append(Path(f"{base}.{index}"))
+    return [path for path in paths if path.exists()]
+
+
+def controller_pulse_history(
+    controller: str,
+    *,
+    horizon_seconds: int = 31 * 24 * 3600,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    if horizon_seconds < 1:
+        raise HTTPException(status_code=422, detail="horizon_seconds must be >= 1")
+    config = load_config()
+    devices = scheduler_devices_for_controller(config, controller)
+    if not devices and controller not in config.get("controllers", {}):
+        raise HTTPException(status_code=404, detail=f"unknown controller: {controller}")
+    pin_to_channel = {
+        int(device["pin"]): channel_id
+        for channel_id, device in devices.items()
+        if isinstance(device, dict) and isinstance(device.get("pin"), int)
+    }
+    current = now or datetime.now()
+    since = current - timedelta(seconds=horizon_seconds)
+    events: list[dict[str, Any]] = []
+    for path in iter_pulse_log_paths():
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        events.extend(parse_pulse_history_lines(lines, role=controller, since=since))
+    events.sort(key=lambda item: item["started_at"], reverse=True)
+    pulses = []
+    for event in events:
+        channel_id = pin_to_channel.get(event["pin"])
+        if channel_id is None:
+            continue
+        started = datetime.fromisoformat(event["started_at"])
+        ended = started + timedelta(seconds=event["seconds"])
+        pulses.append(
+            {
+                "channel_id": channel_id,
+                "pin": event["pin"],
+                "value": event["value"],
+                "seconds": event["seconds"],
+                "started_at": event["started_at"],
+                "ended_at": ended.isoformat(timespec="seconds"),
+            }
+        )
+    return {"controller": controller, "pulses": pulses}
 
 
 def run_plampctl_action(*args: str) -> dict[str, Any]:
@@ -2394,15 +2501,31 @@ def post_controller_channel_schedule(controller: str, channel_id: str, schedule:
     return response
 
 
+@app.get("/api/controllers/{controller}/pulse-history")
+def get_controller_pulse_history(
+    controller: str,
+    horizon_seconds: int = Query(31 * 24 * 3600, ge=1),
+) -> dict[str, Any]:
+    return controller_pulse_history(controller, horizon_seconds=horizon_seconds)
+
+
 @app.post("/api/controllers/{controller}/channels/{channel_id}/schedule-enabled")
 def post_controller_channel_schedule_enabled(
     controller: str,
     channel_id: str,
     payload: dict[str, Any] = Body(...),
 ) -> dict[str, Any]:
-    enabled = (payload or {}).get("enabled")
-    if type(enabled) is not bool:
-        raise HTTPException(status_code=422, detail="enabled must be a boolean")
+    payload = payload or {}
+    mode = payload.get("mode")
+    enabled = payload.get("enabled")
+    if mode is not None:
+        if mode not in {"scheduled", "ready"}:
+            raise HTTPException(status_code=422, detail="mode must be scheduled or ready")
+        programming = mode
+    elif type(enabled) is bool:
+        programming = "scheduled" if enabled else "ready"
+    else:
+        raise HTTPException(status_code=422, detail="mode must be scheduled or ready")
     config = load_config()
     controllers = copy.deepcopy(config.get("controllers", {}))
     proposed = controllers.get(controller)
@@ -2412,12 +2535,12 @@ def post_controller_channel_schedule_enabled(
     device = devices.get(channel_id) if isinstance(devices, dict) else None
     if not isinstance(device, dict):
         raise HTTPException(status_code=404, detail=f"unknown channel: {channel_id}")
-    device["programming"] = "enabled" if enabled else "disabled"
+    device["programming"] = programming
     applied = post_controller_schedule(controller, proposed)
     return {
         "controller": controller,
         "channel": channel_id,
-        "enabled": enabled,
+        "mode": programming,
         "success": applied["success"],
         "message": applied["message"],
         "state": applied.get("state"),

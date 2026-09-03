@@ -89,7 +89,7 @@
         label: config.label,
         output_type: config.output_type || "gpio",
         visibility: config.visibility || "visible",
-        programming: deviceSettings.programming || "enabled",
+        programming: deviceSettings.programming || "scheduled",
         editor: deviceSettings.schedule || {kind: "cycle"},
       };
     }
@@ -110,7 +110,7 @@
   }
 
   function editorMode(device) {
-    if (device?.programming === "disabled") return "disabled";
+    if (device?.programming === "ready" || device?.programming === "disabled") return "ready";
     if (device?.visibility === "hidden") return "hidden";
     return device?.editor?.kind === "daily_window" ? "clock_window" : "cycle";
   }
@@ -146,7 +146,7 @@
       cell(input("device-id", deviceId, {placeholder: "pump"})),
       cell(input("device-pin", device?.pin, {type: "number", min: 0, max: 29})),
       cell(selectWithOptions("device-type", [["gpio", "gpio"]], outputType)),
-      cell(selectWithOptions("device-editor", [["cycle", "cycle"], ["clock_window", "clock_window"], ["disabled", "disabled"], ["hidden", "hidden"]], mode)),
+      cell(selectWithOptions("device-editor", [["cycle", "cycle"], ["clock_window", "clock_window"], ["ready", "ready"], ["hidden", "hidden"]], mode)),
     );
     return row;
   }
@@ -430,7 +430,7 @@
         pin: Number(pinValue),
         display_order: Object.keys(result[controller].settings).length,
         visibility: mode === "hidden" ? "hidden" : "visible",
-        programming: mode === "disabled" ? "disabled" : "enabled",
+        programming: mode === "ready" ? "ready" : "scheduled",
         editor,
         output_type: row.querySelector(".device-type").value,
       });

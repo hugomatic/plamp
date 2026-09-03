@@ -19,7 +19,7 @@ def report(revision):
             "firmware": {
                 "name": "pico_scheduler",
                 "revision": revision,
-                "protocol": 3,
+                "protocol": 4,
             },
             "devices": copy.deepcopy(STATE["devices"]),
         },
@@ -111,7 +111,7 @@ class PicoCommandTests(unittest.TestCase):
         self.assertEqual(client.active.calls[0], "report")
         upgrade = client.active.calls[1]
         self.assertEqual(upgrade[0:3], ("upgrade", "# generic firmware\n", STATE))
-        self.assertEqual(upgrade[3], FirmwareIdentity("pico_scheduler", "newrev", 3))
+        self.assertEqual(upgrade[3], FirmwareIdentity("pico_scheduler", "newrev", 4))
         self.assertIs(upgrade[4]["command_runner"], command_runner)
         self.assertIs(upgrade[4]["interrupter"], interrupter)
         self.assertEqual(upgrade[4]["mpremote"], "/usr/bin/mpremote")
@@ -255,7 +255,7 @@ class PicoCommandTests(unittest.TestCase):
         self.assertIsNone(result["previous_identity"])
         self.assertEqual(
             result["identity"],
-            {"name": "pico_scheduler", "revision": "newrev", "protocol": 3},
+            {"name": "pico_scheduler", "revision": "newrev", "protocol": 4},
         )
 
     def test_upgrade_converts_missing_verified_identity_to_protocol_error(self):

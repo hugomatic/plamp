@@ -30,18 +30,18 @@ from plamp.scheduler_state import (
 class ProfileChannel:
     pin: int
     device_id: str
-    enabled: bool
+    mode: str
 
 
 PLAMP8_CHANNELS = (
-    ProfileChannel(21, "ph_up", False),
-    ProfileChannel(20, "ph_down", False),
-    ProfileChannel(19, "agitator", False),
-    ProfileChannel(18, "nutrients", False),
-    ProfileChannel(17, "pump", True),
-    ProfileChannel(16, "fan", True),
-    ProfileChannel(15, "lights_1", True),
-    ProfileChannel(14, "lights_2", True),
+    ProfileChannel(21, "ph_up", "ready"),
+    ProfileChannel(20, "ph_down", "ready"),
+    ProfileChannel(19, "agitator", "ready"),
+    ProfileChannel(18, "nutrients", "ready"),
+    ProfileChannel(17, "pump", "scheduled"),
+    ProfileChannel(16, "fan", "scheduled"),
+    ProfileChannel(15, "lights_1", "scheduled"),
+    ProfileChannel(14, "lights_2", "scheduled"),
 )
 
 _SAFE_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -122,7 +122,7 @@ def _validated_report_state(
         "pattern",
     }
     if identity.protocol == EXPECTED_FIRMWARE_PROTOCOL:
-        required.add("enabled")
+        required.add("mode")
     state_devices = []
     for index, source in enumerate(report_devices):
         if not required <= set(source):
@@ -135,17 +135,20 @@ def _validated_report_state(
         current_value = _report_integer(
             source["current_value"], f"device {index} current_value", maximum=1
         )
-        if source.get("enabled") is False and current_value != 0:
-            raise ValueError(f"device {index} disabled current_value must be integer 0")
+        mode = source.get("mode")
+        if mode is None and isinstance(source.get("enabled"), bool):
+            mode = "scheduled" if source["enabled"] else "ready"
+        if mode == "ready" and current_value != 0:
+            raise ValueError(f"device {index} ready current_value must be integer 0")
         state_devices.append(
             {
                 "id": source.get("id"),
                 "type": source.get("type"),
                 "pin": source.get("pin"),
-                "enabled": (
-                    source.get("enabled")
+                "mode": (
+                    mode
                     if identity.protocol == EXPECTED_FIRMWARE_PROTOCOL
-                    else True
+                    else "scheduled"
                 ),
                 "current_t": cycle_t,
                 "reschedule": source.get("reschedule"),
@@ -160,7 +163,7 @@ def _matches_plamp8_profile(state: dict[str, Any]) -> bool:
     return all(
         devices_by_pin[channel.pin]["id"] == channel.device_id
         and devices_by_pin[channel.pin]["type"] == "gpio"
-        and devices_by_pin[channel.pin]["enabled"] is channel.enabled
+        and devices_by_pin[channel.pin]["mode"] == channel.mode
         for channel in PLAMP8_CHANNELS
     )
 
@@ -184,7 +187,7 @@ def provisioned_plamp8_state(report: Any) -> dict[str, Any]:
             "id": channel.device_id,
             "type": source["type"],
             "pin": channel.pin,
-            "enabled": channel.enabled,
+            "mode": channel.mode,
             "current_t": source["current_t"],
             "reschedule": source["reschedule"],
             "pattern": source["pattern"],
@@ -214,7 +217,7 @@ def _controller_config_from_state(
             "output_type": device["type"],
             "display_order": index,
             "visibility": "visible",
-            "programming": "enabled" if device["enabled"] else "disabled",
+            "programming": device["mode"],
             "editor": _editor_from_device(device),
         }
         for index, device in enumerate(state["devices"])
@@ -240,7 +243,7 @@ def _identity_json(identity: FirmwareIdentity | None) -> dict[str, Any] | None:
 
 def _channel_rows(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
-        {"pin": device["pin"], "id": device.get("id"), "enabled": device.get("enabled")}
+        {"pin": device["pin"], "id": device.get("id"), "mode": device.get("mode")}
         for device in devices
     ]
 

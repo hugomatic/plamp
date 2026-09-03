@@ -206,7 +206,7 @@ def scheduler_devices_by_controller(controllers: dict[str, Any]) -> list[tuple[s
                     "label": config.get("label"),
                     "output_type": config.get("output_type", "gpio"),
                     "visibility": config.get("visibility", "visible"),
-                    "programming": device_settings.get("programming", "enabled"),
+                    "programming": device_settings.get("programming", "scheduled"),
                     "editor": schedule,
                 }
             else:
@@ -302,7 +302,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
                 controller_options_html=controller_options(controllers, str(device.get("controller") or "")),
                 pin=html.escape(str(device.get("config", {}).get("pin") if device.get("config", {}).get("pin") is not None else ""), quote=True),
                 type_options=pin_type_options(str(device.get("config", {}).get("output_type") or "gpio")),
-                editor_options="".join(option_tag(value, value, "disabled" if device.get("settings", {}).get("programming") == "disabled" else ("clock_window" if device.get("settings", {}).get("schedule", {}).get("kind") == "daily_window" else "cycle")) for value in ["cycle", "clock_window", "disabled", "hidden"]),
+                editor_options="".join(option_tag(value, value, "ready" if device.get("settings", {}).get("programming") in {"disabled", "ready"} else ("clock_window" if device.get("settings", {}).get("schedule", {}).get("kind") == "daily_window" else "cycle")) for value in ["cycle", "clock_window", "ready", "hidden"]),
             )
         )
     device_rows.append(
@@ -315,7 +315,7 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         '</tr>'.format(
             controller_options_html=controller_options(controllers, ""),
             type_options=pin_type_options("gpio"),
-            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window", "disabled", "hidden"]),
+            editor_options="".join(option_tag(value, value, "cycle") for value in ["cycle", "clock_window", "ready", "hidden"]),
         )
     )
 
@@ -402,11 +402,11 @@ def render_config_page(config: dict[str, Any], detected: dict[str, Any]) -> str:
         const controller = row.querySelector(".device-controller").value;
         if (!controller) continue;
         const editor = row.querySelector(".device-editor").value;
-        const settings = editor === "disabled"
-          ? {{programming: "disabled", schedule: {{kind: "cycle"}}}}
+        const settings = editor === "ready"
+          ? {{programming: "ready", schedule: {{kind: "cycle"}}}}
           : editor === "clock_window"
-            ? {{schedule: {{kind: "daily_window", on_time: "06:00", off_time: "18:00"}}}}
-            : {{schedule: {{kind: "cycle"}}}};
+            ? {{programming: "scheduled", schedule: {{kind: "daily_window", on_time: "06:00", off_time: "18:00"}}}}
+            : {{programming: "scheduled", schedule: {{kind: "cycle"}}}};
         result[key] = {{controller, type: "scheduled_output", config: {{pin: pinValue === "" ? null : Number(pinValue), output_type: row.querySelector(".device-type").value, visibility: editor === "hidden" ? "hidden" : "visible"}}, settings}};
       }}
       return result;

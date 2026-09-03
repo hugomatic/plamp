@@ -442,7 +442,7 @@ class PlampCliTimerTests(unittest.TestCase):
     @patch("plamp_cli.main.request_json")
     def test_pico_scheduler_channels_set_enabled_posts_boolean(self, request_json):
         request_json.return_value = {
-            "controller": "plamp8", "channel": "agitator", "enabled": True, "success": True,
+            "controller": "plamp8", "channel": "agitator", "mode": "scheduled", "success": True,
         }
 
         code = main(
@@ -456,7 +456,7 @@ class PlampCliTimerTests(unittest.TestCase):
             "POST",
             "http://127.0.0.1:8000",
             "/api/controllers/plamp8/channels/agitator/schedule-enabled",
-            {"enabled": True},
+            {"mode": "scheduled"},
         )
 
     @patch("plamp_cli.main.request_json")

@@ -17,10 +17,22 @@ _DEFAULT_REPORT_EVERY = 10
 _CONFIG_KEYS = ("controllers", "cameras")
 _RESERVED_CONTROLLER_IDS = {"controllers", "config", "pics", "pico_scheduler"}
 _AUTOFOCUS_MODES = {"auto", "continuous", "manual", "off"}
+_PROGRAMMING_MODES = {"scheduled", "ready"}
+_LEGACY_PROGRAMMING = {"enabled": "scheduled", "disabled": "ready"}
 
 
 def empty_config() -> dict:
     return {key: {} for key in _CONFIG_KEYS}
+
+
+def normalize_programming(value: object, label: str, *, default: str = "scheduled") -> str:
+    if value is None:
+        value = default
+    if value in _LEGACY_PROGRAMMING:
+        value = _LEGACY_PROGRAMMING[value]
+    if value not in _PROGRAMMING_MODES:
+        raise ValueError(f"{label} programming must be scheduled or ready")
+    return value
 
 
 def _is_valid_id(value: object) -> bool:
@@ -182,12 +194,10 @@ def _validate_semantic_devices(value: object, controller_id: str) -> dict:
             raise ValueError(f"device {device_id} uses duplicate pin {pin} for controller {controller_id}")
         used_pins.add(pin)
         visibility = device_value.get("visibility", "visible")
-        programming = device_value.get("programming", "enabled")
+        programming = normalize_programming(device_value.get("programming"), f"device {device_id}")
         output_type = device_value.get("output_type", "gpio")
         if visibility not in {"visible", "hidden"}:
             raise ValueError(f"device {device_id} visibility must be visible or hidden")
-        if programming not in {"enabled", "disabled"}:
-            raise ValueError(f"device {device_id} programming must be enabled or disabled")
         if output_type not in _PIN_TYPES:
             raise ValueError(f"device {device_id} output_type must be one of {sorted(_PIN_TYPES)!r}")
         devices[device_id] = {
@@ -241,30 +251,34 @@ def _validate_payload_pins_match_settings(payload_devices: list[dict], semantic_
 
 def _validate_payload_device(value: object, controller_id: str) -> dict:
     value = _as_mapping(value, f"controller {controller_id} payload device")
-    extra_keys = set(value) - {"pin", "type", "enabled", "pattern"}
+    extra_keys = set(value) - {"pin", "type", "mode", "enabled", "pattern"}
     if extra_keys:
         raise ValueError(f"controller {controller_id} payload device has unknown keys: {sorted(extra_keys)!r}")
     pin = value.get("pin")
     output_type = value.get("type")
+    mode = value.get("mode")
     enabled = value.get("enabled")
     pattern = value.get("pattern")
     if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
         raise ValueError(f"controller {controller_id} payload device pin must be an int in 0..29")
     if output_type not in _PIN_TYPES:
         raise ValueError(f"controller {controller_id} payload device type must be one of {sorted(_PIN_TYPES)!r}")
-    if not isinstance(enabled, bool):
-        raise ValueError(f"controller {controller_id} payload device enabled must be a boolean")
+    if mode is None and isinstance(enabled, bool):
+        mode = "scheduled" if enabled else "ready"
+    if mode not in _PROGRAMMING_MODES:
+        raise ValueError(f"controller {controller_id} payload device mode must be scheduled or ready")
     if not isinstance(pattern, list):
         raise ValueError(f"controller {controller_id} payload device pattern must be a list")
-    return {"pin": pin, "type": output_type, "enabled": enabled, "pattern": pattern}
+    return {"pin": pin, "type": output_type, "mode": mode, "pattern": pattern}
 
 
 def _compile_payload_device(device: Mapping) -> dict:
     editor = device["editor"]
+    programming = normalize_programming(device.get("programming"), "device")
     output = {
         "pin": device["pin"],
         "type": device.get("output_type", "gpio"),
-        "enabled": device.get("programming", "enabled") != "disabled",
+        "mode": programming,
     }
     if editor["kind"] == "cycle":
         output["pattern"] = [
@@ -377,14 +391,12 @@ def validate_controller_devices(value, controller_id: str, controller_type: str)
             raise ValueError(f"device {device_id} settings has unknown keys: {sorted(extra_settings)!r}")
         pin = config.get("pin")
         pin_type = config.get("output_type", "gpio")
-        programming = settings.get("programming", "enabled")
+        programming = normalize_programming(settings.get("programming"), f"device {device_id}")
         visibility = config.get("visibility", "visible")
         if not isinstance(pin, int) or isinstance(pin, bool) or not 0 <= pin <= 29:
             raise ValueError(f"device {device_id} pin must be an int in 0..29")
         if pin_type not in _PIN_TYPES:
             raise ValueError(f"device {device_id} output_type must be one of {sorted(_PIN_TYPES)!r}")
-        if programming not in {"enabled", "disabled"}:
-            raise ValueError(f"device {device_id} programming must be enabled or disabled")
         if visibility not in {"visible", "hidden"}:
             raise ValueError(f"device {device_id} visibility must be visible or hidden")
         pin_key = pin
@@ -450,7 +462,7 @@ def _migrate_legacy_config(config: Mapping) -> dict:
             raise ValueError(f"legacy device {device_id} duplicates controller device")
         editor = device_value.get("editor", "cycle")
         visibility = "hidden" if editor == "hidden" else "visible"
-        programming = "disabled" if editor in {"disabled", "hidden"} else "enabled"
+        programming = "ready" if editor in {"disabled", "hidden", "ready"} else "scheduled"
         schedule = {"kind": "daily_window", "on_time": "06:00", "off_time": "18:00"} if editor == "clock_window" else {"kind": "cycle"}
         device_config = {
             "pin": device_value.get("pin"),
