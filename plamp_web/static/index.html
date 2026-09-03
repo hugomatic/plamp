@@ -24,22 +24,22 @@
     .controller-actions { border-top: 1px solid #ddd; margin-top: .25rem; padding-top: .65rem; }
     .timer-card { border: 1px solid #ccc; border-radius: 6px; padding: .75rem; }
     .timer-card-stale { opacity: .65; }
-    .timer-top { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
+    .timer-top { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem .75rem; justify-content: space-between; }
     .timer-name { font-weight: 700; }
     .timer-value { border-radius: 6px; padding: .15rem .45rem; }
     .timer-value.on { background: #d9f7d9; }
     .timer-value.off { background: #eee; }
     .timer-mode { border-radius: 6px; padding: .15rem .45rem; background: #e8eef7; color: #1f3b63; }
-    .timer-mode.ready { background: #f7e8e8; color: #7a2e2e; }
-    .timer-badges { align-items: center; display: flex; flex-wrap: wrap; gap: .35rem; }
+    .timer-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .35rem; }
+    .timer-controls button { margin: 0; padding: .25rem .55rem; }
+    .timer-badges { align-items: center; display: flex; flex-wrap: wrap; gap: .35rem; margin-left: .55rem; }
     .timer-meta { color: #555; font-size: .9rem; margin: .25rem 0 .5rem; }
     .timer-trace { display: grid; gap: .2rem; margin-top: .55rem; }
-    .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 4.6rem minmax(0, 1fr); }
+    .timer-trace-row { align-items: center; display: grid; gap: .4rem; grid-template-columns: 5.5rem minmax(0, 1fr); }
     .timer-trace-row span { color: #666; font-size: .75rem; }
     .timer-trace-row svg { background: #f1f3f4; border-radius: 3px; display: block; height: 22px; width: 100%; }
     .timer-trace-row path { fill: none; stroke: #3b7f4a; stroke-linejoin: round; stroke-width: 2; vector-effect: non-scaling-stroke; }
     .timer-trace.history .timer-trace-row path { stroke: #b42318; }
-    .timer-override-actions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .55rem; }
     #timer-override-dialog { border: 1px solid #777; border-radius: 8px; max-width: min(30rem, calc(100vw - 2rem)); }
     #timer-override-dialog::backdrop { background: rgb(0 0 0 / .35); }
     #timer-override-dialog form { display: grid; gap: .75rem; }
@@ -64,6 +64,7 @@
     .editor-row select, .editor-row input { min-width: 8rem; }
     .editor-note { color: #555; font-size: .9rem; }
     .editor-error { color: #9a3412; font-weight: 600; }
+    .editor-warn { color: #a16207; font-weight: 600; }
     .editor-success { color: #166534; font-weight: 600; }
     .manual-controls { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .6rem; }
     .manual-controls input { width: 5rem; }
@@ -154,7 +155,9 @@
     const overrideUnit = document.getElementById("override-unit");
     const overrideMessage = document.getElementById("override-message");
     const TIMER_FORECAST_HORIZONS = [["next min", 60], ["next hour", 3600], ["next 24h", 86400]];
-    const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last day", 86400], ["last month", 30 * 86400]];
+    const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last 24h", 86400], ["last 30 days", 30 * 86400]];
+    const STREAM_WARN_AFTER_SECONDS = 5;
+    const STREAM_ERROR_AFTER_SECONDS = 10;
     let refreshSeconds = 30;
     const timerEventSources = new Map();
     const timerMessages = new Map();
@@ -415,30 +418,30 @@
       return path + ` L ${width} ${previous ? highY : lowY}`;
     }
 
-    function historyValueAt(pulses, ageSeconds) {
-      const instant = Date.now() - ageSeconds * 1000;
-      let value = 0;
-      let bestStart = Number.NEGATIVE_INFINITY;
+    function historyValueInWindow(pulses, ageStart, ageEnd) {
+      const older = Math.max(Number(ageStart) || 0, Number(ageEnd) || 0);
+      const newer = Math.min(Number(ageStart) || 0, Number(ageEnd) || 0);
+      const windowStart = Date.now() - older * 1000;
+      const windowEnd = Date.now() - newer * 1000;
       for (const pulse of pulses) {
+        if (Number(pulse.value ?? 0) <= 0) continue;
         const start = Date.parse(pulse.started_at);
         const end = Date.parse(pulse.ended_at);
         if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-        if (start <= instant && instant < end && start >= bestStart) {
-          bestStart = start;
-          value = Number(pulse.value ?? 0);
-        }
+        if (start < windowEnd && end > windowStart) return true;
       }
-      return value > 0;
+      return false;
     }
 
     function historyTracePath(pulses, horizon, width = 240) {
       const highY = 4;
       const lowY = 18;
-      let previous = historyValueAt(pulses, horizon);
+      let previous = historyValueInWindow(pulses, horizon, horizon * (1 - 1 / width));
       let path = `M 0 ${previous ? highY : lowY}`;
       for (let x = 1; x <= width; x += 1) {
-        const ageSeconds = horizon * (1 - x / width);
-        const value = historyValueAt(pulses, ageSeconds);
+        const ageLeft = horizon * (1 - (x - 1) / width);
+        const ageRight = horizon * (1 - x / width);
+        const value = historyValueInWindow(pulses, ageLeft, ageRight);
         if (value !== previous) {
           path += ` L ${x} ${previous ? highY : lowY} L ${x} ${value ? highY : lowY}`;
           previous = value;
@@ -628,6 +631,24 @@
       if (seconds < 2) return "just now";
       if (seconds < 60) return `${seconds}s ago`;
       return `${Math.floor(seconds / 60)}m ago`;
+    }
+
+    function streamSilenceSeconds(role) {
+      const lastAt = timerMessageTimes.get(role);
+      if (!lastAt) return null;
+      return (Date.now() - lastAt) / 1000;
+    }
+
+    function controllerStreamTone(role, health) {
+      const silence = streamSilenceSeconds(role);
+      if (silence != null && silence >= STREAM_ERROR_AFTER_SECONDS) {
+        return "error";
+      }
+      if (health?.ok === true && silence != null && silence >= STREAM_WARN_AFTER_SECONDS) {
+        return "warn";
+      }
+      if (health?.ok === true) return "ok";
+      return "error";
     }
 
     function escapeHtml(value) {
@@ -821,7 +842,8 @@
       for (const role of timerRoles) {
         const message = timerMessages.get(role);
         const health = timerStatuses.get(role);
-        const ok = health?.ok === true;
+        const tone = controllerStreamTone(role, health);
+        const ok = tone !== "error";
         const devices = timerDevicesFromMessage(message);
         const overlays = timerOverlaysFromMessage(message);
         const overlayByPin = new Map(overlays.map((overlay) => [Number(overlay.pin), overlay]));
@@ -849,10 +871,10 @@
         controllerName.className = "controller-name";
         controllerName.textContent = role;
         const status = document.createElement("span");
-        status.className = ok ? "editor-success" : "editor-error";
+        status.className = tone === "ok" ? "editor-success" : tone === "warn" ? "editor-warn" : "editor-error";
         status.textContent = ok
-          ? `OK — last verified ${formatAge(health.last_verified_at || health.checked_at)}`
-          : `ERROR: ${health?.error?.message || "no valid report"}`;
+          ? `OK — last verified ${formatAge(health?.last_verified_at || health?.checked_at)}`
+          : `ERROR: ${health?.error?.message || "controller status stream disconnected"}`;
         controllerTop.append(controllerName, status);
         const devicesGrid = document.createElement("div");
         devicesGrid.className = "controller-devices";
@@ -876,16 +898,32 @@
           const name = document.createElement("span");
           name.className = "timer-name";
           name.textContent = channel.name;
+          const controls = document.createElement("div");
+          controls.className = "timer-controls";
+          if ((channel.type || event.type) === "gpio") {
+            const pulseOn = document.createElement("button");
+            pulseOn.type = "button";
+            pulseOn.textContent = "Pulse ON";
+            pulseOn.disabled = !ok;
+            pulseOn.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
+            const pulseOff = document.createElement("button");
+            pulseOff.type = "button";
+            pulseOff.textContent = "Pulse OFF";
+            pulseOff.disabled = !ok;
+            pulseOff.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 0));
+            controls.append(pulseOn, pulseOff);
+          }
           const badges = document.createElement("div");
           badges.className = "timer-badges";
           const modeBadge = document.createElement("span");
-          modeBadge.className = "timer-mode" + (mode === "ready" ? " ready" : "");
+          modeBadge.className = "timer-mode";
           modeBadge.textContent = mode === "ready" ? "READY" : "SCHEDULED";
           const badge = document.createElement("span");
           badge.className = "timer-value " + (isOn ? "on" : "off");
           badge.textContent = overlay ? `PULSE ${overlayTarget ? "ON" : "OFF"}` : (isOn ? "ON" : "OFF");
           badges.append(modeBadge, badge);
-          top.append(name, badges);
+          controls.append(badges);
+          top.append(name, controls);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
           meta.textContent = mode === "scheduled"
@@ -899,22 +937,6 @@
           if (mode === "ready" && !pulseHistoryByRole.has(role)) refreshPulseHistory(role).then(() => renderTimerStatus(true));
           trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses);
           card.append(trace);
-          if ((channel.type || event.type) === "gpio") {
-            const overrideActions = document.createElement("div");
-            overrideActions.className = "timer-override-actions";
-            const pulseOn = document.createElement("button");
-            pulseOn.type = "button";
-            pulseOn.textContent = "Pulse ON";
-            pulseOn.disabled = !ok;
-            pulseOn.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
-            const pulseOff = document.createElement("button");
-            pulseOff.type = "button";
-            pulseOff.textContent = "Pulse OFF";
-            pulseOff.disabled = !ok;
-            pulseOff.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 0));
-            overrideActions.append(pulseOn, pulseOff);
-            card.append(overrideActions);
-          }
           devicesGrid.append(card);
           if (isEditing) {
             const editor = document.createElement("div");
@@ -1155,8 +1177,6 @@
           renderTimerStatus();
         });
         source.onerror = () => {
-          const health = timerStatuses.get(role) || {};
-          timerStatuses.set(role, {...health, ok: false, status: "ERROR", error: {message: "controller status stream disconnected"}});
           renderTimerStatus(true);
           if (source.readyState === EventSource.CLOSED) {
             timerStatus.textContent = "Stream disconnected.";
