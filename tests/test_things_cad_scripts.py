@@ -273,7 +273,10 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("module component_mount_tubes(", source)
         tubes = compact_scad(scad_module_body(source, "component_mount_tubes"))
 
-        self.assertIn("component_mount_tube_d=9;", compact)
+        self.assertIn(
+            "component_mount_tube_d=max(psu_mount_chamfer_d,converter_mount_chamfer_d);",
+            compact,
+        )
         self.assertIn("for(p=points)", tubes)
         self.assertIn(
             "cylinder(h=component_raise_h,d=component_mount_tube_d);", tubes
@@ -289,6 +292,28 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("component_mount_tubes(converter_mount_points());", converter)
         self.assertIn("psu_mount_holes(0);", psu)
         self.assertIn("converter_mount_holes(0);", converter)
+
+        hole = compact_scad(scad_module_body(source, "bottom_chamfered_mount_hole"))
+        self.assertIn("chamfer_height=is_undef(chamfer_h)?t:chamfer_h;", hole)
+        self.assertIn("cylinder(h=t+2,d=d);", hole)
+        self.assertIn("cylinder(h=chamfer_height+0.1,d1=chamfer_d,d2=d);", hole)
+
+        psu_holes = compact_scad(scad_module_body(source, "psu_mount_hole_from_view"))
+        converter_holes = compact_scad(
+            scad_module_body(source, "converter_mount_holes")
+        )
+        self.assertIn(
+            "bottom_chamfered_mount_hole("
+            "psu_mount_hole_d,psu_mount_chamfer_d,z0,"
+            "wall_t+component_raise_h,wall_t);",
+            psu_holes,
+        )
+        self.assertIn(
+            "bottom_chamfered_mount_hole("
+            "converter_mount_hole_d,converter_mount_chamfer_d,z0,"
+            "wall_t+component_raise_h,wall_t);",
+            converter_holes,
+        )
 
     def test_plamp8_nut_profiles_drive_the_current_m3_catcher(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -1411,6 +1436,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("180,", labels)
         self.assertIn("component_origin_y + internal_psu_y + 13.5", labels)
         self.assertIn("component_origin_y + internal_converter_y + 12", labels)
+        self.assertIn("psu_screw_size", labels)
+        self.assertIn("converter_screw_size", labels)
         self.assertIn("floor_component_label_negatives();", source)
 
     def test_plamp8_transparent_components_keep_colors_without_labels(self):
@@ -1457,8 +1484,36 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn(
             "usb_c_panel_y + sub_panel_usb_c_cutout_h / 2 + 4", labels
         )
+        self.assertNotIn("sub_panel_bonding_hardware_label", labels)
+        self.assertNotIn("ac_socket_nut_label", labels)
         self.assertIn("mirror([1, 0, 0])", source)
         self.assertIn("sub_panel_back_labels_negative();", source)
+
+    def test_plamp8_sub_panel_fastener_labels_are_on_the_top_face(self):
+        source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
+        compact = compact_scad(source)
+        labels = compact_scad(
+            scad_module_body(source, "sub_panel_fastener_label_negatives")
+        )
+        top = compact_scad(
+            scad_module_body(source, "sub_panel_top_label_negative")
+        )
+
+        self.assertIn('ac_socket_nut_label = "6-32 nut";', source)
+        self.assertIn(
+            "sub_panel_bonding_hardware_label=str("
+            "panel_screw_size,\"x\",sub_panel_bonding_screw_length);",
+            compact,
+        )
+        self.assertIn("translate([x,y,sub_panel_base_h])", top)
+        self.assertIn("-sub_panel_revision_depth", top)
+        self.assertNotIn("mirror(", top)
+        self.assertIn("sub_panel_bonding_hardware_label", labels)
+        self.assertIn("ac_socket_nut_label", labels)
+        self.assertIn(
+            "sub_panel_fastener_label_negatives();",
+            compact_scad(scad_module_body(source, "sub_panel_8ch_negative")),
+        )
 
     def test_plamp8_sub_panel_has_full_width_usb_support_rib(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
@@ -2023,6 +2078,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertNotIn("sub_panel_socket_negative();", top_panel)
         self.assertEqual(top_panel.count("outlet_cover_negative(false);"), 2)
 
+        pocket = compact_scad(
+            scad_module_body(source, "ac_socket_nut_pocket_negative")
+        )
+        self.assertIn("ac_socket_nut_across_flats=8;", compact)
+        self.assertIn("ac_socket_nut_pocket_h=2;", compact)
+        self.assertIn(
+            "ac_socket_nut_pocket_d=ac_socket_nut_across_flats/cos(30);",
+            compact,
+        )
+        self.assertIn("h=ac_socket_nut_pocket_h+boolean_shim", pocket)
+        self.assertIn("d=ac_socket_nut_pocket_d", pocket)
+        self.assertIn("$fn=6", pocket)
+        self.assertIn("ac_socket_nut_pocket_negative();", sub_panel)
+
     def test_plamp8_revision_default_and_sub_panel_rib_clearance(self):
         source = (REPO_ROOT / "things" / "plamp8" / "plamp8.scad").read_text()
 
@@ -2030,6 +2099,11 @@ class ThingsCadScriptsTest(unittest.TestCase):
         self.assertIn("sub_panel_revision_clearance = 1;", source)
         self.assertIn(
             "translate([revision_x, sub_panel_revision_y, sub_panel_base_h])",
+            source,
+        )
+        self.assertIn(
+            "- sub_panel_revision_clearance - sub_panel_revision_font / 2\n"
+            "    + 30;",
             source,
         )
 
@@ -2073,7 +2147,8 @@ class ThingsCadScriptsTest(unittest.TestCase):
         )
 
         for definition in (
-            "sub_panel_bonding_tower_d=11;",
+            "sub_panel_bonding_tower_d=13;",
+            "sub_panel_bonding_screw_d=3.7;",
             "sub_panel_bonding_nut_w=panel_nut_entry_w;",
             "sub_panel_bonding_nut_h=panel_nut_slot_h;",
             "sub_panel_bonding_nut_z=2;",
@@ -2084,6 +2159,9 @@ class ThingsCadScriptsTest(unittest.TestCase):
             self.assertIn(definition, compact)
 
         self.assertIn("d=sub_panel_bonding_tower_d", tower)
+        self.assertIn("d=sub_panel_bonding_screw_d", screw)
+        self.assertNotIn("xt60_screw_d", screw)
+        self.assertNotIn("c13_screw_d", screw)
         self.assertIn("side_loaded_panel_nut_trap_negative(", nut)
         self.assertIn("translate([0,0,sub_panel_bonding_nut_z])", nut)
         self.assertIn("opening_edge_distance+boolean_shim", nut)
@@ -2099,6 +2177,20 @@ class ThingsCadScriptsTest(unittest.TestCase):
             c13_positive.count("sub_panel_bonding_tower_positive();"), 1
         )
         self.assertIn("mouth_direction=-side", compact)
+        self.assertIn(
+            "xt60_screw_nut_radius=max(xt60_screw_d,sub_panel_bonding_screw_d,panel_nut_pocket_d)/2;",
+            compact,
+        )
+        xt60_negative = compact_scad(
+            scad_module_body(source, "sub_panel_xt60_bonding_negative")
+        )
+        c13_negative = compact_scad(
+            scad_module_body(source, "sub_panel_c13_bonding_negative")
+        )
+        self.assertIn("sub_panel_bonding_screw_negative();", xt60_negative)
+        self.assertIn("sub_panel_bonding_screw_negative();", c13_negative)
+        self.assertNotIn("xt60_screw_d", xt60_negative)
+        self.assertNotIn("c13_screw_d", c13_negative)
         self.assertIn(
             "sub_panel_xt60_bonding_positive();",
             compact_scad(scad_module_body(source, "sub_panel_8ch_positive")),

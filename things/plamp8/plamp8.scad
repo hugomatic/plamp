@@ -61,6 +61,10 @@ outlet_group_w = 104;
 outlet_group_h = 56;
 
 screw_d = 4;
+ac_socket_nut_label = "6-32 nut";
+ac_socket_nut_across_flats = 8;
+ac_socket_nut_pocket_h = 2;
+ac_socket_nut_pocket_d = ac_socket_nut_across_flats / cos(30);
 screw_spacing = 84;
 outlet_plate_left = outlet_group_w / 2 - outlet_group_x + connector_panel_rim;
 outlet_plate_right = 76;
@@ -426,7 +430,7 @@ floor_locator_clearance = 0.25;
 relay_countersink_h = wall_t;
 component_raise_h = 5;
 component_airflow_post_d = 5;
-component_mount_tube_d = 9;
+component_mount_tube_d = max(psu_mount_chamfer_d, converter_mount_chamfer_d);
 component_airflow_post_spacing = 14;
 component_airflow_post_hole_clearance = 8;
 floor_fastener_hole_d = screw_clearance_d(floor_screw_size);
@@ -502,11 +506,15 @@ sub_panel_usb_support_rib_h = sub_panel_h - sub_panel_base_h;
 sub_panel_usb_support_rib_gap = 1;
 sub_panel_revision_clearance = 1;
 sub_panel_revision_font = 4;
-sub_panel_bonding_tower_d = 11;
+sub_panel_bonding_tower_d = 13;
+sub_panel_bonding_screw_d = 3.7;
 sub_panel_bonding_nut_w = panel_nut_entry_w;
 sub_panel_bonding_nut_h = panel_nut_slot_h;
 sub_panel_bonding_nut_z = 2;
 sub_panel_bonding_screw_length = 12;
+sub_panel_bonding_hardware_label = str(
+    panel_screw_size, "x", sub_panel_bonding_screw_length
+);
 sub_panel_bonding_nut_engagement = sub_panel_bonding_nut_h;
 sub_panel_bonding_screw_tip_protrusion = 1;
 sub_panel_bonding_throat_w = sub_panel_bonding_nut_w
@@ -593,7 +601,8 @@ sub_panel_usb_support_rib_y =
     - sub_panel_usb_support_rib_w / 2;
 sub_panel_revision_y =
     sub_panel_usb_support_rib_y - sub_panel_usb_support_rib_w / 2
-    - sub_panel_revision_clearance - sub_panel_revision_font / 2;
+    - sub_panel_revision_clearance - sub_panel_revision_font / 2
+    + 30;
 dc_grid_x = left_ac_x + outlet_group_x - outlet_group_w / 2 - barrel_group_x + barrel_group_w / 2;
 dc_grid_y = service_row_y + c13_group_h / 2 - barrel_group_y - barrel_group_h / 2;
 dc_col_spacing = dc_region_w + panel_region_gap;
@@ -633,7 +642,11 @@ xt60_region_x_margin = min(
     dc_connector_x() - xt60_outside_w / 2 - (barrel_group_x - dc_region_w / 2),
     barrel_group_x + dc_region_w / 2 - (dc_connector_x() + xt60_outside_w / 2)
 );
-xt60_screw_nut_radius = max(xt60_screw_d, sub_panel_bonding_tower_d) / 2;
+xt60_screw_nut_radius = max(
+    xt60_screw_d,
+    sub_panel_bonding_screw_d,
+    panel_nut_pocket_d
+) / 2;
 xt60_screw_nut_left_x =
     dc_connector_x() - xt60_screw_spacing / 2 - xt60_screw_nut_radius;
 xt60_screw_nut_right_x =
@@ -1442,11 +1455,11 @@ module sub_panel_bonding_nut_negative(mouth_direction, opening_edge_distance) {
         );
 }
 
-module sub_panel_bonding_screw_negative(d) {
+module sub_panel_bonding_screw_negative() {
     translate([0, 0, -boolean_shim])
         cylinder(
             h = sub_panel_h + 2 * boolean_shim,
-            d = d
+            d = sub_panel_bonding_screw_d
         );
 }
 
@@ -1464,7 +1477,7 @@ module sub_panel_xt60_bonding_negative() {
                     opening_edge_distance = xt60_screw_spacing / 2
                         - xt60_cutout_w / 2
                 );
-                sub_panel_bonding_screw_negative(xt60_screw_d);
+                sub_panel_bonding_screw_negative();
             }
 }
 
@@ -1480,8 +1493,40 @@ module sub_panel_c13_bonding_negative() {
                 opening_edge_distance = c13_screw_spacing / 2
                     - c13_cutout_w / 2
             );
-            sub_panel_bonding_screw_negative(c13_screw_d);
+            sub_panel_bonding_screw_negative();
         }
+}
+
+module sub_panel_top_label_negative(label, x, y, font_size = 4) {
+    translate([x, y, sub_panel_base_h])
+        write_text(label, font_size, -sub_panel_revision_depth);
+}
+
+module sub_panel_fastener_label_negatives() {
+    sub_panel_top_label_negative(
+        sub_panel_bonding_hardware_label,
+        dc_channel_x(0) + dc_connector_x(),
+        dc_channel_y(0) - 20
+    );
+    sub_panel_top_label_negative(
+        sub_panel_bonding_hardware_label,
+        c13_hardware_x,
+        c13_hardware_y - c13_cutout_h / 2 - 5
+    );
+    sub_panel_top_label_negative(
+        ac_socket_nut_label,
+        (left_ac_x + right_ac_x) / 2 + ac_connector_x(),
+        ac_row_y
+    );
+}
+
+module ac_socket_nut_pocket_negative() {
+    translate([0, 0, -boolean_shim])
+        cylinder(
+            h = ac_socket_nut_pocket_h + boolean_shim,
+            d = ac_socket_nut_pocket_d,
+            $fn = 6
+        );
 }
 
 module sub_panel_8ch_negative() {
@@ -1492,8 +1537,10 @@ module sub_panel_8ch_negative() {
         translate([x + ac_connector_x(), ac_row_y, plate_t / 2])
             sub_panel_socket_negative();
         for (y = [-sub_panel_socket_screw_spacing / 2, sub_panel_socket_screw_spacing / 2])
-            translate([x + ac_connector_x(), ac_row_y + y, 0])
+            translate([x + ac_connector_x(), ac_row_y + y, 0]) {
                 screw_hole(screw_d);
+                ac_socket_nut_pocket_negative();
+            }
 
         if (!auto_only)
             for (y = [-outlet_spacing / 2, outlet_spacing / 2])
@@ -1524,6 +1571,7 @@ module sub_panel_8ch_negative() {
             -sub_panel_revision_depth
         );
 
+    sub_panel_fastener_label_negatives();
     sub_panel_back_labels_negative();
 }
 
@@ -2014,6 +2062,20 @@ module floor_component_label_negatives() {
         180,
         5
     );
+    floor_component_label_negative(
+        psu_screw_size,
+        component_origin_x + internal_psu_x,
+        component_origin_y + internal_psu_y + 5,
+        0,
+        4
+    );
+    floor_component_label_negative(
+        converter_screw_size,
+        component_origin_x + internal_converter_x,
+        component_origin_y + internal_converter_y + 4,
+        180,
+        4
+    );
 }
 
 module floor_context(colorize = true) {
@@ -2062,11 +2124,13 @@ module relay_mount_holes(z0 = -box_h) {
             bottom_chamfered_mount_hole(relay_mount_hole_d, relay_countersink_d, z0, relay_countersink_h);
 }
 
-module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t) {
+module bottom_chamfered_mount_hole(d, chamfer_d, z0 = -box_h, t = wall_t, chamfer_h) {
+    // Floor-only head cone; a full-height cone undercuts the mount tubes.
+    chamfer_height = is_undef(chamfer_h) ? t : chamfer_h;
     translate([0, 0, z0 - 1])
         cylinder(h = t + 2, d = d);
     translate([0, 0, z0 - 0.1])
-        cylinder(h = t + 0.1, d1 = chamfer_d, d2 = d);
+        cylinder(h = chamfer_height + 0.1, d1 = chamfer_d, d2 = d);
 }
 
 module bottom_m3_flat_head_recess(surface_z = 0) {
@@ -2168,7 +2232,13 @@ module psu_mount_holes(z0 = -box_h) {
 
 module psu_mount_hole_from_view(x, y, z0 = -box_h) {
     translate([y - psu_view_d / 2, psu_view_w / 2 - x, 0])
-        bottom_chamfered_mount_hole(psu_mount_hole_d, psu_mount_chamfer_d, z0, wall_t + component_raise_h);
+        bottom_chamfered_mount_hole(
+            psu_mount_hole_d,
+            psu_mount_chamfer_d,
+            z0,
+            wall_t + component_raise_h,
+            wall_t
+        );
 }
 
 module psu_mount_markers(z) {
@@ -2325,7 +2395,13 @@ module converter_bottom_mount_holes() {
 module converter_mount_holes(z0 = -box_h) {
     for (y = [-converter_mount_spacing / 2, converter_mount_spacing / 2])
         translate([0, y, 0])
-            bottom_chamfered_mount_hole(converter_mount_hole_d, converter_mount_chamfer_d, z0, wall_t + component_raise_h);
+            bottom_chamfered_mount_hole(
+                converter_mount_hole_d,
+                converter_mount_chamfer_d,
+                z0,
+                wall_t + component_raise_h,
+                wall_t
+            );
 }
 
 module floor_revision_negative() {
