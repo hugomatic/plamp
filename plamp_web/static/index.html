@@ -52,7 +52,8 @@
     .camera-panel[hidden] { display: none; }
     .finder-detail { align-items: baseline; display: flex; gap: .75rem; justify-content: space-between; }
     .finder-detail p { margin: 0; }
-    #camera-finder-now[aria-pressed="true"] { font-weight: 700; }
+    .finder-follow { align-items: center; color: #666; display: flex; font-size: .75rem; gap: .35rem; white-space: nowrap; }
+    .finder-follow input { margin: 0; }
     .finder-frames { align-items: flex-end; background: #f1f3f4; border-radius: 3px; display: flex; gap: 6px; justify-content: center; padding: .35rem; }
     .finder-frames.peek { overflow: hidden; }
     .finder-frame { aspect-ratio: 16 / 9; background: #fff; border-radius: 4px; flex: 0 0 auto; overflow: hidden; position: relative; }
@@ -155,7 +156,7 @@
   <section id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden>
     <div class="finder-detail">
       <p id="camera-finder-detail"></p>
-      <button id="camera-finder-now" type="button" aria-pressed="false">Now</button>
+      <label class="finder-follow">follow <input id="camera-finder-now" type="checkbox"></label>
     </div>
     <p id="camera-finder-status"></p>
     <div id="camera-finder-lines"></div>

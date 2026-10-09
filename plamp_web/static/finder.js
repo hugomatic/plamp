@@ -25,11 +25,10 @@
   buttons.gallery.addEventListener("click", () => show("gallery"));
   buttons.finder.addEventListener("click", () => show("finder"));
   if (buttons.ribbon) buttons.ribbon.addEventListener("click", () => show("ribbon"));
-  if (nowButton) nowButton.addEventListener("click", toggleNow);
+  if (nowButton) nowButton.addEventListener("change", toggleNow);
 
   function toggleNow() {
-    following = !following;
-    if (nowButton) nowButton.setAttribute("aria-pressed", following ? "true" : "false");
+    following = Boolean(nowButton && nowButton.checked);
     if (followTimer) window.clearInterval(followTimer);
     followTimer = null;
     if (!following) return;
@@ -42,9 +41,9 @@
   }
 
   function leaveNow() {
-    if (!following) return;
+    if (!following && !(nowButton && nowButton.checked)) return;
     following = false;
-    if (nowButton) nowButton.setAttribute("aria-pressed", "false");
+    if (nowButton) nowButton.checked = false;
     if (followTimer) window.clearInterval(followTimer);
     followTimer = null;
   }
