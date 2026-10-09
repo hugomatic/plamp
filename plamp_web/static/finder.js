@@ -85,13 +85,26 @@
       finderAt = frame.at;
       refresh();
     });
-    box.append(frames, slider);
+    const label = document.createElement("span");
+    const controls = document.createElement("div");
+    controls.className = "finder-slider";
+    controls.append(label, slider);
+    box.append(frames, controls);
     requestAnimationFrame(() => paint(frames, line, Number(slider.value)));
     return box;
   }
 
+  function frameLabel(line, frame) {
+    if (!frame) return "";
+    if (line.scale === "hours") return frame.hour_label || frame.label || "";
+    if (line.scale === "days") return frame.day_label || frame.label || "";
+    return frame.week_label || frame.label || "";
+  }
+
   function paint(frames, line, index) {
     const items = line.frames || [];
+    const label = frames.parentElement.querySelector(".finder-slider span");
+    if (label) label.textContent = frameLabel(line, items[index]);
     const height = line.scale === "hours" ? 168 : line.scale === "days" ? 104 : 56;
     const width = frames.clientWidth || 640;
     const frameWidth = height * 16 / 9;
@@ -106,14 +119,8 @@
       if (frame.thumb_url) {
         const img = document.createElement("img");
         img.src = frame.thumb_url;
-        img.alt = frame.label || line.scale;
+        img.alt = frameLabel(line, frame) || line.scale;
         el.appendChild(img);
-      }
-      if (absolute === index && frame.label) {
-        const caption = document.createElement("div");
-        caption.className = "ribbon-caption";
-        caption.textContent = frame.label;
-        el.appendChild(caption);
       }
       if (absolute === index && line.scale === "hours" && frame.capture_id) {
         const picks = document.createElement("div");

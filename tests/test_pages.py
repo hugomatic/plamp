@@ -611,6 +611,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="camera-show-finder"', html)
         self.assertIn('id="camera-show-ribbon"', html)
         self.assertIn('id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden', html)
+        self.assertIn(".finder-line { background: #f1f3f4;", html)
+        self.assertIn('src="/static/finder.js"', html)
         self.assertIn('id="camera-gallery"', html)
         self.assertIn('id="camera-ribbon" class="camera-panel" aria-label="Camera ribbon" hidden', html)
         self.assertIn('src="/static/ribbon.js"', html)
