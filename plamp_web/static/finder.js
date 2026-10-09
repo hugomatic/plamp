@@ -86,9 +86,12 @@
       refresh();
     });
     const label = document.createElement("span");
+    const range = document.createElement("div");
+    range.className = "finder-range";
+    range.append(slider);
     const controls = document.createElement("div");
     controls.className = "finder-slider";
-    controls.append(label, slider);
+    controls.append(label, range);
     box.append(frames, controls);
     requestAnimationFrame(() => paint(frames, line, Number(slider.value)));
     return box;
