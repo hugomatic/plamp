@@ -94,13 +94,26 @@
     return models[sensor] || rawModel || "-";
   }
 
+  function picoRuntime(item, monitors) {
+    const workers = monitors && typeof monitors === "object" ? Object.values(monitors) : [];
+    const worker = workers.find((candidate) => String(candidate?.serial || "") === String(item.serial || ""));
+    const firmware = worker?.last_report?.content?.firmware;
+    const runtime = firmware?.runtime && typeof firmware.runtime === "object" ? firmware.runtime : {};
+    return {firmware: firmware && typeof firmware === "object" ? firmware : {}, runtime};
+  }
+
   function renderHardware(system) {
     const detected = system.detected && typeof system.detected === "object" ? system.detected : {};
     const picos = Array.isArray(detected.picos) ? detected.picos : [];
+    const monitors = system.monitors && typeof system.monitors === "object" ? system.monitors : {};
     const picoBody = document.getElementById("system-picos");
     picoBody.replaceChildren();
-    if (!picos.length) replaceMessage(picoBody, 4, "No peripherals found.");
-    for (const item of picos) appendCells(picoBody, [item.port, item.usb_device, item.serial, `${valueText(item.vendor_id)}:${valueText(item.product_id)}`]);
+    if (!picos.length) replaceMessage(picoBody, 8, "No peripherals found.");
+    for (const item of picos) {
+      const {firmware, runtime} = picoRuntime(item, monitors);
+      const scheduler = firmware.revision ? `${valueText(firmware.name)} ${firmware.revision} (protocol ${valueText(firmware.protocol)})` : "-";
+      appendCells(picoBody, [item.role, item.port, item.usb_device, runtime.machine || item.model, runtime.version, scheduler, item.serial, `${valueText(item.vendor_id)}:${valueText(item.product_id)}`]);
+    }
 
     const cameras = Array.isArray(detected.cameras) ? detected.cameras : [];
     const cameraBody = document.getElementById("system-cameras");

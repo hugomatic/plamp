@@ -216,6 +216,20 @@ def report_item(device, current_value=None):
     return item
 
 
+def runtime_identity():
+    implementation = sys.implementation
+    version = implementation.version
+    return {{
+        "implementation": implementation.name,
+        "version": ".".join(str(part) for part in version[:3]),
+        "build": getattr(implementation, "_build", None),
+        "machine": getattr(implementation, "_machine", None),
+        "mpy": getattr(implementation, "_mpy", None),
+        "thread": getattr(implementation, "_thread", None),
+        "version_string": sys.version,
+    }}
+
+
 def report():
     base_devices = [device for device in devices if not device.get("overlay")]
     overlays = [device for device in devices if device.get("overlay")]
@@ -231,6 +245,7 @@ def report():
         "name": FIRMWARE_NAME,
         "revision": FIRMWARE_REVISION,
         "protocol": FIRMWARE_PROTOCOL,
+        "runtime": runtime_identity(),
     }}
     content = {{"firmware": firmware, "devices": out, "overlays": overlay_out}}
     print(json.dumps({{"type": "report", "content": content}}))

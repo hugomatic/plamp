@@ -15,6 +15,7 @@
   let configuredPins = [];
   let selectedPulseDevice = null;
   let controllerSource = null;
+  let lastTelemetry = {};
 
   function controllerIdFromPath() {
     const parts = location.pathname.split("/").filter(Boolean);
@@ -55,12 +56,31 @@
     statusBody.append(row);
   }
 
+  function firmwareFacts(telemetry) {
+    const firmware = telemetry?.last_report?.content?.firmware;
+    if (!firmware || typeof firmware !== "object") return [];
+    const runtime = firmware.runtime && typeof firmware.runtime === "object" ? firmware.runtime : {};
+    return [
+      ["Scheduler revision", firmware.revision],
+      ["Scheduler protocol", firmware.protocol],
+      ["MicroPython", runtime.version],
+      ["MicroPython build", runtime.build],
+      ["Board", runtime.machine],
+      ["MPY ABI", runtime.mpy],
+      ["Thread mode", runtime.thread],
+    ].filter(([, value]) => value !== null && value !== undefined && value !== "");
+  }
+
   function renderStatus(telemetry) {
     statusBody.replaceChildren();
     let rendered = 0;
     for (const key of ["state", "connected", "port", "serial", "last_seen", "last_error"]) {
       if (!(key in telemetry)) continue;
       addFactRow(key, telemetry[key]);
+      rendered += 1;
+    }
+    for (const [label, value] of firmwareFacts(telemetry)) {
+      addFactRow(label, value);
       rendered += 1;
     }
     if (!rendered) addTableMessage(statusBody, 2, "No monitor status.");
@@ -170,6 +190,7 @@
 
   function renderController(node) {
     const telemetry = node?.telemetry && typeof node.telemetry === "object" ? node.telemetry : {};
+    lastTelemetry = telemetry;
     configuredSerial = String(node?.payload?.pico_serial || "");
     renderStatus(telemetry);
     renderChannelState(node);
@@ -204,7 +225,11 @@
   function renderStreamEvent(eventName, data) {
     const telemetry = data?.telemetry && typeof data.telemetry === "object" ? data.telemetry : data;
     if (!telemetry || typeof telemetry !== "object") return;
-    if (eventName !== "report") renderStatus(telemetry);
+    if (eventName === "report") renderStatus({...lastTelemetry, last_report: data?.report});
+    else {
+      lastTelemetry = telemetry;
+      renderStatus(telemetry);
+    }
     if (!configuredPins.length) {
       const lastReport = eventName === "report" ? data?.report : telemetry.last_report;
       const ok = eventName === "report" ? true : telemetry.ok;

@@ -110,7 +110,19 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(firmware.pins[2].value(), 1)
         self.assertEqual(firmware.messages()[-1]["type"], "report")
         self.assertEqual(
-            firmware.messages()[-1]["content"]["firmware"],
+            firmware.messages()[-1]["content"]["firmware"]["runtime"],
+            {
+                "implementation": sys.implementation.name,
+                "version": ".".join(str(part) for part in sys.implementation.version[:3]),
+                "build": getattr(sys.implementation, "_build", None),
+                "machine": getattr(sys.implementation, "_machine", None),
+                "mpy": getattr(sys.implementation, "_mpy", None),
+                "thread": getattr(sys.implementation, "_thread", None),
+                "version_string": sys.version,
+            },
+        )
+        self.assertEqual(
+            {key: firmware.messages()[-1]["content"]["firmware"][key] for key in ("name", "revision", "protocol")},
             {"name": "pico_scheduler", "revision": "abc1234", "protocol": 4},
         )
 

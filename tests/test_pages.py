@@ -63,8 +63,22 @@ class PageRenderTests(unittest.TestCase):
         script = static_text("controller.js")
 
         self.assertIn("function renderStreamEvent(eventName, data)", script)
-        self.assertIn('if (eventName !== "report") renderStatus(telemetry);', script)
+        self.assertIn("let lastTelemetry = {};", script)
+        self.assertIn("lastTelemetry = telemetry;", script)
+        self.assertIn("renderStatus({...lastTelemetry, last_report: data?.report})", script)
         self.assertIn("renderStreamEvent(eventName, JSON.parse(event.data))", script)
+
+    def test_controller_page_shows_scheduler_and_micropython_identity(self):
+        script = static_text("controller.js")
+
+        self.assertIn("function firmwareFacts(telemetry)", script)
+        self.assertIn('["Scheduler revision", firmware.revision]', script)
+        self.assertIn('["Scheduler protocol", firmware.protocol]', script)
+        self.assertIn('["MicroPython", runtime.version]', script)
+        self.assertIn('["MicroPython build", runtime.build]', script)
+        self.assertIn('["Board", runtime.machine]', script)
+        self.assertIn('["MPY ABI", runtime.mpy]', script)
+        self.assertIn("renderStatus({...lastTelemetry, last_report: data?.report})", script)
 
     def test_controller_page_distinguishes_configured_observed_empty_and_unavailable_states(self):
         html = static_text("controller.html")
@@ -107,6 +121,19 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('["Tailscale address", networkAddresses(network, "tailscale")]', script)
         for injected_value in ("sprout", "octo_relay", "/home/hugo", "5d98690", "plamp-web started"):
             self.assertNotIn(injected_value, html)
+
+    def test_system_page_enriches_detected_picos_from_available_monitor_reports(self):
+        html = static_text("system.html")
+        script = static_text("system.js")
+
+        for heading in ("Role", "Board", "MicroPython", "Scheduler"):
+            self.assertIn(f"<th>{heading}</th>", html)
+        self.assertIn("function picoRuntime(item, monitors)", script)
+        self.assertIn("worker?.last_report?.content?.firmware", script)
+        self.assertIn("runtime.machine", script)
+        self.assertIn("runtime.version", script)
+        self.assertIn("firmware.revision", script)
+        self.assertIn("item.role", script)
 
     def test_system_static_client_preserves_actions_and_lazy_logs(self):
         html = static_text("system.html")
