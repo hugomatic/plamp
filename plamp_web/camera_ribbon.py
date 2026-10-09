@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+FULL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 FRAME_SHAPES = (
     (-2, "outer", 120),
@@ -124,29 +125,36 @@ def finder_view(
     at: datetime,
     tz: datetime.tzinfo,
     picks: dict[str, dict[str, str]] | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     chosen = picks or {"days": {}, "weeks": {}}
     by_id = {item.capture_id: item for item in captures}
     anchor = _nearest_local(captures, at.astimezone(tz), tz)
-    first_monday, total = _grow_weeks(captures, anchor, tz)
-    weeks = _finder_weeks(captures, tz, chosen, by_id, first_monday, total)
+    clock = (now or at).astimezone(tz)
+    first_day, total_days = _grow_days(captures, anchor, tz)
+    first_monday, total_weeks = _grow_weeks(captures, anchor, tz)
+    day_width = max(3, len(str(total_days)))
+    week_width = max(2, len(str(total_weeks)))
+    weeks = _finder_weeks(captures, tz, chosen, by_id, first_monday, total_weeks, week_width)
     week_index = _index_of_monday(weeks, _monday(anchor.date()))
     selected_week = weeks[week_index]["key"] if weeks else _monday(anchor.date()).isoformat()
-    days = _finder_days(captures, tz, chosen, by_id, datetime.fromisoformat(selected_week).date())
+    days = _finder_days(captures, tz, chosen, by_id, datetime.fromisoformat(selected_week).date(), first_day, total_days, day_width)
     day_index = _index_of_day(days, anchor.date())
     selected_day = datetime.fromisoformat(days[day_index]["key"]).date() if days else anchor.date()
-    hours = _finder_hours(captures, tz, selected_day)
+    hours = _finder_hours(captures, tz, selected_day, first_day, clock.date())
     hour_index = _index_of_hour(hours, anchor)
-    _mark_selected(weeks, week_index, lambda frame: frame["week_label"])
-    _mark_selected(days, day_index, lambda frame: frame["day_label"])
-    _mark_selected(hours, hour_index, lambda frame: frame["hour_label"])
+    _mark_selected(weeks, week_index, lambda frame: frame["slider_label"])
+    _mark_selected(days, day_index, lambda frame: frame["slider_label"])
+    _mark_selected(hours, hour_index, lambda frame: frame["slider_label"])
+    selected_hour = hours[hour_index] if hours else None
     return {
         "at": anchor.isoformat(timespec="seconds"),
         "empty": not captures,
+        "detail": selected_hour["detail"] if selected_hour else "",
         "lines": [
-            {"scale": "hours", "height": FINDER_HEIGHTS["hours"], "index": hour_index, "frames": hours},
-            {"scale": "days", "height": FINDER_HEIGHTS["days"], "index": day_index, "frames": days},
-            {"scale": "weeks", "height": FINDER_HEIGHTS["weeks"], "index": week_index, "frames": weeks},
+            {"scale": "hours", "height": FINDER_HEIGHTS["hours"], "index": hour_index, "label": _line_label(hours, hour_index, "hours 00/24"), "frames": hours},
+            {"scale": "days", "height": FINDER_HEIGHTS["days"], "index": day_index, "label": _line_label(days, day_index, _count_label("days", 1, total_days, day_width)), "frames": days},
+            {"scale": "weeks", "height": FINDER_HEIGHTS["weeks"], "index": week_index, "label": _line_label(weeks, week_index, _count_label("weeks", 1, total_weeks, week_width)), "frames": weeks},
         ],
     }
 
@@ -192,7 +200,7 @@ def _nearest_local(captures: list[RibbonCapture], moment: datetime, tz: datetime
     return nearest.local(tz).replace(minute=0, second=0, microsecond=0)
 
 
-def _finder_weeks(captures, tz, picks, by_id, first_monday, total) -> list[dict[str, Any]]:
+def _finder_weeks(captures, tz, picks, by_id, first_monday, total, width) -> list[dict[str, Any]]:
     mondays = sorted({_monday(item.local(tz).date()) for item in captures})
     frames = []
     height = FINDER_HEIGHTS["weeks"]
@@ -203,12 +211,12 @@ def _finder_weeks(captures, tz, picks, by_id, first_monday, total) -> list[dict[
         index = ((monday - first_monday).days // 7) + 1
         frame = _frame(capture.local(tz), "finder", height, capture, None)
         frame["key"] = monday.isoformat()
-        frame["week_label"] = f"week {index}/{total}"
+        frame["slider_label"] = _count_label("weeks", index, total, width)
         frames.append(frame)
     return frames
 
 
-def _finder_days(captures, tz, picks, by_id, monday) -> list[dict[str, Any]]:
+def _finder_days(captures, tz, picks, by_id, monday, first_day, total_days, width) -> list[dict[str, Any]]:
     week_end = monday + timedelta(days=7)
     days = sorted({item.local(tz).date() for item in captures if monday <= item.local(tz).date() < week_end})
     frames = []
@@ -217,15 +225,14 @@ def _finder_days(captures, tz, picks, by_id, monday) -> list[dict[str, Any]]:
         capture = _picked(by_id, picks["days"].get(day.isoformat())) or _capture_near_noon(captures, day, tz)
         if capture is None:
             continue
-        slot = datetime(day.year, day.month, day.day, 12, tzinfo=tz)
         frame = _frame(capture.local(tz), "finder", height, capture, None)
         frame["key"] = day.isoformat()
-        frame["day_label"] = _date_phrase(slot)
+        frame["slider_label"] = _count_label("days", (day - first_day).days + 1, total_days, width)
         frames.append(frame)
     return frames
 
 
-def _finder_hours(captures, tz, day) -> list[dict[str, Any]]:
+def _finder_hours(captures, tz, day, first_day, today) -> list[dict[str, Any]]:
     grouped: dict[datetime, RibbonCapture] = {}
     for item in captures:
         local = item.local(tz)
@@ -241,9 +248,45 @@ def _finder_hours(captures, tz, day) -> list[dict[str, Any]]:
         capture = grouped[hour]
         frame = _frame(capture.local(tz), "finder", height, capture, None)
         frame["key"] = hour.isoformat(timespec="seconds")
-        frame["hour_label"] = _hour_phrase(hour)
+        frame["slider_label"] = _count_label("hours", hour.hour, 24, 2)
+        frame["detail"] = _finder_detail(hour, first_day, today)
         frames.append(frame)
     return frames
+
+
+def _line_label(frames: list[dict[str, Any]], index: int, fallback: str) -> str:
+    if not frames:
+        return fallback
+    index = min(max(index, 0), len(frames) - 1)
+    return str(frames[index].get("slider_label") or fallback)
+
+
+def _count_label(name: str, current: int, total: int, width: int) -> str:
+    return f"{name} {current:0{width}d}/{total:0{width}d}"
+
+
+def _grow_days(captures: list[RibbonCapture], moment: datetime, tz: datetime.tzinfo) -> tuple[datetime.date, int]:
+    if not captures:
+        day = moment.astimezone(tz).date()
+        return day, 1
+    dates = [item.local(tz).date() for item in captures]
+    first, last = min(dates), max(dates)
+    return first, (last - first).days + 1
+
+
+def _finder_detail(hour: datetime, first_day, today) -> str:
+    since_start = (hour.date() - first_day).days + 1
+    ago = (today - hour.date()).days
+    if ago <= 0:
+        ago_text = "today"
+    elif ago == 1:
+        ago_text = "1 day ago"
+    else:
+        ago_text = f"{ago} days ago"
+    return (
+        f"{WEEKDAYS[hour.weekday()]}, {FULL_MONTHS[hour.month - 1]} {hour.day}, {hour.year}, "
+        f"{hour.hour} hr, day {since_start}, {ago_text}"
+    )
 
 
 def _index_of_monday(frames: list[dict[str, Any]], monday) -> int:

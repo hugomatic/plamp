@@ -71,12 +71,6 @@
       img.alt = frame.label || row.label || "Capture";
       el.appendChild(img);
     }
-    if (row.scale === "hours" && frame.role === "center") {
-      const picks = document.createElement("div");
-      picks.className = "ribbon-picks";
-      picks.append(pickButton("day", "this day", frame), pickButton("week", "this week", frame));
-      el.appendChild(picks);
-    }
     if (frame.label) {
       const caption = document.createElement("div");
       caption.className = "ribbon-caption";
@@ -84,26 +78,6 @@
       el.appendChild(caption);
     }
     return el;
-  }
-
-  function pickButton(scale, text, frame) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = text;
-    button.disabled = !frame.capture_id;
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      event.preventDefault();
-      if (!frame.capture_id) return;
-      fetch("/api/camera/ribbon/picks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scale, at: frame.at, capture_id: frame.capture_id }),
-      }).then((response) => {
-        if (response.ok) refresh();
-      });
-    });
-    return button;
   }
 
   function attachPointer(frames, scale) {

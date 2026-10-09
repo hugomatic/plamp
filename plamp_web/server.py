@@ -2545,6 +2545,7 @@ def get_camera_finder(at: str | None = None) -> dict[str, Any]:
             camera_ribbon.captures_from_records(ribbon_capture_records()),
             at=moment,
             tz=tz,
+            now=local_datetime(),
             picks=camera_ribbon.load_picks(picks_path),
         )
     except camera_ribbon.RibbonError as error:
