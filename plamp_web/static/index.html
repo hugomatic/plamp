@@ -156,7 +156,7 @@
   </section>
 
   <footer>
-    <span id="refresh-status">Refreshing in <span id="refresh-countdown">30</span>s.</span>
+    <span id="refresh-status">Refreshing in 15 min.</span>
     <button id="resume-refresh" type="button" hidden>Resume auto-refresh</button>
   </footer>
 
@@ -172,7 +172,6 @@
     const timerStatus = document.getElementById("timer-stream-status");
     const timerBoard = document.getElementById("timer-status-board");
     const hostClock = document.getElementById("host-clock");
-    const refreshCountdown = document.getElementById("refresh-countdown");
     const refreshStatus = document.getElementById("refresh-status");
     const resumeRefreshButton = document.getElementById("resume-refresh");
     const cameraCaptureButton = document.getElementById("camera-capture");
@@ -196,7 +195,8 @@
     const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last 24h", 86400], ["last 30 days", 30 * 86400]];
     const STREAM_WARN_AFTER_SECONDS = 5;
     const STREAM_ERROR_AFTER_SECONDS = 10;
-    let refreshSeconds = 30;
+    const PAGE_REFRESH_SECONDS = 15 * 60;
+    let refreshSeconds = PAGE_REFRESH_SECONDS;
     const timerEventSources = new Map();
     const timerMessages = new Map();
     const timerStatuses = new Map();
@@ -322,7 +322,8 @@
     }
 
     function updatePageRefreshStatus() {
-      refreshStatus.textContent = `Refreshing in ${refreshSeconds}s.`;
+      const minutes = Math.max(1, Math.ceil(refreshSeconds / 60));
+      refreshStatus.textContent = `Refreshing in ${minutes} min.`;
     }
 
     function tickPageRefresh() {
@@ -344,7 +345,7 @@
 
     function startPageAutoRefresh() {
       if (pageRefreshTimer) return;
-      refreshSeconds = 30;
+      refreshSeconds = PAGE_REFRESH_SECONDS;
       updatePageRefreshStatus();
       resumeRefreshButton.hidden = true;
       pageRefreshTimer = window.setInterval(tickPageRefresh, 1000);

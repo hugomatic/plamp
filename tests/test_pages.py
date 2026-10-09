@@ -344,11 +344,12 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("<h1>nurse-plamp API test</h1>", html)
 
 
-    def test_timer_dashboard_page_reloads_every_30_seconds(self):
+    def test_timer_dashboard_page_reloads_every_15_minutes(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
-        self.assertIn('id="refresh-countdown"', html)
-        self.assertIn("let refreshSeconds = 30;", html)
+        self.assertIn('id="refresh-status"', html)
+        self.assertIn("const PAGE_REFRESH_SECONDS = 15 * 60;", html)
+        self.assertIn("let refreshSeconds = PAGE_REFRESH_SECONDS;", html)
         self.assertIn("window.location.reload();", html)
 
     def test_timer_dashboard_page_uses_server_schedule_success_message(self):
