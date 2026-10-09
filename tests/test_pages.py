@@ -606,6 +606,11 @@ class PageRenderTests(unittest.TestCase):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("<h2>Camera</h2>", html)
+        self.assertIn('id="camera-show-gallery"', html)
+        self.assertIn('id="camera-show-ribbon"', html)
+        self.assertIn('id="camera-gallery"', html)
+        self.assertIn('id="camera-ribbon" class="camera-panel" aria-label="Camera ribbon" hidden', html)
+        self.assertIn('src="/static/ribbon.js"', html)
         self.assertIn('id="camera-capture"', html)
         self.assertIn('id="camera-capture-status"', html)
         self.assertIn('id="camera-capture-camera"', html)

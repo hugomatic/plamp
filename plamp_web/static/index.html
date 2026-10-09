@@ -46,7 +46,21 @@
     .override-duration { align-items: end; display: flex; gap: .5rem; }
     .override-duration label { display: grid; gap: .25rem; }
     .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
+    .camera-switch { margin: .4rem 0 .2rem; }
+    .camera-switch button[aria-pressed="true"] { font-weight: 700; }
     .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
+    .camera-panel[hidden] { display: none; }
+    .ribbon-row { align-items: end; display: grid; gap: .4rem; grid-template-columns: 5.5rem minmax(0, 1fr); }
+    .ribbon-row > span { color: #666; font-size: .75rem; padding-bottom: .15rem; }
+    .ribbon-frames { cursor: ew-resize; display: flex; align-items: flex-end; gap: 2px; touch-action: none; user-select: none; width: 100%; }
+    .ribbon-frame { aspect-ratio: 16 / 9; background: #f1f3f4; border-radius: 3px; min-width: 0; overflow: hidden; position: relative; }
+    .ribbon-frame.outer { flex: 1 1 0; max-width: 43px; }
+    .ribbon-frame.mid { flex: 2 1 0; max-width: 85px; }
+    .ribbon-frame.center { flex: 3 1 0; max-width: 128px; }
+    .ribbon-frame img { display: block; height: 100%; object-fit: cover; width: 100%; }
+    .ribbon-caption { background: rgba(0, 0, 0, .45); bottom: 0; color: #fff; font-size: 9px; left: 0; line-height: 1.2; overflow: hidden; padding: 1px 3px; position: absolute; right: 0; white-space: nowrap; }
+    .ribbon-picks { display: flex; gap: 2px; left: 2px; position: absolute; top: 2px; }
+    .ribbon-picks button { font-size: 9px; margin: 0; padding: 1px 3px; }
     .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
     .camera-viewer { max-width: min(100%, 820px); }
     .camera-viewer[hidden] { display: none; }
@@ -97,7 +111,11 @@
   </dialog>
 
   <h2>Camera</h2>
-  <section class="camera-panel" aria-label="Camera captures">
+  <div class="camera-switch" role="tablist" aria-label="Camera view">
+    <button id="camera-show-gallery" type="button" aria-pressed="true">Gallery</button>
+    <button id="camera-show-ribbon" type="button" aria-pressed="false">Ribbon</button>
+  </div>
+  <section id="camera-gallery" class="camera-panel" aria-label="Camera captures">
     <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <div class="camera-actions">
       <label>Camera <select id="camera-capture-camera"><option value="">Default camera</option></select></label>
@@ -118,6 +136,10 @@
       <span id="camera-capture-page-status"></span>
     </div>
   </section>
+  <section id="camera-ribbon" class="camera-panel" aria-label="Camera ribbon" hidden>
+    <p id="camera-ribbon-status"></p>
+    <div id="camera-ribbon-rows"></div>
+  </section>
 
   <footer>
     <span id="refresh-status">Refreshing in <span id="refresh-countdown">30</span>s.</span>
@@ -125,6 +147,7 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/ribbon.js"></script>
   <script>
     let clockTimeFormat = "12h";
     let timerRoles = [];

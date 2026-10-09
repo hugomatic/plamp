@@ -19,7 +19,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -39,7 +39,7 @@ from plamp.pico_scheduler import SchedulerApplyResult, apply_scheduler_state
 from plamp.pico_transport import PicoClient, PicoCommandError, PicoExchange, PicoFlashError, PicoReportTimeout, PicoUnavailable
 from plamp.scheduler_state import EXPECTED_FIRMWARE_PROTOCOL, FirmwareIdentity, firmware_identity, normalize_scheduler_state
 from plamp.usb_events import UsbSerialEvent, start_usb_serial_observer
-from plamp_web import camera_capture, hardware_inventory
+from plamp_web import camera_capture, camera_ribbon, hardware_inventory
 from plamp_web.pages import render_api_test_page, set_app_revision
 from plamp_web.hardware_config import (
     apply_config_section,
@@ -2508,6 +2508,94 @@ def get_camera_image_by_key(image_key: str) -> FileResponse:
 @app.post("/api/camera/captures")
 def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
     return get_or_start_camera_worker().capture(camera_id=camera_id, capture_kind="manual")
+
+
+_ribbon_cache_lock = threading.Lock()
+_ribbon_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+
+def ribbon_capture_records() -> list[dict[str, Any]]:
+    global _ribbon_cache
+    now = time.monotonic()
+    with _ribbon_cache_lock:
+        if _ribbon_cache is not None and now - _ribbon_cache[0] < 30:
+            return _ribbon_cache[1]
+        records = camera_capture.collect_camera_captures(
+            repo_root=camera_capture.REPO_ROOT,
+            data_dir=camera_capture.DATA_DIR,
+            grows_dir=camera_capture.GROWS_DIR,
+            config_file=camera_capture.CONFIG_FILE,
+        )
+        _ribbon_cache = (now, records)
+        return records
+
+
+def ribbon_paths() -> tuple[Path, Path]:
+    root = camera_capture.DATA_DIR / "camera-ribbon"
+    return root / "picks.json", root / "thumbs"
+
+
+@app.get("/api/camera/ribbon")
+def get_camera_ribbon(at: str | None = None) -> dict[str, Any]:
+    tz = local_datetime().tzinfo or timezone.utc
+    moment = camera_ribbon.parse_moment(at) if at else local_datetime()
+    picks_path, _thumb_dir = ribbon_paths()
+    try:
+        return camera_ribbon.ribbon_view(
+            camera_ribbon.captures_from_records(ribbon_capture_records()),
+            at=moment,
+            tz=tz,
+            picks=camera_ribbon.load_picks(picks_path),
+        )
+    except camera_ribbon.RibbonError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message) from error
+
+
+@app.get("/api/camera/ribbon/thumbs/{capture_id}")
+def get_camera_ribbon_thumb(capture_id: str, height: int = 72) -> FileResponse:
+    _picks_path, thumb_dir = ribbon_paths()
+    try:
+        dest = camera_ribbon.thumbnail_path(thumb_dir, capture_id, height)
+    except camera_ribbon.RibbonError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message) from error
+    records = ribbon_capture_records()
+    source = None
+    for record in records:
+        if str(record.get("capture_id") or "") != capture_id:
+            continue
+        image_path = record.get("image_path")
+        if not image_path:
+            break
+        candidate = (camera_capture.REPO_ROOT / str(image_path)).resolve()
+        if candidate.is_file():
+            source = candidate
+        break
+    if source is None:
+        raise HTTPException(status_code=404, detail="unknown capture")
+    try:
+        camera_ribbon.ensure_thumbnail(source, dest, height)
+    except camera_ribbon.RibbonError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message) from error
+    return FileResponse(dest, media_type="image/jpeg")
+
+
+@app.post("/api/camera/ribbon/picks")
+def post_camera_ribbon_pick(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    scale = str(payload.get("scale") or "")
+    capture_id = str(payload.get("capture_id") or "")
+    at_text = str(payload.get("at") or "")
+    known = {str(record.get("capture_id") or "") for record in ribbon_capture_records()}
+    if capture_id not in known:
+        raise HTTPException(status_code=422, detail="unknown capture")
+    tz = local_datetime().tzinfo or timezone.utc
+    picks_path, _thumb_dir = ribbon_paths()
+    try:
+        moment = camera_ribbon.parse_moment(at_text)
+        key = camera_ribbon.pick_key(scale, moment, tz)
+        camera_ribbon.save_pick(picks_path, scale=scale, key=key, capture_id=capture_id)
+    except camera_ribbon.RibbonError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message) from error
+    return get_camera_ribbon(at=at_text)
 
 
 @app.get("/api/camera/captures/{capture_id}/image")
