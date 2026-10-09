@@ -92,7 +92,7 @@ def _profile_report_devices(
 ) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]], FirmwareIdentity]:
     identity = _supported_identity(report)
     devices = _report_devices(report)
-    if len(devices) != len(PLAMP8_CHANNELS):
+    if len(devices) not in {0, len(PLAMP8_CHANNELS)}:
         raise ValueError("report must contain exactly eight profile devices")
     devices_by_pin: dict[int, dict[str, Any]] = {}
     for device in devices:
@@ -103,7 +103,7 @@ def _profile_report_devices(
             raise ValueError("report must contain unique profile pins")
         devices_by_pin[pin] = device
     profile_pins = {channel.pin for channel in PLAMP8_CHANNELS}
-    if set(devices_by_pin) != profile_pins:
+    if devices and set(devices_by_pin) != profile_pins:
         raise ValueError("report must contain exactly the Plamp8 profile pins")
     return devices, devices_by_pin, identity
 
@@ -160,6 +160,8 @@ def _validated_report_state(
 
 def _matches_plamp8_profile(state: dict[str, Any]) -> bool:
     devices_by_pin = {device["pin"]: device for device in state["devices"]}
+    if set(devices_by_pin) != {channel.pin for channel in PLAMP8_CHANNELS}:
+        return False
     return all(
         devices_by_pin[channel.pin]["id"] == channel.device_id
         and devices_by_pin[channel.pin]["type"] == "gpio"
@@ -182,7 +184,12 @@ def provisioned_plamp8_state(report: Any) -> dict[str, Any]:
     devices_by_pin = {device["pin"]: device for device in state["devices"]}
     devices = []
     for channel in PLAMP8_CHANNELS:
-        source = devices_by_pin[channel.pin]
+        source = devices_by_pin.get(channel.pin, {
+            "type": "gpio",
+            "current_t": 0,
+            "reschedule": 0,
+            "pattern": [{"val": 0, "dur": 86400}],
+        })
         devices.append({
             "id": channel.device_id,
             "type": source["type"],

@@ -89,6 +89,12 @@ def protocol_3_report(*, revision=EXPECTED_REVISION, name="pico_scheduler", prot
     return report
 
 
+def empty_protocol_3_report(*, revision=EXPECTED_REVISION):
+    report = protocol_3_report(revision=revision)
+    report["content"]["devices"] = []
+    return report
+
+
 class ControllerAddTests(unittest.TestCase):
     def write_config(self, root, config=None):
         path = root / "config.json"
@@ -616,6 +622,20 @@ class ControllerAddTests(unittest.TestCase):
         )
         self.assertEqual([item["current_t"] for item in state["devices"]], list(range(5, 13)))
 
+    def test_provisioned_plamp8_state_seeds_empty_scheduler_safe_off(self):
+        state = provisioned_plamp8_state(empty_protocol_3_report())
+
+        self.assertEqual(
+            [(item["pin"], item["id"], item["mode"]) for item in state["devices"]],
+            EXPECTED,
+        )
+        self.assertEqual(
+            [item["pattern"] for item in state["devices"]],
+            [[{"val": 0, "dur": 86400}]] * 8,
+        )
+        self.assertEqual([item["current_t"] for item in state["devices"]], [0] * 8)
+        self.assertEqual([item["reschedule"] for item in state["devices"]], [0] * 8)
+
     def test_display_device_id_humanizes_profile_ids(self):
         self.assertEqual(display_device_id("lights_1"), "Lights 1")
         self.assertEqual(display_device_id("ph_up"), "Ph up")
@@ -650,6 +670,19 @@ class ControllerAddTests(unittest.TestCase):
         self.assertEqual(preview["profile"], "plamp8")
         self.assertEqual(preview["before"][0]["id"], "ph_up")
         self.assertEqual(preview["after"][0]["id"], "ph_up")
+
+    def test_preview_provisions_empty_scheduler_with_profile_channels(self):
+        preview = preview_controller_add(
+            "pico_1", "PICO-1", empty_protocol_3_report(),
+            FirmwareIdentity("pico_scheduler", EXPECTED_REVISION, 4),
+        )
+
+        self.assertEqual(preview["action"], "provision")
+        self.assertEqual(preview["before"], [])
+        self.assertEqual(
+            [(item["pin"], item["id"], item["mode"]) for item in preview["after"]],
+            EXPECTED,
+        )
 
     def test_preview_provisions_protocol_2_report(self):
         preview = preview_controller_add(
