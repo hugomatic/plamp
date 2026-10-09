@@ -156,7 +156,7 @@
   <section id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden>
     <div class="finder-detail">
       <p id="camera-finder-detail"></p>
-      <label class="finder-follow">follow <input id="camera-finder-now" type="checkbox"></label>
+      <label class="finder-follow">latest <input id="camera-finder-now" type="checkbox" checked></label>
     </div>
     <p id="camera-finder-status"></p>
     <div id="camera-finder-lines"></div>
@@ -1182,6 +1182,7 @@
         try { data = JSON.parse(text); } catch (error) {}
         if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
         cameraCaptureStatus.textContent = "Captured.";
+        window.dispatchEvent(new Event("plamp-capture-saved"));
         if (data && typeof data.image_url === "string") {
           selectedCameraImageUrl = data.image_url;
           cameraViewer.src = data.image_url;

@@ -130,7 +130,7 @@ def finder_view(
 ) -> dict[str, Any]:
     chosen = picks or {"days": {}, "weeks": {}}
     by_id = {item.capture_id: item for item in captures}
-    anchor = at.astimezone(tz).replace(minute=0, second=0, microsecond=0)
+    anchor = at.astimezone(tz).replace(microsecond=0)
     if snap:
         anchor = _latest_local(captures, anchor, tz)
     clock = (now or at).astimezone(tz)
@@ -144,7 +144,7 @@ def finder_view(
     day_index = anchor.weekday()
     selected_day = datetime.fromisoformat(days[day_index]["key"]).date() if days else anchor.date()
     hours = _finder_hours(captures, tz, selected_day, first_day, clock.date())
-    hour_index = anchor.hour
+    hour_index = _index_nearest_frame(hours, anchor)
     _mark_selected(weeks, week_index, lambda frame: frame["slider_label"])
     _mark_selected(days, day_index, lambda frame: frame["slider_label"])
     _mark_selected(hours, hour_index, lambda frame: frame["slider_label"])
@@ -207,7 +207,7 @@ def _latest_local(captures: list[RibbonCapture], moment: datetime, tz: datetime.
     if not captures:
         return local
     latest = max(captures, key=lambda item: item.taken_at)
-    return latest.local(tz).replace(minute=0, second=0, microsecond=0)
+    return latest.local(tz).replace(microsecond=0)
 
 
 def _finder_week_bounds(captures: list[RibbonCapture], clock: datetime, tz: datetime.tzinfo) -> tuple[datetime.date, datetime.date, int]:
@@ -255,25 +255,46 @@ def _finder_days(captures, tz, picks, by_id, monday, anchor) -> list[dict[str, A
 
 
 def _finder_hours(captures, tz, day, first_day, today) -> list[dict[str, Any]]:
-    grouped: dict[int, RibbonCapture] = {}
+    grouped: dict[int, list[RibbonCapture]] = {hour: [] for hour in range(24)}
     for item in captures:
         local = item.local(tz)
         if local.date() != day:
             continue
-        hour = local.hour
-        current = grouped.get(hour)
-        if current is None or abs((local - local.replace(minute=0, second=0, microsecond=0)).total_seconds()) < abs((current.local(tz) - current.local(tz).replace(minute=0, second=0, microsecond=0)).total_seconds()):
-            grouped[hour] = item
+        grouped[local.hour].append(item)
     frames = []
     height = FINDER_HEIGHTS["hours"]
     for hour in range(24):
         slot = datetime(day.year, day.month, day.day, hour, tzinfo=tz)
-        frame = _frame(slot, "finder", height, grouped.get(hour), None)
-        frame["key"] = slot.isoformat(timespec="seconds")
-        frame["slider_label"] = _count_label("hours", hour, 24, 2)
-        frame["detail"] = _finder_detail(slot, first_day, today)
-        frames.append(frame)
+        shots = sorted(grouped[hour], key=lambda item: item.taken_at)
+        if not shots:
+            frames.append(_hour_frame(slot, None, height, first_day, today))
+            continue
+        for shot in shots:
+            frames.append(_hour_frame(shot.local(tz).replace(microsecond=0), shot, height, first_day, today))
     return frames
+
+
+def _hour_frame(slot: datetime, capture: RibbonCapture | None, height: int, first_day, today) -> dict[str, Any]:
+    frame = _frame(slot, "finder", height, capture, None)
+    frame["key"] = slot.replace(minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    frame["slider_label"] = _count_label("hours", slot.hour, 24, 2)
+    frame["detail"] = _finder_detail(slot, first_day, today)
+    return frame
+
+
+def _index_nearest_frame(frames: list[dict[str, Any]], moment: datetime) -> int:
+    best = 0
+    best_distance = None
+    for index, frame in enumerate(frames):
+        try:
+            frame_at = parse_moment(str(frame.get("at") or ""))
+        except RibbonError:
+            continue
+        distance = abs((frame_at - moment).total_seconds())
+        if best_distance is None or distance < best_distance:
+            best = index
+            best_distance = distance
+    return best
 
 
 def _line_label(frames: list[dict[str, Any]], index: int, fallback: str) -> str:

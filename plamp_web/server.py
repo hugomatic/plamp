@@ -879,6 +879,7 @@ class CameraWorker:
             else:
                 command.result = result
                 self.mark_capture_complete(camera_id=command.camera_id, capture_kind=command.capture_kind)
+                clear_ribbon_capture_cache()
             finally:
                 command.done.set()
                 self.update_status(state="idle")
@@ -2512,6 +2513,12 @@ def post_camera_capture(camera_id: str | None = None) -> dict[str, Any]:
 
 _ribbon_cache_lock = threading.Lock()
 _ribbon_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+
+def clear_ribbon_capture_cache() -> None:
+    global _ribbon_cache
+    with _ribbon_cache_lock:
+        _ribbon_cache = None
 
 
 def ribbon_capture_records() -> list[dict[str, Any]]:

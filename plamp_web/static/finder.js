@@ -19,15 +19,20 @@
   let loaded = false;
   let loading = false;
   let pending = false;
-  let following = false;
+  let following = Boolean(nowButton && nowButton.checked);
   let followTimer = null;
 
   buttons.gallery.addEventListener("click", () => show("gallery"));
   buttons.finder.addEventListener("click", () => show("finder"));
   if (buttons.ribbon) buttons.ribbon.addEventListener("click", () => show("ribbon"));
-  if (nowButton) nowButton.addEventListener("change", toggleNow);
+  if (nowButton) nowButton.addEventListener("change", applyLatest);
+  window.addEventListener("plamp-capture-saved", () => {
+    if (!following || !loaded) return;
+    finderAt = null;
+    refresh();
+  });
 
-  function toggleNow() {
+  function applyLatest() {
     following = Boolean(nowButton && nowButton.checked);
     if (followTimer) window.clearInterval(followTimer);
     followTimer = null;
@@ -37,7 +42,7 @@
     followTimer = window.setInterval(() => {
       finderAt = null;
       refresh();
-    }, 60000);
+    }, 15000);
   }
 
   function leaveNow() {
@@ -56,7 +61,8 @@
     }
     if (which === "finder" && !loaded) {
       loaded = true;
-      refresh();
+      if (following) applyLatest();
+      else refresh();
     }
     if (which === "ribbon") window.dispatchEvent(new Event("plamp-ribbon-show"));
   }

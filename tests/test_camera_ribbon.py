@@ -96,6 +96,26 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertIsNone(weeks["frames"][1]["capture_id"])
         self.assertEqual(view["detail"], f"Friday, October 9, 2026, 16 hr, day {day_number}, today")
 
+    def test_finder_hour_slider_keeps_extra_pictures_and_empty_hours(self) -> None:
+        from plamp_web.camera_ribbon import finder_view
+
+        captures = captures_from_records(
+            [
+                capture("morning", "2026-10-09T08:00:00"),
+                capture("extra", "2026-10-09T08:20:00"),
+                capture("later", "2026-10-09T08:40:00"),
+            ]
+        )
+        view = finder_view(captures, at=datetime(2026, 10, 9, 8, 40, tzinfo=HST), tz=HST, now=datetime(2026, 10, 9, 18, tzinfo=HST))
+        hours = next(line for line in view["lines"] if line["scale"] == "hours")
+        taken = [frame["capture_id"] for frame in hours["frames"] if frame["capture_id"]]
+
+        self.assertEqual(len(hours["frames"]), 26)
+        self.assertEqual(taken, ["morning", "extra", "later"])
+        self.assertEqual(hours["frames"][hours["index"]]["capture_id"], "later")
+        self.assertIsNone(hours["frames"][0]["capture_id"])
+        self.assertEqual(hours["frames"][-1]["slider_label"], "hours 23/24")
+
     def test_pick_replaces_the_midday_frame(self) -> None:
         picks = {"days": {"2026-10-09": "h16"}, "weeks": {"2026-10-05": "h18"}}
         view = ribbon_view(self.captures, at=self.at, tz=HST, picks=picks)
