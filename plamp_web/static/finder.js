@@ -129,6 +129,21 @@
     return box;
   }
 
+  function lineLayout(scale, frames) {
+    const preferred = scale === "hours" ? 168 : scale === "days" ? 104 : 56;
+    const gap = 6;
+    const style = getComputedStyle(frames);
+    const width = Math.max(0, frames.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)) || 640;
+    const fit = (height) => Math.max(1, Math.floor((width + gap) / (height * 16 / 9 + gap)));
+    if (scale === "hours" && fit(preferred) < 2) {
+      return { height: width * 0.72 * 9 / 16, count: 3, peek: true };
+    }
+    if (scale !== "hours" && fit(preferred) < 3) {
+      return { height: ((width - 2 * gap) / 3) * 9 / 16, count: 3, peek: false };
+    }
+    return { height: preferred, count: fit(preferred), peek: false };
+  }
+
   function frameLabel(line, frame) {
     if (!frame) return line.label || "";
     return frame.slider_label || frame.label || line.label || "";
@@ -139,17 +154,16 @@
     const label = frames.parentElement.querySelector(".finder-slider span");
     if (label) label.textContent = frameLabel(line, items[index]);
     if (line.scale === "hours" && detail && items[index] && items[index].detail) detail.textContent = items[index].detail;
-    const height = line.scale === "hours" ? 168 : line.scale === "days" ? 104 : 56;
-    const width = frames.clientWidth || 640;
-    const frameWidth = height * 16 / 9;
-    let count = Math.max(1, Math.floor((width + 6) / (frameWidth + 6)));
-    let start = index - Math.floor(count / 2);
-    start = Math.max(0, Math.min(start, Math.max(0, items.length - count)));
+    const layout = lineLayout(line.scale, frames);
+    frames.classList.toggle("peek", layout.peek);
+    let start = index - Math.floor(layout.count / 2);
+    start = Math.max(0, Math.min(start, Math.max(0, items.length - layout.count)));
     frames.replaceChildren();
-    items.slice(start, start + count).forEach((frame, offset) => {
+    items.slice(start, start + layout.count).forEach((frame, offset) => {
       const absolute = start + offset;
       const el = document.createElement("div");
       el.className = "finder-frame" + (absolute === index ? " selected" : "");
+      el.style.height = `${layout.height}px`;
       if (frame.thumb_url) {
         const img = document.createElement("img");
         img.src = frame.thumb_url;

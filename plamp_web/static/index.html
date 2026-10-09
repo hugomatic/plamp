@@ -54,7 +54,8 @@
     .finder-detail p { margin: 0; }
     #camera-finder-now[aria-pressed="true"] { font-weight: 700; }
     .finder-frames { align-items: flex-end; background: #f1f3f4; border-radius: 3px; display: flex; gap: 6px; justify-content: center; padding: .35rem; }
-    .finder-frame { aspect-ratio: 16 / 9; background: #fff; border-radius: 4px; overflow: hidden; position: relative; }
+    .finder-frames.peek { overflow: hidden; }
+    .finder-frame { aspect-ratio: 16 / 9; background: #fff; border-radius: 4px; flex: 0 0 auto; overflow: hidden; position: relative; }
     .finder-frame img { display: block; height: 100%; object-fit: cover; width: 100%; }
     .finder-line.hours .finder-frame { height: 168px; }
     .finder-line.days .finder-frame { height: 104px; }
