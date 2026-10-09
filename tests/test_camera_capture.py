@@ -11,6 +11,7 @@ from plamp_web.camera_capture import (
     capture_camera_image,
     capture_image_key,
     find_capture_image,
+    index_camera_captures,
     list_camera_captures,
     resolve_capture_image_key,
 )
@@ -174,6 +175,27 @@ class CameraCaptureTests(unittest.TestCase):
             self.assertEqual(captures[1]["camera_id"], "rpicam_cam1")
             self.assertTrue(captures[0]["image_url"].startswith("/api/camera/images/"))
             self.assertEqual(resolve_capture_image_key(captures[0]["image_key"], repo_root=root), grow_image)
+
+    def test_index_camera_captures_keeps_time_and_path_without_gallery_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_file = root / "data" / "config.json"
+            self.write_config(config_file, cameras={"rpicam_cam0": {"capture_dir": "data/camera/captures"}})
+            image = root / "data" / "camera" / "captures" / "auto-rpicam_cam0-2026-05-07T18-12-44Z-a1b2c3.jpg"
+            self.write_image(image)
+
+            indexed = index_camera_captures(
+                repo_root=root,
+                data_dir=root / "data",
+                grows_dir=root / "data" / "grow" / "grows",
+                config_file=config_file,
+            )
+
+            self.assertEqual(indexed, [{
+                "capture_id": image.stem,
+                "timestamp": "2026-05-07T18:12:44+00:00",
+                "image_path": "data/camera/captures/auto-rpicam_cam0-2026-05-07T18-12-44Z-a1b2c3.jpg",
+            }])
 
     def test_list_camera_captures_filters_by_source_grow_and_offset(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -21,6 +21,12 @@
   let pending = false;
   let following = Boolean(nowButton && nowButton.checked);
   let followTimer = null;
+  const ready = fetch("/api/camera/finder")
+    .then((response) => {
+      if (!response.ok) throw new Error("finder unavailable");
+      return response.json();
+    })
+    .catch(() => null);
 
   buttons.gallery.addEventListener("click", () => show("gallery"));
   buttons.finder.addEventListener("click", () => show("finder"));
@@ -61,8 +67,18 @@
     }
     if (which === "finder" && !loaded) {
       loaded = true;
-      if (following) applyLatest();
-      else refresh();
+      status.textContent = "Loading pictures…";
+      if (following) {
+        followTimer = window.setInterval(() => {
+          finderAt = null;
+          refresh();
+        }, 15000);
+      }
+      ready.then((data) => {
+        if (panels.finder.hidden) return;
+        if (data && (following || !finderAt)) render(data);
+        else refresh();
+      });
     }
     if (which === "ribbon") window.dispatchEvent(new Event("plamp-ribbon-show"));
   }
@@ -120,6 +136,7 @@
       const frame = (line.frames || [])[Number(slider.value)];
       if (!frame) return;
       finderAt = frame.at;
+      if (line.scale === "hours") return;
       refresh();
     });
     const label = document.createElement("span");

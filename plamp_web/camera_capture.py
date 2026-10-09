@@ -579,6 +579,31 @@ def collect_camera_captures(
     return captures
 
 
+def index_camera_captures(
+    *,
+    repo_root: Path = REPO_ROOT,
+    data_dir: Path = DATA_DIR,
+    grows_dir: Path = GROWS_DIR,
+    config_file: Path = CONFIG_FILE,
+) -> list[dict[str, Any]]:
+    """Capture id, time, and path for the finder. Skips gallery metadata."""
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    scan_dirs = scan_capture_dirs(repo_root=repo_root, data_dir=data_dir, grows_dir=grows_dir, config_file=config_file)
+    for image_path in iter_capture_images(scan_dirs):
+        image_path_text = repo_relative(image_path, repo_root)
+        if image_path_text in seen:
+            continue
+        seen.add(image_path_text)
+        _kind, _camera_id, name_timestamp = parse_capture_filename(image_path.stem)
+        records.append({
+            "capture_id": image_path.stem,
+            "timestamp": capture_timestamp(image_path, name_timestamp),
+            "image_path": image_path_text,
+        })
+    return records
+
+
 def list_camera_captures(
     *,
     repo_root: Path = REPO_ROOT,

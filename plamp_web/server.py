@@ -2527,7 +2527,7 @@ def ribbon_capture_records() -> list[dict[str, Any]]:
     with _ribbon_cache_lock:
         if _ribbon_cache is not None and now - _ribbon_cache[0] < 30:
             return _ribbon_cache[1]
-        records = camera_capture.collect_camera_captures(
+        records = camera_capture.index_camera_captures(
             repo_root=camera_capture.REPO_ROOT,
             data_dir=camera_capture.DATA_DIR,
             grows_dir=camera_capture.GROWS_DIR,
