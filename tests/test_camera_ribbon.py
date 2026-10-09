@@ -80,14 +80,21 @@ class CameraRibbonTests(unittest.TestCase):
         day_number = (datetime(2026, 10, 9).date() - datetime(2026, 3, 27).date()).days + 1
 
         self.assertEqual([line["scale"] for line in view["lines"]], ["hours", "days", "weeks"])
-        self.assertEqual([frame["capture_id"] for frame in hours["frames"]], ["morning", "noon", "h14", "h15", "h16", "h17", "h18"])
+        self.assertEqual(len(hours["frames"]), 24)
+        self.assertIsNone(hours["frames"][13]["capture_id"])
         self.assertEqual(hours["frames"][hours["index"]]["capture_id"], "h16")
         self.assertEqual(hours["label"], "hours 16/24")
-        self.assertEqual(hours["frames"][hours["index"]]["slider_label"], "hours 16/24")
-        self.assertEqual(days["label"], f"days {day_number:03d}/{day_number:03d}")
+        self.assertEqual(len(days["frames"]), 7)
+        self.assertEqual(days["label"], "days 5/7")
+        self.assertIsNone(days["frames"][0]["capture_id"])
+        self.assertEqual(days["frames"][2]["capture_id"], "wed-noon")
+        self.assertEqual(days["frames"][4]["capture_id"], "noon")
+        self.assertIsNone(days["frames"][6]["capture_id"])
+        self.assertEqual(len(weeks["frames"]), 29)
+        self.assertEqual(weeks["frames"][0]["slider_label"], "weeks 01/29")
         self.assertEqual(weeks["label"], "weeks 29/29")
+        self.assertIsNone(weeks["frames"][1]["capture_id"])
         self.assertEqual(view["detail"], f"Friday, October 9, 2026, 16 hr, day {day_number}, today")
-        self.assertTrue(all(frame["capture_id"] for frame in hours["frames"] + days["frames"] + weeks["frames"]))
 
     def test_pick_replaces_the_midday_frame(self) -> None:
         picks = {"days": {"2026-10-09": "h16"}, "weeks": {"2026-10-05": "h18"}}

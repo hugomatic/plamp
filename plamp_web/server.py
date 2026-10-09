@@ -2547,6 +2547,7 @@ def get_camera_finder(at: str | None = None) -> dict[str, Any]:
             tz=tz,
             now=local_datetime(),
             picks=camera_ribbon.load_picks(picks_path),
+            snap=at is None,
         )
     except camera_ribbon.RibbonError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message) from error
