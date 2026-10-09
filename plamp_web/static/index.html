@@ -52,15 +52,15 @@
     .camera-panel[hidden] { display: none; }
     .ribbon-row { align-items: end; display: grid; gap: .4rem; grid-template-columns: 5.5rem minmax(0, 1fr); }
     .ribbon-row > span { color: #666; font-size: .75rem; padding-bottom: .15rem; }
-    .ribbon-frames { cursor: ew-resize; display: flex; align-items: flex-end; gap: 2px; touch-action: none; user-select: none; width: 100%; }
-    .ribbon-frame { aspect-ratio: 16 / 9; background: #f1f3f4; border-radius: 3px; min-width: 0; overflow: hidden; position: relative; }
-    .ribbon-frame.outer { flex: 1 1 0; max-width: 43px; }
-    .ribbon-frame.mid { flex: 2 1 0; max-width: 85px; }
-    .ribbon-frame.center { flex: 3 1 0; max-width: 128px; }
-    .ribbon-frame img { display: block; height: 100%; object-fit: cover; width: 100%; }
-    .ribbon-caption { background: rgba(0, 0, 0, .45); bottom: 0; color: #fff; font-size: 9px; left: 0; line-height: 1.2; overflow: hidden; padding: 1px 3px; position: absolute; right: 0; white-space: nowrap; }
-    .ribbon-picks { display: flex; gap: 2px; left: 2px; position: absolute; top: 2px; }
-    .ribbon-picks button { font-size: 9px; margin: 0; padding: 1px 3px; }
+    .ribbon-frames { display: flex; align-items: flex-end; gap: 6px; touch-action: none; user-select: none; width: 100%; }
+    .ribbon-frame { aspect-ratio: 16 / 9; background: #f1f3f4; border-radius: 4px; cursor: pointer; min-width: 0; overflow: hidden; position: relative; }
+    .ribbon-frame.outer { flex: 1 1 0; }
+    .ribbon-frame.mid { flex: 2 1 0; }
+    .ribbon-frame.center { cursor: default; flex: 3 1 0; }
+    .ribbon-frame img { display: block; height: 100%; object-fit: cover; pointer-events: none; width: 100%; }
+    .ribbon-caption { background: rgba(0, 0, 0, .45); bottom: 0; color: #fff; font-size: .8rem; left: 0; line-height: 1.2; overflow: hidden; padding: .15rem .35rem; position: absolute; right: 0; white-space: nowrap; }
+    .ribbon-picks { display: flex; gap: .35rem; left: .4rem; position: absolute; top: .4rem; }
+    .ribbon-picks button { cursor: pointer; font-size: .75rem; margin: 0; padding: .2rem .45rem; }
     .camera-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; }
     .camera-viewer { max-width: min(100%, 820px); }
     .camera-viewer[hidden] { display: none; }

@@ -12,13 +12,13 @@ from typing import Any
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 FRAME_SHAPES = (
-    (-2, "outer", 24),
-    (-1, "mid", 48),
-    (0, "center", 72),
-    (1, "mid", 48),
-    (2, "outer", 24),
+    (-2, "outer", 120),
+    (-1, "mid", 240),
+    (0, "center", 360),
+    (1, "mid", 240),
+    (2, "outer", 120),
 )
-THUMB_HEIGHTS = {24, 48, 72}
+THUMB_HEIGHTS = {120, 240, 360}
 
 
 class RibbonError(Exception):
@@ -119,7 +119,7 @@ def ribbon_view(
 
 def thumbnail_path(cache_dir: Path, capture_id: str, height: int) -> Path:
     if height not in THUMB_HEIGHTS:
-        raise RibbonError("height must be 24, 48, or 72", 422)
+        raise RibbonError("height must be 120, 240, or 360", 422)
     if not _safe_capture_id(capture_id):
         raise RibbonError("unknown capture", 404)
     return cache_dir / f"{capture_id}-{height}.jpg"
@@ -127,7 +127,7 @@ def thumbnail_path(cache_dir: Path, capture_id: str, height: int) -> Path:
 
 def ensure_thumbnail(source: Path, dest: Path, height: int) -> Path:
     if height not in THUMB_HEIGHTS:
-        raise RibbonError("height must be 24, 48, or 72", 422)
+        raise RibbonError("height must be 120, 240, or 360", 422)
     if not source.is_file():
         raise RibbonError("unknown capture", 404)
     if dest.is_file() and dest.stat().st_mtime >= source.stat().st_mtime:

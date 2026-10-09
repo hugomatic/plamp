@@ -63,18 +63,19 @@
       label.textContent = row.label || "";
       const frames = document.createElement("div");
       frames.className = "ribbon-frames";
-      for (const frame of row.frames || []) {
-        frames.appendChild(frameView(row, frame));
-      }
-      attachDrag(frames, row.scale);
+      (row.frames || []).forEach((frame, index) => {
+        frames.appendChild(frameView(row, frame, index - 2));
+      });
+      attachPointer(frames, row.scale);
       line.append(label, frames);
       rows.appendChild(line);
     }
   }
 
-  function frameView(row, frame) {
+  function frameView(row, frame, offset) {
     const el = document.createElement("div");
     el.className = `ribbon-frame ${frame.role || "outer"}`;
+    el.dataset.offset = String(offset);
     if (frame.thumb_url) {
       const img = document.createElement("img");
       img.src = frame.thumb_url;
@@ -116,21 +117,40 @@
     return button;
   }
 
-  function attachDrag(frames, scale) {
+  function attachPointer(frames, scale) {
     let origin = 0;
-    const stepPx = 36;
+    let travel = 0;
+    let wheeledAt = 0;
     frames.addEventListener("pointerdown", (event) => {
       if (event.target.closest("button")) return;
       origin = event.clientX;
+      travel = 0;
       frames.setPointerCapture(event.pointerId);
     });
     frames.addEventListener("pointermove", (event) => {
       if (!frames.hasPointerCapture(event.pointerId)) return;
-      const steps = Math.trunc((event.clientX - origin) / stepPx);
+      const width = Math.max(frames.getBoundingClientRect().width / 9, 48);
+      const steps = Math.trunc((event.clientX - origin) / width);
+      travel = Math.max(travel, Math.abs(event.clientX - origin));
       if (steps === 0) return;
-      origin += steps * stepPx;
+      origin += steps * width;
       move(scale, -steps);
     });
+    frames.addEventListener("pointerup", (event) => {
+      if (travel > 8 || event.target.closest("button")) return;
+      const frame = event.target.closest(".ribbon-frame");
+      const offset = Number(frame && frame.dataset.offset);
+      if (offset) move(scale, offset);
+    });
+    frames.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const now = Date.now();
+      if (now - wheeledAt < 180) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!delta) return;
+      wheeledAt = now;
+      move(scale, delta > 0 ? 1 : -1);
+    }, { passive: false });
   }
 
   function move(scale, delta) {
