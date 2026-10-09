@@ -69,6 +69,24 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertEqual(week["capture_id"], "wed-noon")
         self.assertEqual(week["label"], "week 29/29")
 
+    def test_finder_lists_only_pictures_that_exist(self) -> None:
+        from plamp_web.camera_ribbon import finder_view
+
+        view = finder_view(self.captures, at=datetime(2026, 10, 9, 16, 10, tzinfo=HST), tz=HST)
+        lines = {line["scale"]: line for line in view["lines"]}
+        hours = lines["hours"]
+        days = lines["days"]
+        weeks = lines["weeks"]
+
+        self.assertEqual([line["scale"] for line in view["lines"]], ["hours", "days", "weeks"])
+        self.assertEqual([frame["capture_id"] for frame in hours["frames"]], ["morning", "noon", "h14", "h15", "h16", "h17", "h18"])
+        self.assertEqual(hours["frames"][hours["index"]]["capture_id"], "h16")
+        self.assertEqual(hours["frames"][hours["index"]]["label"], "Oct 9, Friday, 16 hr")
+        self.assertEqual([frame["capture_id"] for frame in days["frames"]], ["wed-noon", "noon"])
+        self.assertEqual(days["frames"][days["index"]]["label"], "Oct 9, Friday")
+        self.assertEqual(weeks["frames"][weeks["index"]]["label"], "week 29/29")
+        self.assertTrue(all(frame["capture_id"] for frame in hours["frames"] + days["frames"] + weeks["frames"]))
+
     def test_pick_replaces_the_midday_frame(self) -> None:
         picks = {"days": {"2026-10-09": "h16"}, "weeks": {"2026-10-05": "h18"}}
         view = ribbon_view(self.captures, at=self.at, tz=HST, picks=picks)

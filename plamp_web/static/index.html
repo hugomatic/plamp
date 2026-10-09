@@ -50,6 +50,15 @@
     .camera-switch button[aria-pressed="true"] { font-weight: 700; }
     .camera-panel { display: grid; gap: .75rem; margin: 1rem 0 2rem; max-width: 980px; }
     .camera-panel[hidden] { display: none; }
+    .finder-line { display: grid; gap: .35rem; }
+    .finder-frames { align-items: flex-end; display: flex; gap: 6px; justify-content: center; }
+    .finder-frame { aspect-ratio: 16 / 9; background: #f1f3f4; border-radius: 4px; overflow: hidden; position: relative; }
+    .finder-frame img { display: block; height: 100%; object-fit: cover; width: 100%; }
+    .finder-line.hours .finder-frame { height: 168px; }
+    .finder-line.days .finder-frame { height: 104px; }
+    .finder-line.weeks .finder-frame { height: 56px; }
+    .finder-frame.selected { outline: 3px solid #174ea6; outline-offset: -3px; }
+    .finder-line input[type="range"] { margin: 0; width: 100%; }
     .ribbon-row { align-items: end; display: grid; gap: .4rem; grid-template-columns: 5.5rem minmax(0, 1fr); }
     .ribbon-row > span { color: #666; font-size: .75rem; padding-bottom: .15rem; }
     .ribbon-frames { display: flex; align-items: flex-end; gap: 6px; touch-action: none; user-select: none; width: 100%; }
@@ -113,6 +122,7 @@
   <h2>Camera</h2>
   <div class="camera-switch" role="tablist" aria-label="Camera view">
     <button id="camera-show-gallery" type="button" aria-pressed="true">Gallery</button>
+    <button id="camera-show-finder" type="button" aria-pressed="false">Finder</button>
     <button id="camera-show-ribbon" type="button" aria-pressed="false">Ribbon</button>
   </div>
   <section id="camera-gallery" class="camera-panel" aria-label="Camera captures">
@@ -136,6 +146,10 @@
       <span id="camera-capture-page-status"></span>
     </div>
   </section>
+  <section id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden>
+    <p id="camera-finder-status"></p>
+    <div id="camera-finder-lines"></div>
+  </section>
   <section id="camera-ribbon" class="camera-panel" aria-label="Camera ribbon" hidden>
     <p id="camera-ribbon-status"></p>
     <div id="camera-ribbon-rows"></div>
@@ -147,6 +161,7 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script src="/static/finder.js"></script>
   <script src="/static/ribbon.js"></script>
   <script>
     let clockTimeFormat = "12h";

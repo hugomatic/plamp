@@ -18,7 +18,8 @@ FRAME_SHAPES = (
     (1, "mid", 240),
     (2, "outer", 120),
 )
-THUMB_HEIGHTS = {120, 240, 360}
+THUMB_HEIGHTS = {96, 120, 160, 240, 320, 360}
+FINDER_HEIGHTS = {"hours": 320, "days": 160, "weeks": 96}
 
 
 class RibbonError(Exception):
@@ -117,9 +118,42 @@ def ribbon_view(
     return {"at": moment.isoformat(timespec="seconds"), "empty": empty, "rows": rows}
 
 
+def finder_view(
+    captures: list[RibbonCapture],
+    *,
+    at: datetime,
+    tz: datetime.tzinfo,
+    picks: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    chosen = picks or {"days": {}, "weeks": {}}
+    by_id = {item.capture_id: item for item in captures}
+    anchor = _nearest_local(captures, at.astimezone(tz), tz)
+    first_monday, total = _grow_weeks(captures, anchor, tz)
+    weeks = _finder_weeks(captures, tz, chosen, by_id, first_monday, total)
+    week_index = _index_of_monday(weeks, _monday(anchor.date()))
+    selected_week = weeks[week_index]["key"] if weeks else _monday(anchor.date()).isoformat()
+    days = _finder_days(captures, tz, chosen, by_id, datetime.fromisoformat(selected_week).date())
+    day_index = _index_of_day(days, anchor.date())
+    selected_day = datetime.fromisoformat(days[day_index]["key"]).date() if days else anchor.date()
+    hours = _finder_hours(captures, tz, selected_day)
+    hour_index = _index_of_hour(hours, anchor)
+    _mark_selected(weeks, week_index, lambda frame: frame["week_label"])
+    _mark_selected(days, day_index, lambda frame: frame["day_label"])
+    _mark_selected(hours, hour_index, lambda frame: frame["hour_label"])
+    return {
+        "at": anchor.isoformat(timespec="seconds"),
+        "empty": not captures,
+        "lines": [
+            {"scale": "hours", "height": FINDER_HEIGHTS["hours"], "index": hour_index, "frames": hours},
+            {"scale": "days", "height": FINDER_HEIGHTS["days"], "index": day_index, "frames": days},
+            {"scale": "weeks", "height": FINDER_HEIGHTS["weeks"], "index": week_index, "frames": weeks},
+        ],
+    }
+
+
 def thumbnail_path(cache_dir: Path, capture_id: str, height: int) -> Path:
     if height not in THUMB_HEIGHTS:
-        raise RibbonError("height must be 120, 240, or 360", 422)
+        raise RibbonError("unsupported thumbnail height", 422)
     if not _safe_capture_id(capture_id):
         raise RibbonError("unknown capture", 404)
     return cache_dir / f"{capture_id}-{height}.jpg"
@@ -127,7 +161,7 @@ def thumbnail_path(cache_dir: Path, capture_id: str, height: int) -> Path:
 
 def ensure_thumbnail(source: Path, dest: Path, height: int) -> Path:
     if height not in THUMB_HEIGHTS:
-        raise RibbonError("height must be 120, 240, or 360", 422)
+        raise RibbonError("unsupported thumbnail height", 422)
     if not source.is_file():
         raise RibbonError("unknown capture", 404)
     if dest.is_file() and dest.stat().st_mtime >= source.stat().st_mtime:
@@ -148,6 +182,100 @@ def pick_key(scale: str, at: datetime, tz: datetime.tzinfo) -> str:
     if scale == "day":
         return local.date().isoformat()
     return _monday(local.date()).isoformat()
+
+
+def _nearest_local(captures: list[RibbonCapture], moment: datetime, tz: datetime.tzinfo) -> datetime:
+    local = moment.astimezone(tz)
+    if not captures:
+        return local.replace(minute=0, second=0, microsecond=0)
+    nearest = min(captures, key=lambda item: abs((item.local(tz) - local).total_seconds()))
+    return nearest.local(tz).replace(minute=0, second=0, microsecond=0)
+
+
+def _finder_weeks(captures, tz, picks, by_id, first_monday, total) -> list[dict[str, Any]]:
+    mondays = sorted({_monday(item.local(tz).date()) for item in captures})
+    frames = []
+    height = FINDER_HEIGHTS["weeks"]
+    for monday in mondays:
+        capture = _picked(by_id, picks["weeks"].get(monday.isoformat())) or _capture_for_week(captures, monday, tz)
+        if capture is None:
+            continue
+        index = ((monday - first_monday).days // 7) + 1
+        frame = _frame(capture.local(tz), "finder", height, capture, None)
+        frame["key"] = monday.isoformat()
+        frame["week_label"] = f"week {index}/{total}"
+        frames.append(frame)
+    return frames
+
+
+def _finder_days(captures, tz, picks, by_id, monday) -> list[dict[str, Any]]:
+    week_end = monday + timedelta(days=7)
+    days = sorted({item.local(tz).date() for item in captures if monday <= item.local(tz).date() < week_end})
+    frames = []
+    height = FINDER_HEIGHTS["days"]
+    for day in days:
+        capture = _picked(by_id, picks["days"].get(day.isoformat())) or _capture_near_noon(captures, day, tz)
+        if capture is None:
+            continue
+        slot = datetime(day.year, day.month, day.day, 12, tzinfo=tz)
+        frame = _frame(capture.local(tz), "finder", height, capture, None)
+        frame["key"] = day.isoformat()
+        frame["day_label"] = _date_phrase(slot)
+        frames.append(frame)
+    return frames
+
+
+def _finder_hours(captures, tz, day) -> list[dict[str, Any]]:
+    grouped: dict[datetime, RibbonCapture] = {}
+    for item in captures:
+        local = item.local(tz)
+        if local.date() != day:
+            continue
+        hour = local.replace(minute=0, second=0, microsecond=0)
+        current = grouped.get(hour)
+        if current is None or abs((local - hour).total_seconds()) < abs((current.local(tz) - hour).total_seconds()):
+            grouped[hour] = item
+    frames = []
+    height = FINDER_HEIGHTS["hours"]
+    for hour in sorted(grouped):
+        capture = grouped[hour]
+        frame = _frame(capture.local(tz), "finder", height, capture, None)
+        frame["key"] = hour.isoformat(timespec="seconds")
+        frame["hour_label"] = _hour_phrase(hour)
+        frames.append(frame)
+    return frames
+
+
+def _index_of_monday(frames: list[dict[str, Any]], monday) -> int:
+    key = monday.isoformat()
+    for index, frame in enumerate(frames):
+        if frame.get("key") == key:
+            return index
+    return 0
+
+
+def _index_of_day(frames: list[dict[str, Any]], day) -> int:
+    key = day.isoformat()
+    for index, frame in enumerate(frames):
+        if frame.get("key") == key:
+            return index
+    return 0
+
+
+def _index_of_hour(frames: list[dict[str, Any]], moment: datetime) -> int:
+    hour = moment.replace(minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    for index, frame in enumerate(frames):
+        if frame.get("key") == hour:
+            return index
+    return 0
+
+
+def _mark_selected(frames: list[dict[str, Any]], index: int, label_of) -> None:
+    if not frames:
+        return
+    index = min(max(index, 0), len(frames) - 1)
+    frames[index]["label"] = label_of(frames[index])
+    frames[index]["selected"] = True
 
 
 def _row(scale: str, label: str, frames: list[dict[str, Any]]) -> dict[str, Any]:

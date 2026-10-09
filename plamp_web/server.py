@@ -2535,6 +2535,22 @@ def ribbon_paths() -> tuple[Path, Path]:
     return root / "picks.json", root / "thumbs"
 
 
+@app.get("/api/camera/finder")
+def get_camera_finder(at: str | None = None) -> dict[str, Any]:
+    tz = local_datetime().tzinfo or timezone.utc
+    moment = camera_ribbon.parse_moment(at) if at else local_datetime()
+    picks_path, _thumb_dir = ribbon_paths()
+    try:
+        return camera_ribbon.finder_view(
+            camera_ribbon.captures_from_records(ribbon_capture_records()),
+            at=moment,
+            tz=tz,
+            picks=camera_ribbon.load_picks(picks_path),
+        )
+    except camera_ribbon.RibbonError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.message) from error
+
+
 @app.get("/api/camera/ribbon")
 def get_camera_ribbon(at: str | None = None) -> dict[str, Any]:
     tz = local_datetime().tzinfo or timezone.utc

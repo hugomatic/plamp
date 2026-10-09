@@ -1,31 +1,20 @@
 (function () {
-  const galleryButton = document.getElementById("camera-show-gallery");
-  const ribbonButton = document.getElementById("camera-show-ribbon");
   const gallery = document.getElementById("camera-gallery");
   const ribbon = document.getElementById("camera-ribbon");
   const rows = document.getElementById("camera-ribbon-rows");
   const status = document.getElementById("camera-ribbon-status");
-  if (!galleryButton || !ribbonButton || !gallery || !ribbon || !rows || !status) return;
+  if (!gallery || !ribbon || !rows || !status) return;
 
   let ribbonAt = null;
   let loaded = false;
   let loading = false;
   let pending = false;
 
-  galleryButton.addEventListener("click", () => show("gallery"));
-  ribbonButton.addEventListener("click", () => show("ribbon"));
-
-  function show(which) {
-    const ribbonOn = which === "ribbon";
-    gallery.hidden = ribbonOn;
-    ribbon.hidden = !ribbonOn;
-    galleryButton.setAttribute("aria-pressed", ribbonOn ? "false" : "true");
-    ribbonButton.setAttribute("aria-pressed", ribbonOn ? "true" : "false");
-    if (ribbonOn && !loaded) {
-      loaded = true;
-      refresh();
-    }
-  }
+  window.addEventListener("plamp-ribbon-show", () => {
+    if (loaded) return;
+    loaded = true;
+    refresh();
+  });
 
   function refresh() {
     pending = true;
