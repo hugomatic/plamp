@@ -164,6 +164,7 @@
     const timerStatuses = new Map();
     const timerMessageTimes = new Map();
     const pulseHistoryByRole = new Map();
+    const pulseHistoryClocks = new Map();
     let cameraCaptures = [];
     let cameraCaptureHasMore = false;
     let cameraCaptureOffset = 0;
@@ -418,11 +419,11 @@
       return path + ` L ${width} ${previous ? highY : lowY}`;
     }
 
-    function historyValueInWindow(pulses, ageStart, ageEnd) {
+    function historyValueInWindow(pulses, ageStart, ageEnd, nowMilliseconds) {
       const older = Math.max(Number(ageStart) || 0, Number(ageEnd) || 0);
       const newer = Math.min(Number(ageStart) || 0, Number(ageEnd) || 0);
-      const windowStart = Date.now() - older * 1000;
-      const windowEnd = Date.now() - newer * 1000;
+      const windowStart = nowMilliseconds - older * 1000;
+      const windowEnd = nowMilliseconds - newer * 1000;
       for (const pulse of pulses) {
         if (Number(pulse.value ?? 0) <= 0) continue;
         const start = Date.parse(pulse.started_at);
@@ -433,15 +434,15 @@
       return false;
     }
 
-    function historyTracePath(pulses, horizon, width = 240) {
+    function historyTracePath(pulses, horizon, nowMilliseconds, width = 240) {
       const highY = 4;
       const lowY = 18;
-      let previous = historyValueInWindow(pulses, horizon, horizon * (1 - 1 / width));
+      let previous = historyValueInWindow(pulses, horizon, horizon * (1 - 1 / width), nowMilliseconds);
       let path = `M 0 ${previous ? highY : lowY}`;
       for (let x = 1; x <= width; x += 1) {
         const ageLeft = horizon * (1 - (x - 1) / width);
         const ageRight = horizon * (1 - x / width);
-        const value = historyValueInWindow(pulses, ageLeft, ageRight);
+        const value = historyValueInWindow(pulses, ageLeft, ageRight, nowMilliseconds);
         if (value !== previous) {
           path += ` L ${x} ${previous ? highY : lowY} L ${x} ${value ? highY : lowY}`;
           previous = value;
@@ -450,9 +451,9 @@
       return path + ` L ${width} ${previous ? highY : lowY}`;
     }
 
-    function timerTraceSvg(event, overlay, messageAge, mode, pulses) {
+    function timerTraceSvg(event, overlay, messageAge, mode, pulses, historyNow) {
       if (mode === "ready") {
-        return TIMER_HISTORY_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Pulse usage for ${label}"><path d="${historyTracePath(pulses, horizon)}"></path></svg></div>`).join("");
+        return TIMER_HISTORY_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Pulse usage for ${label}"><path d="${historyTracePath(pulses, horizon, historyNow)}"></path></svg></div>`).join("");
       }
       return TIMER_FORECAST_HORIZONS.map(([label, horizon]) => `<div class="timer-trace-row"><span>${label}</span><svg viewBox="0 0 240 22" preserveAspectRatio="none" aria-label="Effective output for ${label}"><path d="${timerTracePath(event, overlay, messageAge, horizon)}"></path></svg></div>`).join("");
     }
@@ -465,9 +466,16 @@
         try { data = JSON.parse(text); } catch (error) {}
         if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
         pulseHistoryByRole.set(role, Array.isArray(data?.pulses) ? data.pulses : []);
+        const serverNow = Date.parse(data?.server_now);
+        if (Number.isFinite(serverNow)) pulseHistoryClocks.set(role, {serverNow, loadedAt: performance.now()});
       } catch (error) {
         if (!pulseHistoryByRole.has(role)) pulseHistoryByRole.set(role, []);
       }
+    }
+
+    function pulseHistoryNow(role) {
+      const clock = pulseHistoryClocks.get(role);
+      return clock ? clock.serverNow + (performance.now() - clock.loadedAt) : Date.now();
     }
 
     function openTimerOverride(role, channel, event, overlay, preferredValue) {
@@ -935,7 +943,7 @@
           trace.className = "timer-trace" + (mode === "ready" ? " history" : "");
           const channelPulses = (pulseHistoryByRole.get(role) || []).filter((pulse) => pulse.channel_id === channel.id || Number(pulse.pin) === Number(channel.pin));
           if (mode === "ready" && !pulseHistoryByRole.has(role)) refreshPulseHistory(role).then(() => renderTimerStatus(true));
-          trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses);
+          trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses, pulseHistoryNow(role));
           card.append(trace);
           devicesGrid.append(card);
           if (isEditing) {

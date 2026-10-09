@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import serial
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -60,6 +61,8 @@ TIMERS_DIR = DATA_DIR / "timers"
 PICO_GENERATOR_FILE = REPO_ROOT / "pico_scheduler" / "src" / "generator.py"
 PICO_TEMPLATES_DIR = REPO_ROOT / "pico_scheduler" / "src" / "templates"
 LOG_FILE = DATA_DIR / "plamp.log"
+TIMEZONE_FILE = Path("/etc/timezone")
+LOCALTIME_FILE = Path("/etc/localtime")
 PICO_NAME_HINTS = ("pico", "rp2", "raspberry", "micropython")
 RASPBERRY_PI_USB_VENDOR_ID = "2e8a"
 PICO_HEALTH_INTERVAL_SECONDS = 5.0
@@ -210,6 +213,7 @@ def parse_pulse_history_lines(
     *,
     role: str,
     since: datetime,
+    timezone_info: Any | None = None,
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for line in lines:
@@ -217,6 +221,8 @@ def parse_pulse_history_lines(
         if not ts_match:
             continue
         started = datetime.strptime(ts_match.group(1), "%Y-%m-%d %H:%M:%S")
+        if timezone_info is not None:
+            started = started.replace(tzinfo=timezone_info)
         if started < since:
             continue
         dressed = _PULSE_DRESSED_RE.search(line)
@@ -273,7 +279,16 @@ def controller_pulse_history(
         for channel_id, device in devices.items()
         if isinstance(device, dict) and isinstance(device.get("pin"), int)
     }
-    current = now or datetime.now()
+    if now is None:
+        current = local_datetime()
+        try:
+            timezone_info = ZoneInfo(configured_timezone_name())
+            current = current.astimezone(timezone_info)
+        except ZoneInfoNotFoundError:
+            timezone_info = current.tzinfo
+    else:
+        current = now
+        timezone_info = current.tzinfo
     since = current - timedelta(seconds=horizon_seconds)
     events: list[dict[str, Any]] = []
     for path in iter_pulse_log_paths():
@@ -281,7 +296,14 @@ def controller_pulse_history(
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        events.extend(parse_pulse_history_lines(lines, role=controller, since=since))
+        events.extend(
+            parse_pulse_history_lines(
+                lines,
+                role=controller,
+                since=since,
+                timezone_info=timezone_info,
+            )
+        )
     events.sort(key=lambda item: item["started_at"], reverse=True)
     pulses = []
     for event in events:
@@ -300,7 +322,11 @@ def controller_pulse_history(
                 "ended_at": ended.isoformat(timespec="seconds"),
             }
         )
-    return {"controller": controller, "pulses": pulses}
+    return {
+        "controller": controller,
+        "server_now": current.isoformat(timespec="seconds"),
+        "pulses": pulses,
+    }
 
 
 def run_plampctl_action(*args: str) -> dict[str, Any]:
@@ -1802,8 +1828,50 @@ def configured_time_format() -> str:
     return "24h" if str(config.get("time_format", "12h")).lower() in {"24", "24h"} else "12h"
 
 
+def local_datetime() -> datetime:
+    return datetime.now().astimezone()
+
+
+def configured_timezone_name() -> str:
+    try:
+        target = LOCALTIME_FILE.resolve()
+        marker = "/zoneinfo/"
+        if marker in str(target):
+            return str(target).split(marker, 1)[1]
+    except OSError:
+        pass
+    try:
+        completed = subprocess.run(
+            ["timedatectl", "show", "--property=Timezone", "--value"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        name = completed.stdout.strip() if completed.returncode == 0 else ""
+        if name:
+            return name
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        name = TIMEZONE_FILE.read_text(encoding="utf-8").strip()
+        if name:
+            return name
+    except OSError:
+        pass
+    return local_datetime().tzname() or "unknown"
+
+
+def utc_offset_text(now: datetime) -> str:
+    offset = now.utcoffset() or timedelta(0)
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    hours, minutes = divmod(abs(total_minutes), 60)
+    return f"{sign}{hours:02d}:{minutes:02d}"
+
+
 def host_time_summary() -> dict[str, Any]:
-    now = datetime.now()
+    now = local_datetime()
     seconds = now.hour * 3600 + now.minute * 60 + now.second
     if configured_time_format() == "24h":
         display = now.strftime("%H:%M")
@@ -1811,7 +1879,18 @@ def host_time_summary() -> dict[str, Any]:
         hour = now.hour % 12 or 12
         suffix = "AM" if now.hour < 12 else "PM"
         display = f"{hour}:{now.minute:02d} {suffix}"
-    return {"iso": now.isoformat(timespec="seconds"), "seconds_since_midnight": seconds, "display": display}
+    timezone_name = configured_timezone_name()
+    abbreviation = now.tzname() or "unknown"
+    offset = utc_offset_text(now)
+    return {
+        "iso": now.isoformat(timespec="seconds"),
+        "seconds_since_midnight": seconds,
+        "display": display,
+        "timezone": timezone_name,
+        "timezone_abbreviation": abbreviation,
+        "utc_offset": offset,
+        "timezone_display": f"{timezone_name} ({abbreviation}, UTC{offset})",
+    }
 
 
 

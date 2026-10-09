@@ -13,7 +13,14 @@
     th { background: #f4f4f4; font-weight: 700; }
     td { background: #fff; color: #111; }
     code { background: #f4f4f4; padding: .1rem .25rem; }
-    pre { background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; white-space: pre-wrap; }
+    pre, .system-log { background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; overflow: auto; padding: .75rem; }
+    .system-log { font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+    .log-line + .log-line { margin-top: .2rem; }
+    .log-time { color: #174ea6; }
+    .log-level { font-weight: 700; }
+    .log-level.info { color: #174ea6; }
+    .log-level.warning { color: #a16207; }
+    .log-level.error, .log-level.critical { color: #b42318; }
     .system-page { max-width: 1100px; }
     .system-actions, .logs-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; }
   </style>
@@ -74,7 +81,7 @@
     <section aria-label="System logs">
       <h2>Logs</h2>
       <div class="logs-actions"><button id="system-load-logs" type="button" disabled>Load logs</button></div>
-      <pre id="system-logs">Logs not loaded.</pre>
+      <div id="system-logs" class="system-log">Logs not loaded.</div>
     </section>
   </div>
 

@@ -152,7 +152,9 @@
       ["Hostname", hostname],
       ["LAN address", networkAddresses(network, "lan")],
       ["Tailscale address", networkAddresses(network, "tailscale")],
-      ["Host time", hostTime.display], ["Operating system", osDisplay], ["User name", userDisplay], ["Computer hardware model", valueText(host.hardware_model, "unknown")],
+      ["Host time", hostTime.display],
+      ["Time zone", hostTime.timezone_display],
+      ["Operating system", osDisplay], ["User name", userDisplay], ["Computer hardware model", valueText(host.hardware_model, "unknown")],
     ]);
 
     const commitTime = valueText(software.git_commit_timestamp, "unknown");
@@ -181,12 +183,66 @@
     renderMonitors(system.monitors);
   }
 
+  function parseLogLine(line) {
+    const match = String(line).match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+)\s+(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s+(\S+)\s+(.*)$/);
+    if (!match) return {raw: String(line)};
+    return {timestamp: match[1], level: match[2], logger: match[3], message: match[4]};
+  }
+
+  function parseLogRecords(content) {
+    const lines = String(content || "").split(/\r?\n/);
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    const records = [];
+    let current = null;
+    for (const line of lines) {
+      const entry = parseLogLine(line);
+      if (entry.raw === undefined) {
+        current = {...entry, continuations: []};
+        records.push(current);
+      } else if (current) {
+        current.continuations.push(line);
+      } else {
+        records.push({raw: line, continuations: []});
+      }
+    }
+    return records;
+  }
+
+  function renderLogs(content) {
+    const records = parseLogRecords(content);
+    records.reverse();
+    logsNode.replaceChildren();
+    if (!records.length) {
+      logsNode.textContent = "No log entries.";
+      return;
+    }
+    for (const entry of records) {
+      const row = document.createElement("div");
+      row.className = "log-line";
+      if (entry.raw !== undefined) {
+        row.textContent = entry.raw;
+      } else {
+        const timestamp = document.createElement("span");
+        timestamp.className = "log-time";
+        timestamp.textContent = entry.timestamp;
+        const level = document.createElement("span");
+        level.className = `log-level ${entry.level.toLowerCase()}`;
+        level.textContent = entry.level;
+        const message = document.createElement("span");
+        const continuation = entry.continuations.length ? `\n${entry.continuations.join("\n")}` : "";
+        message.textContent = ` ${entry.logger} ${entry.message}${continuation}`;
+        row.append(timestamp, " ", level, message);
+      }
+      logsNode.append(row);
+    }
+  }
+
   async function loadLogs() {
     logsNode.textContent = "Loading...";
     try {
       const response = await fetch("/api/logs?lines=200");
       const data = await PlampWeb.responseJson(response, "logs");
-      logsNode.textContent = data.content || "No log entries.";
+      renderLogs(data.content);
     } catch (error) {
       logsNode.textContent = `Log load failed: ${error.message || String(error)}`;
     }

@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -49,6 +49,62 @@ class PulseLogFormattingTests(unittest.TestCase):
 
 
 class PulseHistoryTests(unittest.TestCase):
+    def test_pulse_history_uses_server_clock_and_explicit_timezone(self):
+        server_zone = timezone(timedelta(hours=-10))
+        now = datetime(2026, 10, 8, 20, 30, 0, tzinfo=server_zone)
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "plamp.log"
+            log.write_text(
+                "2026-10-08 20:29:00,000 INFO plamp_web pico pulse role=plamp8 channel=Agitator pin=19 ON for 10s\n",
+                encoding="utf-8",
+            )
+            config = {
+                "controllers": {
+                    "plamp8": {
+                        "type": "pico_scheduler",
+                        "settings": {"devices": {"agitator": {"pin": 19, "output_type": "gpio"}}},
+                    }
+                },
+                "cameras": {},
+            }
+            with (
+                patch.object(server, "LOG_FILE", log),
+                patch.object(server, "load_config", return_value=server.config_view(config)),
+            ):
+                payload = server.controller_pulse_history("plamp8", horizon_seconds=3600, now=now)
+
+        self.assertEqual(payload["server_now"], "2026-10-08T20:30:00-10:00")
+        self.assertEqual(payload["pulses"][0]["started_at"], "2026-10-08T20:29:00-10:00")
+        self.assertEqual(payload["pulses"][0]["ended_at"], "2026-10-08T20:29:10-10:00")
+
+    def test_pulse_history_applies_timezone_rules_at_event_date(self):
+        fixed_now = datetime(2026, 11, 5, 12, 0, 0, tzinfo=timezone(timedelta(hours=-8)))
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "plamp.log"
+            log.write_text(
+                "2026-10-30 12:00:00,000 INFO plamp_web pico pulse role=plamp8 channel=Agitator pin=19 ON for 10s\n",
+                encoding="utf-8",
+            )
+            config = {
+                "controllers": {
+                    "plamp8": {
+                        "type": "pico_scheduler",
+                        "settings": {"devices": {"agitator": {"pin": 19, "output_type": "gpio"}}},
+                    }
+                },
+                "cameras": {},
+            }
+            with (
+                patch.object(server, "LOG_FILE", log),
+                patch.object(server, "load_config", return_value=server.config_view(config)),
+                patch.object(server, "local_datetime", return_value=fixed_now),
+                patch.object(server, "configured_timezone_name", return_value="America/Los_Angeles"),
+            ):
+                payload = server.controller_pulse_history("plamp8")
+
+        self.assertEqual(payload["pulses"][0]["started_at"], "2026-10-30T12:00:00-07:00")
+        self.assertEqual(payload["server_now"], "2026-11-05T12:00:00-08:00")
+
     def test_parse_dressed_and_legacy_pulse_log_lines(self):
         now = datetime(2026, 9, 2, 12, 0, 0)
         lines = [
@@ -132,7 +188,6 @@ class PulseHistoryTests(unittest.TestCase):
                 },
             ],
         )
-
 
 if __name__ == "__main__":
     unittest.main()

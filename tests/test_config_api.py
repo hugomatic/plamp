@@ -3,7 +3,7 @@ import json
 import subprocess
 import tempfile
 import unittest
-from datetime import time
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -433,6 +433,62 @@ class ConfigApiTests(unittest.TestCase):
         self.assertEqual(data["storage"]["used"], "1 GB")
         self.assertEqual(data["storage"]["total"], "3 GB")
         self.assertEqual(data["host"]["hardware_model"], "Raspberry Pi Zero 2 W Rev 1.0")
+
+    def test_host_time_summary_reports_host_timezone(self):
+        host_zone = timezone(timedelta(hours=-10), "HST")
+        now = datetime(2026, 10, 8, 20, 15, 0, tzinfo=host_zone)
+        with (
+            patch.object(server, "local_datetime", return_value=now),
+            patch.object(server, "configured_timezone_name", return_value="Pacific/Honolulu"),
+            patch.object(server, "configured_time_format", return_value="12h"),
+        ):
+            summary = server.host_time_summary()
+
+        self.assertEqual(summary["iso"], "2026-10-08T20:15:00-10:00")
+        self.assertEqual(summary["timezone"], "Pacific/Honolulu")
+        self.assertEqual(summary["timezone_abbreviation"], "HST")
+        self.assertEqual(summary["utc_offset"], "-10:00")
+        self.assertEqual(summary["timezone_display"], "Pacific/Honolulu (HST, UTC-10:00)")
+
+    def test_configured_timezone_name_prefers_active_localtime_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zone = root / "zoneinfo" / "Pacific" / "Honolulu"
+            zone.parent.mkdir(parents=True)
+            zone.touch()
+            localtime = root / "localtime"
+            localtime.symlink_to(zone)
+            timezone_file = root / "timezone"
+            timezone_file.write_text("America/Los_Angeles\n", encoding="utf-8")
+            with (
+                patch.object(server, "LOCALTIME_FILE", localtime),
+                patch.object(server, "TIMEZONE_FILE", timezone_file),
+            ):
+                name = server.configured_timezone_name()
+
+        self.assertEqual(name, "Pacific/Honolulu")
+
+    def test_configured_timezone_name_uses_timedatectl_for_copied_localtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            localtime = root / "localtime"
+            localtime.write_bytes(b"TZif")
+            timezone_file = root / "timezone"
+            timezone_file.write_text("America/Los_Angeles\n", encoding="utf-8")
+            completed = subprocess.CompletedProcess(
+                ["timedatectl", "show", "--property=Timezone", "--value"],
+                0,
+                "Pacific/Honolulu\n",
+                "",
+            )
+            with (
+                patch.object(server, "LOCALTIME_FILE", localtime),
+                patch.object(server, "TIMEZONE_FILE", timezone_file),
+                patch.object(server.subprocess, "run", return_value=completed),
+            ):
+                name = server.configured_timezone_name()
+
+        self.assertEqual(name, "Pacific/Honolulu")
 
     def test_status_response_contains_config_tree_and_controller_telemetry(self):
         config = {

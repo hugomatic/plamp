@@ -119,6 +119,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('function networkAddresses(network, scope)', script)
         self.assertIn('["LAN address", networkAddresses(network, "lan")]', script)
         self.assertIn('["Tailscale address", networkAddresses(network, "tailscale")]', script)
+        self.assertIn('["Time zone", hostTime.timezone_display]', script)
         for injected_value in ("sprout", "octo_relay", "/home/hugo", "5d98690", "plamp-web started"):
             self.assertNotIn(injected_value, html)
 
@@ -151,6 +152,19 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("failed:", script)
         self.assertIn("result unconfirmed:", script)
         self.assertNotIn("complete.", script)
+
+    def test_system_log_renders_newest_first_with_timestamp_and_level_colors(self):
+        html = static_text("system.html")
+        script = static_text("system.js")
+
+        self.assertIn("function parseLogLine(line)", script)
+        self.assertIn("function parseLogRecords(content)", script)
+        self.assertIn("current.continuations.push(line);", script)
+        self.assertIn("records.reverse()", script)
+        self.assertIn('timestamp.className = "log-time";', script)
+        self.assertIn('level.className = `log-level ${entry.level.toLowerCase()}`;', script)
+        for class_name in ("log-time", "log-level.info", "log-level.warning", "log-level.error", "log-level.critical"):
+            self.assertIn(f".{class_name}", html)
 
     def test_settings_static_client_bootstraps_only_from_rest(self):
         html = static_text("settings.html")
@@ -572,11 +586,13 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn("function effectiveTimerValueAt(event, overlay, messageAge, futureSeconds) {", html)
         self.assertIn("if (overlayRemaining > futureSeconds) return Number(overlay.target_value ?? 1) > 0;", html)
         self.assertIn('if (deviceMode(event) === "ready") return false;', html)
-        self.assertIn("function historyValueInWindow(pulses, ageStart, ageEnd) {", html)
-        self.assertIn("function historyTracePath(pulses, horizon, width = 240) {", html)
-        self.assertIn("historyValueInWindow(pulses, ageLeft, ageRight)", html)
+        self.assertIn("function historyValueInWindow(pulses, ageStart, ageEnd, nowMilliseconds) {", html)
+        self.assertIn("function historyTracePath(pulses, horizon, nowMilliseconds, width = 240) {", html)
+        self.assertIn("historyValueInWindow(pulses, ageLeft, ageRight, nowMilliseconds)", html)
+        self.assertIn("const serverNow = Date.parse(data?.server_now);", html)
+        self.assertIn("clock.serverNow + (performance.now() - clock.loadedAt)", html)
         self.assertIn('trace.className = "timer-trace"', html)
-        self.assertIn('trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses);', html)
+        self.assertIn('trace.innerHTML = timerTraceSvg(event, overlay, messageAge, mode, channelPulses, pulseHistoryNow(role));', html)
         self.assertIn('/pulse-history', html)
 
     def test_timer_dashboard_labels_active_on_and_off_overrides(self):
