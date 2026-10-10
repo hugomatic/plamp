@@ -61,7 +61,7 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertEqual(weeks["frames"][0]["slider_label"], "weeks 01/29")
         self.assertEqual(weeks["label"], "weeks 29/29")
         self.assertIsNone(weeks["frames"][1]["capture_id"])
-        self.assertEqual(view["detail"], f"Friday, October 9, 2026, 16 hr, day {day_number}, today")
+        self.assertEqual(view["detail"], f"Friday, October 9, 2026, 16 hr, day {day_number}, today (week 29, day 5, hour 16)")
 
     def test_finder_hour_slider_keeps_extra_pictures_and_empty_hours(self) -> None:
         from plamp_web.camera_ribbon import finder_view

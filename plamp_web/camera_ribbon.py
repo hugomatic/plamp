@@ -88,7 +88,7 @@ def finder_view(
     days = _finder_days(captures, tz, datetime.fromisoformat(selected_week).date(), anchor)
     day_index = anchor.weekday()
     selected_day = datetime.fromisoformat(days[day_index]["key"]).date() if days else anchor.date()
-    hours = _finder_hours(captures, tz, selected_day, first_day, clock.date())
+    hours = _finder_hours(captures, tz, selected_day, first_day, first_monday, clock.date())
     hour_index = _index_nearest_frame(hours, anchor)
     _mark_selected(weeks, week_index, lambda frame: frame["slider_label"])
     _mark_selected(days, day_index, lambda frame: frame["slider_label"])
@@ -182,7 +182,7 @@ def _finder_days(captures, tz, monday, anchor) -> list[dict[str, Any]]:
     return frames
 
 
-def _finder_hours(captures, tz, day, first_day, today) -> list[dict[str, Any]]:
+def _finder_hours(captures, tz, day, first_day, first_monday, today) -> list[dict[str, Any]]:
     grouped: dict[int, list[RibbonCapture]] = {hour: [] for hour in range(24)}
     for item in captures:
         local = item.local(tz)
@@ -195,18 +195,18 @@ def _finder_hours(captures, tz, day, first_day, today) -> list[dict[str, Any]]:
         slot = datetime(day.year, day.month, day.day, hour, tzinfo=tz)
         shots = sorted(grouped[hour], key=lambda item: item.taken_at)
         if not shots:
-            frames.append(_hour_frame(slot, None, height, first_day, today))
+            frames.append(_hour_frame(slot, None, height, first_day, first_monday, today))
             continue
         for shot in shots:
-            frames.append(_hour_frame(shot.local(tz).replace(microsecond=0), shot, height, first_day, today))
+            frames.append(_hour_frame(shot.local(tz).replace(microsecond=0), shot, height, first_day, first_monday, today))
     return frames
 
 
-def _hour_frame(slot: datetime, capture: RibbonCapture | None, height: int, first_day, today) -> dict[str, Any]:
+def _hour_frame(slot: datetime, capture: RibbonCapture | None, height: int, first_day, first_monday, today) -> dict[str, Any]:
     frame = _frame(slot, "finder", height, capture, None)
     frame["key"] = slot.replace(minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
     frame["slider_label"] = _count_label("hours", slot.hour, 24, 2)
-    frame["detail"] = _finder_detail(slot, first_day, today)
+    frame["detail"] = _finder_detail(slot, first_day, first_monday, today)
     return frame
 
 
@@ -245,7 +245,7 @@ def _grow_days(captures: list[RibbonCapture], moment: datetime, tz: datetime.tzi
     return first, (last - first).days + 1
 
 
-def _finder_detail(hour: datetime, first_day, today) -> str:
+def _finder_detail(hour: datetime, first_day, first_monday, today) -> str:
     since_start = (hour.date() - first_day).days + 1
     ago = (today - hour.date()).days
     if ago <= 0:
@@ -254,9 +254,11 @@ def _finder_detail(hour: datetime, first_day, today) -> str:
         ago_text = "1 day ago"
     else:
         ago_text = f"{ago} days ago"
+    week = ((_monday(hour.date()) - first_monday).days // 7) + 1
     return (
         f"{WEEKDAYS[hour.weekday()]}, {FULL_MONTHS[hour.month - 1]} {hour.day}, {hour.year}, "
-        f"{hour.hour} hr, day {since_start}, {ago_text}"
+        f"{hour.hour} hr, day {since_start}, {ago_text} "
+        f"(week {week}, day {hour.weekday() + 1}, hour {hour.hour})"
     )
 
 
