@@ -11,6 +11,7 @@
   const status = document.getElementById("camera-finder-status");
   const detail = document.getElementById("camera-finder-detail");
   const nowButton = document.getElementById("camera-finder-now");
+  const fullButton = document.getElementById("camera-finder-full");
   if (!buttons.gallery || !buttons.finder || !panels.finder || !lines || !status) return;
 
   let finderAt = null;
@@ -19,6 +20,7 @@
   let pending = false;
   let following = Boolean(nowButton && nowButton.checked);
   let followTimer = null;
+  let fullCapture = null;
   const ready = fetch("/api/camera/finder")
     .then((response) => {
       if (!response.ok) throw new Error("finder unavailable");
@@ -29,11 +31,22 @@
   buttons.gallery.addEventListener("click", () => show("gallery"));
   buttons.finder.addEventListener("click", () => show("finder"));
   if (nowButton) nowButton.addEventListener("change", applyLatest);
+  if (fullButton) fullButton.addEventListener("click", openFull);
   window.addEventListener("plamp-capture-saved", () => {
     if (!following || !loaded) return;
     finderAt = null;
     refresh();
   });
+
+  function openFull() {
+    if (!fullCapture) return;
+    window.open(`/api/camera/captures/${encodeURIComponent(fullCapture)}/image`, "_blank", "noopener");
+  }
+
+  function setFull(frame) {
+    fullCapture = frame && frame.capture_id ? frame.capture_id : null;
+    if (fullButton) fullButton.disabled = !fullCapture;
+  }
 
   function applyLatest() {
     following = Boolean(nowButton && nowButton.checked);
@@ -172,6 +185,7 @@
     const label = frames.parentElement.querySelector(".finder-slider span");
     if (label) label.textContent = frameLabel(line, items[index]);
     if (line.scale === "hours" && detail && items[index] && items[index].detail) detail.textContent = items[index].detail;
+    if (line.scale === "hours") setFull(items[index]);
     const layout = lineLayout(line.scale, frames);
     frames.classList.toggle("peek", layout.peek);
     let start = index - Math.floor(layout.count / 2);
@@ -189,23 +203,14 @@
         el.appendChild(img);
       }
       el.addEventListener("click", () => {
+        if (line.scale === "hours" && absolute === index && frame.capture_id) {
+          openFull();
+          return;
+        }
         const slider = frames.parentElement.querySelector("input[type=range]");
         slider.value = String(absolute);
         slider.dispatchEvent(new Event("change"));
       });
-      if (line.scale === "hours" && absolute === index && frame.capture_id) {
-        const link = document.createElement("a");
-        link.className = "finder-full";
-        link.href = `/api/camera/captures/${encodeURIComponent(frame.capture_id)}/image`;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = "Full size";
-        const shot = document.createElement("div");
-        shot.className = "finder-shot";
-        shot.append(link, el);
-        frames.appendChild(shot);
-        return;
-      }
       frames.appendChild(el);
     });
   }

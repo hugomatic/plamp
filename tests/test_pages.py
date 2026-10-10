@@ -621,6 +621,7 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn(">latest <", html)
         self.assertIn('id="camera-finder-camera"', html)
         self.assertIn('id="camera-finder-capture" type="button">Take picture</button>', html)
+        self.assertIn('id="camera-finder-full" type="button" disabled>Full size</button>', html)
         self.assertIn("#camera-finder-lines { display: grid; gap: 1rem; }", html)
         self.assertIn('id="camera-gallery"', html)
         self.assertNotIn("camera-ribbon", html)
