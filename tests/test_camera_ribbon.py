@@ -1,3 +1,4 @@
+import subprocess
 import tempfile
 import unittest
 from datetime import datetime
@@ -49,7 +50,7 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertEqual([frame["capture_id"] for frame in hours["frames"]], ["h14", "h15", "h16", "h17", "h18"])
         self.assertEqual(hours["frames"][2]["label"], "Oct 9, Friday, 16 hr")
         self.assertIsNone(hours["frames"][0]["label"])
-        self.assertEqual(hours["frames"][2]["thumb_url"], "/api/camera/ribbon/thumbs/h16?height=320")
+        self.assertEqual(hours["frames"][2]["thumb_url"], "/api/camera/ribbon/thumbs/h16?height=288")
 
     def test_missing_hour_stays_empty(self) -> None:
         view = ribbon_view(self.captures, at=datetime(2026, 10, 9, 13, tzinfo=HST), tz=HST)
@@ -139,8 +140,15 @@ class CameraRibbonTests(unittest.TestCase):
             source = root / "full.jpg"
             _write_sample_jpeg(source)
             dest = root / "thumb.jpg"
-            ensure_thumbnail(source, dest, 320)
+            ensure_thumbnail(source, dest, 288)
             self.assertTrue(dest.read_bytes().startswith(b"\xff\xd8"))
+            sized = subprocess.run(
+                ["/usr/bin/python3", "-c", "import sys\nfrom PIL import Image\nprint(Image.open(sys.argv[1]).size)", str(dest)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(sized.stdout.strip(), "(512, 288)")
             with self.assertRaises(RibbonError):
                 ensure_thumbnail(source, root / "nope.jpg", 4)
 

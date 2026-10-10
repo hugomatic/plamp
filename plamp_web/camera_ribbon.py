@@ -19,7 +19,8 @@ FRAME_SHAPES = (
     (1, "mid", 240),
     (2, "outer", 120),
 )
-THUMB_HEIGHT = 320
+# 512×288 is exact 16:9 and a multiple of 16, so each JPEG block is full.
+THUMB_HEIGHT = 288
 THUMB_HEIGHTS = {THUMB_HEIGHT}
 FINDER_HEIGHTS = {"hours": 320, "days": 160, "weeks": 96}
 
