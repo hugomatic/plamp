@@ -615,7 +615,7 @@ class PageRenderTests(unittest.TestCase):
         )
         self.assertIn('id="camera-finder" class="camera-panel" aria-label="Camera finder"', html)
         self.assertIn('id="camera-gallery" class="camera-panel" aria-label="Camera captures" hidden', html)
-        self.assertIn(".finder-frames { align-items: flex-end; background: #f1f3f4;", html)
+        self.assertIn(".finder-frame img { display: block; height: 100%; object-fit: cover; pointer-events: none; width: 100%; }", html)
         self.assertIn(".finder-range { background: #f1f3f4;", html)
         self.assertIn('id="camera-finder-now" type="checkbox" checked', html)
         self.assertIn(">latest <", html)
