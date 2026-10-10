@@ -19,7 +19,8 @@ FRAME_SHAPES = (
     (1, "mid", 240),
     (2, "outer", 120),
 )
-THUMB_HEIGHTS = {96, 120, 160, 240, 320, 360}
+THUMB_HEIGHT = 320
+THUMB_HEIGHTS = {THUMB_HEIGHT}
 FINDER_HEIGHTS = {"hours": 320, "days": 160, "weeks": 96}
 
 
@@ -416,7 +417,7 @@ def _week_frames(
 
 def _frame(slot: datetime, role: str, height: int, capture: RibbonCapture | None, label: str | None) -> dict[str, Any]:
     capture_id = capture.capture_id if capture else None
-    thumb_url = f"/api/camera/ribbon/thumbs/{capture_id}?height={height}" if capture_id else None
+    thumb_url = f"/api/camera/ribbon/thumbs/{capture_id}?height={THUMB_HEIGHT}" if capture_id else None
     return {
         "role": role,
         "height": height,

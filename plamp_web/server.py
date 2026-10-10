@@ -2577,7 +2577,7 @@ def get_camera_ribbon(at: str | None = None) -> dict[str, Any]:
 
 
 @app.get("/api/camera/ribbon/thumbs/{capture_id}")
-def get_camera_ribbon_thumb(capture_id: str, height: int = 72) -> FileResponse:
+def get_camera_ribbon_thumb(capture_id: str, height: int = camera_ribbon.THUMB_HEIGHT) -> FileResponse:
     _picks_path, thumb_dir = ribbon_paths()
     try:
         dest = camera_ribbon.thumbnail_path(thumb_dir, capture_id, height)

@@ -49,7 +49,7 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertEqual([frame["capture_id"] for frame in hours["frames"]], ["h14", "h15", "h16", "h17", "h18"])
         self.assertEqual(hours["frames"][2]["label"], "Oct 9, Friday, 16 hr")
         self.assertIsNone(hours["frames"][0]["label"])
-        self.assertEqual(hours["frames"][2]["thumb_url"], "/api/camera/ribbon/thumbs/h16?height=360")
+        self.assertEqual(hours["frames"][2]["thumb_url"], "/api/camera/ribbon/thumbs/h16?height=320")
 
     def test_missing_hour_stays_empty(self) -> None:
         view = ribbon_view(self.captures, at=datetime(2026, 10, 9, 13, tzinfo=HST), tz=HST)
@@ -133,13 +133,13 @@ class CameraRibbonTests(unittest.TestCase):
         self.assertEqual(picks["days"]["2026-10-09"], "h16")
         self.assertEqual(picks["weeks"]["2026-10-05"], "h18")
 
-    def test_thumbnail_is_written_on_demand_for_the_three_heights(self) -> None:
+    def test_thumbnail_is_written_on_demand_at_one_height(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "full.jpg"
             _write_sample_jpeg(source)
             dest = root / "thumb.jpg"
-            ensure_thumbnail(source, dest, 120)
+            ensure_thumbnail(source, dest, 320)
             self.assertTrue(dest.read_bytes().startswith(b"\xff\xd8"))
             with self.assertRaises(RibbonError):
                 ensure_thumbnail(source, root / "nope.jpg", 4)
