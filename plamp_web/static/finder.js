@@ -2,12 +2,10 @@
   const buttons = {
     gallery: document.getElementById("camera-show-gallery"),
     finder: document.getElementById("camera-show-finder"),
-    ribbon: document.getElementById("camera-show-ribbon"),
   };
   const panels = {
     gallery: document.getElementById("camera-gallery"),
     finder: document.getElementById("camera-finder"),
-    ribbon: document.getElementById("camera-ribbon"),
   };
   const lines = document.getElementById("camera-finder-lines");
   const status = document.getElementById("camera-finder-status");
@@ -30,7 +28,6 @@
 
   buttons.gallery.addEventListener("click", () => show("gallery"));
   buttons.finder.addEventListener("click", () => show("finder"));
-  if (buttons.ribbon) buttons.ribbon.addEventListener("click", () => show("ribbon"));
   if (nowButton) nowButton.addEventListener("change", applyLatest);
   window.addEventListener("plamp-capture-saved", () => {
     if (!following || !loaded) return;
@@ -80,7 +77,6 @@
         else refresh();
       });
     }
-    if (which === "ribbon") window.dispatchEvent(new Event("plamp-ribbon-show"));
   }
 
   function refresh() {

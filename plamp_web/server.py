@@ -2537,40 +2537,21 @@ def ribbon_capture_records() -> list[dict[str, Any]]:
         return records
 
 
-def ribbon_paths() -> tuple[Path, Path]:
-    root = camera_capture.DATA_DIR / "camera-ribbon"
-    return root / "picks.json", root / "thumbs"
+def ribbon_thumb_dir() -> Path:
+    return camera_capture.DATA_DIR / "camera-ribbon" / "thumbs"
 
 
 @app.get("/api/camera/finder")
 def get_camera_finder(at: str | None = None) -> dict[str, Any]:
     tz = local_datetime().tzinfo or timezone.utc
     moment = camera_ribbon.parse_moment(at) if at else local_datetime()
-    picks_path, _thumb_dir = ribbon_paths()
     try:
         return camera_ribbon.finder_view(
             camera_ribbon.captures_from_records(ribbon_capture_records()),
             at=moment,
             tz=tz,
             now=local_datetime(),
-            picks=camera_ribbon.load_picks(picks_path),
             snap=at is None,
-        )
-    except camera_ribbon.RibbonError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.message) from error
-
-
-@app.get("/api/camera/ribbon")
-def get_camera_ribbon(at: str | None = None) -> dict[str, Any]:
-    tz = local_datetime().tzinfo or timezone.utc
-    moment = camera_ribbon.parse_moment(at) if at else local_datetime()
-    picks_path, _thumb_dir = ribbon_paths()
-    try:
-        return camera_ribbon.ribbon_view(
-            camera_ribbon.captures_from_records(ribbon_capture_records()),
-            at=moment,
-            tz=tz,
-            picks=camera_ribbon.load_picks(picks_path),
         )
     except camera_ribbon.RibbonError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message) from error
@@ -2578,9 +2559,8 @@ def get_camera_ribbon(at: str | None = None) -> dict[str, Any]:
 
 @app.get("/api/camera/ribbon/thumbs/{capture_id}")
 def get_camera_ribbon_thumb(capture_id: str, height: int = camera_ribbon.THUMB_HEIGHT) -> FileResponse:
-    _picks_path, thumb_dir = ribbon_paths()
     try:
-        dest = camera_ribbon.thumbnail_path(thumb_dir, capture_id, height)
+        dest = camera_ribbon.thumbnail_path(ribbon_thumb_dir(), capture_id, height)
     except camera_ribbon.RibbonError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message) from error
     records = ribbon_capture_records()
@@ -2602,25 +2582,6 @@ def get_camera_ribbon_thumb(capture_id: str, height: int = camera_ribbon.THUMB_H
     except camera_ribbon.RibbonError as error:
         raise HTTPException(status_code=error.status_code, detail=error.message) from error
     return FileResponse(dest, media_type="image/jpeg")
-
-
-@app.post("/api/camera/ribbon/picks")
-def post_camera_ribbon_pick(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    scale = str(payload.get("scale") or "")
-    capture_id = str(payload.get("capture_id") or "")
-    at_text = str(payload.get("at") or "")
-    known = {str(record.get("capture_id") or "") for record in ribbon_capture_records()}
-    if capture_id not in known:
-        raise HTTPException(status_code=422, detail="unknown capture")
-    tz = local_datetime().tzinfo or timezone.utc
-    picks_path, _thumb_dir = ribbon_paths()
-    try:
-        moment = camera_ribbon.parse_moment(at_text)
-        key = camera_ribbon.pick_key(scale, moment, tz)
-        camera_ribbon.save_pick(picks_path, scale=scale, key=key, capture_id=capture_id)
-    except camera_ribbon.RibbonError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.message) from error
-    return get_camera_ribbon(at=at_text)
 
 
 @app.get("/api/camera/captures/{capture_id}/image")
