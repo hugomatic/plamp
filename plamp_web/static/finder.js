@@ -197,6 +197,19 @@
         slider.value = String(absolute);
         slider.dispatchEvent(new Event("change"));
       });
+      if (line.scale === "hours" && absolute === index && frame.capture_id) {
+        const link = document.createElement("a");
+        link.className = "finder-full";
+        link.href = `/api/camera/captures/${encodeURIComponent(frame.capture_id)}/image`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "Full size";
+        const shot = document.createElement("div");
+        shot.className = "finder-shot";
+        shot.append(link, el);
+        frames.appendChild(shot);
+        return;
+      }
       frames.appendChild(el);
     });
   }

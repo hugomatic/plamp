@@ -54,6 +54,7 @@
     .finder-detail p { margin: 0; }
     .finder-follow { align-items: center; color: #666; display: flex; font-size: .75rem; gap: .35rem; white-space: nowrap; }
     .finder-follow input { margin: 0; }
+    #camera-finder-lines { display: grid; gap: 1rem; }
     .finder-frames { align-items: flex-end; background: #f1f3f4; border-radius: 3px; display: flex; gap: 6px; justify-content: center; padding: .35rem; }
     .finder-frames.peek { overflow: hidden; }
     .finder-frame { aspect-ratio: 16 / 9; background: #fff; border-radius: 4px; flex: 0 0 auto; overflow: hidden; position: relative; }
@@ -62,6 +63,8 @@
     .finder-line.days .finder-frame { height: 104px; }
     .finder-line.weeks .finder-frame { height: 56px; }
     .finder-frame.selected { outline: 3px solid #174ea6; outline-offset: -3px; }
+    .finder-shot { align-items: center; display: flex; flex-direction: column; gap: .25rem; }
+    .finder-full { color: #174ea6; font-size: .75rem; line-height: 1; text-decoration: none; }
     .finder-slider { align-items: center; display: grid; gap: .4rem; grid-template-columns: auto minmax(0, 1fr); }
     .finder-slider span { color: #666; font-size: .75rem; white-space: nowrap; }
     .finder-range { background: #f1f3f4; border-radius: 3px; padding: .15rem .4rem; }
@@ -154,6 +157,11 @@
     </div>
   </section>
   <section id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden>
+    <div class="camera-actions">
+      <label>Camera <select id="camera-finder-camera"><option value="">Default camera</option></select></label>
+      <button id="camera-finder-capture" type="button">Take picture</button>
+      <span id="camera-finder-capture-status">Ready.</span>
+    </div>
     <div class="finder-detail">
       <p id="camera-finder-detail"></p>
       <label class="finder-follow">latest <input id="camera-finder-now" type="checkbox" checked></label>
@@ -226,19 +234,22 @@
     let pendingTimerRender = false;
 
     function populateCameraSelectors(cameraIds) {
-      cameraCaptureCamera.replaceChildren();
-      if (!cameraIds.length) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "Default camera";
-        cameraCaptureCamera.append(option);
-        return;
-      }
-      for (const cameraId of cameraIds) {
-        const option = document.createElement("option");
-        option.value = cameraId;
-        option.textContent = cameraId;
-        cameraCaptureCamera.append(option);
+      for (const select of [cameraCaptureCamera, document.getElementById("camera-finder-camera")]) {
+        if (!select) continue;
+        select.replaceChildren();
+        if (!cameraIds.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "Default camera";
+          select.append(option);
+          continue;
+        }
+        for (const cameraId of cameraIds) {
+          const option = document.createElement("option");
+          option.value = cameraId;
+          option.textContent = cameraId;
+          select.append(option);
+        }
       }
     }
 
@@ -1084,10 +1095,10 @@
       return `/api/camera/captures?${params.toString()}`;
     }
 
-    function cameraCapturePostUrl() {
+    function cameraCapturePostUrl(cameraId) {
       const params = new URLSearchParams();
-      if (cameraCaptureCamera.value) {
-        params.set("camera_id", cameraCaptureCamera.value);
+      if (cameraId) {
+        params.set("camera_id", cameraId);
       }
       const query = params.toString();
       return query ? `/api/camera/captures?${query}` : "/api/camera/captures";
@@ -1172,16 +1183,16 @@
       }
     }
 
-    async function captureCameraImage() {
-      cameraCaptureButton.disabled = true;
-      cameraCaptureStatus.textContent = "Capturing...";
+    async function captureCameraImage(button, status, cameraId) {
+      button.disabled = true;
+      status.textContent = "Capturing...";
       try {
-        const response = await fetch(cameraCapturePostUrl(), {method: "POST"});
+        const response = await fetch(cameraCapturePostUrl(cameraId), {method: "POST"});
         const text = await response.text();
         let data = null;
         try { data = JSON.parse(text); } catch (error) {}
         if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
-        cameraCaptureStatus.textContent = "Captured.";
+        status.textContent = "Captured.";
         window.dispatchEvent(new Event("plamp-capture-saved"));
         if (data && typeof data.image_url === "string") {
           selectedCameraImageUrl = data.image_url;
@@ -1191,9 +1202,9 @@
         cameraCaptureOffset = 0;
         await refreshCameraCaptures();
       } catch (error) {
-        cameraCaptureStatus.textContent = String(error.message || error);
+        status.textContent = String(error.message || error);
       } finally {
-        cameraCaptureButton.disabled = false;
+        button.disabled = false;
       }
     }
 
@@ -1246,8 +1257,17 @@
 
     cameraCaptureButton.addEventListener("click", () => {
       stopPageAutoRefresh();
-      captureCameraImage();
+      captureCameraImage(cameraCaptureButton, cameraCaptureStatus, cameraCaptureCamera.value);
     });
+    const finderCaptureButton = document.getElementById("camera-finder-capture");
+    const finderCaptureCamera = document.getElementById("camera-finder-camera");
+    const finderCaptureStatus = document.getElementById("camera-finder-capture-status");
+    if (finderCaptureButton && finderCaptureStatus) {
+      finderCaptureButton.addEventListener("click", () => {
+        stopPageAutoRefresh();
+        captureCameraImage(finderCaptureButton, finderCaptureStatus, finderCaptureCamera ? finderCaptureCamera.value : "");
+      });
+    }
     document.getElementById("override-on").addEventListener("click", () => sendTimedOverride(1));
     document.getElementById("override-off").addEventListener("click", () => sendTimedOverride(0));
     timerOverrideDialog.addEventListener("close", () => { activeOverride = null; });

@@ -2625,6 +2625,16 @@ def post_camera_ribbon_pick(payload: dict[str, Any] = Body(...)) -> dict[str, An
 
 @app.get("/api/camera/captures/{capture_id}/image")
 def get_camera_capture_image(capture_id: str) -> FileResponse:
+    for record in ribbon_capture_records():
+        if str(record.get("capture_id") or "") != capture_id:
+            continue
+        image_path = record.get("image_path")
+        if not image_path:
+            break
+        candidate = (camera_capture.REPO_ROOT / str(image_path)).resolve()
+        if candidate.is_file():
+            return FileResponse(candidate, media_type="image/jpeg")
+        break
     image_path = camera_capture.find_capture_image(
         capture_id,
         repo_root=camera_capture.REPO_ROOT,
