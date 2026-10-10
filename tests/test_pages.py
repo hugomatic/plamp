@@ -607,10 +607,14 @@ class PageRenderTests(unittest.TestCase):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)
 
         self.assertIn("<h2>Camera</h2>", html)
-        self.assertIn('id="camera-show-gallery"', html)
-        self.assertIn('id="camera-show-finder"', html)
-        self.assertNotIn('id="camera-show-ribbon"', html)
-        self.assertIn('id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden', html)
+        self.assertIn('id="camera-show-finder" type="button" aria-pressed="true">Finder</button>', html)
+        self.assertIn('id="camera-show-gallery" type="button" aria-pressed="false">Gallery</button>', html)
+        self.assertLess(
+            html.index('id="camera-show-finder"'),
+            html.index('id="camera-show-gallery"'),
+        )
+        self.assertIn('id="camera-finder" class="camera-panel" aria-label="Camera finder"', html)
+        self.assertIn('id="camera-gallery" class="camera-panel" aria-label="Camera captures" hidden', html)
         self.assertIn(".finder-frames { align-items: flex-end; background: #f1f3f4;", html)
         self.assertIn(".finder-range { background: #f1f3f4;", html)
         self.assertIn('id="camera-finder-now" type="checkbox" checked', html)

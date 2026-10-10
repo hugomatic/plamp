@@ -209,4 +209,5 @@
       frames.appendChild(el);
     });
   }
+  show("finder");
 })();

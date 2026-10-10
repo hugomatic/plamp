@@ -120,10 +120,10 @@
 
   <h2>Camera</h2>
   <div class="camera-switch" role="tablist" aria-label="Camera view">
-    <button id="camera-show-gallery" type="button" aria-pressed="true">Gallery</button>
-    <button id="camera-show-finder" type="button" aria-pressed="false">Finder</button>
+    <button id="camera-show-finder" type="button" aria-pressed="true">Finder</button>
+    <button id="camera-show-gallery" type="button" aria-pressed="false">Gallery</button>
   </div>
-  <section id="camera-gallery" class="camera-panel" aria-label="Camera captures">
+  <section id="camera-gallery" class="camera-panel" aria-label="Camera captures" hidden>
     <img id="camera-viewer" class="camera-viewer" alt="Selected camera capture" hidden>
     <div class="camera-actions">
       <label>Camera <select id="camera-capture-camera"><option value="">Default camera</option></select></label>
@@ -144,7 +144,7 @@
       <span id="camera-capture-page-status"></span>
     </div>
   </section>
-  <section id="camera-finder" class="camera-panel" aria-label="Camera finder" hidden>
+  <section id="camera-finder" class="camera-panel" aria-label="Camera finder">
     <div class="camera-actions">
       <label>Camera <select id="camera-finder-camera"><option value="">Default camera</option></select></label>
       <button id="camera-finder-capture" type="button">Take picture</button>
