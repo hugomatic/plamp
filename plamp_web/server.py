@@ -1292,7 +1292,7 @@ class PicoMonitor:
         self.handle_line(json.dumps(result.message).encode("utf-8"), record=False)
         self.update_health(self.health_for_exchange(result))
         self.update_status("connected", connected=True, port=result.port, error=None)
-        return {"role": self.role, "serial": self.pico_serial, "command": text}
+        return {"role": self.role, "serial": self.pico_serial, "command": text, "report": result.message}
 
     def record_exchange(self, command: str, result: Any, *, journal: bool = True) -> None:
         self.record_serial("tx", command, journal=journal)

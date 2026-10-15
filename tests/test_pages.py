@@ -588,6 +588,11 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('id="override-off"', html)
         self.assertIn('sendTimedOverride(1)', html)
         self.assertIn('sendTimedOverride(0)', html)
+        self.assertIn('overrideMessage.textContent = "Applied";', html)
+        self.assertIn('overrideMessage.textContent = "Confirmed";', html)
+        self.assertIn('overrideMessage.textContent = "Error: report did not show the pulse";', html)
+        self.assertIn('finishPulseConfirmation("Error: no confirming report")', html)
+        self.assertNotIn("waiting for live report", html)
         self.assertIn('/pulse`, {seconds, value})', html)
         self.assertIn('/channels/${encodeURIComponent(channel.id)}/pulse`', html)
         self.assertNotIn('/channels/${encodeURIComponent(channel.id)}/schedule-enabled`', html)
@@ -607,6 +612,24 @@ class PageRenderTests(unittest.TestCase):
         if (secondsUntilOutputChange(sameValue, 0) !== null) throw new Error("same value");
         if (secondsUntilOutputChange(changing, 0) !== 7) throw new Error("changing " + secondsUntilOutputChange(changing, 0));
         if (secondsUntilOutputChange(held, 0) !== null) throw new Error("held last step");
+        """
+        completed = subprocess.run(["node", "-e", script], check=False, capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+
+    def test_pulse_confirmation_requires_a_matching_overlay(self):
+        html = static_timer_dashboard()
+        start = html.index("function pulseReportConfirms")
+        end = html.index("function openTimerOverride")
+        script = html[start:end] + """
+        const report = {type:"report", content:{overlays:[{pin:17, target_value:1, remaining_t:10}]}};
+        const ended = {type:"report", content:{overlays:[{pin:17, target_value:1, remaining_t:0}]}};
+        const other = {type:"report", content:{overlays:[{pin:16, target_value:1, remaining_t:10}]}};
+        const off = {type:"report", content:{overlays:[{pin:17, target_value:0, remaining_t:4}]}};
+        if (!pulseReportConfirms(report, 17, 1)) throw new Error("matching pulse");
+        if (pulseReportConfirms(ended, 17, 1)) throw new Error("finished pulse");
+        if (pulseReportConfirms(other, 17, 1)) throw new Error("other pin");
+        if (!pulseReportConfirms(off, 17, 0)) throw new Error("pulse off");
+        if (pulseReportConfirms(off, 17, 1)) throw new Error("off is not on");
         """
         completed = subprocess.run(["node", "-e", script], check=False, capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)

@@ -2372,6 +2372,7 @@ class ConfigApiTests(unittest.TestCase):
 
         command.assert_called_once_with("p 21 5", timeout=5.0)
         self.assertEqual(returned["command"], "p 21 5")
+        self.assertEqual(returned["report"], exchange.message)
         self.assertEqual(monitor.report_sequence, 1)
         self.assertEqual([entry["direction"] for entry in monitor.serial_log()], ["tx", "rx"])
         self.assertTrue(monitor.snapshot()["ok"])

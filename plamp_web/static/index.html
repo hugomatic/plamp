@@ -542,6 +542,16 @@
       return clock ? clock.serverNow + (performance.now() - clock.loadedAt) : Date.now();
     }
 
+    function pulseReportConfirms(report, pin, value) {
+      const overlays = Array.isArray(report?.content?.overlays) ? report.content.overlays : [];
+      const wanted = Number(value) > 0 ? 1 : 0;
+      return overlays.some((overlay) => {
+        if (Number(overlay.pin) !== Number(pin)) return false;
+        const target = Number(overlay.target_value ?? overlay.current_value ?? 0) > 0 ? 1 : 0;
+        return target === wanted && Number(overlay.remaining_t ?? 0) > 0;
+      });
+    }
+
     function openTimerOverride(role, channel, event, overlay, preferredValue) {
       activeOverride = {role, channel, event, overlay, preferredValue};
       const mode = deviceMode(event, channel);
@@ -572,20 +582,73 @@
       let data = null;
       try { data = JSON.parse(text); } catch (error) {}
       if (!response.ok) throw new Error(data?.detail || text || `${response.status} ${response.statusText}`);
-      overrideMessage.textContent = "Applied; waiting for live report…";
       return data;
+    }
+
+    let pulseConfirmation = null;
+
+    function clearPulseConfirmation() {
+      if (!pulseConfirmation) return;
+      window.clearTimeout(pulseConfirmation.timer);
+      pulseConfirmation = null;
+    }
+
+    function finishPulseConfirmation(text) {
+      clearPulseConfirmation();
+      if (activeOverride) overrideMessage.textContent = text;
+    }
+
+    function reportFromTimerMessage(message) {
+      return message?.report || message?.last_report || null;
+    }
+
+    function settlePulseConfirmation() {
+      const pending = pulseConfirmation;
+      if (!pending || !activeOverride) return;
+      const message = timerMessages.get(pending.role);
+      const sequence = Number(message?.report_sequence);
+      if (!Number.isFinite(sequence) || sequence <= pending.sequence) return;
+      if (pulseReportConfirms(reportFromTimerMessage(message), pending.pin, pending.value)) {
+        finishPulseConfirmation("Confirmed");
+      }
+    }
+
+    function watchPulseConfirmation(role, pin, value) {
+      clearPulseConfirmation();
+      const sequence = Number(timerMessages.get(role)?.report_sequence);
+      pulseConfirmation = {
+        role,
+        pin,
+        value,
+        sequence: Number.isFinite(sequence) ? sequence : 0,
+        timer: window.setTimeout(() => finishPulseConfirmation("Error: no confirming report"), 8000),
+      };
+      settlePulseConfirmation();
     }
 
     async function sendTimedOverride(value) {
       if (!activeOverride) return;
+      const {role, channel} = activeOverride;
       try {
-        const {role, channel} = activeOverride;
         const seconds = overrideSeconds();
-        await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/pulse`, {seconds, value});
+        const data = await overrideRequest(`/api/controllers/${encodeURIComponent(role)}/channels/${encodeURIComponent(channel.id)}/pulse`, {seconds, value});
+        if (!activeOverride) return;
+        overrideMessage.textContent = "Applied";
+        if (pulseReportConfirms(data?.report, channel.pin, value)) {
+          clearPulseConfirmation();
+          overrideMessage.textContent = "Confirmed";
+        } else if (data?.report) {
+          clearPulseConfirmation();
+          overrideMessage.textContent = "Error: report did not show the pulse";
+        } else {
+          watchPulseConfirmation(role, channel.pin, value);
+        }
         await refreshPulseHistory(role);
         renderTimerStatus(true);
+        settlePulseConfirmation();
       } catch (error) {
-        overrideMessage.textContent = String(error.message || error);
+        clearPulseConfirmation();
+        overrideMessage.textContent = `Error: ${error.message || error}`;
       }
     }
 
@@ -1255,6 +1318,7 @@
             timerMessageTimes.set(role, Date.now());
             if (eventName === "snapshot") timerStatuses.set(role, data);
             renderTimerStatus();
+            settlePulseConfirmation();
           });
         }
         source.addEventListener("status", (event) => {
@@ -1288,7 +1352,7 @@
     }
     document.getElementById("override-on").addEventListener("click", () => sendTimedOverride(1));
     document.getElementById("override-off").addEventListener("click", () => sendTimedOverride(0));
-    timerOverrideDialog.addEventListener("close", () => { activeOverride = null; });
+    timerOverrideDialog.addEventListener("close", () => { activeOverride = null; clearPulseConfirmation(); });
     cameraCaptureList.addEventListener("click", stopPageAutoRefresh);
     cameraCaptureFilter.addEventListener("change", () => {
       stopPageAutoRefresh();
