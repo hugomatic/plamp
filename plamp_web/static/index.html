@@ -106,7 +106,7 @@
       <p id="override-state"></p>
       <div class="override-duration">
         <label>Duration <input id="override-duration" type="number" min="1" step="1" value="10" required></label>
-        <label>Unit <select id="override-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option></select></label>
+        <label>Unit <select id="override-unit"><option value="1" selected>seconds</option><option value="60">minutes</option><option value="3600">hours</option></select></label>
       </div>
       <div>
         <button id="override-on" type="button">Pulse</button>
@@ -554,6 +554,7 @@
       overrideTitle.textContent = `${scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF")}${channelName ? " " + channelName : ""}`;
       overrideState.textContent = `Output ${currentValue}; mode ${mode.toUpperCase()}.`;
       overrideMessage.textContent = "";
+      overrideUnit.value = "1";
       timerOverrideDialog.showModal();
       overrideDuration.focus();
     }

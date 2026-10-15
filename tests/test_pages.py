@@ -582,6 +582,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('<button id="override-off" type="button" hidden>Pulse OFF</button>', html)
         self.assertIn('id="override-duration"', html)
         self.assertIn('id="override-unit"', html)
+        self.assertIn('<option value="1" selected>seconds</option>', html)
+        self.assertIn('overrideUnit.value = "1";', html)
         self.assertIn('id="override-on"', html)
         self.assertIn('id="override-off"', html)
         self.assertIn('sendTimedOverride(1)', html)
