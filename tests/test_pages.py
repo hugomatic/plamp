@@ -1,5 +1,6 @@
 import html as html_module
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -569,7 +570,14 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('pulseOff.textContent = "Pulse OFF";', html)
         self.assertIn('openTimerOverride(role, channel, event, overlay, 0)', html)
         self.assertIn('overrideOn.textContent = scheduled ? "Pulse" : "Pulse ON";', html)
+        self.assertIn('const channelName = String(channel?.name || channel?.id || "");', html)
+        self.assertIn(
+            'overrideTitle.textContent = `${scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF")}${channelName ? " " + channelName : ""}`;',
+            html,
+        )
         self.assertIn('overrideOff.hidden = scheduled;', html)
+        self.assertIn('secondsUntilOutputChange(event, messageAge)', html)
+        self.assertIn('" | no scheduled change"', html)
         self.assertIn('#timer-override-dialog button[hidden] { display: none; }', html)
         self.assertIn('<button id="override-off" type="button" hidden>Pulse OFF</button>', html)
         self.assertIn('id="override-duration"', html)
@@ -583,6 +591,23 @@ class PageRenderTests(unittest.TestCase):
         self.assertNotIn('/channels/${encodeURIComponent(channel.id)}/schedule-enabled`', html)
         self.assertNotIn('Disable schedule', html)
         self.assertNotIn('Re-enable saved schedule', html)
+
+    def test_constant_schedule_is_not_reported_as_a_change(self):
+        html = static_timer_dashboard()
+        start = html.index("function currentTimerStep")
+        end = html.index("function timerDevicesFromMessage")
+        script = html[start:end] + """
+        const flat = {pattern:[{val:0,dur:86400}], reschedule:1, elapsed_t:1628};
+        const sameValue = {pattern:[{val:0,dur:10},{val:0,dur:20}], reschedule:1, elapsed_t:3};
+        const changing = {pattern:[{val:1,dur:10},{val:0,dur:50}], reschedule:1, elapsed_t:3};
+        const held = {pattern:[{val:1,dur:10},{val:0,dur:10}], reschedule:0, elapsed_t:20};
+        if (secondsUntilOutputChange(flat, 0) !== null) throw new Error("flat pattern");
+        if (secondsUntilOutputChange(sameValue, 0) !== null) throw new Error("same value");
+        if (secondsUntilOutputChange(changing, 0) !== 7) throw new Error("changing " + secondsUntilOutputChange(changing, 0));
+        if (secondsUntilOutputChange(held, 0) !== null) throw new Error("held last step");
+        """
+        completed = subprocess.run(["node", "-e", script], check=False, capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
 
     def test_timer_dashboard_renders_effective_schedule_traces(self):
         html = static_timer_dashboard(["pump_lights"], "12h", {"pump_lights": []}, 0)

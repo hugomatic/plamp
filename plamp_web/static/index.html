@@ -401,6 +401,24 @@
       return null;
     }
 
+    function secondsUntilOutputChange(event, ageSeconds = 0) {
+      const step = currentTimerStep(event, ageSeconds);
+      if (!step) return null;
+      const pattern = Array.isArray(event.pattern) ? event.pattern : [];
+      const flags = pattern.map((item) => Number(item.val) > 0);
+      if (!flags.length || flags.every((flag) => flag === flags[0])) return null;
+      const current = Number(step.step.val) > 0;
+      let elapsed = 0;
+      for (let index = 0; index < pattern.length + 1; index += 1) {
+        const here = currentTimerStep(event, ageSeconds + elapsed);
+        if (!here) return null;
+        if ((Number(here.step.val) > 0) !== current) return elapsed;
+        if (here.remaining <= 0) return null;
+        elapsed += here.remaining;
+      }
+      return null;
+    }
+
     function timerDevicesFromMessage(message) {
       const candidates = [
         message?.telemetry?.last_report?.content?.devices,
@@ -529,10 +547,11 @@
       const mode = deviceMode(event, channel);
       const scheduled = mode === "scheduled";
       const currentValue = Number(event.current_value ?? 0) > 0 ? "ON" : "OFF";
+      const channelName = String(channel?.name || channel?.id || "");
       overrideOn.textContent = scheduled ? "Pulse" : "Pulse ON";
       overrideOff.hidden = scheduled;
       overrideOff.style.display = scheduled ? "none" : "";
-      overrideTitle.textContent = scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF");
+      overrideTitle.textContent = `${scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF")}${channelName ? " " + channelName : ""}`;
       overrideState.textContent = `Output ${currentValue}; mode ${mode.toUpperCase()}.`;
       overrideMessage.textContent = "";
       timerOverrideDialog.showModal();
@@ -945,7 +964,6 @@
           const overlay = overlayByPin.get(Number(channel.pin ?? event.pin));
           const overlayTarget = Number(overlay?.target_value ?? 1) > 0;
           const overlayRemaining = Math.max(0, Number(overlay?.remaining_t ?? 0) - messageAge);
-          const step = currentTimerStep(event, messageAge);
           const value = Number(event.current_value ?? 0);
           const isOn = value > 0;
           const card = document.createElement("div");
@@ -993,8 +1011,9 @@
           top.append(name, controls);
           const meta = document.createElement("div");
           meta.className = "timer-meta";
+          const changeIn = mode === "scheduled" ? secondsUntilOutputChange(event, messageAge) : null;
           meta.textContent = mode === "scheduled"
-            ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | changes at " + (step ? formatChangeLabel(step.remaining) : "?") + (ok ? "" : " | stale")
+            ? "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + (changeIn == null ? " | no scheduled change" : " | changes at " + formatChangeLabel(changeIn)) + (ok ? "" : " | stale")
             : "pin " + (channel.pin ?? event.pin ?? "?") + " | " + (channel.type || event.type || "timer") + " | value " + value + " | ready" + (ok ? "" : " | stale");
           if (overlay) meta.textContent += ` | override ${overlayTarget ? "ON" : "OFF"} for ${formatDuration(overlayRemaining)}`;
           card.append(top, meta);
