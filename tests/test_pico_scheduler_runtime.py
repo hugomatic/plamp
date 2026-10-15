@@ -410,6 +410,21 @@ class PicoSchedulerRuntimeTests(unittest.TestCase):
         self.assertEqual(len(firmware.runtime.devices), 2)
         self.assertEqual(firmware.pins[2].value(), 1)
 
+    def test_finished_one_shot_schedule_remains_pulseable(self):
+        firmware = self.harness()
+        base = gpio(value=0)
+        base["reschedule"] = 0
+        firmware.call("handle_message", {"type": "configure", "content": {"devices": [base]}})
+
+        firmware.call("tick", 10)
+        firmware.call("apply")
+        firmware.call("handle_command", "p 2 1 5")
+
+        bases = [device for device in firmware.runtime.devices if not device.get("overlay")]
+        self.assertEqual([device["pin"] for device in bases], [2])
+        self.assertEqual(firmware.messages()[-1]["type"], "report")
+        self.assertEqual(firmware.pins[2].value(), 1)
+
     def test_json_configure_command_is_parsed(self):
         firmware = self.harness()
 

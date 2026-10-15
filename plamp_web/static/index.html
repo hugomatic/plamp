@@ -192,6 +192,8 @@
     const overrideDuration = document.getElementById("override-duration");
     const overrideUnit = document.getElementById("override-unit");
     const overrideMessage = document.getElementById("override-message");
+    const overrideOn = document.getElementById("override-on");
+    const overrideOff = document.getElementById("override-off");
     const TIMER_FORECAST_HORIZONS = [["next min", 60], ["next hour", 3600], ["next 24h", 86400]];
     const TIMER_HISTORY_HORIZONS = [["last hour", 3600], ["last 24h", 86400], ["last 30 days", 30 * 86400]];
     const STREAM_WARN_AFTER_SECONDS = 5;
@@ -524,8 +526,11 @@
     function openTimerOverride(role, channel, event, overlay, preferredValue) {
       activeOverride = {role, channel, event, overlay, preferredValue};
       const mode = deviceMode(event, channel);
+      const scheduled = mode === "scheduled";
       const currentValue = Number(event.current_value ?? 0) > 0 ? "ON" : "OFF";
-      overrideTitle.textContent = preferredValue ? "Pulse ON" : "Pulse OFF";
+      overrideOn.textContent = scheduled ? "Pulse" : "Pulse ON";
+      overrideOff.hidden = scheduled;
+      overrideTitle.textContent = scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF");
       overrideState.textContent = `Output ${currentValue}; mode ${mode.toUpperCase()}.`;
       overrideMessage.textContent = "";
       timerOverrideDialog.showModal();
@@ -952,17 +957,26 @@
           const controls = document.createElement("div");
           controls.className = "timer-controls";
           if ((channel.type || event.type) === "gpio") {
-            const pulseOn = document.createElement("button");
-            pulseOn.type = "button";
-            pulseOn.textContent = "Pulse ON";
-            pulseOn.disabled = !ok;
-            pulseOn.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
-            const pulseOff = document.createElement("button");
-            pulseOff.type = "button";
-            pulseOff.textContent = "Pulse OFF";
-            pulseOff.disabled = !ok;
-            pulseOff.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 0));
-            controls.append(pulseOn, pulseOff);
+            if (mode === "scheduled") {
+              const pulse = document.createElement("button");
+              pulse.type = "button";
+              pulse.textContent = "Pulse";
+              pulse.disabled = !ok;
+              pulse.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
+              controls.append(pulse);
+            } else {
+              const pulseOn = document.createElement("button");
+              pulseOn.type = "button";
+              pulseOn.textContent = "Pulse ON";
+              pulseOn.disabled = !ok;
+              pulseOn.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 1));
+              const pulseOff = document.createElement("button");
+              pulseOff.type = "button";
+              pulseOff.textContent = "Pulse OFF";
+              pulseOff.disabled = !ok;
+              pulseOff.addEventListener("click", () => openTimerOverride(role, channel, event, overlay, 0));
+              controls.append(pulseOn, pulseOff);
+            }
           }
           const badges = document.createElement("div");
           badges.className = "timer-badges";

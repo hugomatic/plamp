@@ -394,7 +394,7 @@ def tick(dt):
         if not device.get("overlay") and device["mode"] != "scheduled":
             continue
         device["elapsed_t"] += dt
-        if not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:
+        if device.get("overlay") and not device["reschedule"] and device["elapsed_t"] >= device["total_t"]:
             remove.append(device)
     if remove:
         for device in remove:
