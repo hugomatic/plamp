@@ -570,6 +570,8 @@ class PageRenderTests(unittest.TestCase):
         self.assertIn('openTimerOverride(role, channel, event, overlay, 0)', html)
         self.assertIn('overrideOn.textContent = scheduled ? "Pulse" : "Pulse ON";', html)
         self.assertIn('overrideOff.hidden = scheduled;', html)
+        self.assertIn('#timer-override-dialog button[hidden] { display: none; }', html)
+        self.assertIn('<button id="override-off" type="button" hidden>Pulse OFF</button>', html)
         self.assertIn('id="override-duration"', html)
         self.assertIn('id="override-unit"', html)
         self.assertIn('id="override-on"', html)

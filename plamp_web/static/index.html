@@ -43,6 +43,7 @@
     #timer-override-dialog { border: 1px solid #777; border-radius: 8px; max-width: min(30rem, calc(100vw - 2rem)); }
     #timer-override-dialog::backdrop { background: rgb(0 0 0 / .35); }
     #timer-override-dialog form { display: grid; gap: .75rem; }
+    #timer-override-dialog button[hidden] { display: none; }
     .override-duration { align-items: end; display: flex; gap: .5rem; }
     .override-duration label { display: grid; gap: .25rem; }
     .device-schedule-editor { border: 1px solid #ddd; border-radius: 6px; display: grid; gap: .65rem; padding: .65rem; }
@@ -108,8 +109,8 @@
         <label>Unit <select id="override-unit"><option value="1">seconds</option><option value="60" selected>minutes</option><option value="3600">hours</option></select></label>
       </div>
       <div>
-        <button id="override-on" type="button">Pulse ON</button>
-        <button id="override-off" type="button">Pulse OFF</button>
+        <button id="override-on" type="button">Pulse</button>
+        <button id="override-off" type="button" hidden>Pulse OFF</button>
       </div>
       <p id="override-message" aria-live="polite"></p>
       <button value="cancel">Close</button>
@@ -530,6 +531,7 @@
       const currentValue = Number(event.current_value ?? 0) > 0 ? "ON" : "OFF";
       overrideOn.textContent = scheduled ? "Pulse" : "Pulse ON";
       overrideOff.hidden = scheduled;
+      overrideOff.style.display = scheduled ? "none" : "";
       overrideTitle.textContent = scheduled ? "Pulse" : (preferredValue ? "Pulse ON" : "Pulse OFF");
       overrideState.textContent = `Output ${currentValue}; mode ${mode.toUpperCase()}.`;
       overrideMessage.textContent = "";

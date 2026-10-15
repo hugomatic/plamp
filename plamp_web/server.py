@@ -3083,7 +3083,11 @@ def get_settings_page() -> FileResponse:
 
 @app.get("/", response_class=FileResponse)
 def get_timer_dashboard_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/controllers/{controller}", response_class=FileResponse)

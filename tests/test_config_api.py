@@ -309,6 +309,7 @@ class ConfigApiTests(unittest.TestCase):
 
         self.assertIsInstance(response, FileResponse)
         self.assertEqual(Path(response.path), server.STATIC_DIR / "index.html")
+        self.assertEqual(response.headers["cache-control"], "no-cache")
 
     def test_startup_resolves_application_revision_once(self):
         previous_revision = server.APP_REVISION
